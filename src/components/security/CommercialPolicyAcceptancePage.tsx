@@ -9,12 +9,12 @@ import {
   loadPendingPolicy,
   reauthForPolicy,
   signPolicy,
-  submitPolicyAttempt,
   uploadPolicyPhoto,
   type PendingPolicy,
 } from "@/src/lib/commercialPolicy/commercialPolicyClient";
 import { parsePolicyChapters } from "@/src/lib/commercialPolicy/policyDocumentFormat";
 import { CommercialPolicyReader } from "@/src/components/security/CommercialPolicyReader";
+import { CommercialPolicyQuiz, type PolicyQuizResults } from "@/src/components/security/CommercialPolicyQuiz";
 
 const STEPS = COMMERCIAL_POLICY_ACCEPTANCE_STEPS;
 
@@ -27,7 +27,7 @@ export const CommercialPolicyAcceptancePage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [answers, setAnswers] = useState<Record<string, string>>({});
-  const [explanations, setExplanations] = useState<Record<string, string>>({});
+  const [quizResults, setQuizResults] = useState<PolicyQuizResults>({});
   const [checked, setChecked] = useState<Record<number, boolean>>({});
   const [password, setPassword] = useState("");
   const [challengeId, setChallengeId] = useState<string | null>(null);
@@ -213,7 +213,8 @@ export const CommercialPolicyAcceptancePage: React.FC = () => {
           signer={signer}
           initialChapterId={reviewChapterId}
           onGeneratePdf={() => void downloadAuthenticatedFile(`/api/commercial-policy/versions/${policy.id}/document`, "POL-COM-001-copia-controlada.pdf")}
-          onFinish={() => setStep(1)}
+          // Releitura pedida no teste volta direto para a pergunta; a primeira leitura segue para as regras.
+          onFinish={() => setStep(reviewChapterId ? 2 : 1)}
         />
       </div>
     );
@@ -288,75 +289,25 @@ export const CommercialPolicyAcceptancePage: React.FC = () => {
         ) : null}
 
         {step === 2 ? (
-          <section className="space-y-4 rounded-2xl border border-border bg-card p-5">
-            <h1 className="text-lg font-bold">Teste de compreensão</h1>
-            {policy.questions.map((question) => (
-              <fieldset key={question.id} className="space-y-2">
-                <legend className="text-sm font-semibold">{question.prompt}</legend>
-                {question.options.map((option) => (
-                  <label key={option.id} className="flex items-start gap-2 text-sm">
-                    <input
-                      type="radio"
-                      name={question.id}
-                      checked={answers[question.id] === option.id}
-                      onChange={() => setAnswers((current) => ({ ...current, [question.id]: option.id }))}
-                    />
-                    {option.text}
-                  </label>
-                ))}
-                {explanations[question.id] ? (
-                  <div className="space-y-1">
-                    <p className="text-xs text-amber-800">{explanations[question.id]}</p>
-                    {question.reviewChapterId ? (
-                      <button
-                        type="button"
-                        className="text-xs font-semibold text-primary"
-                        onClick={() => {
-                          setReviewChapterId(question.reviewChapterId ?? null);
-                          setStep(0);
-                        }}
-                      >
-                        Revisar regra
-                      </button>
-                    ) : null}
-                  </div>
-                ) : null}
-              </fieldset>
-            ))}
-            <div className="flex justify-between">
-              <button type="button" className="text-xs font-semibold" onClick={() => setStep(1)}>Voltar</button>
-              <button
-                type="button"
-                disabled={busy}
-                className="rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground disabled:opacity-50"
-                onClick={() => {
-                  setBusy(true);
-                  setError(null);
-                  void submitPolicyAttempt(
-                    policy.id,
-                    policy.questions.map((question) => ({ questionId: question.id, optionId: answers[question.id] ?? "" }))
-                  )
-                    .then((result) => {
-                      if (!result.passed) {
-                        const next: Record<string, string> = {};
-                        for (const item of result.results) {
-                          if (!item.correct) next[item.questionId] = item.explanation;
-                        }
-                        setExplanations(next);
-                        setError("Algumas respostas precisam ser corrigidas. Você pode tentar de novo.");
-                        return;
-                      }
-                      setExplanations({});
-                      setStep(3);
-                    })
-                    .catch(fail)
-                    .finally(() => setBusy(false));
-                }}
-              >
-                Conferir respostas
-              </button>
-            </div>
-          </section>
+          <CommercialPolicyQuiz
+            policyVersionId={policy.id}
+            questions={policy.questions}
+            seed={`${authUser?.id ?? ""}:${policy.id}`}
+            answers={answers}
+            onAnswer={(questionId, optionId) => setAnswers((current) => ({ ...current, [questionId]: optionId }))}
+            results={quizResults}
+            onResults={(next) => {
+              setError(null);
+              setQuizResults(next);
+            }}
+            onPassed={() => setStep(3)}
+            onBack={() => setStep(1)}
+            onReview={(chapterId) => {
+              setReviewChapterId(chapterId);
+              setStep(0);
+            }}
+            onError={fail}
+          />
         ) : null}
 
         {step === 3 ? (

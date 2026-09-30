@@ -445,15 +445,31 @@ describe("POL-COM-001 v1.0 — prontidão, severidade e publicação (testes 11�
       const question = POL_COM_001_QUESTIONS.find((item) => item.id === id);
       return `${question?.prompt ?? ""} ${question?.options.find((option) => option.id === question.correctOptionId)?.text ?? ""}`;
     };
-    // Matriz: a pergunta prova a interpolação pelo preço e os limites, não um degrau de margem.
-    assert.match(correct("q-matriz"), /interpolação linear/);
-    assert.match(correct("q-matriz"), /preço praticado/);
-    assert.match(correct("q-limites"), /Abaixo do Atacado/);
-    assert.match(correct("q-limites"), /teto da Matriz/);
-    // Carteira: faturamento válido, PV sem NF não reinicia, CRM válido preserva, registro genérico não.
-    assert.match(correct("q-noventa"), /90 dias corridos sem novo Faturamento Válido/);
-    assert.match(correct("q-faturamento"), /Só nota fiscal ou Documento de Saída válido reinicia/);
-    assert.match(correct("q-preservacao"), /fato comercial concreto/);
+    // Matriz: a pergunta prova o cálculo entre dois níveis pelo preço vendido e os limites, não um degrau de margem.
+    assert.match(correct("q-matriz"), /entre dois níveis da tabela/);
+    assert.match(correct("q-matriz"), /entre as comissões dos dois níveis, calculado pelo sistema/);
+    assert.match(correct("q-limites"), /Abaixo do Atacado vale a comissão mínima indicada no Anexo I/);
+    assert.match(correct("q-limites"), /comissão do Varejo 3, que é a máxima/);
+    // Carteira: venda faturada, pedido sem nota não reinicia, registro real no CRM preserva, registro genérico não.
+    assert.match(correct("q-noventa"), /90 dias sem nenhuma venda faturada/);
+    assert.match(correct("q-faturamento"), /Somente uma venda faturada: nota fiscal ou Documento de Saída válido/);
+    assert.match(correct("q-preservacao"), /Um registro real no CRM/);
+    const wrongOf = (id: string) => {
+      const question = POL_COM_001_QUESTIONS.find((item) => item.id === id);
+      return question?.options.filter((option) => option.id !== question.correctOptionId).map((option) => option.text).join(" ") ?? "";
+    };
+    assert.match(wrongOf("q-faturamento"), /pedido aprovado, mesmo sem nota fiscal/);
+    assert.match(wrongOf("q-preservacao"), /Qualquer anotação no CRM/);
+    assert.match(wrongOf("q-matriz"), /margem do item/);
+    assert.match(wrongOf("q-supervisor"), /descontada da comissão dos vendedores/);
+    // Linguagem simples: pergunta curta, alternativas curtas, explicação com a seção da Política.
+    for (const question of POL_COM_001_QUESTIONS) {
+      assert.ok(question.prompt.length <= 170, `${question.id}: pergunta longa`);
+      assert.equal(question.options.length, 3, question.id);
+      for (const option of question.options) assert.ok(option.text.length <= 170, `${question.id}/${option.id}: alternativa longa`);
+      assert.match(question.explanation, /\((Seç(ão|ões) [\d. e]+|Seção \d+ e Anexo I)\)|A Seção \d+/, question.id);
+      assert.doesNotMatch(`${question.prompt} ${question.options.map((option) => option.text).join(" ")}`, /interpolação|materialmente|prospectiv|elegíveis/i, question.id);
+    }
     const all = JSON.stringify({ POL_COM_001_QUESTIONS, POL_COM_001_DECLARATIONS, POL_COM_001_SUMMARY_RULES });
     assert.doesNotMatch(all, /Pedido de Venda aprovado e sem registro/);
     assert.doesNotMatch(all, /sem novo Pedido de Venda aprovado/);

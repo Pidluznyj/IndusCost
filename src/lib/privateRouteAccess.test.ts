@@ -35,9 +35,11 @@ describe("privateRouteAccess — públicos e allowlist", () => {
     assert.equal(isPublicRoutePath("/machines"), false);
   });
 
-  it("allowlist autenticada inclui home pós-login", () => {
-    assert.deepEqual(AUTHENTICATED_ALLOWLIST_PATH_PREFIXES, ["/home"]);
+  it("allowlist autenticada inclui home pós-login e os aceites do próprio usuário", () => {
+    assert.deepEqual(AUTHENTICATED_ALLOWLIST_PATH_PREFIXES, ["/home", "/account/commercial-acceptances"]);
     assert.equal(isAuthenticatedAllowlistPath("/home"), true);
+    assert.equal(isAuthenticatedAllowlistPath("/account/commercial-acceptances"), true);
+    assert.equal(isAuthenticatedAllowlistPath("/account"), false);
     assert.equal(isAuthenticatedAllowlistPath("/anything"), false);
   });
 });

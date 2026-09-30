@@ -46,201 +46,206 @@ export const POL_COM_001_DECLARATIONS = [
   "Reconheço que este aceite será registrado eletronicamente com dados técnicos destinados a comprovar autoria, integridade e momento do aceite.",
 ];
 
+/**
+ * Perguntas em linguagem simples, por situação do dia a dia: quem responde é
+ * o vendedor, não um leitor de norma. Cada explicação aponta a regra da
+ * Política; o texto normativo continua sendo o documento.
+ */
 export const POL_COM_001_QUESTIONS: PolicyQuestion[] = [
   {
     id: "q-carteira",
     reviewChapterId: "10-responsabilidade-comercial-e-carteira",
-    prompt: "A carteira de clientes atribuída ao vendedor é propriedade pessoal dele?",
+    prompt: "Os clientes da sua carteira são seus ou da empresa?",
     options: [
-      { id: "a", text: "Sim. O cliente pertence ao vendedor que o atende." },
-      { id: "b", text: "Não. A carteira é ativo da empresa e a atribuição representa responsabilidade comercial, não propriedade pessoal do cliente." },
-      { id: "c", text: "Sim, depois de 90 dias sem compra." },
+      { id: "a", text: "São meus: o cliente pertence ao vendedor que o atende." },
+      { id: "b", text: "São da empresa. Eu sou o responsável por atender, mas o cliente não é meu." },
+      { id: "c", text: "Passam a ser meus depois de 90 dias sem compra." },
     ],
     correctOptionId: "b",
     explanation:
-      "A Política afirma que clientes, leads, oportunidades e informações comerciais são ativos da empresa, e que a atribuição de carteira representa responsabilidade comercial, não propriedade pessoal do cliente.",
+      "Clientes, contatos e oportunidades são da empresa. Ter um cliente na carteira significa ser o responsável por atendê-lo, não ser dono dele (Seção 10).",
   },
   {
     id: "q-registro",
     reviewChapterId: "4-definicoes",
-    prompt: "O que a Política define como Registro Material?",
+    prompt: "O que vale como prova de que você trabalhou uma venda?",
     options: [
-      { id: "a", text: "Somente anotação particular do vendedor, fora dos sistemas da empresa." },
-      { id: "b", text: "CRM, e-mail, proposta, cotação, WhatsApp corporativo, documento do cliente, ordem de compra, log de sistema ou outro elemento contemporâneo e verificável." },
-      { id: "c", text: "Apenas o Pedido de Venda já faturado." },
+      { id: "a", text: "Minhas anotações pessoais, fora dos sistemas da empresa." },
+      { id: "b", text: "O que fica registrado e pode ser conferido: CRM, e-mail, proposta, cotação, WhatsApp corporativo ou pedido do cliente." },
+      { id: "c", text: "Só o pedido, depois de faturado." },
     ],
     correctOptionId: "b",
     explanation:
-      "A definição oficial de Registro Material é: CRM, e-mail, proposta, cotação, WhatsApp corporativo, documento do cliente, ordem de compra, log de sistema ou outro elemento contemporâneo e verificável.",
+      "A Política chama isso de Registro Material: CRM, e-mail, proposta, cotação, WhatsApp corporativo, documento do cliente, ordem de compra ou outro registro feito na hora e que possa ser conferido (Seção 4).",
   },
   {
     id: "q-historico",
     reviewChapterId: "8-vendas-recorrentes-oem-cobertura-e-canais-de-entrada",
-    prompt: "A existência de relacionamento histórico com o cliente, por si só, garante a comissão da nova operação?",
+    prompt: "Você atende um cliente há anos. Isso já garante a sua comissão em toda nova venda para ele?",
     options: [
-      { id: "a", text: "Sim. Toda venda futura do cliente pertence automaticamente ao Responsável Comercial." },
-      { id: "b", text: "Não. Relacionamento histórico, compras anteriores ou condição habitual não caracterizam, isoladamente, negociação específica já materialmente iniciada." },
-      { id: "c", text: "Sim, quando o cliente é OEM." },
+      { id: "a", text: "Sim. Toda venda futura desse cliente é minha." },
+      { id: "b", text: "Não. O histórico sozinho não garante: é preciso ter atuado naquela venda, com registro." },
+      { id: "c", text: "Sim, se o cliente for OEM ou comprar sempre." },
     ],
     correctOptionId: "b",
     explanation:
-      "A Política diz que relacionamento histórico, tabela previamente negociada, compras anteriores, condição habitual, cadastro de carteira ou mera chegada de mensagem não caracterizam, isoladamente, negociação específica já materialmente iniciada. Cliente recorrente ou OEM também não determina, isoladamente, a atribuição da comissão.",
+      "Ter histórico com o cliente, compras anteriores ou o cliente na carteira não bastam sozinhos. O que conta é a negociação daquela venda, iniciada e registrada. Isso vale também para cliente recorrente ou OEM (Seção 8).",
   },
   {
     id: "q-iniciada",
     reviewChapterId: "8-vendas-recorrentes-oem-cobertura-e-canais-de-entrada",
-    prompt: "Uma operação já materialmente iniciada e comprovável antes da ausência permanece atribuída a quem?",
+    prompt: "Você começou uma negociação, deixou tudo registrado e saiu de férias. Um colega fechou o pedido. De quem é a venda?",
     options: [
-      { id: "a", text: "Ao Vendedor de Cobertura, porque ele concluiu o pedido." },
-      { id: "b", text: "Ao Responsável Comercial original." },
-      { id: "c", text: "À administração, sem comissão." },
+      { id: "a", text: "Do colega, porque foi ele quem fechou o pedido." },
+      { id: "b", text: "Minha, porque a negociação já estava iniciada e registrada antes da minha ausência." },
+      { id: "c", text: "De ninguém: a venda fica sem comissão." },
     ],
     correctOptionId: "b",
     explanation:
-      "A Seção 8.3 determina que permanecerá atribuída ao Responsável Comercial original a operação que, antes da ausência, já possua negociação específica materialmente iniciada e comprovável.",
+      "A venda continua com o Responsável Comercial original quando a negociação já estava iniciada e pode ser comprovada antes da ausência (Seção 8.3).",
   },
   {
     id: "q-cobertura",
     reviewChapterId: "8-vendas-recorrentes-oem-cobertura-e-canais-de-entrada",
-    prompt: "Durante a cobertura, surge nova demanda sem operação específica materialmente iniciada antes. A quem a Política atribui essa venda?",
+    prompt: "Durante as suas férias, o cliente pede algo novo, que você não tinha começado a negociar. O colega que está cobrindo atende e fecha. De quem é a venda?",
     options: [
-      { id: "a", text: "Sempre ao Responsável Comercial ausente, por ser a carteira dele." },
-      { id: "b", text: "Ao Vendedor de Cobertura que efetivamente assumir, conduzir e concluir a operação, observadas as demais regras da Política." },
-      { id: "c", text: "A venda fica sem comissão até o retorno do responsável." },
+      { id: "a", text: "Minha, porque o cliente é da minha carteira." },
+      { id: "b", text: "Do colega que cobriu, porque foi ele quem assumiu, conduziu e fechou a venda." },
+      { id: "c", text: "De ninguém, até eu voltar." },
     ],
     correctOptionId: "b",
     explanation:
-      "A Seção 8.4 diz que o Vendedor de Cobertura que efetivamente assumir, conduzir e concluir a operação fará jus à atribuição comercial e à comissão correspondente àquela venda, observadas as demais regras da Política.",
+      "Pedido novo, sem negociação iniciada antes da ausência, é de quem cobriu: o Vendedor de Cobertura que assumiu, conduziu e concluiu a venda recebe a comissão dela (Seção 8.4).",
   },
   {
     id: "q-noventa",
     reviewChapterId: "11-inatividade-de-cliente-e-revisao-de-carteira",
-    prompt: "Ao final de 90 dias corridos sem novo Faturamento Válido e sem registro válido no CRM, o que a Política prevê?",
+    prompt: "Um cliente seu ficou 90 dias sem nenhuma venda faturada e não há registro válido no CRM. O que acontece?",
     options: [
-      { id: "a", text: "Nada muda até o Supervisor decidir." },
-      { id: "b", text: "O cliente deixa automaticamente de possuir Responsável Comercial exclusivo e fica disponível para redistribuição, prospecção ou reativação." },
-      { id: "c", text: "As comissões já adquiridas são canceladas." },
+      { id: "a", text: "Nada, até o Supervisor decidir." },
+      { id: "b", text: "O cliente sai automaticamente da minha carteira e pode ser passado a outro vendedor." },
+      { id: "c", text: "Perco as comissões que já tinha ganho com ele." },
     ],
     correctOptionId: "b",
     explanation:
-      "A Seção 11 conta o prazo do último Faturamento Válido e estabelece que, sem registro objetivo, atualizado e suficiente no CRM, o cliente deixa automaticamente de possuir Responsável Comercial exclusivo e fica disponível para redistribuição, prospecção ou reativação. A reatribuição é prospectiva e não afeta comissões já adquiridas.",
+      "Depois de 90 dias corridos sem venda faturada e sem registro válido no CRM, o cliente deixa automaticamente de ter Responsável Comercial exclusivo e fica disponível para outro vendedor. As comissões que você já ganhou não são afetadas (Seção 11).",
   },
   {
     id: "q-faturamento",
     reviewChapterId: "11-inatividade-de-cliente-e-revisao-de-carteira",
-    prompt: "Um Pedido de Venda ainda não faturado reinicia a contagem dos 90 dias de inatividade do cliente?",
+    prompt: "O que faz a contagem dos 90 dias começar de novo?",
     options: [
-      { id: "a", text: "Sim. Basta existir um Pedido de Venda aprovado." },
-      { id: "b", text: "Não. Só nota fiscal ou Documento de Saída válido reinicia a contagem; pedido sem faturamento, orçamento, proposta e faturamento cancelado não reiniciam." },
-      { id: "c", text: "Sim, desde que o cliente já tenha pago a parcela anterior." },
+      { id: "a", text: "Um pedido aprovado, mesmo sem nota fiscal." },
+      { id: "b", text: "Somente uma venda faturada: nota fiscal ou Documento de Saída válido." },
+      { id: "c", text: "Um orçamento ou uma proposta enviada ao cliente." },
     ],
     correctOptionId: "b",
     explanation:
-      "A Seção 11 conta o prazo a partir do último Faturamento Válido: somente nota fiscal ou Documento de Saída válido reinicia a contagem. Pedido de Venda ainda não faturado, orçamento, proposta e faturamento cancelado não reiniciam, e o recebimento financeiro não é a referência do prazo.",
+      "Só a venda faturada (nota fiscal ou Documento de Saída válido) reinicia a contagem. Pedido ainda não faturado, orçamento, proposta e nota cancelada não reiniciam (Seção 11).",
   },
   {
     id: "q-preservacao",
     reviewChapterId: "11-inatividade-de-cliente-e-revisao-de-carteira",
-    prompt: "Depois de 90 dias sem Faturamento Válido, o que pode preservar o Responsável Comercial do cliente?",
+    prompt: "Passaram 90 dias sem venda faturada para um cliente. O que mantém esse cliente na sua carteira?",
     options: [
-      { id: "a", text: "Qualquer anotação recente no CRM, mesmo genérica, feita para manter a carteira." },
-      { id: "b", text: "Registro válido no CRM que demonstre fato comercial concreto, como proposta ou negociação em andamento com próximo passo definido, ou paralisação informada pelo cliente com data de retomada." },
-      { id: "c", text: "A simples atualização do cadastro ou de uma proposta antiga." },
+      { id: "a", text: "Qualquer anotação no CRM, feita só para segurar o cliente." },
+      { id: "b", text: "Um registro real no CRM: proposta ou negociação em andamento com próximo passo marcado, ou aviso do cliente de que parou e quando volta a comprar." },
+      { id: "c", text: "Atualizar o cadastro ou mexer em uma proposta antiga." },
     ],
     correctOptionId: "b",
     explanation:
-      "A Seção 11 exige registro objetivo, atualizado e suficiente. Registros genéricos, desatualizados ou artificiais e a simples atualização técnica de uma proposta ou de um cadastro não impedem a aplicação da regra de 90 dias; criar registro artificial para impedir a revisão é conduta vedada pela Seção 22.",
+      "O registro precisa mostrar um fato comercial de verdade e estar atualizado. Anotação genérica, registro antigo ou simples atualização de cadastro ou proposta não seguram o cliente — e inventar registro para isso é conduta proibida (Seções 11 e 22).",
   },
   {
     id: "q-matriz",
     reviewChapterId: "anexo-i-matriz-de-referencia-de-formacao-de-preco-comissao-e-alcada",
-    prompt: "O preço efetivamente praticado de um Item de Venda ficou entre os preços de referência de dois níveis comerciais consecutivos. Como é determinada a comissão?",
+    prompt: "Você vendeu por um preço que ficou entre dois níveis da tabela (por exemplo, entre Atacado e Varejo 1). Qual é a sua comissão?",
     options: [
-      { id: "a", text: "Aplica-se sempre o percentual do nível inferior, em degrau." },
-      { id: "b", text: "Por interpolação linear, feita pelo IndusCost, entre os percentuais dos dois níveis, conforme a posição do preço praticado entre os dois preços de referência." },
-      { id: "c", text: "Pela margem do item: cada faixa de margem tem um percentual fixo." },
+      { id: "a", text: "Sempre a do nível mais baixo." },
+      { id: "b", text: "Um percentual entre as comissões dos dois níveis, calculado pelo sistema: quanto mais perto do preço do nível de cima, maior a comissão." },
+      { id: "c", text: "Depende da margem do item, e não do preço que eu vendi." },
     ],
     correctOptionId: "b",
     explanation:
-      "A Seção 7 e o Anexo I estabelecem que os níveis comerciais (Atacado, Varejo 1, Varejo 2 e Varejo 3) são pontos de referência. Entre os preços de referência de dois níveis consecutivos, o percentual é obtido por interpolação linear entre os percentuais desses níveis, pelo preço praticado — e não pela margem. No preço de referência de um nível, aplica-se o percentual desse nível.",
+      "Atacado, Varejo 1, Varejo 2 e Varejo 3 são pontos de referência. Entre dois níveis, o sistema calcula a comissão proporcionalmente ao preço vendido. Exemplo: na metade do caminho entre um nível que paga 1% e outro que paga 2%, a comissão é 1,5% (Seção 7 e Anexo I).",
   },
   {
     id: "q-limites",
     reviewChapterId: "7-margem-oficial-matriz-de-comissao-precificacao-e-alcadas",
-    prompt: "O que acontece quando o preço praticado fica abaixo do preço de referência do Atacado, ou igual ou acima do preço de referência do Varejo 3?",
+    prompt: "E se o preço vendido ficar abaixo do Atacado, ou acima do Varejo 3?",
     options: [
-      { id: "a", text: "Abaixo do Atacado não há comissão; acima do Varejo 3 o percentual continua subindo sem limite." },
-      { id: "b", text: "Abaixo do Atacado aplica-se o percentual indicado no Anexo I para preço abaixo da tabela; a partir do Varejo 3 aplica-se o percentual do Varejo 3, que é o teto da Matriz." },
-      { id: "c", text: "Nos dois casos a comissão é definida livremente pelo Supervisor Comercial." },
+      { id: "a", text: "Abaixo do Atacado não tem comissão; acima do Varejo 3 ela continua subindo sem limite." },
+      { id: "b", text: "Abaixo do Atacado vale a comissão mínima indicada no Anexo I; do Varejo 3 para cima vale a comissão do Varejo 3, que é a máxima." },
+      { id: "c", text: "Nos dois casos quem decide a comissão é o Supervisor." },
     ],
     correctOptionId: "b",
     explanation:
-      "A Seção 7 fixa os limites: preço abaixo do preço de referência do Atacado recebe o percentual indicado no Anexo I para preço abaixo da tabela; preço igual ou superior ao preço de referência do Varejo 3 recebe o percentual do Varejo 3, que é o teto da Matriz.",
+      "Preço abaixo do Atacado recebe o percentual que o Anexo I indica para preço abaixo da tabela. Do preço do Varejo 3 para cima, a comissão é a do Varejo 3: ela é o teto e não sobe mais (Seção 7).",
   },
   {
     id: "q-supervisor",
     reviewChapterId: "14-comissao-do-supervisor-comercial",
-    prompt: "Como a Política trata a remuneração variável do Supervisor Comercial?",
+    prompt: "De onde vem a comissão do Supervisor Comercial?",
     options: [
-      { id: "a", text: "É descontada da comissão dos Vendedores do time." },
-      { id: "b", text: "Equivale a 33% das comissões elegíveis apuradas para os Vendedores do seu time, é parcela adicional suportada pela empresa e não reduz a comissão do Vendedor." },
-      { id: "c", text: "O Supervisor tem carteira própria e recebe comissão integral das vendas em que participa." },
+      { id: "a", text: "É descontada da comissão dos vendedores do time." },
+      { id: "b", text: "É um valor a mais, pago pela empresa: 33% das comissões dos vendedores do time. Não tira nada do vendedor." },
+      { id: "c", text: "Ele tem carteira própria e recebe a comissão inteira das vendas em que ajuda." },
     ],
     correctOptionId: "b",
     explanation:
-      "A Seção 14 fixa 33% do valor das comissões elegíveis dos Vendedores vinculados ao time, como parcela adicional suportada pela empresa, e afirma que o Supervisor não possui carteira própria para comissão individual. A apuração dessa parcela é feita por procedimento administrativo próprio, fora do cálculo automático do sistema.",
+      "O Supervisor recebe o equivalente a 33% das comissões dos vendedores do seu time. É uma parcela adicional paga pela empresa, que não reduz a comissão de ninguém, e ele não tem carteira própria (Seção 14).",
   },
   {
     id: "q-campanha",
     reviewChapterId: "9-campanhas-e-condicoes-comerciais-especificas",
-    prompt: "Uma campanha comercial pode ser aplicada sem identificação, versão, vigência, escopo e comunicação prévia?",
+    prompt: "Um colega comenta sobre uma campanha com comissão maior, mas ela não foi comunicada oficialmente. Você pode usar?",
     options: [
-      { id: "a", text: "Sim, se o Vendedor a mencionar na proposta." },
-      { id: "b", text: "Não. Toda campanha deve possuir identificação, versão, vigência, escopo, percentual ou fórmula, condições, alçadas, regra de cumulatividade e comunicação prévia; aplicar campanha inexistente, vencida ou fora do escopo é conduta vedada." },
-      { id: "c", text: "Sim, desde que o percentual seja maior que o da Matriz." },
+      { id: "a", text: "Sim, basta citar a campanha na proposta." },
+      { id: "b", text: "Não. Só vale campanha oficial: com nome, prazo de validade, regras definidas e comunicada antes." },
+      { id: "c", text: "Sim, se a comissão for maior que a da tabela." },
     ],
     correctOptionId: "b",
     explanation:
-      "A Seção 9 exige identificação, versão, vigência, escopo, percentual ou fórmula, condições, alçadas, regra de cumulatividade e comunicação prévia (Anexo II), e a Seção 22 veda aplicar campanha inexistente, vencida ou fora do escopo.",
+      "Toda campanha precisa ter identificação, versão, prazo de validade, regras e comunicação prévia. Usar campanha que não existe, que já venceu ou que não se aplica ao caso é conduta proibida (Seções 9 e 22).",
   },
   {
     id: "q-vedadas",
     reviewChapterId: "22-condutas-vedadas",
-    prompt: "Qual das condutas abaixo é vedada pela Seção 22 da Política?",
+    prompt: "Qual destas atitudes é proibida pela Política?",
     options: [
-      { id: "a", text: "Registrar no CRM, de forma contemporânea, um contato real com o cliente." },
-      { id: "b", text: "Criar registros artificiais para impedir a revisão de inatividade ou alterar a atribuição de uma operação." },
-      { id: "c", text: "Escalar ao Supervisor uma divergência de atribuição de venda." },
+      { id: "a", text: "Registrar no CRM um contato que realmente aconteceu." },
+      { id: "b", text: "Inventar um registro no CRM só para não perder o cliente ou para ficar com uma venda." },
+      { id: "c", text: "Avisar o Supervisor quando há dúvida sobre de quem é a venda." },
     ],
     correctOptionId: "b",
     explanation:
-      "A Seção 22 veda, entre outras condutas, criar registros artificiais para impedir revisão de inatividade ou alterar a atribuição de uma operação, alterar ou simular preço, custo, margem, data, cliente ou campanha, e combinar divisão informal de comissão sem registro e aprovação.",
+      "A Seção 22 proíbe criar registros artificiais para impedir a revisão da carteira ou mudar de quem é a venda. Também proíbe alterar ou simular preço, custo, margem, data, cliente ou campanha, e combinar divisão de comissão por fora.",
   },
   {
     id: "q-copia",
     reviewChapterId: "7-margem-oficial-matriz-de-comissao-precificacao-e-alcadas",
-    prompt: "Cópias informais, planilhas locais ou mensagens substituem o cadastro oficial e a Matriz vigente?",
+    prompt: "Você tem uma planilha ou uma mensagem com percentuais diferentes dos que estão no sistema. O que vale?",
     options: [
-      { id: "a", text: "Sim, se estiverem mais recentes que o sistema." },
-      { id: "b", text: "Não. Cópias informais não substituem o cadastro oficial nem a versão vigente do Anexo I." },
-      { id: "c", text: "Substituem somente para contas OEM." },
+      { id: "a", text: "A planilha, se ela for mais nova." },
+      { id: "b", text: "O que está no sistema e na versão atual do Anexo I. Planilhas e mensagens não valem." },
+      { id: "c", text: "A planilha, mas só para clientes OEM." },
     ],
     correctOptionId: "b",
     explanation:
-      "A Política diz que cópias informais, planilhas locais ou mensagens não substituem o cadastro oficial vigente, e que tabelas copiadas em mensagens, apresentações, planilhas particulares ou documentos antigos não substituem a versão vigente do Anexo I.",
+      "Vale sempre o cadastro oficial e a versão vigente do Anexo I. Tabelas copiadas em mensagens, apresentações, planilhas pessoais ou documentos antigos não substituem a versão oficial (Seção 7).",
   },
   {
     id: "q-sigilo",
     reviewChapterId: "23-confidencialidade-documento-controlado-e-uso-restrito",
-    prompt: "A leitura e o aceite eletrônico desta Política autorizam a divulgação externa do documento?",
+    prompt: "Você pode mostrar ou enviar esta Política para alguém de fora da empresa?",
     options: [
-      { id: "a", text: "Sim, para os clientes da própria carteira." },
-      { id: "b", text: "Não. Sem autorização expressa, divulgar, reproduzir ou compartilhar o documento ou suas informações protegidas é vedado, e o aceite não autoriza distribuição externa." },
-      { id: "c", text: "Sim, se for apenas um trecho ou uma foto da tela." },
+      { id: "a", text: "Sim, para os clientes da minha carteira." },
+      { id: "b", text: "Não. O documento é interno: não pode ser enviado, copiado ou fotografado para terceiros sem autorização." },
+      { id: "c", text: "Sim, se for só um trecho ou uma foto da tela." },
     ],
     correctOptionId: "b",
     explanation:
-      "A Seção 23 classifica o documento como controlado, de uso interno e restrito, veda a divulgação sem autorização expressa e afirma que a leitura, o acesso ou o aceite eletrônico não autorizam sua distribuição externa.",
+      "A Política é documento controlado, de uso interno e restrito. Ler ou aceitar não autoriza divulgar: sem autorização expressa, não pode ser compartilhada nem em parte (Seção 23).",
   },
 ];
 

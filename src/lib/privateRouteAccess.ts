@@ -21,9 +21,11 @@ export const PUBLIC_ROUTE_PATH_PREFIXES: readonly string[] = [
 /**
  * Rotas autenticadas sem resourceKey de módulo.
  * Home pós-login: landing autenticada (mercado + atalhos), não exige módulo.
+ * Meus aceites: documentos assinados pelo próprio usuário (a API só devolve os dele).
  */
 export const AUTHENTICATED_ALLOWLIST_PATH_PREFIXES: readonly string[] = [
   "/home",
+  "/account/commercial-acceptances",
 ];
 
 function normalizePathname(pathname: string): string {
