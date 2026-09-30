@@ -13,12 +13,11 @@ import { verifyPassword } from "@/src/lib/auth/appAuth.server.js";
 import { prisma } from "@/src/lib/prisma.js";
 import { loadCommissionSettings } from "@/src/lib/commissions/commission-settings.server.js";
 import {
-  acceptanceReceiptLines,
   buildTextPdf,
 } from "./commercialPolicyPdf.js";
-import { buildControlledCopyPdf } from "./commercialPolicyControlledCopyPdf.js";
+import { buildAcceptanceCertificatePdf, buildControlledCopyPdf } from "./commercialPolicyControlledCopyPdf.js";
 import { loadCommissionMatrixFromPriceTables } from "./commercialPolicyCommissionMatrix.server.js";
-import { policyCommissionMatrixFromSnapshot, type PolicyAutoFieldContext } from "./policyAutoFields.js";
+import { policyCommissionMatrixFromSnapshot, policyFunctionLabel, type PolicyAutoFieldContext, type PolicyIdentity } from "./policyAutoFields.js";
 import { createPrismaCommercialPolicyStore } from "./commercialPolicyPrismaStore.js";
 import {
   auditPolCom001Publication,
@@ -43,6 +42,7 @@ import {
   findPendingRevisionDraft,
   updatePolicyDraft,
   invalidateCommercialPolicyAcceptance,
+  resetCommercialPolicyAcceptances,
   openNormativeRevision,
   publishOfficialCommercialPolicy,
   publishPolicyVersion,
@@ -56,7 +56,7 @@ import {
   type PolicyActor,
 } from "./commercialPolicyService.js";
 import type { CommercialPolicyStore, StoredAcceptance, StoredVersion } from "./commercialPolicyStore.js";
-import { COMMERCIAL_POLICY_AUDIENCE, sha256Hex, validatePolicyDraft, type PolicyQuestion, type PolicyVersionBody } from "./commercialPolicyRules.js";
+import { isCommercialPolicyAudience, sha256Hex, validatePolicyDraft, type PolicyQuestion, type PolicyVersionBody } from "./commercialPolicyRules.js";
 import {
   POL_COM_001_CLASSIFICATION,
   POL_COM_001_CNPJ,
@@ -99,6 +99,7 @@ type SessionUser = {
   role: string;
   isActive: boolean;
   mustChangePassword: boolean;
+  mustAcceptCommercialPolicy?: boolean;
   externalSellerId: number | null;
   sessionId: string;
 };
@@ -154,8 +155,19 @@ export type CommercialPolicyRouteDeps = {
   loadRelease?: () => Promise<ReleaseNormativeInput>;
   /** Matriz de comissão lida das tabelas publicadas da Formação de Preço. Nos testes, injetada. */
   loadCommissionMatrix?: (at: Date) => Promise<CommissionMatrixInput | null>;
-  /** Nome e perfil de quem publicou a versão (aprovação eletrônica). Nos testes, injetada. */
-  loadUserIdentity?: (userId: string) => Promise<{ name: string; role: string } | null>;
+  /**
+   * Liga/desliga a exigência manual da política no usuário e registra a
+   * auditoria. Devolve nulo se o usuário não existe. Nos testes, injetada.
+   */
+  setAcceptanceRequired?: (input: {
+    actorUserId: string;
+    targetUserId: string;
+    required: boolean;
+    ipAddress: string | null;
+    userAgent: string | null;
+  }) => Promise<{ required: boolean; changed: boolean } | null>;
+  /** Nome completo, perfil e cargo de um usuário (aprovação e assinatura impressas). Nos testes, injetada. */
+  loadUserIdentity?: (userId: string) => Promise<PolicyIdentity | null>;
 };
 
 /**
@@ -195,7 +207,15 @@ export function registerCommercialPolicyRoutes(app: express.Express, deps: Comme
   const loadCommissionMatrix = deps.loadCommissionMatrix ?? ((at: Date) => loadCommissionMatrixFromPriceTables(prisma, at));
   const loadUserIdentity =
     deps.loadUserIdentity ??
-    ((userId: string) => prisma.appUser.findUnique({ where: { id: userId }, select: { name: true, role: true } }));
+    (async (userId: string): Promise<PolicyIdentity | null> => {
+      // Nome completo e cargo vêm do cadastro de Pessoas/RH vinculado ao usuário; sem vínculo, nome e perfil do login.
+      const row = await prisma.appUser.findUnique({
+        where: { id: userId },
+        select: { name: true, role: true, employee: { select: { name: true, Role: { select: { name: true } } } } },
+      });
+      if (!row) return null;
+      return { name: row.employee?.name?.trim() || row.name, role: row.role, jobTitle: row.employee?.Role?.name?.trim() || null };
+    });
 
   /** Snapshot normativo atual; sem banco, o snapshot fica nulo e a auditoria registra WARNING em vez de fingir alinhamento. */
   async function currentNormativeState(): Promise<{ snapshot: NormativeSnapshot | null; settingsSource: string }> {
@@ -209,15 +229,20 @@ export function registerCommercialPolicyRoutes(app: express.Express, deps: Comme
     }
   }
 
-  const identityCache = new Map<string, { name: string; role: string } | null>();
-  /** Quem publicou a versão: é a aprovação eletrônica impressa no documento. */
-  async function approverOf(version: { publishedByUserId: string | null } | null): Promise<{ name: string; role: string } | null> {
-    const userId = version?.publishedByUserId;
+  // Cache curto: cargo ou nome corrigido no cadastro aparece sem reiniciar o servidor.
+  const IDENTITY_TTL_MS = 60_000;
+  const identityCache = new Map<string, { at: number; identity: PolicyIdentity | null }>();
+  async function identityOf(userId: string | null | undefined): Promise<PolicyIdentity | null> {
     if (!userId) return null;
-    if (!identityCache.has(userId)) {
-      identityCache.set(userId, await loadUserIdentity(userId).catch(() => null));
-    }
-    return identityCache.get(userId) ?? null;
+    const cached = identityCache.get(userId);
+    if (cached && Date.now() - cached.at < IDENTITY_TTL_MS) return cached.identity;
+    const identity = await loadUserIdentity(userId).catch(() => null);
+    identityCache.set(userId, { at: Date.now(), identity });
+    return identity;
+  }
+  /** Quem publicou a versão: é a aprovação eletrônica impressa no documento. */
+  function approverOf(version: { publishedByUserId: string | null } | null): Promise<PolicyIdentity | null> {
+    return identityOf(version?.publishedByUserId);
   }
 
   async function adminView(version: StoredVersion) {
@@ -238,6 +263,7 @@ export function registerCommercialPolicyRoutes(app: express.Express, deps: Comme
     const commissionMatrix =
       policyCommissionMatrixFromSnapshot(published?.normativeSnapshot) ??
       policyCommissionMatrixFromSnapshot((await currentNormativeState()).snapshot);
+    const signerIdentity = acceptance ? await identityOf(acceptance.userId) : isCommercialPolicyAudience(user) ? await identityOf(user.id) : null;
     return {
       commissionMatrix,
       versionLabel: input.label,
@@ -245,9 +271,9 @@ export function registerCommercialPolicyRoutes(app: express.Express, deps: Comme
       effectiveFrom: published?.effectiveFrom.toISOString() ?? null,
       approver: await approverOf(published),
       signer: acceptance
-        ? { name: acceptance.userNameSnapshot, email: acceptance.userEmailSnapshot, role: acceptance.roleSnapshot }
-        : user.role === COMMERCIAL_POLICY_AUDIENCE
-          ? { name: user.name, email: user.email, role: user.role }
+        ? { name: signerIdentity?.name ?? acceptance.userNameSnapshot, email: acceptance.userEmailSnapshot, role: acceptance.roleSnapshot, jobTitle: signerIdentity?.jobTitle ?? null }
+        : isCommercialPolicyAudience(user)
+          ? { name: signerIdentity?.name ?? user.name, email: user.email, role: user.role, jobTitle: signerIdentity?.jobTitle ?? null }
           : null,
       acceptance: acceptance
         ? { id: acceptance.id, acceptedAt: acceptance.acceptedAt.toISOString(), evidenceHash: acceptance.evidenceHash }
@@ -302,7 +328,13 @@ export function registerCommercialPolicyRoutes(app: express.Express, deps: Comme
     if (result.ok === false) return res.status(result.status).json(result);
     if (result.pending && result.version) {
       const stored = await store.getVersion(result.version.id);
-      return res.json({ ...result, version: { ...result.version, approver: await approverOf(stored) } });
+      const identity = await identityOf(user.id);
+      return res.json({
+        ...result,
+        version: { ...result.version, approver: await approverOf(stored) },
+        // O termo de ciência mostra o nome completo e o cargo do cadastro de quem assina.
+        signer: { ...result.signer, name: identity?.name ?? result.signer.name, jobTitle: identity?.jobTitle ?? null },
+      });
     }
     return res.json(result);
   });
@@ -429,29 +461,31 @@ export function registerCommercialPolicyRoutes(app: express.Express, deps: Comme
       return res.status(404).json({ error: "NOT_FOUND", code: "NOT_FOUND", message: "Aceite não encontrado." });
     }
     const version = await store.getVersion(row.policyVersionId);
-    const pdf = buildTextPdf(
-      acceptanceReceiptLines({
-        acceptanceId: row.id,
-        title: version?.title ?? "Política Comercial",
-        versionLabel: version ? versionLabelOf(version) : "—",
-        policyHash: row.policyContentHash,
-        normativeSnapshotHash: row.normativeSnapshotHash || null,
-        changeSetHash: row.changeSetHash || null,
-        signerName: row.userNameSnapshot,
-        signerEmail: row.userEmailSnapshot,
-        role: row.roleSnapshot,
-        externalSellerId: row.externalSellerIdSnapshot,
-        acceptedAt: row.acceptedAt.toISOString(),
-        ipAddress: row.ipAddress,
-        declarations: row.declarationsAccepted,
-        quizPassed: true,
-        challengeId: row.challengeId,
-        photoHash: row.photoHash,
-        evidenceHash: row.evidenceHash,
-      })
-    );
+    const signerIdentity = await identityOf(row.userId);
+    // Comprovante em formato de certificado: documento formal, com moldura, selo e hashes de integridade.
+    const pdf = buildAcceptanceCertificatePdf({
+      acceptanceId: row.id,
+      company: POL_COM_001_COMPANY,
+      cnpj: POL_COM_001_CNPJ,
+      code: version && version.content.includes(POL_COM_001_CODE) ? POL_COM_001_CODE : null,
+      title: version?.title ?? "Política Comercial",
+      versionLabel: version ? versionLabelOf(version) : "—",
+      signerName: signerIdentity?.name ?? row.userNameSnapshot,
+      signerEmail: row.userEmailSnapshot,
+      signerRole: policyFunctionLabel({ role: row.roleSnapshot, jobTitle: signerIdentity?.jobTitle }),
+      externalSellerId: row.externalSellerIdSnapshot,
+      acceptedAt: row.acceptedAt.toISOString(),
+      ipAddress: row.ipAddress,
+      challengeId: row.challengeId,
+      declarations: row.declarationsAccepted,
+      policyHash: row.policyContentHash,
+      normativeSnapshotHash: row.normativeSnapshotHash || null,
+      changeSetHash: row.changeSetHash || null,
+      photoHash: row.photoHash,
+      evidenceHash: row.evidenceHash,
+    });
     res.setHeader("Content-Type", "application/pdf");
-    res.setHeader("Content-Disposition", `attachment; filename="aceite-${row.id}.pdf"`);
+    res.setHeader("Content-Disposition", `attachment; filename="certificado-de-aceite-${row.id}.pdf"`);
     res.setHeader("Cache-Control", "no-store");
     return res.send(pdf);
   });
@@ -466,7 +500,7 @@ export function registerCommercialPolicyRoutes(app: express.Express, deps: Comme
     const mine = await store.findAcceptance(user.id, version.id);
     const current = await store.currentPublished(now());
     const allowed = user.role === "SUPER_ADMIN" || mine || current?.id === version.id;
-    if (!allowed || (user.role === "SELLER" && user.mustChangePassword)) {
+    if (!allowed || (isCommercialPolicyAudience(user) && user.role !== "SUPER_ADMIN" && user.mustChangePassword)) {
       return res.status(404).json({ error: "NOT_FOUND", code: "NOT_FOUND", message: "Documento não encontrado." });
     }
     const generatedAt = now();
@@ -868,6 +902,117 @@ export function registerCommercialPolicyRoutes(app: express.Express, deps: Comme
     if (result.ok === false) return res.status(result.status).json(result);
     return res.json(result);
   });
+
+  const setAcceptanceRequired =
+    deps.setAcceptanceRequired ??
+    (async (input) => {
+      const target = await prisma.appUser.findUnique({
+        where: { id: input.targetUserId },
+        select: { id: true, mustAcceptCommercialPolicy: true },
+      });
+      if (!target) return null;
+      if (target.mustAcceptCommercialPolicy === input.required) return { required: input.required, changed: false };
+      await prisma.$transaction(async (tx) => {
+        await tx.appUser.update({ where: { id: target.id }, data: { mustAcceptCommercialPolicy: input.required } });
+        await writeSecurityAuditLog(tx, {
+          eventType: input.required
+            ? SECURITY_AUDIT_EVENTS.COMMERCIAL_POLICY_ACCEPTANCE_REQUIRED_SET
+            : SECURITY_AUDIT_EVENTS.COMMERCIAL_POLICY_ACCEPTANCE_REQUIRED_CLEARED,
+          actorUserId: input.actorUserId,
+          targetUserId: target.id,
+          ipAddress: input.ipAddress,
+          userAgent: input.userAgent,
+          metadata: { source: "ADMIN_FLAG" },
+        });
+      });
+      return { required: input.required, changed: true };
+    });
+
+  /**
+   * Exigência manual da Política Comercial por usuário (mesmo modelo da troca
+   * de senha): o SUPER_ADMIN marca quem precisa ler e aceitar, qualquer que
+   * seja o perfil. Vale no próximo request da pessoa, sem novo login.
+   */
+  app.post("/api/admin/users/:id/commercial-policy-required", deps.requireAppAuth, async (req, res) => {
+    const user = await actor(req, res);
+    if (!user) return;
+    if (user.role !== "SUPER_ADMIN") {
+      return res.status(403).json({ error: "FORBIDDEN", code: "FORBIDDEN", message: "Apenas um super administrador pode exigir o aceite da Política Comercial." });
+    }
+    if (typeof req.body?.required !== "boolean") {
+      return res.status(400).json({ error: "INVALID_REQUIRED", code: "INVALID_REQUIRED", message: "Informe se o aceite da Política Comercial é obrigatório." });
+    }
+    const targetUserId = String(req.params.id ?? "").trim();
+    if (!targetUserId) return res.status(400).json({ error: "INVALID_ID", code: "INVALID_ID", message: "ID inválido." });
+    try {
+      const result = await setAcceptanceRequired({
+        actorUserId: user.id,
+        targetUserId,
+        required: req.body.required,
+        ipAddress: resolveAuditIpAddress(req.socket?.remoteAddress),
+        userAgent: normalizeUserAgent(req.headers["user-agent"]),
+      });
+      if (!result) return res.status(404).json({ error: "NOT_FOUND", code: "NOT_FOUND", message: "Usuário não encontrado." });
+      return res.json({ success: true, mustAcceptCommercialPolicy: result.required, changed: result.changed });
+    } catch (error) {
+      console.error("POST /api/admin/users/:id/commercial-policy-required", error);
+      return res.status(500).json({ error: "INTERNAL_ERROR", code: "INTERNAL_ERROR", message: "Erro ao atualizar a exigência da Política Comercial." });
+    }
+  });
+
+  /**
+   * Zerar aceites (fase de testes): apaga o aceite e o material do fluxo para
+   * o vendedor aceitar de novo. Só SUPER_ADMIN, com motivo; zerar todos exige
+   * a frase de confirmação. O que foi apagado fica no log de segurança.
+   */
+  const resetAcceptances = async (req: express.Request, res: express.Response, acceptanceId?: string) => {
+    const user = await actor(req, res);
+    if (!user || !superAdmin(user, res)) return;
+    const result = await resetCommercialPolicyAcceptances(store, {
+      acceptanceId,
+      confirmation: typeof req.body?.confirmation === "string" ? req.body.confirmation : undefined,
+      reason: typeof req.body?.reason === "string" ? req.body.reason : "",
+    });
+    if (result.ok === false) return res.status(result.status).json(result);
+    try {
+      await writeSecurityAuditLog(prisma, {
+        eventType: SECURITY_AUDIT_EVENTS.COMMERCIAL_POLICY_ACCEPTANCES_RESET,
+        actorUserId: user.id,
+        targetUserId: acceptanceId ? result.acceptances[0]?.userId ?? user.id : user.id,
+        ipAddress: resolveAuditIpAddress(req.socket?.remoteAddress),
+        userAgent: normalizeUserAgent(req.headers["user-agent"]),
+        metadata: {
+          scope: acceptanceId ? "ONE" : "ALL",
+          reason: result.reason,
+          removed: result.acceptances.map((row) => ({
+            acceptanceId: row.id,
+            userId: row.userId,
+            policyVersionId: row.policyVersionId,
+            acceptedAt: row.acceptedAt.toISOString(),
+            evidenceHash: row.evidenceHash,
+          })),
+          attempts: result.attempts,
+          challenges: result.challenges,
+          photos: result.photos,
+          invalidations: result.invalidations,
+        },
+      });
+    } catch (error) {
+      console.error("[commercial-policy-acceptances-reset-audit]", error);
+    }
+    return res.json({
+      ok: true,
+      removedAcceptances: result.acceptances.length,
+      attempts: result.attempts,
+      challenges: result.challenges,
+      photos: result.photos,
+    });
+  };
+
+  app.post("/api/admin/commercial-policy/acceptances/reset", deps.requireAppAuth, (req, res) => resetAcceptances(req, res));
+  app.post("/api/admin/commercial-policy/acceptances/:id/reset", deps.requireAppAuth, (req, res) =>
+    resetAcceptances(req, res, String(req.params.id ?? ""))
+  );
 
   app.get("/api/admin/commercial-policy/acceptances", deps.requireAppAuth, async (req, res) => {
     const user = await actor(req, res);

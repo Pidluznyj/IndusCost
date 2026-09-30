@@ -18,12 +18,55 @@ import { CommercialPolicyQuiz, type PolicyQuizResults } from "@/src/components/s
 
 const STEPS = COMMERCIAL_POLICY_ACCEPTANCE_STEPS;
 
+/** O navegador só expõe a câmera em conexão segura (https ou localhost). */
+const cameraSupported = () => typeof navigator !== "undefined" && typeof navigator.mediaDevices?.getUserMedia === "function";
+
+const CAMERA_UNAVAILABLE =
+  "O navegador não liberou a câmera neste endereço: ela só funciona em conexão segura (https). Use o botão \"Enviar foto\" para tirar ou escolher uma foto sua agora.";
+
+function cameraErrorMessage(error: unknown): string {
+  const name = error instanceof DOMException ? error.name : "";
+  if (name === "NotAllowedError" || name === "SecurityError") {
+    return "A câmera foi bloqueada. Permita o uso da câmera no navegador (ícone ao lado do endereço) e tente de novo.";
+  }
+  if (name === "NotFoundError" || name === "OverconstrainedError") return "Nenhuma câmera foi encontrada neste aparelho. Use o botão \"Enviar foto\".";
+  if (name === "NotReadableError") return "A câmera está em uso por outro programa. Feche-o e tente de novo.";
+  return "Não foi possível abrir a câmera. Tente de novo ou use o botão \"Enviar foto\".";
+}
+
+/** Converte a foto escolhida em JPEG (mesmo formato da captura pela câmera), limitada a 1280 px. */
+function fileToJpegDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const image = new Image();
+    image.onload = () => {
+      const scale = Math.min(1, 1280 / Math.max(image.width, image.height));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.round(image.width * scale);
+      canvas.height = Math.round(image.height * scale);
+      const context = canvas.getContext("2d");
+      URL.revokeObjectURL(url);
+      if (!context) return reject(new Error("Não foi possível ler a foto."));
+      context.drawImage(image, 0, 0, canvas.width, canvas.height);
+      resolve(canvas.toDataURL("image/jpeg", 0.85));
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("O arquivo escolhido não é uma imagem válida."));
+    };
+    image.src = url;
+  });
+}
+
 export const CommercialPolicyAcceptancePage: React.FC = () => {
   const { authUser, loadMe, logout } = useAuth();
   const navigate = useNavigate();
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const [step, setStep] = useState(0);
   const [policy, setPolicy] = useState<PendingPolicy | null>(null);
+  /** Quem assina, como o servidor identifica: nome completo e cargo do cadastro. */
+  const [serverSigner, setServerSigner] = useState<{ name: string; email: string; role: string; jobTitle?: string | null } | null>(null);
+  const [cameraOn, setCameraOn] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [answers, setAnswers] = useState<Record<string, string>>({});
@@ -47,6 +90,7 @@ export const CommercialPolicyAcceptancePage: React.FC = () => {
           return;
         }
         setPolicy(data.version);
+        setServerSigner(data.signer ?? null);
       })
       .catch((err: unknown) => {
         if (!cancelled) setError(err instanceof Error ? err.message : "Não foi possível abrir a política.");
@@ -72,10 +116,33 @@ export const CommercialPolicyAcceptancePage: React.FC = () => {
 
   const startCamera = async () => {
     setError(null);
-    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" }, audio: false });
-    if (videoRef.current) {
-      videoRef.current.srcObject = stream;
-      await videoRef.current.play();
+    if (!cameraSupported()) {
+      setError(CAMERA_UNAVAILABLE);
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" }, audio: false });
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play();
+      }
+      setPreview(null);
+      setPhotoId(null);
+      setCameraOn(true);
+    } catch (err) {
+      setCameraOn(false);
+      setError(cameraErrorMessage(err));
+    }
+  };
+
+  const pickPhoto = async (file: File | undefined) => {
+    if (!file) return;
+    setError(null);
+    try {
+      setPreview(await fileToJpegDataUrl(file));
+      setPhotoId(null);
+    } catch (err) {
+      fail(err);
     }
   };
 
@@ -155,9 +222,9 @@ export const CommercialPolicyAcceptancePage: React.FC = () => {
           <button
             type="button"
             className="rounded-lg border border-border px-3 py-2 text-sm font-semibold"
-            onClick={() => void downloadAuthenticatedFile(`/api/commercial-policy/acceptances/${signed.id}/receipt`, `comprovante-${signed.id}.pdf`)}
+            onClick={() => void downloadAuthenticatedFile(`/api/commercial-policy/acceptances/${signed.id}/receipt`, `certificado-de-aceite-${signed.id}.pdf`)}
           >
-            Baixar comprovante de aceite
+            Baixar certificado de aceite
           </button>
           <button
             type="button"
@@ -183,7 +250,7 @@ export const CommercialPolicyAcceptancePage: React.FC = () => {
   // Toda versão (oficial ou editada no painel) é lida no mesmo leitor estruturado.
   const chapters = parsePolicyChapters(policy.content);
   // O termo de ciência já vem com os dados de quem está logado: o vendedor só confere e aceita.
-  const signer = authUser ? { name: authUser.name, email: authUser.email, role: authUser.role } : null;
+  const signer = serverSigner ?? (authUser ? { name: authUser.name, email: authUser.email, role: authUser.role } : null);
   if (step === 0 && chapters.length > 0) {
     return (
       <div className="flex h-screen flex-col bg-background">
@@ -374,26 +441,65 @@ export const CommercialPolicyAcceptancePage: React.FC = () => {
         ) : null}
 
         {step === 5 ? (
-          <section className="space-y-3 rounded-2xl border border-border bg-card p-5">
+          <section className="space-y-4 rounded-2xl border border-border bg-card p-5">
             <h1 className="text-lg font-bold">Registro visual do aceite</h1>
             <p className="text-sm text-muted-foreground">
-              A fotografia será armazenada de forma restrita como evidência adicional do ato de aceite. Não há reconhecimento facial.
+              Tire uma foto sua agora. Ela fica guardada de forma restrita, apenas como prova de que foi você quem aceitou. Não há reconhecimento facial.
             </p>
-            <video ref={videoRef} className="w-full rounded-lg bg-black" playsInline muted />
-            {preview ? <img src={preview} alt="Prévia da captura" className="w-full rounded-lg" /> : null}
+            {!cameraSupported() ? (
+              <p className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-950" data-testid="policy-camera-unavailable">
+                {CAMERA_UNAVAILABLE}
+              </p>
+            ) : null}
+            {/* O vídeo fica montado para receber a câmera; só aparece enquanto ela está aberta e sem foto tirada. */}
+            <video ref={videoRef} className={cameraOn && !preview ? "w-full rounded-lg bg-black" : "hidden"} playsInline muted />
+            {preview ? <img src={preview} alt="Foto que será registrada" className="w-full rounded-lg" /> : null}
+            {!cameraOn && !preview ? (
+              <div className="flex h-40 items-center justify-center rounded-lg border border-dashed border-border bg-muted/40 text-sm text-muted-foreground">
+                Nenhuma foto ainda
+              </div>
+            ) : null}
             <div className="flex flex-wrap gap-2">
-              <button type="button" className="rounded-lg border border-border px-3 py-2 text-xs font-semibold" onClick={() => void startCamera().catch(fail)}>
-                Abrir câmera
-              </button>
-              <button type="button" className="rounded-lg border border-border px-3 py-2 text-xs font-semibold" onClick={capture}>
-                Tirar novamente
-              </button>
-              <button type="button" disabled={!preview || busy} className="rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground disabled:opacity-50" onClick={() => void confirmPhoto()}>
-                Usar esta foto
-              </button>
+              {cameraSupported() && !cameraOn ? (
+                <button type="button" className="rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground" onClick={() => void startCamera()}>
+                  Abrir câmera
+                </button>
+              ) : null}
+              {cameraOn && !preview ? (
+                <button type="button" className="rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground" onClick={capture}>
+                  Tirar foto
+                </button>
+              ) : null}
+              {cameraOn && preview && !photoId ? (
+                <button type="button" className="rounded-lg border border-border px-4 py-2.5 text-sm font-semibold" onClick={() => setPreview(null)}>
+                  Tirar outra
+                </button>
+              ) : null}
+              {!photoId ? (
+                <label className="cursor-pointer rounded-lg border border-border px-4 py-2.5 text-sm font-semibold hover:bg-accent/60">
+                  Enviar foto
+                  <input
+                    type="file"
+                    accept="image/*"
+                    capture="user"
+                    className="sr-only"
+                    onChange={(event) => {
+                      void pickPhoto(event.target.files?.[0]);
+                      event.target.value = "";
+                    }}
+                  />
+                </label>
+              ) : null}
+              {preview && !photoId ? (
+                <button type="button" disabled={busy} className="rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground disabled:opacity-50" onClick={() => void confirmPhoto()}>
+                  {busy ? "Enviando…" : "Usar esta foto"}
+                </button>
+              ) : null}
             </div>
-            <div className="flex justify-end">
-              <button type="button" disabled={!photoId} className="rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground disabled:opacity-50" onClick={() => setStep(6)}>
+            {photoId ? <p className="text-sm font-semibold text-emerald-800">Foto registrada. Pode continuar.</p> : null}
+            <div className="flex justify-between">
+              <button type="button" className="text-xs font-semibold" onClick={() => setStep(4)}>Voltar</button>
+              <button type="button" disabled={!photoId} className="rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground disabled:opacity-50" onClick={() => setStep(6)}>
                 Continuar
               </button>
             </div>

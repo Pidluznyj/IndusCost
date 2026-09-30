@@ -616,6 +616,7 @@ import { createCommercialPolicyAcceptanceGuard } from "./src/lib/commercialPolic
 import { createPrismaCommercialPolicyStore } from "./src/lib/commercialPolicy/commercialPolicyPrismaStore.js";
 import { registerCommercialPolicyRoutes } from "./src/lib/commercialPolicy/commercialPolicyRoutes.js";
 import { sellerHasPendingPolicy } from "./src/lib/commercialPolicy/commercialPolicyService.js";
+import { isCommercialPolicyAudience } from "./src/lib/commercialPolicy/commercialPolicyRules.js";
 import {
   loginThrottle,
   authRateLimitedBody,
@@ -1934,7 +1935,7 @@ async function startServer() {
     resolvePending: async (req) => {
       const request = req as express.Request;
       if (request.appAuth?.mustChangePassword) return false;
-      if (request.appAuth && request.appAuth.role !== "SELLER") return false;
+      if (request.appAuth && !isCommercialPolicyAudience(request.appAuth)) return false;
       if (request.appAuth && !request.appAuth.isActive) return false;
       if (request.appAuth) {
         return sellerHasPendingPolicy(commercialPolicyStore, request.appAuth, new Date());
@@ -1949,12 +1950,12 @@ async function startServer() {
           expiresAt: { gt: new Date() },
         },
         select: {
-          user: { select: { id: true, role: true, isActive: true, mustChangePassword: true } },
+          user: { select: { id: true, role: true, isActive: true, mustChangePassword: true, mustAcceptCommercialPolicy: true } },
         },
       });
       const user = session?.user;
       if (!user?.isActive) return null;
-      if (user.mustChangePassword || user.role !== "SELLER") return false;
+      if (user.mustChangePassword || !isCommercialPolicyAudience(user)) return false;
       return sellerHasPendingPolicy(commercialPolicyStore, user, new Date());
     },
   });
@@ -2259,7 +2260,9 @@ async function startServer() {
     requireAppAuth,
     getCurrentAppUser,
     store: commercialPolicyStore,
-    countActiveSellers: () => prisma.appUser.count({ where: { role: "SELLER", isActive: true } }),
+    // Obrigados à política: vendedores ativos e quem o SUPER_ADMIN marcou manualmente.
+    countActiveSellers: () =>
+      prisma.appUser.count({ where: { isActive: true, OR: [{ role: "SELLER" }, { mustAcceptCommercialPolicy: true }] } }),
   });
 
   app.post("/api/auth/login", async (req, res) => {

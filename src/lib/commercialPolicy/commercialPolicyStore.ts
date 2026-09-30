@@ -127,6 +127,21 @@ export type CommercialPolicyStore = {
   getPhoto(id: string): Promise<StoredPhoto | null>;
   commitAcceptance(row: StoredAcceptance): Promise<{ ok: true; acceptance: StoredAcceptance } | { ok: false; code: "CONFLICT" | "EXPIRED" | "USED" | "PHOTO_USED" }>;
   insertInvalidation(row: StoredInvalidation): Promise<StoredInvalidation>;
+  /**
+   * Zera aceites (fase de testes): apaga o aceite e tudo o que o usuário
+   * produziu para aquela versão (tentativas, reautenticação, foto), para que o
+   * fluxo recomece do início. Sem `acceptanceId`, zera todos os aceites e
+   * todo o material de aceite. Devolve o que foi apagado, para a auditoria.
+   */
+  resetAcceptances(filter: { acceptanceId?: string }): Promise<AcceptanceResetResult>;
+};
+
+export type AcceptanceResetResult = {
+  acceptances: StoredAcceptance[];
+  attempts: number;
+  challenges: number;
+  photos: number;
+  invalidations: number;
 };
 
 export function newId(prefix: string): string {
@@ -313,6 +328,29 @@ export function createMemoryCommercialPolicyStore(): CommercialPolicyStore & {
     async insertInvalidation(row) {
       invalidations.push(row);
       return row;
+    },
+    async resetAcceptances(filter) {
+      const removed = acceptances.filter((row) => !filter.acceptanceId || row.id === filter.acceptanceId);
+      const all = !filter.acceptanceId;
+      const sameFlow = (row: { userId: string; policyVersionId: string }) =>
+        all || removed.some((item) => item.userId === row.userId && item.policyVersionId === row.policyVersionId);
+      const drop = <T,>(list: T[], match: (row: T) => boolean) => {
+        const before = list.length;
+        const kept = list.filter((row) => !match(row));
+        list.length = 0;
+        list.push(...kept);
+        return before - kept.length;
+      };
+      const removedIds = new Set(removed.map((row) => row.id));
+      const result = {
+        acceptances: removed,
+        invalidations: drop(invalidations, (row) => removedIds.has(row.acceptanceId)),
+        attempts: drop(attempts, sameFlow),
+        challenges: drop(challenges, sameFlow),
+        photos: drop(photos, sameFlow),
+      };
+      drop(acceptances, (row) => removedIds.has(row.id));
+      return result;
     },
   };
   void policyId;

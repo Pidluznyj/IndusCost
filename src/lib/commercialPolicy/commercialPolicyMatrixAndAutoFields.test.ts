@@ -316,6 +316,23 @@ describe("campos automáticos do documento", () => {
     assert.match(document, /Diretoria\nPaulo Diretor — Super administrador\n30\/09\/2026 12:00 · aprovação eletrônica por usuário autenticado no IndusCost/);
   });
 
+  it("aprovação e termo de ciência mostram nome completo e cargo do cadastro; sem cargo, o perfil de acesso", () => {
+    const withTitle = text({
+      ...published,
+      approver: { name: "Paulo Henrique Pidluznyj", role: "SUPER_ADMIN", jobTitle: "Diretor Comercial" },
+      signer: { name: "Joseane Maria da Silva", email: "joseane@koppetel.com", role: "SELLER", jobTitle: "Executiva de Vendas" },
+    });
+    assert.match(withTitle, /Diretoria\nPaulo Henrique Pidluznyj — Diretor Comercial\n/);
+    assert.doesNotMatch(withTitle, /Super administrador/);
+    assert.match(withTitle, /Profissional: Joseane Maria da Silva/);
+    assert.match(withTitle, /Função: Executiva de Vendas/);
+    assert.match(withTitle, /publicação eletrônica por Paulo Henrique Pidluznyj/);
+    // Usuário sem vínculo com Pessoas/RH: vale o perfil de acesso.
+    const withoutTitle = text({ ...published, signer: { name: "Ana", email: "ana@koppetel.com", role: "SELLER", jobTitle: null } });
+    assert.match(withoutTitle, /Paulo Diretor — Super administrador/);
+    assert.match(withoutTitle, /Função: Vendedor\(a\)/);
+  });
+
   it("o termo de ciência vem preenchido com o usuário logado e, após o aceite, com a assinatura eletrônica", () => {
     const signer = { name: "Ana Vendedora", email: "ana@koppetel.com", role: "SELLER" };
     const reading = text({ ...published, signer });
@@ -399,7 +416,7 @@ describe("vigência informada na publicação", () => {
       now: () => NOW,
       loadRelease: async () => RELEASE,
       loadCommissionMatrix: async () => PRICING,
-      loadUserIdentity: async (id) => (id === admin.id ? { name: admin.name, role: admin.role } : null),
+      loadUserIdentity: async (id) => (id === admin.id ? { name: "Paulo Diretor da Silva", role: admin.role, jobTitle: "Diretor Comercial" } : null),
     });
     const server = http.createServer(app);
     await new Promise<void>((resolve) => server.listen(0, resolve));
@@ -419,10 +436,11 @@ describe("vigência informada na publicação", () => {
       assert.equal(((await missing.json()) as { code: string }).code, "EFFECTIVE_FROM_REQUIRED");
       const done = await fetch(publishUrl, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ effectiveFrom: "2026-10-15" }) });
       assert.equal(done.status, 200);
-      const body = (await done.json()) as { version: { effectiveFrom: string; publishedAt: string; approver: { name: string; role: string } } };
+      const body = (await done.json()) as { version: { effectiveFrom: string; publishedAt: string; approver: { name: string; role: string; jobTitle?: string } } };
       assert.equal(body.version.effectiveFrom, "2026-10-15T03:00:00.000Z");
       assert.equal(body.version.publishedAt, NOW.toISOString());
-      assert.deepEqual(body.version.approver, { name: "Paulo Diretor", role: "SUPER_ADMIN" });
+      // Nome completo e cargo do cadastro de Pessoas/RH, não o nome de login e o perfil de acesso.
+      assert.deepEqual(body.version.approver, { name: "Paulo Diretor da Silva", role: "SUPER_ADMIN", jobTitle: "Diretor Comercial" });
     } finally {
       server.close();
     }

@@ -871,7 +871,7 @@ export const Sidebar = () => {
             <span className="ml-3 text-sm font-medium truncate">Alterar senha</span>
           )}
         </button>
-        {authUser?.role === "SELLER" ? (
+        {authUser?.role === "SELLER" || authUser?.mustAcceptCommercialPolicy ? (
           <button
             type="button"
             title={collapsed ? "Meus aceites" : undefined}

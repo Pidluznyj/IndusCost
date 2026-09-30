@@ -17,6 +17,8 @@ import {
   createPolicyDraft,
   publishPolicyVersion,
   recordKnowledgeAttempt,
+  resetCommercialPolicyAcceptances,
+  RESET_ALL_ACCEPTANCES_CONFIRMATION,
   saveSignaturePhoto,
   sellerHasPendingPolicy,
   signCommercialPolicy,
@@ -29,6 +31,7 @@ import {
 } from "./commercialPolicyGuard.js";
 import { registerCommercialPolicyRoutes } from "./commercialPolicyRoutes.js";
 import { buildTextPdf } from "./commercialPolicyPdf.js";
+import { buildAcceptanceCertificatePdf } from "./commercialPolicyControlledCopyPdf.js";
 
 const BODY: PolicyVersionBody = {
   title: "Política Comercial de teste",
@@ -333,6 +336,59 @@ describe("versão, questionário e aceite", () => {
     assert.equal(pdf.toString("latin1").includes("abc"), true);
   });
 
+  it("o comprovante é um certificado formal: signatário, documento, data, declarações, selo e hashes — sem a imagem", async () => {
+    const { store, version, now } = await published();
+    const acceptance = await passAndSign(store, seller(), version.id, now);
+    const pdf = buildAcceptanceCertificatePdf({
+      acceptanceId: acceptance.id,
+      company: "Koppetel Comercio de Plásticos LTDA",
+      cnpj: "14.055.501/0001-80",
+      code: "POL-COM-001",
+      title: version.title,
+      versionLabel: "1.0",
+      signerName: acceptance.userNameSnapshot,
+      signerEmail: acceptance.userEmailSnapshot,
+      signerRole: "Vendedor(a)",
+      externalSellerId: acceptance.externalSellerIdSnapshot,
+      acceptedAt: acceptance.acceptedAt.toISOString(),
+      ipAddress: acceptance.ipAddress,
+      challengeId: acceptance.challengeId,
+      declarations: acceptance.declarationsAccepted,
+      policyHash: acceptance.policyContentHash,
+      photoHash: acceptance.photoHash,
+      evidenceHash: acceptance.evidenceHash,
+    });
+    assert.equal(pdf.subarray(0, 5).toString(), "%PDF-");
+    const text = pdf.toString("latin1");
+    for (const expected of [
+      "CERTIFICADO DE ACEITE ELETR\\324NICO",
+      "Certificamos que",
+      "Vendedor Teste",
+      "vendedor@exemplo.test",
+      "POL-COM-001",
+      "28/09/2026 09:00",
+      acceptance.id,
+      acceptance.challengeId,
+      acceptance.policyContentHash,
+      acceptance.photoHash,
+      acceptance.evidenceHash,
+      "203.0.113.9",
+      "Declaro que li a vers",
+      "ACEITE",
+      "REGISTRADO",
+      "Assinado eletronicamente no IndusCost",
+      "P\\341gina 1 de ",
+    ]) {
+      assert.ok(text.includes(expected), expected);
+    }
+    // A fotografia nunca entra no certificado: não há objeto de imagem no PDF.
+    assert.doesNotMatch(text, /\/Subtype \/Image/);
+    // A rota entrega o certificado, não mais o texto corrido.
+    const routes = readFileSync(new URL("./commercialPolicyRoutes.ts", import.meta.url), "utf8");
+    assert.match(routes, /buildAcceptanceCertificatePdf\(/);
+    assert.doesNotMatch(routes, /acceptanceReceiptLines/);
+  });
+
   it("questionário está ligado à versão e não vaza a resposta na pontuação pública", () => {
     const scored = scoreQuestionnaire(BODY.questions, [{ questionId: "q1", optionId: "b" }]);
     assert.equal(scored.passed, true);
@@ -442,8 +498,173 @@ describe("gate HTTP", () => {
   });
 });
 
+describe("exigência manual da política por usuário (flag do SUPER_ADMIN)", () => {
+  it("pessoa marcada fica pendente em qualquer perfil, faz o fluxo inteiro e deixa de ficar pendente ao aceitar", async () => {
+    const { store, version, now } = await published();
+    const manager = seller({ id: "manager-1", role: "COMMERCIAL_MANAGER", sessionId: "session-m", externalSellerId: null });
+    // Sem a marcação, gestor não é obrigado nem consegue iniciar o fluxo.
+    assert.equal(await sellerHasPendingPolicy(store, manager, now), false);
+    const refused = await recordKnowledgeAttempt(store, manager, { policyVersionId: version.id, answers: [{ questionId: "q1", optionId: "b" }] }, now);
+    assert.equal(refused.ok, false);
+    // Marcado: pendente, como o vendedor.
+    const flagged = { ...manager, mustAcceptCommercialPolicy: true };
+    assert.equal(await sellerHasPendingPolicy(store, flagged, now), true);
+    const acceptance = await passAndSign(store, flagged, version.id, now);
+    assert.equal(acceptance.roleSnapshot, "COMMERCIAL_MANAGER");
+    assert.equal(await sellerHasPendingPolicy(store, flagged, now), false);
+    // A marcação continua valendo: nova versão publicada volta a exigir o aceite.
+    const later = new Date(now.getTime() + 60_000);
+    const draft = await createPolicyDraft(store, { ...BODY, title: "Política Comercial de teste v2" }, later);
+    assert.equal(draft.ok, true);
+    if (!draft.ok) return;
+    const next = await publishPolicyVersion(store, draft.version.id, "super-1", later);
+    assert.equal(next.ok, true);
+    assert.equal(await sellerHasPendingPolicy(store, flagged, later), true);
+    assert.equal(await sellerHasPendingPolicy(store, manager, later), false);
+  });
+
+  it("senha obrigatória e usuário inativo continuam na frente da marcação", async () => {
+    const { store, now } = await published();
+    const flagged = seller({ id: "admin-1", role: "ADMIN", mustAcceptCommercialPolicy: true });
+    assert.equal(await sellerHasPendingPolicy(store, { ...flagged, mustChangePassword: true }, now), false);
+    assert.equal(await sellerHasPendingPolicy(store, { ...flagged, isActive: false }, now), false);
+  });
+
+  it("só SUPER_ADMIN marca ou desmarca; a rota valida o corpo e o usuário", async () => {
+    const { store, now } = await published();
+    const flags = new Map<string, boolean>([["user-1", false]]);
+    const calls: Array<{ actorUserId: string; targetUserId: string; required: boolean }> = [];
+    const app = express();
+    app.use(express.json());
+    let current: PolicyActor = seller({ role: "ADMIN", id: "admin-1" });
+    registerCommercialPolicyRoutes(app, {
+      requireAppAuth: (_req, _res, next) => next(),
+      getCurrentAppUser: async () => current,
+      store,
+      now: () => now,
+      setAcceptanceRequired: async (input) => {
+        if (!flags.has(input.targetUserId)) return null;
+        calls.push({ actorUserId: input.actorUserId, targetUserId: input.targetUserId, required: input.required });
+        const changed = flags.get(input.targetUserId) !== input.required;
+        flags.set(input.targetUserId, input.required);
+        return { required: input.required, changed };
+      },
+    });
+    const server = http.createServer(app);
+    await new Promise<void>((resolve) => server.listen(0, resolve));
+    const address = server.address();
+    const url = `http://127.0.0.1:${typeof address === "object" && address ? address.port : 0}`;
+    const post = (id: string, body: unknown) =>
+      fetch(`${url}/api/admin/users/${id}/commercial-policy-required`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+    try {
+      assert.equal((await post("user-1", { required: true })).status, 403);
+      assert.equal(calls.length, 0);
+      current = seller({ role: "SUPER_ADMIN", id: "super-1" });
+      assert.equal((await post("user-1", { required: "sim" })).status, 400);
+      assert.equal((await post("nao-existe", { required: true })).status, 404);
+      const set = await post("user-1", { required: true });
+      assert.equal(set.status, 200);
+      assert.deepEqual(await set.json(), { success: true, mustAcceptCommercialPolicy: true, changed: true });
+      const again = await post("user-1", { required: true });
+      assert.deepEqual(await again.json(), { success: true, mustAcceptCommercialPolicy: true, changed: false });
+      const cleared = await post("user-1", { required: false });
+      assert.deepEqual(await cleared.json(), { success: true, mustAcceptCommercialPolicy: false, changed: true });
+      assert.deepEqual(calls.map((call) => [call.actorUserId, call.required]), [["super-1", true], ["super-1", true], ["super-1", false]]);
+    } finally {
+      server.close();
+    }
+  });
+});
+
+describe("zerar aceites (fase de testes, só SUPER_ADMIN)", () => {
+  it("zerar um aceite apaga o fluxo daquele vendedor, que volta a ficar pendente e consegue aceitar de novo", async () => {
+    const { store, version, now } = await published();
+    const first = seller();
+    const second = seller({ id: "seller-2", sessionId: "session-2", email: "outro@exemplo.test" });
+    const accepted = await passAndSign(store, first, version.id, now);
+    const kept = await passAndSign(store, second, version.id, now);
+    assert.equal(await sellerHasPendingPolicy(store, first, now), false);
+
+    const noReason = await resetCommercialPolicyAcceptances(store, { acceptanceId: accepted.id, reason: "  " });
+    assert.equal(noReason.ok === false && noReason.code, "REASON_REQUIRED");
+    const missing = await resetCommercialPolicyAcceptances(store, { acceptanceId: "nao-existe", reason: "teste" });
+    assert.equal(missing.ok === false && missing.code, "NOT_FOUND");
+
+    const reset = await resetCommercialPolicyAcceptances(store, { acceptanceId: accepted.id, reason: "teste do fluxo" });
+    assert.equal(reset.ok, true);
+    if (!reset.ok) return;
+    assert.deepEqual(reset.acceptances.map((row) => row.id), [accepted.id]);
+    assert.deepEqual([reset.attempts, reset.challenges, reset.photos], [1, 1, 1]);
+    // O outro vendedor não é tocado.
+    assert.deepEqual(store.acceptances.map((row) => row.id), [kept.id]);
+    assert.equal(store.attempts.every((row) => row.userId === second.id), true);
+    assert.equal(await sellerHasPendingPolicy(store, first, now), true);
+    assert.equal(await sellerHasPendingPolicy(store, second, now), false);
+    // O fluxo recomeça do zero e o novo aceite é gravado normalmente.
+    const again = await passAndSign(store, first, version.id, now);
+    assert.notEqual(again.id, accepted.id);
+    assert.equal(await sellerHasPendingPolicy(store, first, now), false);
+  });
+
+  it("zerar todos exige a frase de confirmação e apaga todo o material de aceite", async () => {
+    const { store, version, now } = await published();
+    await passAndSign(store, seller(), version.id, now);
+    await passAndSign(store, seller({ id: "seller-2", sessionId: "session-2" }), version.id, now);
+    const unconfirmed = await resetCommercialPolicyAcceptances(store, { reason: "teste", confirmation: "sim" });
+    assert.equal(unconfirmed.ok === false && unconfirmed.code, "CONFIRMATION_REQUIRED");
+    assert.equal(store.acceptances.length, 2);
+    const reset = await resetCommercialPolicyAcceptances(store, { reason: "teste", confirmation: RESET_ALL_ACCEPTANCES_CONFIRMATION });
+    assert.equal(reset.ok, true);
+    if (!reset.ok) return;
+    assert.equal(reset.acceptances.length, 2);
+    assert.deepEqual([store.acceptances.length, store.attempts.length, store.challenges.length, store.photos.length], [0, 0, 0, 0]);
+    // A versão publicada continua vigente: só os aceites somem.
+    assert.equal((await store.currentPublished(now))?.id, version.id);
+  });
+
+  it("as rotas de zerar só atendem SUPER_ADMIN", async () => {
+    const { store, version, now } = await published();
+    const actor = seller();
+    const signed = await passAndSign(store, actor, version.id, now);
+    const app = express();
+    app.use(express.json());
+    let current: PolicyActor = actor;
+    registerCommercialPolicyRoutes(app, {
+      requireAppAuth: (_req, _res, next) => next(),
+      getCurrentAppUser: async () => current,
+      store,
+      now: () => now,
+    });
+    const server = http.createServer(app);
+    await new Promise<void>((resolve) => server.listen(0, resolve));
+    const address = server.address();
+    const url = `http://127.0.0.1:${typeof address === "object" && address ? address.port : 0}`;
+    const post = (path: string, body: unknown) =>
+      fetch(`${url}${path}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+    try {
+      for (const role of ["SELLER", "ADMIN", "COMMERCIAL_MANAGER"]) {
+        current = seller({ role, id: `user-${role}` });
+        const one = await post(`/api/admin/commercial-policy/acceptances/${signed.id}/reset`, { reason: "teste" });
+        const all = await post("/api/admin/commercial-policy/acceptances/reset", { reason: "teste", confirmation: RESET_ALL_ACCEPTANCES_CONFIRMATION });
+        assert.notEqual(one.status, 200, role);
+        assert.notEqual(all.status, 200, role);
+      }
+      assert.equal(store.acceptances.length, 1);
+      current = seller({ role: "SUPER_ADMIN", id: "super-1" });
+      const refused = await post("/api/admin/commercial-policy/acceptances/reset", { reason: "teste" });
+      assert.equal(refused.status, 422);
+      const done = await post(`/api/admin/commercial-policy/acceptances/${signed.id}/reset`, { reason: "teste do fluxo" });
+      assert.equal(done.status, 200);
+      assert.equal(((await done.json()) as { removedAcceptances: number }).removedAcceptances, 1);
+      assert.equal(store.acceptances.length, 0);
+    } finally {
+      server.close();
+    }
+  });
+});
+
 describe("integridade do código", () => {
-  it("não há update/delete de aceite e o IP não lê X-Forwarded-For", () => {
+  it("rotas não fazem update/delete direto de aceite (só o zerar do SUPER_ADMIN, pelo store) e o IP não lê X-Forwarded-For", () => {
     const routes = readFileSync(new URL("./commercialPolicyRoutes.ts", import.meta.url), "utf8");
     assert.doesNotMatch(routes, /commercialPolicyAcceptance\.(update|delete)/);
     assert.doesNotMatch(routes.toLowerCase(), /x-forwarded-for/);

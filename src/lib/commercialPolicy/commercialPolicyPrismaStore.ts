@@ -411,5 +411,35 @@ export function createPrismaCommercialPolicyStore(client: PrismaClient = prisma)
       await client.commercialPolicyAcceptanceInvalidation.create({ data: row });
       return row;
     },
+    async resetAcceptances(filter) {
+      return client.$transaction(async (tx) => {
+        const rows = await tx.commercialPolicyAcceptance.findMany({
+          where: filter.acceptanceId ? { id: filter.acceptanceId } : {},
+        });
+        const removed = rows.map(mapAcceptance);
+        if (filter.acceptanceId && removed.length === 0) {
+          return { acceptances: [], attempts: 0, challenges: 0, photos: 0, invalidations: 0 };
+        }
+        // Um aceite: só o fluxo daquele usuário naquela versão. Todos: todo o material de aceite.
+        const flow = filter.acceptanceId
+          ? { OR: removed.map((row) => ({ userId: row.userId, policyVersionId: row.policyVersionId })) }
+          : {};
+        // Ordem imposta pelas FKs (onDelete: Restrict): invalidação → aceite → foto → reautenticação → tentativa.
+        const invalidations = await tx.commercialPolicyAcceptanceInvalidation.deleteMany({
+          where: { acceptanceId: { in: removed.map((row) => row.id) } },
+        });
+        await tx.commercialPolicyAcceptance.deleteMany({ where: { id: { in: removed.map((row) => row.id) } } });
+        const photos = await tx.commercialPolicyPhotoEvidence.deleteMany({ where: flow });
+        const challenges = await tx.commercialPolicySignatureChallenge.deleteMany({ where: flow });
+        const attempts = await tx.commercialPolicyKnowledgeAttempt.deleteMany({ where: flow });
+        return {
+          acceptances: removed,
+          attempts: attempts.count,
+          challenges: challenges.count,
+          photos: photos.count,
+          invalidations: invalidations.count,
+        };
+      });
+    },
   };
 }

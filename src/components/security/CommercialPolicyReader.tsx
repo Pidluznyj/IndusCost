@@ -132,7 +132,7 @@ export const CommercialPolicyReader: React.FC<{
   const chapters = useMemo(
     () => applyPolicyAutoFields(chaptersProp ?? POL_COM_001_CHAPTERS, { versionLabel, publishedAt, effectiveFrom, approver, signer, acceptance, today, commissionMatrix }),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- objetos comparados pelos campos: o pai os recria a cada render
-    [chaptersProp, versionLabel, publishedAt, effectiveFrom, approver?.name, approver?.role, signer?.name, signer?.email, signer?.role, acceptance?.id, today, commissionMatrix]
+    [chaptersProp, versionLabel, publishedAt, effectiveFrom, approver?.name, approver?.role, approver?.jobTitle, signer?.name, signer?.email, signer?.role, signer?.jobTitle, acceptance?.id, today, commissionMatrix]
   );
   const start = chapters.find((chapter) => chapter.id === initialChapterId)?.id ?? chapters[0]?.id ?? "capa";
   const [chapterId, setChapterId] = useState(start);

@@ -77,9 +77,9 @@ export const MyCommercialAcceptancesPage: React.FC = () => {
             <button
               type="button"
               className="mt-2 text-xs font-semibold text-primary"
-              onClick={() => void downloadAuthenticatedFile(`/api/commercial-policy/acceptances/${row.id}/receipt`, `aceite-${row.id}.pdf`)}
+              onClick={() => void downloadAuthenticatedFile(`/api/commercial-policy/acceptances/${row.id}/receipt`, `certificado-de-aceite-${row.id}.pdf`)}
             >
-              Baixar comprovante
+              Baixar certificado de aceite
             </button>
           </li>
         ))}

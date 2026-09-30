@@ -66,6 +66,11 @@ export type SafeAppUser = {
    * não ter que deduzir o estado a partir de mensagem de erro.
    */
   mustChangePassword: boolean;
+  /**
+   * SUPER_ADMIN marcou esta pessoa como obrigada a ler e aceitar a Política
+   * Comercial, qualquer que seja o perfil (o vendedor já é obrigado pelo perfil).
+   */
+  mustAcceptCommercialPolicy?: boolean;
   /** Última troca conhecida. `null` = usuário anterior à feature (histórico desconhecido). */
   passwordChangedAt: string | null;
   createdAt: string;

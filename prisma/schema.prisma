@@ -2822,6 +2822,8 @@ model AppUser {
   isActive                               Boolean                              @default(true)
   /// Credencial atual é temporária: exige troca antes de usar o sistema (enforcement no backend).
   mustChangePassword                     Boolean                              @default(false)
+  /// SUPER_ADMIN exige leitura e aceite da Política Comercial desta pessoa, qualquer que seja o perfil (SELLER é sempre obrigado).
+  mustAcceptCommercialPolicy             Boolean                              @default(false)
   /// Última troca conhecida. NULL = usuário anterior à feature (histórico desconhecido; sem backfill).
   passwordChangedAt                      DateTime?                            @db.Timestamptz(6)
   externalSellerId                       Int?

@@ -20,10 +20,10 @@ export type PolicyAutoFieldContext = {
   publishedAt: string | null;
   /** ISO da vigência; nulo enquanto não for informada na publicação. */
   effectiveFrom: string | null;
-  /** Quem publicou a versão. */
-  approver: { name: string; role: string } | null;
+  /** Quem publicou a versão: nome completo e cargo do cadastro de Pessoas/RH, quando houver vínculo. */
+  approver: PolicyIdentity | null;
   /** Usuário logado que lê e assina; nulo em prévias administrativas. */
-  signer: { name: string; email: string; role: string } | null;
+  signer: (PolicyIdentity & { email: string }) | null;
   /** Aceite já registrado deste usuário para esta versão. */
   acceptance: { id: string; acceptedAt: string; evidenceHash: string } | null;
   /** Instante atual (ISO), para a data do termo antes da assinatura. */
@@ -97,6 +97,18 @@ export function policyRoleLabel(role: string): string {
   return ROLE_LABELS[role] ?? role;
 }
 
+/**
+ * Pessoa impressa no documento. `name` é o nome completo do cadastro de
+ * Pessoas/RH quando o usuário está vinculado; `jobTitle` é o cargo cadastrado.
+ * Sem vínculo, valem o nome do usuário e o perfil de acesso.
+ */
+export type PolicyIdentity = { name: string; role: string; jobTitle?: string | null };
+
+/** Cargo cadastrado; sem cargo, o perfil de acesso em texto de leitura. */
+export function policyFunctionLabel(identity: { role: string; jobTitle?: string | null }): string {
+  return identity.jobTitle?.trim() || policyRoleLabel(identity.role);
+}
+
 const SAO_PAULO = "America/Sao_Paulo";
 
 export function formatPolicyDate(iso: string): string {
@@ -128,7 +140,7 @@ function fillParagraph(text: string, context: PolicyAutoFieldContext): string {
   const { signer, acceptance, approver } = context;
   const effective = context.effectiveFrom ? formatPolicyDate(context.effectiveFrom) : `data ${PENDING_PUBLICATION}`;
   if (/^Profissional:/i.test(text)) return `Profissional: ${signer?.name ?? "usuário logado que assina (preenchido automaticamente)"}`;
-  if (/^Função:/i.test(text)) return `Função: ${signer ? policyRoleLabel(signer.role) : "perfil do usuário que assina (preenchido automaticamente)"}`;
+  if (/^Função:/i.test(text)) return `Função: ${signer ? policyFunctionLabel(signer) : "cargo do usuário que assina (preenchido automaticamente)"}`;
   if (/^Versão recebida:/i.test(text)) {
     const date = acceptance ? formatPolicyDate(acceptance.acceptedAt) : signer ? formatPolicyDate(context.today) : "data do aceite";
     return `Versão recebida: ${context.versionLabel}    Data: ${date}`;
@@ -155,7 +167,7 @@ function fillRow(row: string[], context: PolicyAutoFieldContext): string[] {
     const { approver, publishedAt } = context;
     return [
       row[0],
-      approver ? `${approver.name} — ${policyRoleLabel(approver.role)}` : "quem publicar a versão (preenchido automaticamente)",
+      approver ? `${approver.name} — ${policyFunctionLabel(approver)}` : "quem publicar a versão (preenchido automaticamente)",
       approver && publishedAt
         ? `${formatPolicyDateTime(publishedAt)} · aprovação eletrônica por usuário autenticado no IndusCost`
         : "aprovação eletrônica registrada na publicação",

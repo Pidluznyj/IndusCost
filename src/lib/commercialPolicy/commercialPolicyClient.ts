@@ -1,4 +1,4 @@
-import type { PolicyCommissionMatrix } from "./policyAutoFields.js";
+import type { PolicyCommissionMatrix, PolicyIdentity } from "./policyAutoFields.js";
 import { fetchJsonOk, fetchOk } from "@/src/lib/http";
 
 /** Etapas do fluxo de aceite do vendedor, na ordem em que a página as apresenta. */
@@ -27,7 +27,7 @@ export type PendingPolicy = {
   publishedAt: string | null;
   whatChanged?: string[];
   /** Quem publicou a versão (aprovação eletrônica impressa no documento). */
-  approver?: { name: string; role: string } | null;
+  approver?: PolicyIdentity | null;
   /** Matriz de Referência congelada na versão (Anexo I). */
   commissionMatrix?: PolicyCommissionMatrix | null;
 };
@@ -36,7 +36,8 @@ export type PendingResponse = {
   ok: true;
   pending: boolean;
   version: PendingPolicy | null;
-  signer?: { name: string; email: string; role: string; externalSellerId: number | null };
+  /** Quem assina: nome completo e cargo do cadastro, quando o usuário está vinculado a Pessoas/RH. */
+  signer?: { name: string; email: string; role: string; externalSellerId: number | null; jobTitle?: string | null };
 };
 
 export function loadPendingPolicy() {
@@ -90,6 +91,14 @@ export function signPolicy(input: {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(input),
     }
+  );
+}
+
+/** SUPER_ADMIN: marca ou desmarca a exigência manual da Política Comercial para um usuário. */
+export function requestSetCommercialPolicyRequired(userId: string, required: boolean) {
+  return fetchJsonOk<{ success: true; mustAcceptCommercialPolicy: boolean; changed: boolean }>(
+    `/api/admin/users/${encodeURIComponent(userId)}/commercial-policy-required`,
+    { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ required }) }
   );
 }
 

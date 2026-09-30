@@ -29,6 +29,7 @@ import {
   requestAdminResetPassword,
   requestSetPasswordChangeRequired,
 } from "@/src/lib/auth/passwordLifecycleClient";
+import { requestSetCommercialPolicyRequired } from "@/src/lib/commercialPolicy/commercialPolicyClient";
 import { SellerNomusPicker, type SellerNomusPickerValue } from "@/src/components/admin/SellerNomusPicker";
 import { EmployeeUserPicker } from "@/src/components/admin/EmployeeUserPicker";
 import type { AdminSellerOption } from "@/src/lib/adminSellerOptionsTypes";
@@ -223,6 +224,8 @@ export const AdminUsersModule: React.FC = () => {
   const [resetError, setResetError] = useState<string | null>(null);
   const [passwordFlagSaving, setPasswordFlagSaving] = useState(false);
   const [passwordFlagError, setPasswordFlagError] = useState<string | null>(null);
+  const [policyFlagSaving, setPolicyFlagSaving] = useState(false);
+  const [policyFlagError, setPolicyFlagError] = useState<string | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteConfirmEmail, setDeleteConfirmEmail] = useState("");
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -807,6 +810,24 @@ export const AdminUsersModule: React.FC = () => {
     }
   };
 
+  const handleCommercialPolicyRequired = async (required: boolean) => {
+    if (!selectedId || authUser?.role !== "SUPER_ADMIN") return;
+    setPolicyFlagSaving(true);
+    setPolicyFlagError(null);
+    try {
+      const result = await requestSetCommercialPolicyRequired(selectedId, required);
+      setUsers((current) =>
+        current.map((user) =>
+          user.id === selectedId ? { ...user, mustAcceptCommercialPolicy: result.mustAcceptCommercialPolicy } : user
+        )
+      );
+    } catch (err) {
+      setPolicyFlagError(err instanceof Error ? err.message : "Falha ao atualizar a exigência da Política Comercial.");
+    } finally {
+      setPolicyFlagSaving(false);
+    }
+  };
+
   const handlePasswordChangeRequired = async (required: boolean) => {
     if (!selectedId || authUser?.role !== "SUPER_ADMIN") return;
     setPasswordFlagSaving(true);
@@ -1280,6 +1301,33 @@ export const AdminUsersModule: React.FC = () => {
                         </span>
                         {passwordFlagError ? (
                           <span className="mt-1 block font-medium text-red-700">{passwordFlagError}</span>
+                        ) : null}
+                      </span>
+                    </label>
+                  ) : null}
+                  {authUser?.role === "SUPER_ADMIN" && selectedListUser ? (
+                    <label
+                      className="mb-3 flex items-start gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2"
+                      data-testid="user-commercial-policy-required"
+                    >
+                      <input
+                        type="checkbox"
+                        className="mt-0.5"
+                        checked={selectedListUser.role === "SELLER" || selectedListUser.mustAcceptCommercialPolicy === true}
+                        disabled={policyFlagSaving || selectedListUser.role === "SELLER"}
+                        onChange={(e) => void handleCommercialPolicyRequired(e.target.checked)}
+                      />
+                      <span className="text-[11px] leading-relaxed">
+                        <span className="font-semibold text-foreground">
+                          Exigir leitura e aceite da Política Comercial
+                        </span>
+                        <span className="mt-0.5 block text-muted-foreground">
+                          {selectedListUser.role === "SELLER"
+                            ? "Vendedor é sempre obrigado: ao entrar, precisa ler e aceitar a versão vigente antes de usar o sistema."
+                            : "A pessoa deverá ler e aceitar a versão vigente da Política Comercial antes de voltar a usar o sistema, e a cada nova versão publicada. Vale para qualquer perfil."}
+                        </span>
+                        {policyFlagError ? (
+                          <span className="mt-1 block font-medium text-red-700">{policyFlagError}</span>
                         ) : null}
                       </span>
                     </label>

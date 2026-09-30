@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import {
-  COMMERCIAL_POLICY_AUDIENCE,
+  isCommercialPolicyAudience,
   COMMERCIAL_POLICY_CHALLENGE_TTL_MS,
   COMMERCIAL_POLICY_PHOTO_REQUIRED,
   buildEvidenceHash,
@@ -48,6 +48,8 @@ export type PolicyActor = {
   role: string;
   isActive: boolean;
   mustChangePassword: boolean;
+  /** Marcação manual do SUPER_ADMIN: obrigado à política mesmo sem ser vendedor. */
+  mustAcceptCommercialPolicy?: boolean;
   externalSellerId: number | null;
   sessionId: string;
 };
@@ -142,10 +144,10 @@ export function versionAdminView(version: StoredVersion) {
 
 export async function sellerHasPendingPolicy(
   store: CommercialPolicyStore,
-  user: { id: string; role: string; isActive: boolean; mustChangePassword: boolean },
+  user: { id: string; role: string; isActive: boolean; mustChangePassword: boolean; mustAcceptCommercialPolicy?: boolean | null },
   now: Date
 ): Promise<boolean> {
-  if (user.role !== COMMERCIAL_POLICY_AUDIENCE || user.mustChangePassword || user.isActive === false) return false;
+  if (!isCommercialPolicyAudience(user) || user.mustChangePassword || user.isActive === false) return false;
   const current = await loadCurrent(store, now);
   if (current.conflict === true) return true;
   if (!current.version) return false;
@@ -357,7 +359,7 @@ export async function readPendingForSeller(
   if (actor.mustChangePassword) {
     return fail(403, "PASSWORD_CHANGE_REQUIRED", "Conclua a troca de senha antes da política.");
   }
-  if (actor.role !== COMMERCIAL_POLICY_AUDIENCE) {
+  if (!isCommercialPolicyAudience(actor)) {
     return fail(403, "NOT_REQUIRED", "Esta política não é obrigatória para o seu perfil.");
   }
   const resolved = await loadCurrent(store, now);
@@ -386,7 +388,7 @@ export async function recordKnowledgeAttempt(
   input: { policyVersionId: string; answers: SubmittedAnswer[] },
   now: Date
 ) {
-  if (actor.role !== COMMERCIAL_POLICY_AUDIENCE || actor.mustChangePassword) {
+  if (!isCommercialPolicyAudience(actor) || actor.mustChangePassword) {
     return fail(403, "FORBIDDEN", "O questionário só vale para o vendedor depois da senha pessoal.");
   }
   const resolved = await loadCurrent(store, now);
@@ -422,7 +424,7 @@ export async function createSignatureChallenge(
   input: { policyVersionId: string; password: string },
   deps: { now: Date; verifyPassword: (password: string, userId: string) => Promise<boolean> }
 ) {
-  if (actor.role !== COMMERCIAL_POLICY_AUDIENCE || actor.mustChangePassword) {
+  if (!isCommercialPolicyAudience(actor) || actor.mustChangePassword) {
     return fail(403, "FORBIDDEN", "Reautenticação indisponível neste estado.");
   }
   const resolved = await loadCurrent(store, deps.now);
@@ -498,7 +500,7 @@ export async function signCommercialPolicy(
   if (input.clientUserId && input.clientUserId !== actor.id) {
     return fail(403, "SIGNER_MISMATCH", "O signatário é o usuário autenticado.");
   }
-  if (actor.role !== COMMERCIAL_POLICY_AUDIENCE || actor.mustChangePassword || !actor.isActive) {
+  if (!isCommercialPolicyAudience(actor) || actor.mustChangePassword || !actor.isActive) {
     return fail(403, "FORBIDDEN", "O aceite não está disponível neste estado.");
   }
   const resolved = await loadCurrent(store, deps.now);
@@ -599,6 +601,31 @@ export async function invalidateCommercialPolicyAcceptance(
     createdAt: now,
   });
   return { ok: true as const, invalidationId: event.id, acceptanceId: acceptance.id };
+}
+
+/** Texto que o super administrador digita para zerar todos os aceites de uma vez. */
+export const RESET_ALL_ACCEPTANCES_CONFIRMATION = "ZERAR ACEITES";
+
+/**
+ * Zera aceites para a fase de testes do fluxo: o aceite e o material que o
+ * usuário produziu (tentativas, reautenticação, foto) são apagados e o
+ * vendedor volta a ser bloqueado até aceitar de novo. Diferente da
+ * invalidação, não preserva o aceite — quem chama registra a auditoria.
+ */
+export async function resetCommercialPolicyAcceptances(
+  store: CommercialPolicyStore,
+  input: { acceptanceId?: string; confirmation?: string; reason: string }
+) {
+  const reason = input.reason.trim();
+  if (!reason) return fail(422, "REASON_REQUIRED", "Informe o motivo para zerar o aceite.");
+  if (!input.acceptanceId && input.confirmation !== RESET_ALL_ACCEPTANCES_CONFIRMATION) {
+    return fail(422, "CONFIRMATION_REQUIRED", `Digite "${RESET_ALL_ACCEPTANCES_CONFIRMATION}" para zerar todos os aceites.`);
+  }
+  if (input.acceptanceId && !(await store.getAcceptance(input.acceptanceId))) {
+    return fail(404, "NOT_FOUND", "Aceite não encontrado.");
+  }
+  const removed = await store.resetAcceptances(input.acceptanceId ? { acceptanceId: input.acceptanceId } : {});
+  return { ok: true as const, reason, ...removed };
 }
 
 /** O rascunho pendente da próxima versão: único por política enquanto não for publicado ou cancelado. */

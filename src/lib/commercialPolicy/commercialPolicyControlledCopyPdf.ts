@@ -529,3 +529,172 @@ export function buildControlledCopyPdf(input: ControlledCopyPdfInput): Buffer {
 
   return assemblePdf(streams, `${input.code} v${input.versionLabel} — cópia controlada`);
 }
+
+// ── Certificado de aceite eletrônico ─────────────────────────────────────────
+
+export type AcceptanceCertificatePdfInput = {
+  acceptanceId: string;
+  company: string;
+  cnpj: string;
+  /** Código documental ("POL-COM-001"); nulo para versões sem código. */
+  code: string | null;
+  title: string;
+  versionLabel: string;
+  signerName: string;
+  signerEmail: string;
+  /** Perfil já em texto de leitura ("Vendedor(a)"). */
+  signerRole: string;
+  externalSellerId: number | null;
+  /** ISO do aceite (relógio do servidor). */
+  acceptedAt: string;
+  ipAddress: string | null;
+  challengeId: string;
+  declarations: string[];
+  policyHash: string;
+  normativeSnapshotHash?: string | null;
+  changeSetHash?: string | null;
+  photoHash: string;
+  evidenceHash: string;
+};
+
+function drawTextCenter(target: string[], center: number, y: number, text: string, font: Font, size: number, color = TEXT): void {
+  drawText(target, center - pdfTextWidth(text, font, size) / 2, y, text, font, size, color);
+}
+
+/** Círculo por quatro curvas de Bézier. */
+function circlePath(cx: number, cy: number, r: number): string {
+  const k = r * 0.5523;
+  return [
+    `${n(cx + r)} ${n(cy)} m`,
+    `${n(cx + r)} ${n(cy + k)} ${n(cx + k)} ${n(cy + r)} ${n(cx)} ${n(cy + r)} c`,
+    `${n(cx - k)} ${n(cy + r)} ${n(cx - r)} ${n(cy + k)} ${n(cx - r)} ${n(cy)} c`,
+    `${n(cx - r)} ${n(cy - k)} ${n(cx - k)} ${n(cy - r)} ${n(cx)} ${n(cy - r)} c`,
+    `${n(cx + k)} ${n(cy - r)} ${n(cx + r)} ${n(cy - k)} ${n(cx + r)} ${n(cy)} c`,
+  ].join(" ");
+}
+
+/**
+ * Comprovante de aceite em formato de certificado (A4): moldura, identificação
+ * do signatário, texto de certificação, quadro do aceite, declarações aceitas,
+ * assinatura eletrônica com selo e hashes de integridade. A fotografia do
+ * registro visual não é impressa.
+ */
+export function buildAcceptanceCertificatePdf(input: AcceptanceCertificatePdfInput): Buffer {
+  const CENTER = PAGE_W / 2;
+  const acceptedAt = formatDateTime(input.acceptedAt);
+  const acceptedDate = formatDate(input.acceptedAt, "—");
+  const documentId = [input.code, `Versão ${input.versionLabel}`].filter(Boolean).join(" · ");
+  const title = sanitize(input.title);
+
+  const flow = new Flow(640);
+  const first = flow.page;
+
+  // Cabeçalho do certificado.
+  drawTextCenter(first.fg, CENTER, 774, sanitize(input.company).toUpperCase(), "F2", 10, NAVY);
+  drawTextCenter(first.fg, CENTER, 762, `CNPJ ${input.cnpj}`, "F1", 8, MUTED);
+  drawTextCenter(first.fg, CENTER, 724, "CERTIFICADO DE ACEITE ELETRÔNICO", "F2", 21, NAVY);
+  drawLine(first.fg, CENTER - 110, 712, CENTER + 110, 712, RULE, 0.6);
+  drawLine(first.fg, CENTER - 32, 712, CENTER + 32, 712, AMBER, 2);
+  wrapPdfText(title, "F2", 11, WIDTH - 40)
+    .slice(0, 2)
+    .forEach((line, index) => drawTextCenter(first.fg, CENTER, 694 - index * 14, line, "F2", 11, TEXT));
+  drawTextCenter(first.fg, CENTER, 664, sanitize(documentId), "F1", 9, AMBER);
+
+  // Quem aceitou.
+  drawTextCenter(first.fg, CENTER, flow.y - 6, "Certificamos que", "F1", 10, MUTED);
+  flow.gap(34);
+  drawTextCenter(first.fg, CENTER, flow.y, fitText(sanitize(input.signerName), "F2", 19, WIDTH), "F2", 19, NAVY);
+  flow.gap(16);
+  const identity = [input.signerEmail, input.signerRole, input.externalSellerId ? `Nomus ${input.externalSellerId}` : null].filter(Boolean).join("  ·  ");
+  drawTextCenter(first.fg, CENTER, flow.y, fitText(sanitize(identity), "F1", 9, WIDTH), "F1", 9, MUTED);
+  flow.gap(18);
+  const statement = sanitize(
+    `leu o documento na íntegra, foi aprovado(a) no teste de compreensão e aceitou eletronicamente a ${input.title}${input.code ? ` (${input.code})` : ""}, versão ${input.versionLabel}, em ${acceptedAt}, com confirmação de identidade por senha e registro visual do ato.`
+  );
+  for (const line of wrapPdfText(statement, "F1", 10.5, WIDTH - 50)) {
+    flow.gap(15.5);
+    drawTextCenter(first.fg, CENTER, flow.y, line, "F1", 10.5);
+  }
+  flow.gap(10);
+
+  flow.label("Dados do aceite");
+  flow.table(
+    [
+      ["Número do aceite", input.acceptanceId],
+      ["Documento", [input.title, documentId].join(" — ")],
+      ["Signatário", `${input.signerName} (${input.signerEmail})`],
+      ["Data e hora do servidor", acceptedAt],
+      ["IP observado pelo servidor", input.ipAddress ?? "—"],
+      ["Teste de compreensão", "Aprovado"],
+      ["Confirmação de identidade", `Reautenticação por senha — ${input.challengeId}`],
+      ["Registro visual", "Realizado; imagem guardada em área restrita (não impressa neste certificado)"],
+    ],
+    { header: false, boldFirstColumn: true }
+  );
+
+  // Assinatura eletrônica e selo: bloco único, nunca partido entre páginas.
+  flow.ensure(172);
+  flow.gap(14);
+  const signY = flow.y - 42;
+  const page = flow.page;
+  drawLine(page.fg, LEFT, signY, LEFT + 270, signY, NAVY, 0.8);
+  drawText(page.fg, LEFT, signY + 6, fitText(sanitize(input.signerName), "F2", 11, 270), "F2", 11, NAVY);
+  drawText(page.fg, LEFT, signY - 11, "Assinado eletronicamente no IndusCost", "F1", 8, MUTED);
+  drawText(page.fg, LEFT, signY - 21, sanitize(`em ${acceptedAt}`), "F1", 8, MUTED);
+  const sealX = RIGHT - 58;
+  const sealY = signY - 2;
+  page.fg.push(`${AMBER} RG 1.6 w ${circlePath(sealX, sealY, 46)} S`);
+  page.fg.push(`${AMBER} RG 0.6 w ${circlePath(sealX, sealY, 41)} S`);
+  drawTextCenter(page.fg, sealX, sealY + 15, "ACEITE", "F2", 10, AMBER);
+  drawTextCenter(page.fg, sealX, sealY + 3, "REGISTRADO", "F2", 10, AMBER);
+  drawLine(page.fg, sealX - 24, sealY - 4, sealX + 24, sealY - 4, AMBER, 0.5);
+  drawTextCenter(page.fg, sealX, sealY - 15, acceptedDate, "F1", 8.5, AMBER);
+  drawTextCenter(page.fg, sealX, sealY - 25, "IndusCost", "F1", 7, AMBER);
+  flow.y = signY - 38;
+
+  // Integridade: hashes que amarram este certificado ao documento e à evidência.
+  const hashes: Array<[string, string]> = [
+    ["SHA-256 do documento aceito", input.policyHash],
+    ...(input.normativeSnapshotHash ? [["SHA-256 do snapshot normativo", input.normativeSnapshotHash] as [string, string]] : []),
+    ...(input.changeSetHash ? [["SHA-256 do changeset", input.changeSetHash] as [string, string]] : []),
+    ["SHA-256 do registro visual", input.photoHash],
+    ["SHA-256 do pacote de evidências", input.evidenceHash],
+  ];
+  flow.label("Integridade");
+  flow.gap(3);
+  for (const [name, value] of hashes) {
+    flow.gap(10);
+    drawText(flow.page.fg, LEFT, flow.y, name, "F2", 7, MUTED);
+    drawText(flow.page.fg, LEFT + 150, flow.y, fitText(value || "—", "F1", 7, WIDTH - 150), "F1", 7, TEXT);
+  }
+
+  // Declarações: depois do corpo do certificado, seguem para a página seguinte se não couberem.
+  if (input.declarations.length) {
+    flow.gap(8);
+    flow.ensure(60);
+    flow.label("Declarações aceitas pelo signatário");
+    flow.gap(4);
+    for (const line of input.declarations) flow.bullet(line);
+  }
+
+  const pages = flow.pages;
+  const streams = pages.map((item, index) => {
+    const chrome: string[] = [];
+    // Moldura dupla em todas as páginas.
+    chrome.push(`${NAVY} RG 1.4 w 26 26 ${n(PAGE_W - 52)} ${n(PAGE_H - 52)} re S`);
+    chrome.push(`${AMBER} RG 0.5 w 31 31 ${n(PAGE_W - 62)} ${n(PAGE_H - 62)} re S`);
+    if (index > 0) {
+      drawText(chrome, LEFT, 796, "CERTIFICADO DE ACEITE ELETRÔNICO", "F2", 8, NAVY);
+      drawTextRight(chrome, RIGHT, 796, fitText(sanitize(documentId), "F1", 8, 220), "F1", 8, MUTED);
+      drawLine(chrome, LEFT, 788, RIGHT, 788, RULE, 0.6);
+    }
+    drawLine(chrome, LEFT, 74, RIGHT, 74, RULE, 0.6);
+    drawText(chrome, LEFT, 63, "DOCUMENTO CONTROLADO  ·  USO INTERNO E RESTRITO", "F2", 6.5, NAVY);
+    drawText(chrome, LEFT, 53, fitText(sanitize(`Certificado do aceite ${input.acceptanceId}, emitido pelo IndusCost a partir do registro eletrônico do aceite.`), "F1", 7, WIDTH), "F1", 7, MUTED);
+    drawText(chrome, LEFT, 43, "A autenticidade é conferida pelo número do aceite e pelos hashes de integridade.", "F1", 7, MUTED);
+    drawTextRight(chrome, RIGHT, 63, `Página ${index + 1} de ${pages.length}`, "F1", 8, NAVY);
+    return [...item.bg, ...chrome, ...item.fg].join("\n");
+  });
+
+  return assemblePdf(streams, `Certificado de aceite ${input.acceptanceId}`);
+}

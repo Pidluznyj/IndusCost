@@ -6,6 +6,14 @@ import { createHash } from "node:crypto";
 
 export const COMMERCIAL_POLICY_TYPE = "COMMERCIAL_POLICY";
 export const COMMERCIAL_POLICY_AUDIENCE = "SELLER";
+
+/**
+ * Quem é obrigado a ler e aceitar a Política Comercial: todo vendedor, pelo
+ * perfil, e qualquer pessoa que o SUPER_ADMIN marcar no cadastro do usuário.
+ */
+export function isCommercialPolicyAudience(user: { role: string; mustAcceptCommercialPolicy?: boolean | null }): boolean {
+  return user.role === COMMERCIAL_POLICY_AUDIENCE || user.mustAcceptCommercialPolicy === true;
+}
 export const POLICY_ACCEPTANCE_REQUIRED_CODE = "POLICY_ACCEPTANCE_REQUIRED";
 export const COMMERCIAL_POLICY_CHALLENGE_TTL_MS = 5 * 60 * 1000;
 export const COMMERCIAL_POLICY_PHOTO_MAX_BYTES = 2 * 1024 * 1024;

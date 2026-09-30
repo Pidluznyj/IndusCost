@@ -43,10 +43,13 @@ export type AuthUser = {
   /** Credencial temporária pendente de troca (autoridade é o backend). */
   mustChangePassword: boolean;
   /**
-   * SELLER com Política Comercial vigente ainda não aceita.
+   * Usuário obrigado à Política Comercial (vendedor ou marcado pelo
+   * SUPER_ADMIN) com versão vigente ainda não aceita.
    * Ausente em respostas antigas. A senha obrigatória continua na frente.
    */
   commercialPolicyAcceptanceRequired?: boolean;
+  /** Marcação manual do SUPER_ADMIN: esta pessoa deve ler e aceitar a Política Comercial. */
+  mustAcceptCommercialPolicy?: boolean;
   /** `null` = usuário anterior à feature; a data histórica é desconhecida. */
   passwordChangedAt: string | null;
   createdAt: string;

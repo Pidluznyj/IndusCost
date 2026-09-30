@@ -62,7 +62,7 @@ type VersionView = {
   whatChanged: string[];
   normativeSnapshot?: unknown;
   changeSet?: PolicyChange[];
-  approver?: { name: string; role: string } | null;
+  approver?: { name: string; role: string; jobTitle?: string | null } | null;
   commissionMatrix?: PolicyCommissionMatrix | null;
 };
 
@@ -108,6 +108,9 @@ type Acceptance = {
 
 type Coverage = { required: number; signed: number; pending: number; percent: number };
 
+/** Mesma frase exigida pelo servidor (RESET_ALL_ACCEPTANCES_CONFIRMATION) para zerar todos os aceites. */
+const RESET_ALL_CONFIRMATION = "ZERAR ACEITES";
+
 type PreviewDoc = {
   chapters: PolicyChapter[] | null;
   title: string;
@@ -115,7 +118,7 @@ type PreviewDoc = {
   /** Nulos enquanto a versão não for publicada: o documento mostra "definida na publicação". */
   effectiveFrom: string | null;
   publishedAt: string | null;
-  approver: { name: string; role: string } | null;
+  approver: { name: string; role: string; jobTitle?: string | null } | null;
   /** Matriz do Anexo I: a congelada na versão ou, antes de publicar, a atual da Formação de Preço. */
   commissionMatrix: PolicyCommissionMatrix | null;
   origin: string;
@@ -356,6 +359,10 @@ export const CommercialPolicyAdminPanel: React.FC = () => {
   const [divergencesOpen, setDivergencesOpen] = useState(false);
   const [confirmPublish, setConfirmPublish] = useState<{ kind: "official" } | { kind: "version"; id: string; label: string } | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
+  /** Aceite a zerar ("ALL" = todos); o motivo é obrigatório e vai para o log de segurança. */
+  const [resetTarget, setResetTarget] = useState<Acceptance | "ALL" | null>(null);
+  const [resetReason, setResetReason] = useState("");
+  const [resetConfirmation, setResetConfirmation] = useState("");
   const [busy, setBusy] = useState(false);
 
   const reload = useCallback(async () => {
@@ -450,6 +457,37 @@ export const CommercialPolicyAdminPanel: React.FC = () => {
       setNotice({ tone: "ok", text: `Rascunho criado a partir do documento oficial (versão ${result.data.version.label}). Edite, salve e visualize antes de publicar.` });
       return { ok: true };
     });
+
+  const resetAcceptances = (target: Acceptance | null) => {
+    setResetReason("");
+    setResetConfirmation("");
+    setResetTarget(target ?? "ALL");
+  };
+
+  const confirmResetAcceptances = () => {
+    const target = resetTarget;
+    if (!target) return;
+    void run("Zerar aceites", async () => {
+      const result = await api<{ removedAcceptances: number }>(
+        target === "ALL" ? "/api/admin/commercial-policy/acceptances/reset" : `/api/admin/commercial-policy/acceptances/${target.id}/reset`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ reason: resetReason, confirmation: resetConfirmation }),
+        }
+      );
+      if (!result.ok) return result;
+      setResetTarget(null);
+      setNotice({
+        tone: "ok",
+        text:
+          target === "ALL"
+            ? `${result.data.removedAcceptances} aceite(s) zerado(s). Os vendedores voltam a ser obrigados a ler e aceitar no próximo acesso.`
+            : `Aceite de ${target.userNameSnapshot} zerado. A política volta a ser exigida no próximo acesso.`,
+      });
+      return { ok: true };
+    });
+  };
 
   const createBlank = () =>
     void run("Novo rascunho", async () => {
@@ -874,15 +912,75 @@ export const CommercialPolicyAdminPanel: React.FC = () => {
       ) : null}
 
       <section className="rounded-xl border border-border bg-card p-4" aria-label="Aceites">
-        <h3 className="text-sm font-bold">Aceites registrados</h3>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h3 className="text-sm font-bold">Aceites registrados</h3>
+          {acceptances.length > 0 ? (
+            <button
+              type="button"
+              disabled={busy}
+              className="rounded-lg border border-red-300 px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-50 disabled:opacity-50"
+              onClick={() => void resetAcceptances(null)}
+            >
+              Zerar todos os aceites
+            </button>
+          ) : null}
+        </div>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Fase de testes: zerar apaga o aceite (com teste, confirmação de senha e foto) e o vendedor volta a ser obrigado a ler e aceitar no próximo acesso. A ação
+          fica registrada no log de segurança e não pode ser desfeita.
+        </p>
+        {resetTarget ? (
+          <div className="mt-3 rounded-lg border border-red-300 bg-red-50 p-3 text-xs text-red-950" role="alertdialog" aria-label="Zerar aceites" data-testid="policy-reset-acceptances">
+            <p className="font-semibold">
+              {resetTarget === "ALL" ? `Zerar todos os ${acceptances.length} aceite(s)?` : `Zerar o aceite de ${resetTarget.userNameSnapshot}?`}
+            </p>
+            <p className="mt-1">O aceite, o teste, a confirmação de senha e a foto são apagados. Não há como desfazer.</p>
+            <label className="mt-3 block font-semibold" htmlFor="policy-reset-reason">Motivo</label>
+            <input
+              id="policy-reset-reason"
+              value={resetReason}
+              onChange={(event) => setResetReason(event.target.value)}
+              placeholder="Ex.: teste do fluxo de aceite"
+              className="mt-1 w-full max-w-md rounded-lg border border-red-300 bg-white px-2 py-1.5"
+            />
+            {resetTarget === "ALL" ? (
+              <>
+                <label className="mt-3 block font-semibold" htmlFor="policy-reset-confirmation">Digite {RESET_ALL_CONFIRMATION} para confirmar</label>
+                <input
+                  id="policy-reset-confirmation"
+                  value={resetConfirmation}
+                  onChange={(event) => setResetConfirmation(event.target.value)}
+                  className="mt-1 w-full max-w-md rounded-lg border border-red-300 bg-white px-2 py-1.5"
+                />
+              </>
+            ) : null}
+            <div className="mt-3 flex gap-2">
+              <button
+                type="button"
+                disabled={busy || !resetReason.trim() || (resetTarget === "ALL" && resetConfirmation !== RESET_ALL_CONFIRMATION)}
+                className="rounded-lg bg-red-700 px-3 py-2 font-semibold text-white disabled:opacity-50"
+                onClick={confirmResetAcceptances}
+              >
+                Zerar agora
+              </button>
+              <button type="button" className="rounded-lg border border-border bg-white px-3 py-2 font-semibold text-foreground" onClick={() => setResetTarget(null)}>
+                Cancelar
+              </button>
+            </div>
+          </div>
+        ) : null}
         <ul className="mt-2 space-y-1 text-xs">
           {acceptances.length === 0 ? <li className="text-muted-foreground">Nenhum aceite registrado.</li> : null}
           {acceptances.map((row) => (
             <li key={row.id} className="break-all">
               {row.userNameSnapshot}{row.userEmailSnapshot ? ` · ${row.userEmailSnapshot}` : ""} · {when(row.acceptedAt)} · versão {rows.find((version) => version.id === row.policyVersionId)?.label ?? "—"} · {row.id} · evidência {short(row.evidenceHash)}
               {" "}
-              <button type="button" className="font-semibold text-primary" onClick={() => void downloadAuthenticatedFile(`/api/commercial-policy/acceptances/${row.id}/receipt`, `aceite-${row.id}.pdf`)}>
-                comprovante
+              <button type="button" className="font-semibold text-primary" onClick={() => void downloadAuthenticatedFile(`/api/commercial-policy/acceptances/${row.id}/receipt`, `certificado-de-aceite-${row.id}.pdf`)}>
+                certificado
+              </button>
+              {" · "}
+              <button type="button" disabled={busy} className="font-semibold text-red-700 disabled:opacity-50" onClick={() => void resetAcceptances(row)}>
+                zerar aceite
               </button>
             </li>
           ))}

@@ -107,6 +107,8 @@ export function toSafeAppUser(
     lastLoginAt: user.lastLoginAt?.toISOString() ?? null,
     mustChangePassword:
       (user as AppUser & { mustChangePassword?: boolean }).mustChangePassword === true,
+    mustAcceptCommercialPolicy:
+      (user as AppUser & { mustAcceptCommercialPolicy?: boolean }).mustAcceptCommercialPolicy === true,
     passwordChangedAt:
       (user as AppUser & { passwordChangedAt?: Date | null }).passwordChangedAt?.toISOString() ??
       null,
