@@ -1,14 +1,29 @@
 import type { NormalizedSourceBatch } from "../../legalExposureContracts.js";
 import { LEGAL_EXPOSURE_ENV, type LegalExposureEnv } from "../../legalExposureFeatureFlags.js";
 import { legalExposureFetch } from "../../legalExposureHttp.js";
-import type { DjenSearchQuery } from "./djenContracts.js";
+import { DJEN_EMPTY_QUERY_MESSAGE, hasDjenSearchFilter, type DjenSearchQuery } from "./djenContracts.js";
 import { mapDjenPublications } from "./djenMapper.js";
+
+function emptyQueryBatch(): NormalizedSourceBatch {
+  return {
+    source: "DJEN",
+    outcome: "CONFIGURATION_ERROR",
+    errorCode: "CONFIGURATION_ERROR",
+    errorMessageSanitized: DJEN_EMPTY_QUERY_MESSAGE,
+    retryAfterSeconds: null,
+    externalCall: false,
+    cases: [],
+    communications: [],
+    candidates: [],
+  };
+}
 
 export async function searchDjen(input: {
   env: LegalExposureEnv;
   fetchImpl: typeof fetch;
   query: DjenSearchQuery;
 }): Promise<NormalizedSourceBatch> {
+  if (!hasDjenSearchFilter(input.query)) return emptyQueryBatch();
   const base = input.env[LEGAL_EXPOSURE_ENV.djenBaseUrl]?.trim().replace(/\/$/, "") ?? "";
   if (!base) {
     return {
