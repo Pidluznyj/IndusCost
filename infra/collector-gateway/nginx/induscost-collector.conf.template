@@ -1,0 +1,51 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# IndusCost — gateway HTTPS privado do Stock Collector
+# Gerado por scripts/install-collector-gateway.sh a partir de
+# infra/collector-gateway/nginx/induscost-collector.conf.template
+# Ambiente: __COLLECTOR_ENV__ — não edite no host; edite o template e reinstale.
+#
+#   DEVICE (tailnet)
+#     → https://__COLLECTOR_TAILSCALE_HOSTNAME__ (TLS aqui, certificado Tailscale)
+#     → bind EXCLUSIVO no IP Tailscale __COLLECTOR_TAILSCALE_IP__:__COLLECTOR_HTTPS_PORT__
+#     → http://127.0.0.1:__COLLECTOR_APP_PORT__ (IndusCost neste host)
+#
+# O bind no IP Tailscale é o que garante que este gateway não existe fora do
+# tailnet. Por isso o Nginx só pode subir DEPOIS de o tailscaled entregar o
+# endereço — é o drop-in do systemd (induscost-tailscale.conf) que garante isso.
+# ─────────────────────────────────────────────────────────────────────────────
+
+server {
+    # SOMENTE o IP Tailscale. Nunca 0.0.0.0 / [::] — nem "para facilitar o boot".
+    listen __COLLECTOR_TAILSCALE_IP__:__COLLECTOR_HTTPS_PORT__ ssl;
+    server_name __COLLECTOR_TAILSCALE_HOSTNAME__;
+
+    ssl_certificate     __COLLECTOR_TLS_DIR__/__COLLECTOR_TAILSCALE_HOSTNAME__.crt;
+    ssl_certificate_key __COLLECTOR_TLS_DIR__/__COLLECTOR_TAILSCALE_HOSTNAME__.key;
+
+    ssl_protocols TLSv1.2 TLSv1.3;
+
+    # Só peers do tailnet (CGNAT do Tailscale). Segunda barreira além do bind.
+    allow 100.64.0.0/10;
+    deny all;
+
+    location / {
+        proxy_pass http://127.0.0.1:__COLLECTOR_APP_PORT__;
+        proxy_http_version 1.1;
+
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Forwarded-Port __COLLECTOR_HTTPS_PORT__;
+
+        # IDENTIDADE DO DEVICE: sempre SOBRESCRITO com o peer real da conexão
+        # TLS. proxy_set_header substitui qualquer valor enviado pelo cliente —
+        # o cliente nunca escolhe. Não remover nem alterar sem análise
+        # (docs/stock-collector-secure-ingress.md).
+        proxy_set_header X-IndusCost-Tailscale-Peer $remote_addr;
+
+        # Headers "públicos" apagados: nada vindo do cliente vira identidade.
+        proxy_set_header X-Forwarded-For "";
+        proxy_set_header X-Real-IP "";
+        proxy_set_header CF-Connecting-IP "";
+    }
+}
