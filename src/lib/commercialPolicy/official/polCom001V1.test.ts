@@ -7,7 +7,7 @@ import {
   sellerHasPendingPolicy,
 } from "../commercialPolicyService.js";
 import { createPolicyDraft } from "../commercialPolicyService.js";
-import { buildControlledPolicyPdf } from "../commercialPolicyPdf.js";
+import { buildControlledCopyPdf } from "../commercialPolicyControlledCopyPdf.js";
 import { scoreQuestionnaire, toPublicQuestions } from "../commercialPolicyRules.js";
 import {
   POL_COM_001_QUESTIONS,
@@ -112,8 +112,19 @@ describe("POL-COM-001 conteúdo oficial", () => {
   });
 
   it("a cópia controlada identifica o destinatário e a restrição", () => {
-    const pdf = buildControlledPolicyPdf({
-      lines: ["POL-COM-001", "USO INTERNO E RESTRITO"],
+    const pdf = buildControlledCopyPdf({
+      content: "# 1. OBJETIVO\nTexto da política.",
+      title: "POLÍTICA COMERCIAL E DE COMISSIONAMENTO",
+      versionLabel: "1.0",
+      code: "POL-COM-001",
+      company: "Koppetel Comercio de Plásticos LTDA",
+      cnpj: "14.055.501/0001-80",
+      classification: "POLÍTICA OFICIAL — USO INTERNO E RESTRITO",
+      contentHash: "abc",
+      effectiveFrom: null,
+      publishedAt: null,
+      summaryRules: [],
+      notice: ["CONFIDENCIALIDADE E RESTRIÇÃO DE USO", "A posse desta cópia não implica autorização para divulgação."],
       copyId: "copy-1",
       recipientName: "Ana Vendedora",
       recipientEmail: "ana@koppetel.com",
@@ -123,10 +134,15 @@ describe("POL-COM-001 conteúdo oficial", () => {
     assert.equal(pdf.subarray(0, 5).toString(), "%PDF-");
     assert.match(latin, /POL-COM-001/);
     assert.match(latin, /USO INTERNO/);
-    assert.match(latin, /COPIA CONTROLADA/);
-    assert.match(latin, /NAO DISTRIBUIR/);
-    assert.match(latin, /ana@koppetel.com/);
-    assert.match(latin, /copy-1/);
-    assert.match(latin, /KOPPETEL \/ LAZARIOS/);
+    assert.ok(latin.includes("C\\323PIA CONTROLADA"));
+    assert.ok(latin.includes("N\\303O DISTRIBUIR"));
+    assert.ok(latin.includes("Koppetel Comercio de Pl\\341sticos LTDA"));
+    // Quem gerou aparece no quadro da capa, no rodapé e na marca d'água (atrás do texto).
+    const footer = "C\\363pia emitida para Ana Vendedora \\(ana@koppetel.com\\) em 28/09/2026 12:00";
+    assert.ok(latin.includes(footer));
+    assert.ok(latin.includes("C\\363digo da c\\363pia: copy-1"));
+    const watermarkAt = latin.indexOf("Ana Vendedora  \\267  ana@koppetel.com");
+    assert.ok(watermarkAt >= 0);
+    assert.ok(watermarkAt < latin.indexOf(footer), "a marca d'água é pintada antes do texto");
   });
 });

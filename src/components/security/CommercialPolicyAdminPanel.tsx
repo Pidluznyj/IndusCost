@@ -197,7 +197,7 @@ const VersionSummary: React.FC<{ version: VersionView; title: string; extra?: Re
 );
 
 /** "O que falta para publicar": cada bloqueio com quem resolve, onde e como. */
-const PublicationGuide: React.FC<{ findings: Finding[]; status: Integrity["publicationStatus"]; onOpenEditor: () => void; onOpenDivergences: () => void; compact?: boolean }> = ({ findings, status, onOpenEditor, onOpenDivergences, compact }) => {
+const PublicationGuide: React.FC<{ findings: Finding[]; status: Integrity["publicationStatus"]; onOpenEditor: () => void; onOpenDivergences: () => void; compact?: boolean; /** Coluna única, para o painel lateral estreito da prévia. */ stacked?: boolean }> = ({ findings, status, onOpenEditor, onOpenDivergences, compact, stacked }) => {
   const blockers = findings.filter((item) => item.severity === "BLOCKING");
   const warnings = findings.filter((item) => item.severity === "WARNING");
   if (status === "PUBLISHED") {
@@ -239,7 +239,7 @@ const PublicationGuide: React.FC<{ findings: Finding[]; status: Integrity["publi
               <Badge className={ownerClass(finding.resolution?.owner)}>Quem resolve: {finding.resolution?.owner ?? "DECISÃO"}</Badge>
               <code className="ml-auto text-[10px] text-muted-foreground">{finding.code}</code>
             </div>
-            <dl className="mt-2 grid gap-2 sm:grid-cols-2">
+            <dl className={`mt-2 grid gap-2 ${stacked ? "" : "sm:grid-cols-2"}`}>
               <div className="rounded-md bg-amber-50 p-2">
                 <dt className="text-[10px] font-bold uppercase tracking-wide text-amber-800">O documento diz</dt>
                 <dd className="mt-0.5 leading-relaxed">{finding.document}</dd>
@@ -264,7 +264,19 @@ const PublicationGuide: React.FC<{ findings: Finding[]; status: Integrity["publi
           </li>
         ))}
       </ol>
-      {warnings.length ? (
+      {warnings.length && stacked ? (
+        <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-slate-800">
+          <p className="font-bold text-amber-900">Alertas — não bloqueiam a publicação</p>
+          <ul className="mt-1 space-y-1.5">
+            {warnings.map((item) => (
+              <li key={item.code}>
+                <code className="text-[10px] text-muted-foreground">{item.code}</code>
+                <span className="block leading-relaxed">{item.resolution?.steps[0] ?? item.action}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : warnings.length ? (
         <p className="mt-3 text-slate-700">
           Alertas (não bloqueiam): {warnings.map((item) => `${item.code} — ${item.resolution?.steps[0] ?? item.action}`).join(" · ")}
         </p>
@@ -291,6 +303,7 @@ export const CommercialPolicyAdminPanel: React.FC = () => {
   const [previewDoc, setPreviewDoc] = useState<PreviewDoc | null>(null);
   const [previewView, setPreviewView] = useState<"admin" | "seller">("admin");
   const [sellerFinishNotice, setSellerFinishNotice] = useState(false);
+  const [previewPendingOpen, setPreviewPendingOpen] = useState(false);
   const [divergencesOpen, setDivergencesOpen] = useState(false);
   const [confirmPublish, setConfirmPublish] = useState<{ kind: "official" } | { kind: "version"; id: string; label: string } | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -436,9 +449,13 @@ export const CommercialPolicyAdminPanel: React.FC = () => {
       version ? `POL-COM-001-v${version.label}-copia-controlada.pdf` : "POL-COM-001-v1.0-copia-controlada.pdf"
     ).catch((error: unknown) => setNotice({ tone: "error", text: error instanceof Error ? error.message : "Não foi possível gerar a cópia controlada." }));
 
+  const previewBlockerCount =
+    integrity && integrity.publicationStatus !== "PUBLISHED" ? integrity.findings.filter((item) => item.severity === "BLOCKING").length : 0;
+
   const openOfficialPreview = () => {
     setPreviewDoc({ chapters: null, title: doc?.title ?? "", label: doc?.versionLabel ?? "1.0", effectiveFrom: published?.effectiveFrom ?? null, origin: "documento oficial" });
     setPreviewView("admin");
+    setPreviewPendingOpen(false);
   };
   const openVersionPreview = (version: VersionView) => {
     setPreviewDoc({ chapters: parsePolicyChapters(version.content), title: version.title, label: version.label, effectiveFrom: version.effectiveFrom, origin: `versão ${version.label} (${STATUS_LABEL[version.status] ?? version.status})` });
@@ -811,28 +828,29 @@ export const CommercialPolicyAdminPanel: React.FC = () => {
                 <button type="button" role="tab" aria-selected={previewView === "admin"} className={`rounded-md px-3 py-1.5 ${previewView === "admin" ? "bg-slate-100 text-slate-900" : "text-slate-200 hover:bg-slate-800"}`} onClick={() => setPreviewView("admin")}>Visão do administrador</button>
                 <button type="button" role="tab" aria-selected={previewView === "seller"} className={`rounded-md px-3 py-1.5 ${previewView === "seller" ? "bg-slate-100 text-slate-900" : "text-slate-200 hover:bg-slate-800"}`} onClick={() => setPreviewView("seller")}>Como o vendedor verá</button>
               </div>
+              {previewView === "admin" && integrity ? (
+                <button
+                  type="button"
+                  aria-expanded={previewPendingOpen}
+                  aria-controls="policy-preview-pending"
+                  className={`inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs font-semibold ${previewPendingOpen ? "border-slate-100 bg-slate-100 text-slate-900" : "border-slate-600 text-slate-100 hover:bg-slate-800"}`}
+                  onClick={() => setPreviewPendingOpen((open) => !open)}
+                >
+                  {previewBlockerCount > 0 ? "Pendências para publicar" : "Situação da publicação"}
+                  {previewBlockerCount > 0 ? (
+                    <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-red-600 px-1.5 text-[11px] font-bold text-white">{previewBlockerCount}</span>
+                  ) : null}
+                </button>
+              ) : null}
               <button type="button" className="rounded-lg border border-slate-600 px-3 py-1.5 text-xs font-semibold text-slate-100 hover:bg-slate-800" onClick={() => generatePdf()}>Gerar PDF / cópia controlada</button>
               <button type="button" className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-900" onClick={() => setPreviewDoc(null)}>Fechar prévia</button>
             </div>
           </div>
-          <div className="min-h-0 flex-1 overflow-hidden p-2 sm:p-4">
-            <div className="mx-auto flex h-full w-full max-w-7xl min-h-0 flex-col overflow-hidden rounded-xl border border-slate-700 bg-background shadow-2xl">
+          {/* Tela cheia: o documento ocupa tudo; as pendências ficam num painel lateral que abre sob demanda. */}
+          <div className="relative flex min-h-0 flex-1 bg-background">
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col">
               {previewView === "admin" ? (
-                <>
-                  <div className="max-h-[40vh] overflow-auto border-b border-border bg-muted/40 px-4 py-3 text-xs">
-                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-                      <span className="font-semibold">Prévia administrativa</span>
-                      <span className="text-muted-foreground">Não gera aceite, não registra leitura e não publica. Use "Como o vendedor verá" para simular o fluxo de aceite.</span>
-                      <span className="text-muted-foreground">SHA-256 {short(doc?.contentHash)}</span>
-                    </div>
-                    {integrity ? (
-                      <div className="mt-2">
-                        <PublicationGuide findings={integrity.findings} status={integrity.publicationStatus} onOpenEditor={() => { setPreviewDoc(null); scrollToEditor(); }} onOpenDivergences={() => { setPreviewDoc(null); setDivergencesOpen(true); }} />
-                      </div>
-                    ) : null}
-                  </div>
-                  <CommercialPolicyReader mode="preview" chapters={previewDoc.chapters ?? undefined} title={previewDoc.title} versionLabel={previewDoc.label} effectiveFrom={previewDoc.effectiveFrom} onGeneratePdf={() => generatePdf()} />
-                </>
+                <CommercialPolicyReader fluid mode="preview" chapters={previewDoc.chapters ?? undefined} title={previewDoc.title} versionLabel={previewDoc.label} effectiveFrom={previewDoc.effectiveFrom} onGeneratePdf={() => generatePdf()} />
               ) : (
                 <>
                   <div className="border-b border-border bg-sky-50 px-4 py-2 text-xs text-sky-950">
@@ -856,10 +874,29 @@ export const CommercialPolicyAdminPanel: React.FC = () => {
                       <button type="button" className="font-semibold underline" onClick={() => setSellerFinishNotice(false)}>Entendi</button>
                     </div>
                   ) : null}
-                  <CommercialPolicyReader mode="acceptance" chapters={previewDoc.chapters ?? undefined} title={previewDoc.title} versionLabel={previewDoc.label} effectiveFrom={previewDoc.effectiveFrom} onGeneratePdf={() => generatePdf()} onFinish={() => setSellerFinishNotice(true)} />
+                  <CommercialPolicyReader fluid mode="acceptance" chapters={previewDoc.chapters ?? undefined} title={previewDoc.title} versionLabel={previewDoc.label} effectiveFrom={previewDoc.effectiveFrom} onGeneratePdf={() => generatePdf()} onFinish={() => setSellerFinishNotice(true)} />
                 </>
               )}
             </div>
+            {previewView === "admin" && integrity && previewPendingOpen ? (
+              <aside
+                id="policy-preview-pending"
+                aria-label="Pendências para publicar"
+                className="absolute inset-y-0 right-0 z-10 flex w-full max-w-md flex-col border-l border-border bg-card shadow-2xl xl:static xl:w-[30rem] xl:max-w-none xl:shadow-none"
+              >
+                <div className="flex items-start justify-between gap-3 border-b border-border px-4 py-3">
+                  <div className="min-w-0 text-xs">
+                    <p className="text-sm font-bold">{previewBlockerCount > 0 ? "Pendências para publicar" : "Situação da publicação"}</p>
+                    <p className="mt-0.5 text-muted-foreground">Esta prévia não gera aceite, não registra leitura e não publica.</p>
+                    <p className="text-muted-foreground">SHA-256 {short(doc?.contentHash)}</p>
+                  </div>
+                  <button type="button" className="shrink-0 rounded-md border border-border px-2 py-1 text-xs font-semibold hover:bg-muted" onClick={() => setPreviewPendingOpen(false)}>Fechar painel</button>
+                </div>
+                <div className="min-h-0 flex-1 overflow-auto p-3">
+                  <PublicationGuide stacked findings={integrity.findings} status={integrity.publicationStatus} onOpenEditor={() => { setPreviewDoc(null); scrollToEditor(); }} onOpenDivergences={() => { setPreviewDoc(null); setDivergencesOpen(true); }} />
+                </div>
+              </aside>
+            ) : null}
           </div>
         </div>
       ) : null}

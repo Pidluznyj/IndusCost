@@ -44,7 +44,7 @@ const WINANSI: Record<string, string> = {
   "€": "\\200",
 };
 
-function escapePdfText(line: string): string {
+export function escapePdfText(line: string): string {
   let out = "";
   for (const char of line) {
     if (char === "\\") out += "\\\\";
@@ -130,90 +130,6 @@ export function buildTextPdf(input: string[]): Buffer {
     objects[pageId] =
       `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents ${contentId} 0 R /Resources << /Font << /F1 ${fontId} 0 R >> >> >>`;
   }
-  return finishPdf(objects, pageIds, fontId, nextId);
-}
-
-export type ControlledCopyHeader = {
-  company: string;
-  title: string;
-  code: string;
-  versionLabel: string;
-  classification: string;
-};
-
-export const CONTROLLED_COPY_DEFAULT_HEADER: ControlledCopyHeader = {
-  company: "KOPPETEL / LAZARIOS",
-  title: "POLÍTICA COMERCIAL E DE COMISSIONAMENTO",
-  code: "POL-COM-001",
-  versionLabel: "1.0",
-  classification: "DOCUMENTO CONTROLADO  ·  USO INTERNO E RESTRITO",
-};
-
-/**
- * Cópia controlada: marca d'água, cabeçalho com código/versão/classificação,
- * rodapé com paginação, destinatário e código da cópia em todas as páginas.
- * O texto entra integral (com quebra de linha por largura), nunca truncado.
- */
-export function buildControlledPolicyPdf(input: {
-  lines: string[];
-  copyId: string;
-  recipientName: string;
-  recipientEmail: string;
-  generatedAt: string;
-  header?: Partial<ControlledCopyHeader>;
-  /** Marca adicional no rodapé, ex.: "PRÉVIA — VERSÃO NÃO PUBLICADA". */
-  stamp?: string | null;
-}): Buffer {
-  const header = { ...CONTROLLED_COPY_DEFAULT_HEADER, ...(input.header ?? {}) };
-  const lines = wrapPdfLines(input.lines, 108);
-  const chunkSize = 48;
-  const chunks: string[][] = [];
-  for (let i = 0; i < lines.length; i += chunkSize) chunks.push(lines.slice(i, i + chunkSize));
-  if (chunks.length === 0) chunks.push(["(vazio)"]);
-  const pageCount = chunks.length;
-  const fontId = 3;
-  const objects: string[] = [];
-  const pageIds: number[] = [];
-  let nextId = 4;
-  chunks.forEach((chunk, index) => {
-    const contentId = nextId++;
-    const pageId = nextId++;
-    pageIds.push(pageId);
-    const pageNumber = index + 1;
-    const commands = [
-      "q",
-      "0.86 g",
-      "BT /F1 28 Tf 0.70 0.70 -0.70 0.70 78 300 Tm (USO INTERNO) Tj ET",
-      "BT /F1 14 Tf 0.70 0.70 -0.70 0.70 108 250 Tm (COPIA CONTROLADA) Tj ET",
-      "BT /F1 14 Tf 0.70 0.70 -0.70 0.70 128 214 Tm (NAO DISTRIBUIR) Tj ET",
-      "Q",
-      "0 g",
-      "BT /F1 8 Tf 40 812 Td 11 TL",
-      `(${escapePdfText(header.company)}) Tj T*`,
-      `(${escapePdfText(header.title)}) Tj T*`,
-      `(${escapePdfText(`${header.code}  VERSÃO ${header.versionLabel}`)}) Tj T*`,
-      `(${escapePdfText(header.classification)}) Tj T*`,
-      "ET",
-      "BT /F1 8 Tf 40 762 Td 11 TL",
-    ];
-    for (const line of chunk) commands.push(`(${escapePdfText(line)}) Tj`, "T*");
-    commands.push(
-      "ET",
-      "BT /F1 7 Tf 40 78 Td 9 TL",
-      `(${escapePdfText(input.stamp ? `${input.stamp}  ·  USO INTERNO E RESTRITO` : "USO INTERNO E RESTRITO")}) Tj T*`,
-      `(${escapePdfText("Proibida divulgação ou reprodução não autorizada")}) Tj T*`,
-      `(${escapePdfText(`Página ${pageNumber} de ${pageCount}`)}) Tj T*`,
-      `(${escapePdfText(`Gerado para: ${input.recipientName}`)}) Tj T*`,
-      `(${escapePdfText(`Usuário: ${input.recipientEmail}`)}) Tj T*`,
-      `(${escapePdfText(`Gerado em: ${input.generatedAt}`)}) Tj T*`,
-      `(${escapePdfText(`Código da cópia: ${input.copyId}`)}) Tj T*`,
-      "ET"
-    );
-    const stream = commands.join("\n");
-    objects[contentId] = `<< /Length ${Buffer.byteLength(stream)} >>\nstream\n${stream}\nendstream`;
-    objects[pageId] =
-      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents ${contentId} 0 R /Resources << /Font << /F1 ${fontId} 0 R >> >> >>`;
-  });
   return finishPdf(objects, pageIds, fontId, nextId);
 }
 
