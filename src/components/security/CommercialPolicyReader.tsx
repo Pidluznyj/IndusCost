@@ -114,7 +114,10 @@ export const CommercialPolicyReader: React.FC<{
   chapters?: OfficialPolicyChapter[];
   onGeneratePdf: () => void;
   onFinish?: () => void;
-}> = ({ effectiveFrom, initialChapterId, mode = "acceptance", versionLabel = POL_COM_001_VERSION_LABEL, title: titleProp, chapters: chaptersProp, onGeneratePdf, onFinish }) => {
+  /** Ocupa toda a largura do contêiner (prévia em tela cheia) em vez da moldura de 80rem. */
+  fluid?: boolean;
+}> = ({ effectiveFrom, initialChapterId, mode = "acceptance", versionLabel = POL_COM_001_VERSION_LABEL, title: titleProp, chapters: chaptersProp, onGeneratePdf, onFinish, fluid = false }) => {
+  const frame = fluid ? "max-w-none" : "max-w-7xl";
   const documentTitle = titleProp ? titleCase(titleProp) : "Política Comercial e de Comissionamento";
   const chapters = chaptersProp ?? POL_COM_001_CHAPTERS;
   const start = chapters.find((chapter) => chapter.id === initialChapterId)?.id ?? chapters[0]?.id ?? "capa";
@@ -243,7 +246,7 @@ export const CommercialPolicyReader: React.FC<{
     <div className="flex min-h-0 flex-1 flex-col bg-slate-100">
       {/* Cabeçalho: identificação do documento controlado + busca. */}
       <header className="border-b border-slate-200 bg-white px-4 py-3 sm:px-6">
-        <div className="mx-auto flex max-w-7xl flex-wrap items-start justify-between gap-3">
+        <div className={`mx-auto flex ${frame} flex-wrap items-start justify-between gap-3`}>
           <div className="flex min-w-0 items-start gap-3">
             <div className="hidden shrink-0 rounded-md border-2 border-amber-600 px-2 py-1 text-center sm:block" aria-hidden="true">
               <p className="text-[9px] font-black uppercase leading-tight tracking-widest text-amber-700">Documento<br />controlado</p>
@@ -264,7 +267,7 @@ export const CommercialPolicyReader: React.FC<{
             </button>
           </div>
         </div>
-        <div className="mx-auto mt-3 flex max-w-7xl flex-wrap items-center gap-3">
+        <div className={`mx-auto mt-3 flex ${frame} flex-wrap items-center gap-3`}>
           <label className="sr-only" htmlFor="policy-search">Buscar na política</label>
           <input
             id="policy-search"
@@ -281,7 +284,7 @@ export const CommercialPolicyReader: React.FC<{
           </p>
         </div>
         {hits.length > 0 ? (
-          <ul className="mx-auto mt-2 max-h-40 max-w-7xl space-y-1 overflow-auto rounded-lg border border-slate-200 bg-white p-2 text-xs shadow-sm">
+          <ul className={`mx-auto mt-2 max-h-40 ${frame} space-y-1 overflow-auto rounded-lg border border-slate-200 bg-white p-2 text-xs shadow-sm`}>
             {hits.map((hit, hitIndex) => (
               <li key={`${hit.chapterId}-${hitIndex}`}>
                 <button type="button" className="w-full rounded px-2 py-1 text-left hover:bg-slate-50" onClick={() => openChapter(hit.chapterId)}>
@@ -294,7 +297,7 @@ export const CommercialPolicyReader: React.FC<{
         ) : null}
       </header>
 
-      <div className="mx-auto flex min-h-0 w-full max-w-7xl flex-1">
+      <div className={`mx-auto flex min-h-0 w-full ${frame} flex-1`}>
         {/* Índice: escuro, com progresso e capítulos lidos marcados; rola sozinho. */}
         <aside className={`${indexOpen ? "block" : "hidden"} min-h-0 w-full bg-slate-900 text-slate-200 md:block md:w-80 md:shrink-0 md:overflow-y-auto`}>
           <nav aria-label="Capítulos da política" className="max-h-[70vh] overflow-auto p-4 md:max-h-none md:overflow-visible">
@@ -323,7 +326,7 @@ export const CommercialPolicyReader: React.FC<{
         {/* Coluna de leitura: folha branca com medida de texto confortável. */}
         <main id="policy-chapter" tabIndex={-1} className="min-w-0 flex-1 overflow-auto bg-slate-100 px-3 py-4 outline-none sm:px-6 sm:py-6">
           {cover ? (
-            <div className="mx-auto max-w-4xl space-y-5">
+            <div className={`mx-auto ${fluid ? "max-w-5xl" : "max-w-4xl"} space-y-5`}>
               <section className="overflow-hidden rounded-2xl bg-slate-900 text-slate-50 shadow-xl">
                 <div className="border-b border-slate-700/60 px-6 py-4 sm:px-10">
                   <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-300">
@@ -402,7 +405,7 @@ export const CommercialPolicyReader: React.FC<{
               ) : null}
             </div>
           ) : (
-            <article className="mx-auto max-w-3xl rounded-2xl border border-slate-200 bg-white px-5 py-7 shadow-sm sm:px-10 sm:py-10">
+            <article className={`mx-auto ${fluid ? "max-w-4xl" : "max-w-3xl"} rounded-2xl border border-slate-200 bg-white px-5 py-7 shadow-sm sm:px-10 sm:py-10`}>
               <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-amber-700">
                 {meta.short}{meta.short ? " · " : ""}{POL_COM_001_CODE} v{versionLabel}
               </p>
@@ -445,7 +448,7 @@ export const CommercialPolicyReader: React.FC<{
 
       {/* Rodapé: navegação e conclusão. */}
       <footer className="border-t border-slate-200 bg-white px-4 py-3 sm:px-6">
-        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3">
+        <div className={`mx-auto flex ${frame} flex-wrap items-center justify-between gap-3`}>
           <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Uso interno e restrito · documento controlado</p>
           <div className="flex items-center gap-2">
             <button type="button" className="rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-800 hover:bg-slate-50 disabled:opacity-40" disabled={index <= 0} onClick={() => openChapter(chapters[index - 1].id)}>

@@ -40,7 +40,8 @@ import {
   type PrePublishFinding,
 } from "./commercialPolicyNormative.js";
 import { registerCommercialPolicyRoutes, resolvePublicationStatus } from "./commercialPolicyRoutes.js";
-import { buildControlledPolicyPdf, policyDocumentLines, wrapPdfLines } from "./commercialPolicyPdf.js";
+import { policyDocumentLines, wrapPdfLines } from "./commercialPolicyPdf.js";
+import { buildControlledCopyPdf } from "./commercialPolicyControlledCopyPdf.js";
 import { hashPolicyContent } from "./commercialPolicyRules.js";
 import {
   POL_COM_001_CLASSIFICATION,
@@ -413,16 +414,16 @@ describe("POL-COM-001 v1.0 — prévia e cópia controlada antes da publicação
       const latin = bytes.toString("latin1");
       assert.equal(bytes.subarray(0, 5).toString(), "%PDF-");
       // O texto entra em WinAnsi com escapes octais (\303 = Ã, \343 = ã, \341 = á, \227 = —).
-      assert.match(latin, /POL-COM-001  VERS\\303O 1\.0/);
+      assert.match(latin, /POL-COM-001 \\267 VERS\\303O 1\.0/);
       assert.match(latin, /PR\\311VIA \\227 VERS\\303O AINDA N\\303O PUBLICADA/);
       assert.match(latin, /14\.055\.501\/0001-80/);
       assert.match(latin, /Koppetel Comercio de Pl\\341sticos LTDA/);
       assert.match(latin, /USO INTERNO E RESTRITO/);
-      assert.match(latin, /COPIA CONTROLADA/);
+      assert.match(latin, /C\\323PIA CONTROLADA/);
       assert.match(latin, /P\\341gina 1 de \d+/);
       assert.match(latin, /super@koppetel\.com/);
       // Linhas quebradas por largura são reunidas para conferir o teor do Anexo III.
-      const joined = latin.replace(/\) Tj\nT\*\n\(/g, " ");
+      const joined = [...latin.matchAll(/\(((?:[^()\\]|\\.)*)\) Tj/g)].map((match) => match[1]).join(" ");
       assert.match(joined, /c\\363digo POL-COM-001, vers\\343o 1\.0, vigente a partir de/);
       assert.doesNotMatch(joined, /vers\\343o 2\.0/);
       current = { ...superAdmin(), role: "SELLER", id: "seller-1" };
@@ -459,13 +460,43 @@ describe("POL-COM-001 v1.0 — prévia e cópia controlada antes da publicação
     const wrapped = wrapPdfLines(lines, 108);
     assert.ok(wrapped.every((line) => line.length <= 108));
     assert.equal(wrapped.join(" ").includes("utilizar comissão adquirida como penalidade disciplinar"), true);
-    const pdf = buildControlledPolicyPdf({ lines, copyId: "copy-1", recipientName: "Super", recipientEmail: "super@koppetel.com", generatedAt: NOW.toISOString(), header: { versionLabel: "1.0" } });
+    const pdf = buildControlledCopyPdf({
+      content: body.content,
+      title: body.title,
+      versionLabel: "1.0",
+      code: POL_COM_001_CODE,
+      company: POL_COM_001_COMPANY,
+      cnpj: POL_COM_001_CNPJ,
+      classification: POL_COM_001_CLASSIFICATION,
+      contentHash: officialCommercialPolicyHash(),
+      effectiveFrom: null,
+      publishedAt: null,
+      summaryRules: body.summaryRules,
+      notice: ["CONFIDENCIALIDADE E RESTRIÇÃO DE USO"],
+      copyId: "copy-1",
+      recipientName: "Super",
+      recipientEmail: "super@koppetel.com",
+      generatedAt: NOW.toISOString(),
+    });
     const latin = pdf.toString("latin1");
     const pages = latin.match(/\/Type \/Page\b/g)?.length ?? 0;
     assert.ok(pages >= 10, String(pages));
     assert.match(latin, new RegExp(`P\\\\341gina ${pages} de ${pages}`));
     assert.match(latin, /\\227/);
-    assert.doesNotMatch(latin, /\(\?\) Tj/);
+    assert.ok(latin.includes("POL-COM-001 \\267 Vers\\343o 1.0"));
+    assert.ok(latin.includes("CNPJ 14.055.501/0001-80"));
+    assert.ok(latin.includes("USO INTERNO E RESTRITO"));
+    // Texto integral: toda palavra do documento oficial está impressa, e nenhuma virou "?".
+    const printed = [...latin.matchAll(/\(((?:[^()\\]|\\.)*)\) Tj/g)]
+      .map((match) =>
+        match[1]
+          .replace(/\\(\d{3})/g, (_m, octal: string) => ({ 0o222: "’", 0o227: "—" })[parseInt(octal, 8)] ?? String.fromCharCode(parseInt(octal, 8)))
+          .replace(/\\([()\\])/g, "$1")
+      );
+    assert.equal(printed.some((text) => text.includes("?")), false);
+    const words = new Set(printed.flatMap((text) => text.split(/\s+/)));
+    const missing = officialPolicyPlainText().split(/\s+/).filter((word) => word && !/^_+$/.test(word) && !words.has(word));
+    assert.deepEqual(missing.slice(0, 5), []);
   });
 });
 

@@ -14,10 +14,9 @@ import { prisma } from "@/src/lib/prisma.js";
 import { loadCommissionSettings } from "@/src/lib/commissions/commission-settings.server.js";
 import {
   acceptanceReceiptLines,
-  buildControlledPolicyPdf,
   buildTextPdf,
-  policyDocumentLines,
 } from "./commercialPolicyPdf.js";
+import { buildControlledCopyPdf } from "./commercialPolicyControlledCopyPdf.js";
 import { createPrismaCommercialPolicyStore } from "./commercialPolicyPrismaStore.js";
 import {
   auditPolCom001Publication,
@@ -72,6 +71,15 @@ const CONTROLLED_COPY_NOTICE = [
   "A posse desta cópia não implica autorização para divulgação.",
   "A versão eletrônica vigente mantida no IndusCost constitui a referência oficial para consulta da política.",
 ];
+
+/** Identificação fixa do documento impressa em toda cópia controlada. */
+const CONTROLLED_COPY_IDENTITY = {
+  code: POL_COM_001_CODE,
+  company: POL_COM_001_COMPANY,
+  cnpj: POL_COM_001_CNPJ,
+  classification: POL_COM_001_CLASSIFICATION,
+  notice: CONTROLLED_COPY_NOTICE,
+};
 
 export type PublicationStatus = "NOT_PUBLISHED" | "AWAITING_COMPATIBILIZATION" | "READY_FOR_PUBLICATION" | "PUBLISHED";
 
@@ -164,35 +172,6 @@ export function registerCommercialPolicyRoutes(app: express.Express, deps: Comme
     } catch {
       return { snapshot: null, settingsSource: "DATABASE_UNAVAILABLE" };
     }
-  }
-
-  function controlledCopyLines(version: {
-    title: string;
-    label: string;
-    contentHash: string;
-    effectiveFrom: string | null;
-    publishedAt: string | null;
-    content: string;
-    summaryRules: string[];
-  }): string[] {
-    return [
-      ...CONTROLLED_COPY_NOTICE,
-      `${POL_COM_001_CODE} · versão ${version.label} · ${POL_COM_001_CLASSIFICATION}`,
-      "",
-      ...policyDocumentLines({
-        title: version.title,
-        versionLabel: version.label,
-        code: POL_COM_001_CODE,
-        company: POL_COM_001_COMPANY,
-        cnpj: POL_COM_001_CNPJ,
-        classification: POL_COM_001_CLASSIFICATION,
-        contentHash: version.contentHash,
-        effectiveFrom: version.effectiveFrom,
-        publishedAt: version.publishedAt,
-        content: version.content,
-        summaryRules: version.summaryRules,
-      }),
-    ];
   }
 
   function sendControlledCopy(res: express.Response, pdf: Buffer, copyId: string): express.Response {
@@ -407,15 +386,6 @@ export function registerCommercialPolicyRoutes(app: express.Express, deps: Comme
     const generatedAt = now();
     const copyId = randomUUID();
     const label = versionLabelOf(version);
-    const lines = controlledCopyLines({
-      title: version.title,
-      label,
-      contentHash: version.contentHash,
-      effectiveFrom: version.effectiveFrom.toISOString(),
-      publishedAt: version.publishedAt?.toISOString() ?? null,
-      content: version.content,
-      summaryRules: version.summaryRules,
-    });
     const copyDigest = sha256Hex(
       `${copyId}|${version.contentHash}|${user.id}|${generatedAt.toISOString()}|${user.email}`
     );
@@ -441,13 +411,19 @@ export function registerCommercialPolicyRoutes(app: express.Express, deps: Comme
     } catch (error) {
       console.error("[commercial-policy-copy-audit]", error);
     }
-    const pdf = buildControlledPolicyPdf({
-      lines,
+    const pdf = buildControlledCopyPdf({
+      ...CONTROLLED_COPY_IDENTITY,
+      content: version.content,
+      title: version.title,
+      versionLabel: label,
+      contentHash: version.contentHash,
+      effectiveFrom: version.effectiveFrom.toISOString(),
+      publishedAt: version.publishedAt?.toISOString() ?? null,
+      summaryRules: version.summaryRules,
       copyId,
       recipientName: user.name,
       recipientEmail: user.email,
       generatedAt: generatedAt.toISOString(),
-      header: { versionLabel: label, title: version.title },
     });
     return sendControlledCopy(res, pdf, copyId);
   });
@@ -466,15 +442,6 @@ export function registerCommercialPolicyRoutes(app: express.Express, deps: Comme
     const published = versions.find((row) => row.status === "PUBLISHED" && row.contentHash === hash) ?? null;
     const generatedAt = now();
     const copyId = randomUUID();
-    const lines = controlledCopyLines({
-      title: body.title,
-      label: POL_COM_001_VERSION_LABEL,
-      contentHash: hash,
-      effectiveFrom: published?.effectiveFrom.toISOString() ?? null,
-      publishedAt: published?.publishedAt?.toISOString() ?? null,
-      content: body.content,
-      summaryRules: body.summaryRules,
-    });
     try {
       await writeSecurityAuditLog(prisma, {
         eventType: SECURITY_AUDIT_EVENTS.COMMERCIAL_POLICY_CONTROLLED_COPY,
@@ -493,13 +460,19 @@ export function registerCommercialPolicyRoutes(app: express.Express, deps: Comme
     } catch (error) {
       console.error("[commercial-policy-copy-audit]", error);
     }
-    const pdf = buildControlledPolicyPdf({
-      lines,
+    const pdf = buildControlledCopyPdf({
+      ...CONTROLLED_COPY_IDENTITY,
+      content: body.content,
+      title: POL_COM_001_TITLE,
+      versionLabel: POL_COM_001_VERSION_LABEL,
+      contentHash: hash,
+      effectiveFrom: published?.effectiveFrom.toISOString() ?? null,
+      publishedAt: published?.publishedAt?.toISOString() ?? null,
+      summaryRules: body.summaryRules,
       copyId,
       recipientName: user.name,
       recipientEmail: user.email,
       generatedAt: generatedAt.toISOString(),
-      header: { versionLabel: POL_COM_001_VERSION_LABEL, title: POL_COM_001_TITLE },
       stamp: published ? null : "PRÉVIA — VERSÃO AINDA NÃO PUBLICADA",
     });
     return sendControlledCopy(res, pdf, copyId);
