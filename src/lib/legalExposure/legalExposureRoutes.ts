@@ -48,6 +48,16 @@ function queryOf(req: express.Request) {
     to: text("to"),
     verification: text("verification"),
     enrichment: text("enrichment"),
+    stage: text("stage"),
+    className: text("className"),
+    multipleGroup: text("multipleGroup"),
+    hasHearing: text("hasHearing"),
+    hasRequiredAction: text("hasRequiredAction"),
+    filedFrom: text("filedFrom"),
+    filedTo: text("filedTo"),
+    claimMin: text("claimMin"),
+    claimMax: text("claimMax"),
+    timelineKind: text("timelineKind"),
     page: q.page,
     pageSize: q.pageSize,
   };
@@ -177,6 +187,37 @@ export function registerLegalExposureRoutes(
   app.get("/api/legal-exposure/cases/:id/timeline", auth, view, async (req, res) => {
     try {
       res.json(await service.timeline(String(req.params.id), queryOf(req), await userId(req)));
+    } catch (error) {
+      sendError(res, error);
+    }
+  });
+
+  app.post("/api/legal-exposure/cases/:id/refresh", auth, sync, async (req, res) => {
+    try {
+      res.json(await service.refreshCase(String(req.params.id), await userId(req)));
+    } catch (error) {
+      sendError(res, error);
+    }
+  });
+
+  app.get("/api/legal-exposure/cases/:id/pdf", auth, view, async (req, res) => {
+    try {
+      const pdf = await service.processPdf(String(req.params.id), await userId(req));
+      res.setHeader("content-type", "application/pdf");
+      res.setHeader("content-disposition", `attachment; filename="${pdf.filename}"`);
+      res.send(pdf.buffer);
+    } catch (error) {
+      sendError(res, error);
+    }
+  });
+
+  app.get("/api/legal-exposure/reports/group.pdf", auth, view, async (req, res) => {
+    try {
+      const entityId = typeof req.query.entityId === "string" ? req.query.entityId : null;
+      const pdf = await service.groupPdf(entityId, await userId(req));
+      res.setHeader("content-type", "application/pdf");
+      res.setHeader("content-disposition", `attachment; filename="${pdf.filename}"`);
+      res.send(pdf.buffer);
     } catch (error) {
       sendError(res, error);
     }

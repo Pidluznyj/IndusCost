@@ -8,9 +8,12 @@
  */
 
 import type {
+  LegalCasePole,
   NormalizedCaseObservation,
   NormalizedMovement,
+  NormalizedParty,
   NormalizedSourceBatch,
+  NormalizedSubject,
 } from "../../legalExposureContracts.js";
 import { sanitizePayload } from "../../legalExposureNormalization.js";
 
@@ -100,6 +103,99 @@ function movementsFrom(source: Record<string, unknown>): NormalizedMovement[] {
   return out;
 }
 
+function subjectsFrom(source: Record<string, unknown>): NormalizedSubject[] {
+  const raw = source.assuntos;
+  if (!Array.isArray(raw)) return [];
+  const out: NormalizedSubject[] = [];
+  for (const [index, item] of raw.entries()) {
+    const row = asRecord(item);
+    const name = row ? text(row.nome) ?? text(row.descricao) : text(item);
+    if (!name) continue;
+    out.push({
+      code: row ? text(row.codigo) : null,
+      name,
+      fullPath: row ? text(row.hierarquia) ?? text(row.caminhoCompleto) : null,
+      isMain: Boolean(row?.principal) || index === 0,
+    });
+  }
+  return out;
+}
+
+function poleFrom(value: unknown): LegalCasePole {
+  const folded = String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase();
+  if (folded.includes("ATIVO") || folded === "AT" || folded.includes("AUTHOR") || folded.includes("POLO ATIVO")) {
+    return "ACTIVE";
+  }
+  if (folded.includes("PASSIVO") || folded === "PA" || folded.includes("REU") || folded.includes("POLO PASSIVO")) {
+    return "PASSIVE";
+  }
+  if (folded.includes("TERCEIR")) return "THIRD_PARTY";
+  return "UNKNOWN";
+}
+
+function partiesFrom(source: Record<string, unknown>): NormalizedParty[] {
+  const buckets = [source.polos, source.partes, source.pessoas];
+  const out: NormalizedParty[] = [];
+  for (const bucket of buckets) {
+    if (!Array.isArray(bucket)) continue;
+    for (const item of bucket) {
+      const row = asRecord(item);
+      if (!row) continue;
+      const name = text(row.nome) ?? text(row.nomePessoa) ?? text(row.razaoSocial);
+      if (!name) continue;
+      const document = text(row.numeroDocumentoPrincipal) ?? text(row.documento) ?? text(row.cnpj) ?? text(row.cpf);
+      out.push({
+        name,
+        document,
+        partyType: text(row.tipo) ?? text(row.tipoParte) ?? text(row.papel),
+        personType: document && document.replace(/\D/g, "").length === 14 ? "COMPANY" : document && document.replace(/\D/g, "").length === 11 ? "PERSON" : "UNKNOWN",
+        pole: poleFrom(row.polo ?? row.poloProcessual ?? row.tipoPolo),
+      });
+    }
+  }
+  return out;
+}
+
+function systemNameFrom(source: Record<string, unknown>): string | null {
+  const sistema = asRecord(source.sistema);
+  return text(sistema?.nome) ?? text(source.sistema) ?? text(source.nomeSistema);
+}
+
+function currentStatusFrom(source: Record<string, unknown>): string | null {
+  const situacao = asRecord(source.situacao);
+  return (
+    text(situacao?.nome) ??
+    text(source.situacao) ??
+    text(source.descricaoSituacao) ??
+    text(asRecord(source.movimentoAtual)?.nome)
+  );
+}
+
+function secrecyFrom(source: Record<string, unknown>): boolean | null {
+  const nivel = asRecord(source.nivelSigilo) ?? asRecord(source.sigilo);
+  if (typeof source.nivelSigilo === "number") return source.nivelSigilo > 0;
+  if (typeof source.sigilo === "boolean") return source.sigilo;
+  const nome = text(nivel?.nome) ?? text(source.nivelSigilo);
+  if (!nome) return null;
+  const folded = nome.toUpperCase();
+  if (folded.includes("PUBLIC")) return false;
+  if (folded.includes("SIGIL") || folded.includes("SEGREDO")) return true;
+  return null;
+}
+
+function archivedAtFrom(source: Record<string, unknown>, movements: NormalizedMovement[]): string | null {
+  const direct =
+    normalizeDatajudDateTime(source.dataBaixa) ??
+    normalizeDatajudDateTime(source.dataArquivamento) ??
+    normalizeDatajudDateTime(asRecord(source.baixa)?.data);
+  if (direct) return direct;
+  const archival = movements.find((row) => /arquiv|baixa|extint/i.test(row.name));
+  return archival?.occurredAt ?? null;
+}
+
 export function mapDatajudSearch(body: unknown): NormalizedSourceBatch {
   const root = asRecord(body);
   const hitsWrap = asRecord(root?.hits);
@@ -139,6 +235,8 @@ export function mapDatajudSearch(body: unknown): NormalizedSourceBatch {
     if (!processNumber) continue;
     const datajudId = text(source.id) ?? processNumber;
     const tribunal = text(source.tribunal) ?? text(source.siglaTribunal);
+    const movements = movementsFrom(source);
+    const parties = partiesFrom(source);
     cases.push({
       processNumber,
       tribunal,
@@ -148,15 +246,21 @@ export function mapDatajudSearch(body: unknown): NormalizedSourceBatch {
       classCode: text(asRecord(source.classe)?.codigo),
       className: text(asRecord(source.classe)?.nome),
       filedAt: normalizeDatajudDateTime(source.dataAjuizamento),
-      currentStatus: null,
+      currentStatus: currentStatusFrom(source),
       entityPole: "UNKNOWN",
       sourceIdentifier: datajudId,
       sourceUpdatedAt: normalizeDatajudDateTime(source.dataHoraUltimaAtualizacao),
       explicitCnpj: null,
       candidateName: null,
       officialIdentifier: datajudId,
-      parties: [],
-      movements: movementsFrom(source),
+      parties,
+      movements,
+      subjects: subjectsFrom(source),
+      systemName: systemNameFrom(source),
+      area: text(source.formato) ?? text(asRecord(source.formato)?.nome),
+      archivedAt: archivedAtFrom(source, movements),
+      secrecy: secrecyFrom(source),
+      priority: text(asRecord(source.prioridade)?.nome) ?? text(source.prioridade),
       rawMetadata: sanitizePayload(source),
     });
   }

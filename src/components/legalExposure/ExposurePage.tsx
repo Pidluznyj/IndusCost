@@ -65,6 +65,7 @@ import {
   type ExposureTimelineItem,
 } from "./ExposureFeed";
 import { formatExposureDateTime } from "@/src/lib/legalExposure/legalExposureCaseListUi";
+import { ExposureCaseDossier } from "./ExposureCaseDossier";
 
 type TabId =
   | "overview"
@@ -95,7 +96,8 @@ type Dashboard = {
     newsToday: number;
   };
   emptyState: string | null;
-  absenceIsNotClearance: string;
+    absenceIsNotClearance: string;
+    multipleGroupNote?: string;
   sources: {
     source: string;
     label: string;
@@ -141,6 +143,8 @@ export function ExposurePage() {
   const [selectedCase, setSelectedCase] = useState<string | null>(null);
   const [timeline, setTimeline] = useState<{ items: ExposureTimelineItem[]; case: ExposureTimelineCase | null } | null>(null);
   const [feed, setFeed] = useState<{ items: ExposureEventItem[] } | null>(null);
+  const [dossier, setDossier] = useState<React.ComponentProps<typeof ExposureCaseDossier>["dossier"] | null>(null);
+  const [refreshingCase, setRefreshingCase] = useState(false);
   const [certificates, setCertificates] = useState<ExposureCertificateItem[] | null>(null);
   const [entities, setEntities] = useState<MonitoredEntity[]>([]);
   const [groupCompanies, setGroupCompanies] = useState<ExposureGroupCompany[]>([]);
@@ -214,6 +218,10 @@ export function ExposurePage() {
     if (filters.verification) params.set("verification", filters.verification);
     if (filters.enrichment) params.set("enrichment", filters.enrichment);
     if (filters.pole) params.set("pole", filters.pole);
+    if (filters.stage) params.set("stage", filters.stage);
+    if (filters.hasHearing) params.set("hasHearing", filters.hasHearing);
+    if (filters.hasRequiredAction) params.set("hasRequiredAction", filters.hasRequiredAction);
+    if (filters.multipleGroup) params.set("multipleGroup", filters.multipleGroup);
     return `/api/legal-exposure/cases?${params.toString()}`;
   }
 
@@ -400,6 +408,12 @@ export function ExposurePage() {
     }
   }
 
+  async function openDossier(caseId: string) {
+    setSelectedCase(caseId);
+    const data = await fetchJsonOk<NonNullable<typeof dossier>>(`/api/legal-exposure/cases/${caseId}`);
+    setDossier(data);
+  }
+
   async function openTimeline(caseId: string) {
     setSelectedCase(caseId);
     setTab("timeline");
@@ -440,8 +454,18 @@ export function ExposurePage() {
             <Card label="Novidades hoje" value={dashboard.cards.newsToday} />
           </div>
           <p className="text-sm text-muted-foreground">{dashboard.absenceIsNotClearance}</p>
+          {dashboard.multipleGroupNote ? <p className="text-xs text-muted-foreground">{dashboard.multipleGroupNote}</p> : null}
           {entities.length > 0 && dashboard.emptyState ? <p className="text-sm font-medium">{dashboard.emptyState}</p> : null}
           {notice ? <p className="text-sm text-emerald-800">{notice}</p> : null}
+          <button
+            type="button"
+            className="rounded-lg border border-border px-3 py-1.5 text-sm"
+            onClick={() => {
+              window.open("/api/legal-exposure/reports/group.pdf", "_blank");
+            }}
+          >
+            Gerar relatório PDF
+          </button>
           <SourceGrid sources={dashboard.sources} certificates={dashboard.certificates} />
           <section className="space-y-3">
             <div className="flex items-center justify-between gap-3">
@@ -521,7 +545,7 @@ export function ExposurePage() {
           alerts={alerts?.items ?? null}
           canManage={companyActions.showEdit}
           busy={saving}
-          onOpenCase={(caseId) => void openTimeline(caseId)}
+          onOpenCase={(caseId) => void openDossier(caseId)}
           onAcknowledge={(alertId) => void updateAlert(alertId, "acknowledge")}
           onResolve={(alertId) => void updateAlert(alertId, "resolve")}
         />
@@ -546,12 +570,12 @@ export function ExposurePage() {
             setCaseFilters(next);
             void loadCases(next);
           }}
-          onOpenCase={(caseId) => void openTimeline(caseId)}
+          onOpenCase={(caseId) => void openDossier(caseId)}
         />
       )}
 
       {tab === "communications" && (
-        <ExposureCommunicationsTab communications={communications?.items ?? null} onOpenCase={(caseId) => void openTimeline(caseId)} />
+        <ExposureCommunicationsTab communications={communications?.items ?? null} onOpenCase={(caseId) => void openDossier(caseId)} />
       )}
 
       {tab === "timeline" && (
@@ -564,25 +588,43 @@ export function ExposurePage() {
         />
       )}
 
-      {tab === "certificates" ? <ExposureCertificatesTab certificates={certificates} entities={entities} /> : null}
+      {tab === "certificates" && dashboard ? (
+        <div className="space-y-4">
+          <ExposureCertificatesTab certificates={certificates} entities={entities} />
+          <CertificatesPanel
+            entities={entities}
+            note={dashboard.certificates.cndtNote || CNDT_DOES_NOT_MEAN_NO_CASES_COPY}
+            rows={(certificates ?? []).map((row) => ({
+              ...row,
+              registeredByUserId: null,
+              createdAt: row.issuedAt ?? "",
+            }))}
+            onReload={async () => {
+              const data = await fetchJsonOk<ExposureCertificateItem[]>("/api/legal-exposure/certificates");
+              setCertificates(data);
+            }}
+          />
+        </div>
+      ) : null}
 
       {tab === "sources" && dashboard ? <ExposureSourcesTab sources={dashboard.sources} /> : null}
 
       {tab === "settings" && dashboard ? (
         <div className="space-y-6">
-          <ul className="space-y-2 text-sm">
-            {dashboard.configuration.map((row) => (
-              <li key={row.source}>
-                <span className="font-medium">{SOURCE_LABELS[row.source as keyof typeof SOURCE_LABELS] ?? row.source}</span>:{" "}
-                {row.configured ? "configurada" : "não configurada"}
-                {row.enabled ? " · monitoramento ligado" : " · monitoramento desligado"}
-              </li>
-            ))}
-            <li className="text-muted-foreground">{LIKELY_REVIEW_COPY} permanece como revisão humana. Segredos não são exibidos.</li>
-          </ul>
+          <section className="space-y-3">
+            <h2 className="text-base font-semibold">Fontes</h2>
+            <ul className="space-y-2 text-sm">
+              {dashboard.configuration.map((row) => (
+                <li key={row.source}>
+                  {row.source}: {row.configured ? "configurado" : "não configurado"}
+                  {row.enabled ? "" : " · desligado"}
+                </li>
+              ))}
+            </ul>
+          </section>
           {companyActions.showEdit ? (
             <section className="space-y-4">
-              <h3 className="text-sm font-semibold">Aliases de descoberta DJEN</h3>
+              <h2 className="text-base font-semibold">Empresas monitoradas e aliases DJEN</h2>
               {aliasError ? <p className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{aliasError}</p> : null}
               {entities.map((entity) => {
                 const draft = aliasDrafts[entity.id] ?? { value: "", type: "OTHER" as LegalAliasType };
@@ -860,6 +902,31 @@ export function ExposurePage() {
           <p className="text-xs font-normal normal-case text-muted-foreground">{MONITOR_GLOBAL_NOTE}</p>
         </EntityDialog>
       ) : null}
+
+      {dossier ? (
+        <ExposureCaseDossier
+          dossier={dossier}
+          refreshing={refreshingCase}
+          onClose={() => {
+            setDossier(null);
+            setSelectedCase(null);
+          }}
+          onRefresh={async () => {
+            if (!selectedCase || refreshingCase) return;
+            setRefreshingCase(true);
+            try {
+              await fetchJsonOk(`/api/legal-exposure/cases/${selectedCase}/refresh`, { method: "POST" });
+              await openDossier(selectedCase);
+            } finally {
+              setRefreshingCase(false);
+            }
+          }}
+          onPdf={() => {
+            if (!selectedCase) return;
+            window.open(`/api/legal-exposure/cases/${selectedCase}/pdf`, "_blank");
+          }}
+        />
+      ) : null}
     </div>
   );
 }
@@ -940,6 +1007,128 @@ function Card({ label, value }: { label: string; value: number }) {
   );
 }
 
+function CertificatesPanel({
+  entities,
+  note,
+  rows,
+  onReload,
+}: {
+  entities: MonitoredEntity[];
+  note: string;
+  rows: Array<{
+    id: string;
+    entityId: string;
+    type: string;
+    tribunal: string | null;
+    result: string;
+    issuedAt: string | null;
+    validUntil: string | null;
+    verificationCode: string | null;
+    originalFileName: string | null;
+    notes: string | null;
+    registeredByUserId: string | null;
+    createdAt: string;
+  }>;
+  onReload: () => Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [entityId, setEntityId] = useState(entities[0]?.id ?? "");
+  const [type, setType] = useState("CNDT");
+  const [result, setResult] = useState("NEGATIVE");
+  const [tribunal, setTribunal] = useState("");
+  const [notes, setNotes] = useState("");
+  return (
+    <div className="space-y-3 text-sm">
+      <p>{note}</p>
+      <button type="button" className="rounded-lg bg-slate-900 px-3 py-1.5 text-sm font-semibold text-white" onClick={() => setOpen(true)}>
+        + Registrar certidão
+      </button>
+      <div className="overflow-x-auto rounded-xl border border-border">
+        <table className="min-w-full text-sm">
+          <thead className="bg-muted/40 text-left">
+            <tr>
+              <th className="px-3 py-2">Empresa</th>
+              <th className="px-3 py-2">Tipo</th>
+              <th className="px-3 py-2">Tribunal</th>
+              <th className="px-3 py-2">Resultado</th>
+              <th className="px-3 py-2">Emissão</th>
+              <th className="px-3 py-2">Validade</th>
+              <th className="px-3 py-2">Código</th>
+              <th className="px-3 py-2">Arquivo</th>
+              <th className="px-3 py-2">Observações</th>
+              <th className="px-3 py-2">Registrado por</th>
+              <th className="px-3 py-2">Cadastro</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.id} className="border-t border-border">
+                <td className="px-3 py-2">{entities.find((entity) => entity.id === row.entityId)?.legalName ?? row.entityId}</td>
+                <td className="px-3 py-2">{row.type}</td>
+                <td className="px-3 py-2">{row.tribunal ?? "—"}</td>
+                <td className="px-3 py-2">{row.result}</td>
+                <td className="px-3 py-2">{row.issuedAt ?? "—"}</td>
+                <td className="px-3 py-2">{row.validUntil ?? "—"}</td>
+                <td className="px-3 py-2">{row.verificationCode ?? "—"}</td>
+                <td className="px-3 py-2">{row.originalFileName ?? "—"}</td>
+                <td className="px-3 py-2">{row.notes ?? "—"}</td>
+                <td className="px-3 py-2">{row.registeredByUserId ?? "—"}</td>
+                <td className="px-3 py-2">{row.createdAt}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {open ? (
+        <div className="rounded-xl border border-border p-3 space-y-2">
+          <select className="rounded border px-2 py-1" value={entityId} onChange={(event) => setEntityId(event.target.value)}>
+            {entities.map((entity) => (
+              <option key={entity.id} value={entity.id}>{entity.legalName}</option>
+            ))}
+          </select>
+          <select className="rounded border px-2 py-1" value={type} onChange={(event) => setType(event.target.value)}>
+            <option value="CNDT">CNDT</option>
+            <option value="TRT_LABOR_CASES">Certidão TRT</option>
+            <option value="OTHER">Outra</option>
+          </select>
+          <select className="rounded border px-2 py-1" value={result} onChange={(event) => setResult(event.target.value)}>
+            <option value="NEGATIVE">Negativa</option>
+            <option value="POSITIVE">Positiva</option>
+            <option value="UNKNOWN">Desconhecido</option>
+          </select>
+          <input className="rounded border px-2 py-1" placeholder="Tribunal" value={tribunal} onChange={(event) => setTribunal(event.target.value)} />
+          <input className="rounded border px-2 py-1" placeholder="Observações" value={notes} onChange={(event) => setNotes(event.target.value)} />
+          <div className="flex gap-2">
+            <button
+              type="button"
+              className="rounded-lg bg-slate-900 px-3 py-1.5 text-white"
+              disabled={saving || !entityId}
+              onClick={async () => {
+                setSaving(true);
+                try {
+                  await fetchJsonOk("/api/legal-exposure/certificates", {
+                    method: "POST",
+                    headers: { "content-type": "application/json" },
+                    body: JSON.stringify({ entityId, type, result, tribunal, notes }),
+                  });
+                  setOpen(false);
+                  await onReload();
+                } finally {
+                  setSaving(false);
+                }
+              }}
+            >
+              Salvar
+            </button>
+            <button type="button" className="underline" onClick={() => setOpen(false)}>Cancelar</button>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function SourceGrid({
   sources,
   certificates,
@@ -954,6 +1143,19 @@ function SourceGrid({
           <p className="font-semibold">{source.label}</p>
           <p>{source.statusLabel}</p>
           <p>Última consulta com sucesso: {formatExposureDateTime(source.lastSuccessfulAt) ?? "nunca"}</p>
+          <button
+            type="button"
+            className="mt-2 text-xs font-semibold underline"
+            onClick={() =>
+              void fetchJsonOk("/api/legal-exposure/sources/test", {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ source: source.source }),
+              })
+            }
+          >
+            Testar conexão
+          </button>
         </div>
       ))}
       <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">

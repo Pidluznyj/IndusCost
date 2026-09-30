@@ -10,7 +10,7 @@ import { saveAppLocalFile } from "@/src/lib/appLocalFileStorage.js";
 import { applyBatchToMemory } from "./legalExposureApply.js";
 import type { LegalAliasType, LegalExposureSource, NormalizedSourceBatch } from "./legalExposureContracts.js";
 import { LEGAL_ALIAS_TYPES } from "./legalExposureContracts.js";
-import { publicSourceConfiguration } from "./legalExposureFeatureFlags.js";
+import { publicSourceConfiguration, escavadorRefreshHours, isEscavadorEnabled } from "./legalExposureFeatureFlags.js";
 import {
   matchExposureGroupCompanies,
   OUTSIDE_GROUP_COMPANY_MESSAGE,
@@ -40,6 +40,10 @@ import {
   sourceStatuses,
   type ExposureListQuery,
 } from "./legalExposureReadModel.js";
+import {
+  buildExposureGroupReport,
+  buildExposureProcessDossier,
+} from "./legalExposureExecutive.js";
 import type { LegalExposureRepository } from "./legalExposureRepository.server.js";
 import type {
   ExposureAuditRecord,
@@ -61,6 +65,7 @@ export type ExposureRunners = {
   domicilio: () => Promise<NormalizedSourceBatch>;
   datajud: (input?: { processNumber?: string; tribunalAlias?: string }) => Promise<NormalizedSourceBatch>;
   djen: (input?: { nomeParte?: string; numeroProcesso?: string }) => Promise<NormalizedSourceBatch>;
+  escavador?: (input?: { processNumber?: string }) => Promise<NormalizedSourceBatch>;
 };
 
 export type ExposureServiceDeps = {
@@ -80,6 +85,7 @@ const TARGET: Record<string, string> = {
   DOMICILIO: "LEGAL_EXPOSURE_DOMICILIO",
   DATAJUD: "LEGAL_EXPOSURE_DATAJUD",
   DJEN: "LEGAL_EXPOSURE_DJEN",
+  ESCAVADOR: "LEGAL_EXPOSURE_ESCAVADOR",
 };
 
 function disabledRunner(source: LegalExposureSource): NormalizedSourceBatch {
@@ -100,6 +106,7 @@ async function defaultRunners(): Promise<ExposureRunners> {
   const { runDomicilioSync } = await import("./sources/domicilio/domicilioSyncRunner.server.js");
   const { runDatajudSync } = await import("./sources/datajud/datajudSyncRunner.server.js");
   const { runDjenSync } = await import("./sources/djen/djenSyncRunner.server.js");
+  const { runEscavadorSync } = await import("./sources/escavador/escavadorSyncRunner.server.js");
   return {
     domicilio: () => runDomicilioSync({}),
     datajud: (input) =>
@@ -109,6 +116,7 @@ async function defaultRunners(): Promise<ExposureRunners> {
         tribunalAlias: input?.tribunalAlias ?? "",
       }),
     djen: (input) => runDjenSync(input ?? {}),
+    escavador: (input) => runEscavadorSync({ processNumber: input?.processNumber }),
   };
 }
 
@@ -136,6 +144,8 @@ function shouldApplyBatch(batch: NormalizedSourceBatch): boolean {
 }
 
 export type ExposureSyncTrigger = "MANUAL" | "SCHEDULED";
+
+const refreshingCases = new Set<string>();
 
 export function createLegalExposureService(deps: ExposureServiceDeps) {
   const now = () => (deps.now ? deps.now() : new Date());
@@ -398,16 +408,12 @@ export function createLegalExposureService(deps: ExposureServiceDeps) {
     },
     async getCase(id: string, userId: string) {
       const memory = await deps.repository.load();
-      const row = memory.cases.find((item) => item.id === id);
-      if (!row) throw new ExposureServiceError("Processo não encontrado.", "NOT_FOUND");
+      const dossier = buildExposureProcessDossier(memory, id);
+      if (!dossier) throw new ExposureServiceError("Processo não encontrado.", "NOT_FOUND");
       await deps.repository.appendAudit(
-        buildAuditRecord(userId, "VIEW_CASE", { entityId: row.entityId, caseId: row.id }, {})
+        buildAuditRecord(userId, "VIEW_CASE", { entityId: dossier.entityId, caseId: dossier.id }, {})
       );
-      return {
-        ...row,
-        evidences: memory.evidences.filter((item) => item.caseId === id),
-        parties: memory.parties.filter((item) => item.caseId === id),
-      };
+      return dossier;
     },
     async timeline(id: string, query: ExposureListQuery, userId: string) {
       const memory = await deps.repository.load();
@@ -466,6 +472,7 @@ export function createLegalExposureService(deps: ExposureServiceDeps) {
           verificationCode: row.verificationCode,
           originalFileName: row.originalFileName,
           notes: row.notes,
+          registeredByUserId: row.registeredByUserId,
           createdAt: row.createdAt,
         }));
     },
@@ -558,6 +565,7 @@ export function createLegalExposureService(deps: ExposureServiceDeps) {
       const wantsDjen = pipelineAll || input.source === "DJEN";
       const wantsDatajud = pipelineAll || input.source === "DATAJUD";
       const wantsDomicilio = pipelineAll || input.source === "DOMICILIO";
+      const wantsEscavador = pipelineAll || input.source === "ESCAVADOR";
       const scopedProcessNumber = input.entityId ? input.processNumber?.trim() || "" : "";
 
       let entities: ExposureEntityRecord[];
@@ -668,6 +676,36 @@ export function createLegalExposureService(deps: ExposureServiceDeps) {
           applyOwned(entity.id, domicilio);
         }
 
+        if (wantsEscavador && runners.escavador) {
+          const refreshHours = escavadorRefreshHours();
+          const linkedCaseIds = new Set(
+            memory.entityLinks.filter((row) => row.entityId === entity.id).map((row) => row.caseId)
+          );
+          const processes = new Map<string, string>();
+          for (const row of memory.cases) {
+            if (row.entityId !== entity.id && !linkedCaseIds.has(row.id)) continue;
+            processes.set(row.processNumberNormalized, row.processNumberNormalized);
+          }
+          const scoped = normalizeProcessNumber(scopedProcessNumber);
+          for (const processNumber of processes.keys()) {
+            if (scoped && processNumber !== scoped) continue;
+            const caseIds = memory.cases
+              .filter((row) => row.processNumberNormalized === processNumber)
+              .map((row) => row.id);
+            const lastEscavador = memory.evidences
+              .filter((row) => caseIds.includes(row.caseId) && row.source === "ESCAVADOR")
+              .map((row) => Date.parse(row.lastSeenAt))
+              .sort((a, b) => b - a)[0];
+            const stale =
+              lastEscavador == null ||
+              now().getTime() - lastEscavador > refreshHours * 60 * 60 * 1000;
+            if (!scoped && !stale) continue;
+            const batch = await runners.escavador({ processNumber });
+            owned.push(batch);
+            applyOwned(entity.id, batch);
+          }
+        }
+
         Object.assign(counters, countSourceOutcomes(owned));
         summaryEntities.push({
           entityId: entity.id,
@@ -767,6 +805,44 @@ export function createLegalExposureService(deps: ExposureServiceDeps) {
           connectivityTest: "RUN",
         };
       }
+      if (source === "ESCAVADOR") {
+        if (!isEscavadorEnabled() || !runners.escavador) {
+          return {
+            source,
+            success: false,
+            latencyMs: Date.now() - started,
+            timestamp: now().toISOString(),
+            sanitizedError: "Escavador desligado ou não configurado.",
+            externalCall: false,
+            connectivityTest: "NOT_CONFIGURED",
+          };
+        }
+        const entity = input?.entityId
+          ? memory.entities.find((row) => row.id === input.entityId && row.active)
+          : memory.entities.find((row) => row.active);
+        const known = entity ? memory.cases.find((row) => row.entityId === entity.id) : undefined;
+        if (!known) {
+          return {
+            source,
+            success: true,
+            latencyMs: Date.now() - started,
+            timestamp: now().toISOString(),
+            sanitizedError: null,
+            externalCall: false,
+            connectivityTest: "NOT_RUN_NO_KNOWN_PROCESS",
+          };
+        }
+        const batch = await runners.escavador({ processNumber: known.processNumberNormalized });
+        return {
+          source,
+          success: batch.outcome === "SUCCESS" || batch.outcome === "NO_RESULTS" || batch.outcome === "PARTIAL",
+          latencyMs: Date.now() - started,
+          timestamp: now().toISOString(),
+          sanitizedError: batch.errorMessageSanitized,
+          externalCall: batch.externalCall,
+          connectivityTest: "RUN",
+        };
+      }
       const batch = source === "DOMICILIO" ? await runners.domicilio() : disabledRunner(source);
       return {
         source,
@@ -776,6 +852,55 @@ export function createLegalExposureService(deps: ExposureServiceDeps) {
         sanitizedError: batch.errorMessageSanitized,
         externalCall: batch.externalCall,
         connectivityTest: "RUN",
+      };
+    },
+    async refreshCase(id: string, userId: string) {
+      if (refreshingCases.has(id)) {
+        throw new ExposureServiceError("Atualização deste processo já está em andamento.", "CONFLICT");
+      }
+      const memory = await deps.repository.load();
+      const row = memory.cases.find((item) => item.id === id);
+      if (!row) throw new ExposureServiceError("Processo não encontrado.", "NOT_FOUND");
+      refreshingCases.add(id);
+      try {
+        return await this.sync(
+          {
+            entityId: row.entityId,
+            processNumber: row.processNumberNormalized,
+            source: "ALL",
+            mode: "apply",
+            trigger: "MANUAL",
+          },
+          userId
+        );
+      } finally {
+        refreshingCases.delete(id);
+      }
+    },
+    async processPdf(id: string, userId: string) {
+      const dossier = await this.getCase(id, userId);
+      const { buildPagedPdf, dossierPdfLines } = await import("./legalExposurePdf.js");
+      return {
+        filename: `exposure-${dossier.processNumber.replace(/\D/g, "")}.pdf`,
+        buffer: buildPagedPdf({
+          title: "IndusCost · Exposure · Dossiê do processo",
+          lines: dossierPdfLines(dossier),
+        }),
+      };
+    },
+    async groupPdf(entityId: string | null, userId: string) {
+      const memory = await deps.repository.load();
+      await deps.repository.appendAudit(
+        buildAuditRecord(userId, "VIEW_CASE", { entityId }, { report: "GROUP" })
+      );
+      const report = buildExposureGroupReport(memory, entityId);
+      const { buildPagedPdf, groupReportPdfLines } = await import("./legalExposurePdf.js");
+      return {
+        filename: "exposure-relatorio-geral.pdf",
+        buffer: buildPagedPdf({
+          title: "IndusCost · Exposure · Relatório geral",
+          lines: groupReportPdfLines(report),
+        }),
       };
     },
   };

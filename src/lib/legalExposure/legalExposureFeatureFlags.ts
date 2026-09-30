@@ -23,6 +23,12 @@ export const LEGAL_EXPOSURE_ENV = {
   djenMaxPages: "DJEN_MAX_PAGES",
   djenMinRequestIntervalMs: "DJEN_MIN_REQUEST_INTERVAL_MS",
   autosync: "LEGAL_EXPOSURE_AUTOSYNC_ENABLED",
+  escavador: "ESCAVADOR_ENABLED",
+  escavadorBaseUrl: "ESCAVADOR_BASE_URL",
+  escavadorApiKey: "ESCAVADOR_API_KEY",
+  escavadorMinRequestIntervalMs: "ESCAVADOR_MIN_REQUEST_INTERVAL_MS",
+  escavadorTimeoutMs: "ESCAVADOR_TIMEOUT_MS",
+  escavadorRefreshHours: "ESCAVADOR_REFRESH_HOURS",
 } as const;
 
 const ENABLED = new Set(["1", "true", "yes", "on", "enabled"]);
@@ -58,8 +64,24 @@ export function isLegalExposureAutosyncEnabled(env: LegalExposureEnv = process.e
   return isEnvFlagOn(LEGAL_EXPOSURE_ENV.autosync, env);
 }
 
+export function isEscavadorEnabled(env: LegalExposureEnv = process.env): boolean {
+  return isLegalExposureModuleEnabled(env) && isEnvFlagOn(LEGAL_EXPOSURE_ENV.escavador, env);
+}
+
+export function clampEscavadorMinRequestIntervalMs(raw: string | undefined): number {
+  const parsed = Number.parseInt(String(raw ?? "1500"), 10);
+  if (!Number.isFinite(parsed)) return 1500;
+  return Math.min(10_000, Math.max(500, parsed));
+}
+
+export function escavadorRefreshHours(env: LegalExposureEnv = process.env): number {
+  const parsed = Number.parseInt(String(env[LEGAL_EXPOSURE_ENV.escavadorRefreshHours] ?? "24"), 10);
+  if (!Number.isFinite(parsed) || parsed < 1) return 24;
+  return Math.min(168, parsed);
+}
+
 export type SourceConfigurationState = {
-  source: "DOMICILIO" | "DATAJUD" | "DJEN";
+  source: "DOMICILIO" | "DATAJUD" | "DJEN" | "ESCAVADOR";
   enabled: boolean;
   configured: boolean;
 };
@@ -88,6 +110,10 @@ export function djenConfigured(env: LegalExposureEnv = process.env): boolean {
   return filled(env, LEGAL_EXPOSURE_ENV.djenBaseUrl);
 }
 
+export function escavadorConfigured(env: LegalExposureEnv = process.env): boolean {
+  return filled(env, LEGAL_EXPOSURE_ENV.escavadorApiKey);
+}
+
 /** Presença, nunca o valor. */
 export function publicSourceConfiguration(env: LegalExposureEnv = process.env): SourceConfigurationState[] {
   return [
@@ -105,6 +131,11 @@ export function publicSourceConfiguration(env: LegalExposureEnv = process.env): 
       source: "DJEN",
       enabled: isDjenEnabled(env),
       configured: djenConfigured(env),
+    },
+    {
+      source: "ESCAVADOR",
+      enabled: isEscavadorEnabled(env),
+      configured: escavadorConfigured(env),
     },
   ];
 }

@@ -21,6 +21,7 @@ export const SOURCE_FRESHNESS_POLICY: Record<
   DJEN: { healthyMaxMs: HOUR, staleAfterMs: 2 * HOUR },
   TRT_CERTIFICATE: { healthyMaxMs: 30 * DAY, staleAfterMs: 45 * DAY },
   CNDT: { healthyMaxMs: 30 * DAY, staleAfterMs: 45 * DAY },
+  ESCAVADOR: { healthyMaxMs: 24 * HOUR, staleAfterMs: 48 * HOUR },
 };
 
 export const RECOMMENDED_SYNC_SCHEDULE = {
