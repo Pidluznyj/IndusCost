@@ -2,11 +2,13 @@
  * Leituras agregadas. Grids não incluem rawMetadata.
  */
 
-import { formatCnpj } from "@/src/lib/companyCnpjFormat.js";
+import { formatCnpj, formatCurrencyBrl } from "@/src/lib/companyCnpjFormat.js";
 import {
   ABSENCE_IS_NOT_CLEARANCE_COPY,
   CNDT_DOES_NOT_MEAN_NO_CASES_COPY,
+  classifyCommunicationKind,
   clampPage,
+  foldText,
   isHealthyStatus,
   MULTIPLE_GROUP_NOTE,
   NO_CASES_IDENTIFIED_COPY,
@@ -73,6 +75,7 @@ export type ExposureListQuery = {
   claimMin?: string | number | null;
   claimMax?: string | number | null;
   timelineKind?: string | null;
+  communicationType?: string | null;
   page?: unknown;
   pageSize?: unknown;
 };
@@ -107,6 +110,7 @@ export function sourceStatuses(memory: LegalExposureMemory, now: Date): SourcePu
           enabled,
           lastSuccessfulAt: null,
           lastAttemptAt: null,
+          lastErrorCode: null,
           healthy: false,
         };
       }
@@ -133,6 +137,10 @@ export function sourceStatuses(memory: LegalExposureMemory, now: Date): SourcePu
         .filter((value): value is string => Boolean(value))
         .sort()
         .at(-1) ?? null;
+      const lastErrorCode =
+        status === "DISABLED" || status === "NOT_CONFIGURED"
+          ? null
+          : rows.map((row) => row.lastErrorCode).find((value) => Boolean(value)) ?? null;
       return {
         source,
         label: SOURCE_LABELS[source],
@@ -142,6 +150,7 @@ export function sourceStatuses(memory: LegalExposureMemory, now: Date): SourcePu
         enabled,
         lastSuccessfulAt,
         lastAttemptAt,
+        lastErrorCode,
         healthy: isHealthyStatus(status),
       };
     }
@@ -151,10 +160,15 @@ export function sourceStatuses(memory: LegalExposureMemory, now: Date): SourcePu
 export function buildExposureDashboard(memory: LegalExposureMemory, now = new Date()) {
   const start = new Date(now);
   start.setHours(0, 0, 0, 0);
+  const canonical = listCanonicalCases(memory, {}, now);
   const monitoredCases = uniqueProcessCount(memory);
   const pendingCommunications = memory.communications.filter((row) => row.normalizedStatus === "PENDING").length;
   const actionRequired = memory.alerts.filter((row) => row.status === "OPEN" && row.requiresAction).length;
   const newsToday = memory.events.filter((row) => Date.parse(row.detectedAt) >= start.getTime()).length;
+  const passiveCases = canonical.filter((row) => row.groupEntities.some((entity) => entity.pole === "PASSIVE")).length;
+  const futureHearings = canonical.filter((row) => row.nextHearing).length;
+  const knownClaimTotal = canonical.reduce((sum, row) => sum + (row.claimValue ? Number(row.claimValue) || 0 : 0), 0);
+  const knownClaimCount = canonical.filter((row) => row.claimValue && Number(row.claimValue) > 0).length;
   const sources = sourceStatuses(memory, now);
   const entities = memory.entities.filter((row) => row.active).map((entity) => ({
     id: entity.id,
@@ -167,12 +181,19 @@ export function buildExposureDashboard(memory: LegalExposureMemory, now = new Da
       certificates: entity.monitorCertificates,
     },
     monitoredCases: entityUniqueProcessCount(memory, entity.id),
+    polePassive: canonical.filter((row) =>
+      row.groupEntities.some((item) => item.id === entity.id && item.pole === "PASSIVE")
+    ).length,
+    poleActive: canonical.filter((row) =>
+      row.groupEntities.some((item) => item.id === entity.id && item.pole === "ACTIVE")
+    ).length,
     pendingCommunications: memory.communications.filter(
       (row) => row.entityId === entity.id && row.normalizedStatus === "PENDING"
     ).length,
     actionRequired: memory.alerts.filter(
       (row) => row.entityId === entity.id && row.status === "OPEN" && row.requiresAction
     ).length,
+    lastSuccessfulSyncAt: entity.lastSuccessfulSyncAt,
     freshness: sources
       .filter((source) => isCriticalMonitoringSource(source.source))
       .map((source) => ({ source: source.source, status: source.status, healthy: source.healthy })),
@@ -188,8 +209,12 @@ export function buildExposureDashboard(memory: LegalExposureMemory, now = new Da
       monitoredCases,
       pendingCommunications,
       newsToday,
+      passiveCases,
+      futureHearings,
+      knownClaimCount,
+      knownClaimTotalFormatted: knownClaimCount > 0 ? formatCurrencyBrl(knownClaimTotal) : null,
     },
-    monitoredCasesLabel: "Processos monitorados",
+    monitoredCasesLabel: "Processos únicos",
     multipleGroupNote: MULTIPLE_GROUP_NOTE,
     emptyState: monitoredCases === 0 ? NO_CASES_IDENTIFIED_COPY : null,
     absenceIsNotClearance: ABSENCE_IS_NOT_CLEARANCE_COPY,
@@ -251,13 +276,32 @@ function feedReference(
   };
 }
 
+function digitsOf(value: string | null | undefined): string {
+  return (value ?? "").replace(/\D/g, "");
+}
+
 export function listCommunications(memory: LegalExposureMemory, query: ExposureListQuery) {
   const { page, pageSize } = clampPage(query.page, query.pageSize);
+  const qDigits = digitsOf(query.q);
+  const qFolded = foldText(query.q ?? "");
   const rows = memory.communications
     .filter((row) => !query.entityId || row.entityId === query.entityId)
     .filter((row) => !query.status || row.normalizedStatus === query.status)
     .filter((row) => !query.source || row.source === query.source)
-    .filter((row) => !query.tribunal || row.tribunal === query.tribunal)
+    .filter((row) => !query.tribunal || foldText(row.tribunal ?? "").includes(foldText(query.tribunal ?? "")))
+    .filter((row) => {
+      if (!query.communicationType) return true;
+      return (
+        classifyCommunicationKind(row.communicationType) === query.communicationType ||
+        foldText(row.communicationType) === foldText(query.communicationType)
+      );
+    })
+    .filter((row) => {
+      if (!query.q?.trim()) return true;
+      if (qDigits) return digitsOf(row.processNumber).includes(qDigits);
+      const haystack = foldText(`${row.subject ?? ""} ${row.communicationType} ${row.tribunal ?? ""}`);
+      return haystack.includes(qFolded);
+    })
     .filter((row) => inRange(row.detectedAt, query.from, query.to))
     .sort((a, b) => Date.parse(b.detectedAt) - Date.parse(a.detectedAt))
     .map((row) => ({

@@ -137,6 +137,14 @@ export type LegalExposureAuditAction = (typeof LEGAL_EXPOSURE_AUDIT_ACTIONS)[num
 
 export const NO_CASES_IDENTIFIED_COPY =
   "Nenhum processo identificado nas fontes consultadas.";
+export const NO_CASES_FILTER_COPY = "Nenhum processo encontrado para os filtros selecionados.";
+export const NO_ACTION_REQUIRED_COPY = "Nenhuma ação requerida no momento.";
+export const NO_COMMUNICATIONS_FILTER_COPY =
+  "Nenhuma comunicação encontrada para os filtros selecionados.";
+export const NO_TIMELINE_EVENTS_COPY = "Nenhum evento processual disponível.";
+export const NO_CERTIFICATES_COPY = "Nenhuma certidão registrada.";
+export const EXPOSURE_LOADING_COPY = "Carregando...";
+export const GROUP_ENTITY_BADGE_COPY = "EMPRESA DO GRUPO";
 export const ABSENCE_IS_NOT_CLEARANCE_COPY =
   "Ausência de resultado não equivale a ausência de exposição.";
 export const CNDT_DOES_NOT_MEAN_NO_CASES_COPY =
@@ -166,7 +174,7 @@ export const SOURCE_STATUS_LABELS: Record<LegalSourceConnectionStatus, string> =
   RATE_LIMITED: "limite de taxa",
   SOURCE_ERROR: "indisponível",
   STALE: "desatualizada",
-  DISABLED: "desligada",
+  DISABLED: "Desligado",
   NOT_CONFIGURED: "não configurada",
 };
 
@@ -548,6 +556,7 @@ export type SourcePublicStatus = {
   enabled: boolean;
   lastSuccessfulAt: string | null;
   lastAttemptAt: string | null;
+  lastErrorCode: string | null;
   healthy: boolean;
 };
 

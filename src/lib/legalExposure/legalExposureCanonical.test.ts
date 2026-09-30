@@ -142,8 +142,10 @@ describe("canonical CNJ grouping", () => {
     assert.equal(canonical?.id, "case-a");
     const dash = buildExposureDashboard(memory);
     assert.equal(dash.cards.monitoredCases, 1);
+    assert.equal(dash.cards.passiveCases, 1);
     assert.equal(dash.entities.find((row) => row.id === "ent-a")?.monitoredCases, 1);
     assert.equal(dash.entities.find((row) => row.id === "ent-b")?.monitoredCases, 1);
+    assert.equal(dash.entities.find((row) => row.id === "ent-a")?.polePassive ?? 0, dash.entities.find((row) => row.id === "ent-b")?.polePassive);
   });
 
   it("nova ingestão da segunda empresa não cria outro LegalCase", () => {
@@ -386,6 +388,23 @@ describe("privacy and cards", () => {
     assert.equal(JSON.stringify(dossier).includes("12345678909"), false);
     assert.ok(dossier.claimants[0]?.documentMasked);
     assert.ok(dossier.narrative != null);
+  });
+
+  it("valor da causa zero ou inválido fica não informado", () => {
+    const memory = twoEntities();
+    const zero = physicalCase("case-a", "ent-a", "2026-09-01T10:00:00.000Z");
+    zero.claimValue = "0";
+    memory.cases.push(zero);
+    assert.equal(listCases(memory, {}).items[0]?.claimValueFormatted, null);
+    const invalid = physicalCase("case-b", "ent-b", "2026-09-02T10:00:00.000Z");
+    invalid.processNumber = "0009999-00.2024.5.09.0001";
+    invalid.processNumberNormalized = "00099990020245090001";
+    invalid.claimValue = "abc";
+    memory.cases.push(invalid);
+    assert.equal(
+      listCases(memory, {}).items.find((row) => row.caseIds.includes("case-b"))?.claimValueFormatted,
+      null
+    );
   });
 });
 

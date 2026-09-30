@@ -1,20 +1,52 @@
 /**
  * PDF A4 do Exposure. Reusa o mesmo DTO do dossiê/relatório.
- * Sem Puppeteer e sem rawMetadata.
+ * Sem Puppeteer e sem rawMetadata. Layout independente de viewport.
  */
 
-import { PDF_DISCLAIMER } from "./legalExposureContracts.js";
-import { formatExposureDateTime } from "./legalExposureCaseListUi.js";
+import { PDF_DISCLAIMER, SOURCE_KIND_LABELS } from "./legalExposureContracts.js";
+import { caseVerificationLabel, formatExposureDate, formatExposureDateTime } from "./legalExposureCaseListUi.js";
+import { exposureTimelineKindLabel } from "./legalExposureFeedUi.js";
+
+function looksLikeIsoDate(value: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}/.test(value) || value.includes("T");
+}
+
+function pdfWhen(value: string | null | undefined, fallback = "nao informado"): string {
+  if (!value?.trim()) return fallback;
+  const formatted = formatExposureDateTime(value) ?? formatExposureDate(value);
+  if (formatted) return formatted;
+  if (looksLikeIsoDate(value)) return fallback;
+  return value;
+}
+
+function pdfPole(pole: string): string {
+  if (pole === "PASSIVE") return "reu / polo passivo";
+  if (pole === "ACTIVE") return "autora / polo ativo";
+  if (pole === "THIRD_PARTY") return "terceira interessada";
+  if (pole === "OTHER") return "outro polo";
+  return "polo ainda nao confirmado";
+}
 
 function escapePdfText(value: string): string {
   return value.replace(/\\/g, "\\\\").replace(/\(/g, "\\(").replace(/\)/g, "\\)");
 }
 
-function wrapLine(text: string, width = 92): string[] {
+function wrapLine(text: string, width = 88): string[] {
   const words = text.split(/\s+/);
   const lines: string[] = [];
   let current = "";
+  const pushChunks = (word: string) => {
+    for (let i = 0; i < word.length; i += width) lines.push(word.slice(i, i + width));
+  };
   for (const word of words) {
+    if (word.length > width) {
+      if (current) {
+        lines.push(current);
+        current = "";
+      }
+      pushChunks(word);
+      continue;
+    }
     const next = current ? `${current} ${word}` : word;
     if (next.length > width) {
       if (current) lines.push(current);
@@ -25,11 +57,17 @@ function wrapLine(text: string, width = 92): string[] {
   return lines.length > 0 ? lines : [""];
 }
 
-export function buildPagedPdf(input: { title: string; lines: string[] }): Buffer {
+export function buildPagedPdf(input: { title: string; lines: string[]; generatedAt?: string }): Buffer {
+  const generatedAt = pdfWhen(input.generatedAt ?? new Date().toISOString());
   const pages: string[][] = [];
   let current: string[] = [];
-  const maxLines = 48;
+  const maxLines = 42;
   for (const line of input.lines) {
+    if (line === "\f") {
+      pages.push(current.length > 0 ? current : [""]);
+      current = [];
+      continue;
+    }
     const wrapped = wrapLine(line);
     for (const row of wrapped) {
       if (current.length >= maxLines) {
@@ -52,10 +90,26 @@ export function buildPagedPdf(input: { title: string; lines: string[] }): Buffer
   pages.forEach((lines, index) => {
     const pageId = 3 + index * 2;
     const contentId = pageId + 1;
-    const contentLines = ["BT", "/F1 12 Tf", "50 800 Td", `(${escapePdfText(input.title)}) Tj`, "/F1 9 Tf"];
+    const pageLabel = `Pagina ${index + 1} de ${pages.length}`;
+    const contentLines = [
+      "BT",
+      "/F1 11 Tf",
+      "50 800 Td",
+      `(${escapePdfText(input.title)}) Tj`,
+      "/F1 8 Tf",
+      "0 -12 Td",
+      `(Gerado em ${escapePdfText(generatedAt)}) Tj`,
+      "/F1 9 Tf",
+      "0 -18 Td",
+    ];
     for (const line of lines) {
       contentLines.push(`0 -14 Td (${escapePdfText(line)}) Tj`);
     }
+    contentLines.push("ET");
+    contentLines.push("BT");
+    contentLines.push("/F1 8 Tf");
+    contentLines.push("50 36 Td");
+    contentLines.push(`(${escapePdfText(pageLabel)}) Tj`);
     contentLines.push("ET");
     const stream = contentLines.join("\n");
     objects.push(
@@ -110,33 +164,37 @@ export function dossierPdfLines(dossier: {
   narrative?: string;
 }): string[] {
   const lines = [
-    `Gerado em ${formatExposureDateTime(new Date().toISOString()) ?? ""}`,
     `CNJ ${dossier.processNumber}`,
-    `Confirmação: ${dossier.verificationStatus}`,
-    `Empresas do grupo: ${dossier.groupEntities.map((row) => `${row.legalName} (${row.pole})`).join(" | ") || "não identificadas"}`,
-    `Autor/reclamante: ${dossier.claimants.map((row) => row.name).join("; ") || "não identificado nas fontes disponíveis"}`,
-    `Outros réus: ${dossier.otherDefendants.map((row) => row.name).join("; ") || "não identificados"}`,
-    `Advogados: ${dossier.attorneys.map((row) => `${row.name}${row.oabNumber ? ` OAB ${row.oabNumber}/${row.oabState ?? ""}` : ""}`).join("; ") || "não identificados"}`,
-    `Tribunal: ${dossier.tribunal ?? "não informado"}`,
-    `Vara: ${dossier.courtUnit ?? "não informada"}`,
-    `Grau: ${dossier.degree ?? "não informado"}`,
-    `Sistema: ${dossier.systemName ?? "não informado"}`,
-    `Classe: ${dossier.className ?? "não informada"}`,
-    `Assuntos: ${dossier.subjects.map((row) => row.name).join("; ") || "não informados"}`,
-    `Ajuizamento: ${dossier.filedAt ?? "não informado"}`,
-    `Valor da causa: ${dossier.claimValueFormatted ?? "não informado"}`,
-    `Situação: ${dossier.currentStatus ?? "não informada"}`,
+    `Classe: ${dossier.className ?? "nao informada"}`,
+    `Confirmacao: ${caseVerificationLabel(dossier.verificationStatus as "CONFIRMED_OFFICIAL" | "REVIEW_REQUIRED")}`,
+    `Empresas do grupo: ${dossier.groupEntities.map((row) => `${row.legalName} (${pdfPole(row.pole)})`).join(" | ") || "nao identificadas"}`,
+    `Autor/reclamante: ${dossier.claimants.map((row) => row.name).join("; ") || "nao identificado nas fontes disponiveis"}`,
+    `Outros reus: ${dossier.otherDefendants.map((row) => row.name).join("; ") || "nao identificados"}`,
+    `Advogados: ${dossier.attorneys.map((row) => `${row.name}${row.oabNumber ? ` OAB ${row.oabNumber}/${row.oabState ?? ""}` : ""}`).join("; ") || "nao identificados"}`,
+    `Tribunal: ${dossier.tribunal ?? "nao informado"}`,
+    `Vara: ${dossier.courtUnit ?? "nao informada"}`,
+    `Grau: ${dossier.degree ?? "nao informado"}`,
+    `Sistema: ${dossier.systemName ?? "nao informado"}`,
+    `Assuntos: ${dossier.subjects.map((row) => row.name).join("; ") || "nao informados"}`,
+    `Ajuizamento: ${pdfWhen(dossier.filedAt)}`,
+    `Valor da causa: ${dossier.claimValueFormatted ?? "nao informado"}`,
+    `Situacao: ${dossier.currentStatus?.trim() || "nao informada"}`,
     `Fase: ${dossier.stageLabel}`,
-    `Última movimentação: ${dossier.latestMovement ? `${dossier.latestMovement.occurredAt ?? ""} ${dossier.latestMovement.name}` : "não identificada"}`,
-    `Próxima audiência: ${dossier.nextHearing?.scheduledAt ?? "não identificada"}`,
-    `Movimentações: ${dossier.movementCount}`,
-    `Fontes: ${dossier.evidenceSources.join(", ")}`,
-    `Pontos de atenção: ${dossier.attentionLabels.join("; ") || "nenhum"}`,
+    `Ultima movimentacao: ${dossier.latestMovement ? `${pdfWhen(dossier.latestMovement.occurredAt, "")} ${dossier.latestMovement.name}`.trim() : "nao identificada"}`,
+    `Proxima audiencia: ${pdfWhen(dossier.nextHearing?.scheduledAt, "nao identificada")}`,
+    `Movimentacoes: ${dossier.movementCount}`,
+    `Fontes: ${dossier.evidenceSources.map((source) => SOURCE_KIND_LABELS[source as keyof typeof SOURCE_KIND_LABELS] ?? source).join(", ")}`,
+    `Pontos de atencao: ${dossier.attentionLabels.join("; ") || "nenhum"}`,
     "",
     dossier.narrative ?? "",
     "",
     "Linha do tempo resumida:",
-    ...dossier.timeline.slice(0, 20).map((row) => `${row.at} · ${row.kind} · ${row.title} · ${row.source}`),
+    ...dossier.timeline
+      .slice(0, 20)
+      .map(
+        (row) =>
+          `${pdfWhen(row.at)} · ${exposureTimelineKindLabel(row.kind, row.title)} · ${row.title} · ${SOURCE_KIND_LABELS[row.source as keyof typeof SOURCE_KIND_LABELS] ?? row.source}`
+      ),
     "",
     PDF_DISCLAIMER,
   ];
@@ -168,24 +226,30 @@ export function groupReportPdfLines(report: {
   }>;
 }): string[] {
   return [
-    `Gerado em ${formatExposureDateTime(report.generatedAt) ?? report.generatedAt}`,
+    "EXPOSURE - RELATORIO GERENCIAL",
+    "Capa",
+    `Gerado em ${pdfWhen(report.generatedAt)}`,
+    report.groupNote,
+    "\f",
     "RESUMO EXECUTIVO",
-    `Processos CNJ únicos: ${report.totals.uniqueProcesses}`,
+    `Processos CNJ unicos: ${report.totals.uniqueProcesses}`,
     `Processos no filtro: ${report.totals.filteredProcesses}`,
     `Polo passivo: ${report.totals.passive}`,
     `Polo ativo: ${report.totals.active}`,
-    `Múltiplas empresas do grupo: ${report.totals.multipleGroup}`,
-    `Valor total de causas conhecido: ${report.totals.claimTotalFormatted ?? "não informado"}`,
-    `Ações requeridas: ${report.totals.requiredActions}`,
-    `Audiências futuras: ${report.totals.futureHearings}`,
-    report.groupNote,
-    "",
-    "Por empresa:",
+    `Multiplas empresas do grupo: ${report.totals.multipleGroup}`,
+    `Valor total de causas conhecido: ${report.totals.claimTotalFormatted ?? "nao informado"}`,
+    `Acoes requeridas: ${report.totals.requiredActions}`,
+    `Audiencias futuras: ${report.totals.futureHearings}`,
+    "\f",
+    "EMPRESAS MONITORADAS",
+    ...report.entities.flatMap((entity) => [`${entity.legalName}: ${entity.monitoredCases} processo(s) unicos`]),
+    "\f",
+    "PROCESSOS",
     ...report.entities.flatMap((entity) => [
-      `${entity.legalName}: ${entity.monitoredCases} processo(s)`,
+      entity.legalName,
       ...entity.processes.map(
         (row) =>
-          `  ${row.processNumber} · ${row.className ?? "classe não informada"} · ${row.claimants[0]?.name ?? "reclamante não identificado"} · ${row.claimValueFormatted ?? "valor não informado"}`
+          `  ${row.processNumber} · ${row.className ?? "classe nao informada"} · ${row.claimants[0]?.name ?? "reclamante nao identificado"} · ${row.claimValueFormatted ?? "valor nao informado"}`
       ),
     ]),
     "",

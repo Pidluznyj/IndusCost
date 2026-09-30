@@ -3,7 +3,7 @@
  * do Exposure. Só tradução de código → texto; nenhuma regra jurídica.
  */
 
-import { SOURCE_LABELS } from "./legalExposureContracts.js";
+import { SOURCE_LABELS, foldText } from "./legalExposureContracts.js";
 import type {
   LegalCertificateResult,
   LegalCertificateType,
@@ -60,7 +60,7 @@ export const COMMUNICATION_STATUS_LABELS: Record<LegalCommunicationNormalizedSta
 
 export const ALERT_STATUS_LABELS: Record<LegalExposureAlertStatus, string> = {
   OPEN: "Em aberto",
-  ACKNOWLEDGED: "Ciente",
+  ACKNOWLEDGED: "Reconhecido",
   RESOLVED: "Resolvido",
 };
 
@@ -174,4 +174,26 @@ export function movementComplementsText(complements: unknown): string | null {
     })
     .filter((item): item is string => Boolean(item));
   return parts.length ? parts.join(" · ") : null;
+}
+
+export const TIMELINE_KIND_LABELS = {
+  movement: "MOVIMENTAÇÃO",
+  publication: "PUBLICAÇÃO",
+  hearing: "AUDIÊNCIA",
+  communication: "COMUNICAÇÃO",
+  decision: "DECISÃO",
+  event: "EVENTO INDUSCOST",
+} as const;
+
+export function exposureTimelineKindLabel(kind: string, title?: string | null): string {
+  const folded = foldText(title ?? "");
+  if (kind === "decision" || folded.includes("DECISA") || folded.includes("SENTEN")) {
+    return TIMELINE_KIND_LABELS.decision;
+  }
+  if (kind === "movement") return TIMELINE_KIND_LABELS.movement;
+  if (kind === "publication") return TIMELINE_KIND_LABELS.publication;
+  if (kind === "hearing") return TIMELINE_KIND_LABELS.hearing;
+  if (kind === "communication") return TIMELINE_KIND_LABELS.communication;
+  if (kind === "event") return TIMELINE_KIND_LABELS.event;
+  return kind.toUpperCase();
 }

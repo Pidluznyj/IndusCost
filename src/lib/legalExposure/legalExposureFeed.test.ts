@@ -232,15 +232,25 @@ describe("leituras do feed dizem do que se trata", () => {
     assert.equal(page.items.find((row) => row.title === "Situação do processo alterada")?.detail, "Em andamento → Arquivado");
     assert.equal(caseTimeline(memoryWithCase(), "nao-existe", {}).case, null);
   });
+
+  it("comunicações filtram por CNJ e tipo sem alterar a identidade canônica", () => {
+    const byCnj = listCommunications(memoryWithCase(), { q: "0030701-80.2024.8.16.0001" });
+    assert.equal(byCnj.total, 1);
+    const byType = listCommunications(memoryWithCase(), { communicationType: "INTIMATION" });
+    assert.equal(byType.total, 1);
+    const none = listCommunications(memoryWithCase(), { q: "0000000-00.0000.0.00.0000" });
+    assert.equal(none.total, 0);
+  });
 });
 
 describe("tela", () => {
   it("as abas de leitura usam os cartões do feed e não imprimem código bruto de evento", () => {
     const page = readFileSync(path.join(ROOT, "src/components/legalExposure/ExposurePage.tsx"), "utf8");
-    for (const name of ["ExposureAlertsTab", "ExposureCommunicationsTab", "ExposureTimelineTab", "ExposureCertificatesTab", "ExposureSourcesTab"]) {
+    for (const name of ["ExposureAlertsTab", "ExposureCommunicationsTab", "ExposureCertificatesTab", "ExposureSourcesTab"]) {
       assert.match(page, new RegExp(`<${name}\\b`), name);
     }
-    assert.match(page, /\/api\/legal-exposure\/events\?page=1/);
+    assert.doesNotMatch(page, /id: "timeline"/);
+    assert.doesNotMatch(page, /label: "Linha do Tempo"/);
     assert.match(page, /\/api\/legal-exposure\/certificates/);
     assert.doesNotMatch(page, /\{item\.eventType\}|\{item\.severity\}|\{item\.detectedAt\}|\{item\.at\}/);
     const feed = readFileSync(path.join(ROOT, "src/components/legalExposure/ExposureFeed.tsx"), "utf8");
@@ -250,6 +260,8 @@ describe("tela", () => {
     assert.match(feed, /COMMUNICATION_STATUS_LABELS\[/);
     assert.match(feed, /CERTIFICATE_RESULT_LABELS\[/);
     assert.match(feed, /SOURCE_STATUS_HINTS\[/);
+    assert.match(feed, /Reconhecer/);
+    assert.match(feed, /NO_ACTION_REQUIRED_COPY/);
     assert.doesNotMatch(feed, /rawMetadata|payload/);
   });
 });
