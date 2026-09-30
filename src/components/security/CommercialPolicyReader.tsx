@@ -9,6 +9,7 @@ import {
   POL_COM_001_COMPANY,
   POL_COM_001_VERSION_LABEL,
 } from "@/src/lib/commercialPolicy/official/polCom001V1View.js";
+import { applyPolicyAutoFields, type PolicyAutoFieldContext } from "@/src/lib/commercialPolicy/policyAutoFields.js";
 
 /** Frases que o documento trata como regra central: viram "ponto-chave" destacado. */
 const NOTICE_PHRASES = [
@@ -116,10 +117,21 @@ export const CommercialPolicyReader: React.FC<{
   onFinish?: () => void;
   /** Ocupa toda a largura do contêiner (prévia em tela cheia) em vez da moldura de 80rem. */
   fluid?: boolean;
-}> = ({ effectiveFrom, initialChapterId, mode = "acceptance", versionLabel = POL_COM_001_VERSION_LABEL, title: titleProp, chapters: chaptersProp, onGeneratePdf, onFinish, fluid = false }) => {
+  /** Dados reais que preenchem as lacunas do documento: publicação, quem aprovou, quem assina e o aceite. */
+  publishedAt?: string | null;
+  approver?: PolicyAutoFieldContext["approver"];
+  signer?: PolicyAutoFieldContext["signer"];
+  acceptance?: PolicyAutoFieldContext["acceptance"];
+}> = ({ effectiveFrom, initialChapterId, mode = "acceptance", versionLabel = POL_COM_001_VERSION_LABEL, title: titleProp, chapters: chaptersProp, onGeneratePdf, onFinish, fluid = false, publishedAt = null, approver = null, signer = null, acceptance = null }) => {
   const frame = fluid ? "max-w-none" : "max-w-7xl";
   const documentTitle = titleProp ? titleCase(titleProp) : "Política Comercial e de Comissionamento";
-  const chapters = chaptersProp ?? POL_COM_001_CHAPTERS;
+  const [today] = useState(() => new Date().toISOString());
+  // Datas, aprovação e termo de ciência são preenchidos pelo sistema; o texto gravado (e o hash) não muda.
+  const chapters = useMemo(
+    () => applyPolicyAutoFields(chaptersProp ?? POL_COM_001_CHAPTERS, { versionLabel, publishedAt, effectiveFrom, approver, signer, acceptance, today }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- objetos comparados pelos campos: o pai os recria a cada render
+    [chaptersProp, versionLabel, publishedAt, effectiveFrom, approver?.name, approver?.role, signer?.name, signer?.email, signer?.role, acceptance?.id, today]
+  );
   const start = chapters.find((chapter) => chapter.id === initialChapterId)?.id ?? chapters[0]?.id ?? "capa";
   const [chapterId, setChapterId] = useState(start);
   const [visited, setVisited] = useState<Set<string>>(() => new Set([start]));

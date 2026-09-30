@@ -1,4 +1,4 @@
-﻿src/lib/canonicalPersonBackfill.test.ts
+src/lib/canonicalPersonBackfill.test.ts
 src/lib/canonicalPersonHardening.integration.test.ts
 src/lib/employeesPermissions.test.ts
 src/lib/security/employeesEditAliasBackfill.test.ts
@@ -191,6 +191,7 @@ src/lib/commercialPolicy/official/polCom001V1.test.ts
 src/lib/commercialPolicy/commercialPolicyNormative.test.ts
 src/lib/commercialPolicy/commercialPolicyPublication.test.ts
 src/lib/commercialPolicy/policyDocumentFormat.test.ts
+src/lib/commercialPolicy/commercialPolicyMatrixAndAutoFields.test.ts
 src/lib/auth/authGatePipeline.test.ts
 src/lib/auth/passwordLifecycleWiring.test.ts
 src/lib/auth/authRateLimit.test.ts

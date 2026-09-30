@@ -15,6 +15,7 @@
  */
 import { escapePdfText } from "./commercialPolicyPdf.js";
 import { parsePolicyChapters, type PolicyBlock, type PolicyChapter } from "./policyDocumentFormat.js";
+import { applyPolicyAutoFields, type PolicyAutoFieldContext } from "./policyAutoFields.js";
 
 export type ControlledCopyPdfInput = {
   /** Conteúdo gravado na versão (marcação `# / ## / - / > / |` ou texto plano). */
@@ -40,6 +41,8 @@ export type ControlledCopyPdfInput = {
   generatedAt: string;
   /** Carimbo adicional, ex.: "PRÉVIA — VERSÃO AINDA NÃO PUBLICADA". */
   stamp?: string | null;
+  /** Preenche as lacunas do documento (datas, aprovação, termo de ciência) com dados reais. */
+  autoFields?: PolicyAutoFieldContext;
 };
 
 // ── Métricas (AFM) de Helvetica e Helvetica-Bold, caracteres 32..126 ─────────
@@ -415,7 +418,8 @@ function assemblePdf(streams: string[], title: string): Buffer {
 
 export function buildControlledCopyPdf(input: ControlledCopyPdfInput): Buffer {
   const issuedAt = formatDateTime(input.generatedAt);
-  const chapters = parsePolicyChapters(input.content);
+  const parsed = parsePolicyChapters(input.content);
+  const chapters = input.autoFields ? applyPolicyAutoFields(parsed, input.autoFields) : parsed;
   const coverChapter = chapters.find((chapter) => chapter.id === "capa");
   const bodyChapters = chapters.filter((chapter) => chapter !== coverChapter);
   const documentId = `${input.code} · Versão ${input.versionLabel}`;

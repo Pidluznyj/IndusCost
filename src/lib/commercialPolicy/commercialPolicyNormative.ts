@@ -9,6 +9,7 @@
  */
 
 import { sha256Hex, stableStringify } from "./commercialPolicyRules.js";
+import { parsePolicyChapters } from "./policyDocumentFormat.js";
 
 export type NormativeImpact =
   | "POLICY_VERSION_REQUIRED"
@@ -89,18 +90,38 @@ export const DOCUMENT_SUPERVISOR_SHARE = 0.33;
 export const DOCUMENT_INACTIVITY_DAYS = 90;
 
 /**
- * Fatos confirmados no código. A matriz de margem do Anexo I não existe como
- * parâmetro (o motor usa CommissionRule.ratePercent por regra/faixa de
- * tabela de preço). A rotina de carteira (POL-COM-001 §11,
+ * Faixa comercial da Formação de Preço (Atacado / Varejo 1–3): margem-alvo e
+ * comissão gravadas na versão PUBLICADA e vigente da tabela de preço. É o que
+ * o motor de comissão lê quando a regra ativa é "Faixa comercial".
+ */
+export type SystemCommissionTier = {
+  code: string;
+  name: string;
+  marginPercent: number;
+  commissionPercent: number;
+};
+
+/** Matriz lida das fontes oficiais (tabelas de preço publicadas + regras de comissão). */
+export type CommissionMatrixInput = {
+  tiers: SystemCommissionTier[];
+  /** Comissão paga quando o preço vendido fica abaixo do Atacado. */
+  outOfTableCommissionPercent: number;
+  /** Existe regra de comissão ativa do tipo "Faixa comercial" (COMMERCIAL_PRICE_TIER). */
+  engineRuleActive: boolean;
+};
+
+/**
+ * Fatos confirmados no código. A matriz de comissão vem da Formação de Preço
+ * (margem-alvo e comissão por tabela publicada), lida em runtime; o motor
+ * interpola o percentual entre faixas pelo preço vendido. A rotina de carteira (POL-COM-001 §11,
  * customerCommercialOwnerInactivity) remove o responsável exclusivo após 90
  * dias sem PV com NF / Documento de Saída válido, salvo CRM estruturado
  * válido; o texto v1.0 ainda diz "PV aprovado" — divergência que exige nova
  * versão. Os 33% do supervisor não estão em CommissionSettings.
  */
 export const SYSTEM_NORMATIVE_FACTS = {
-  commissionMatrixParameterized: false,
-  commissionMatrixSource: null as null,
-  commissionEngineSource: "CommissionRule.ratePercent (regra/faixa de tabela de preço)",
+  commissionMatrixSource: "PriceTableVersion publicada (Formação de Preço): margem-alvo e comissão por tabela",
+  commissionEngineSource: "regra de comissão \"Faixa comercial\" → PriceTableItem.commissionPerc das tabelas publicadas, interpolado pelo preço vendido",
   supervisorShareParameterized: false,
   portfolioInactivityRemovesResponsible: true,
   portfolioCrmEvidenceCanPreserveAssignment: true,
@@ -115,11 +136,16 @@ export const SYSTEM_NORMATIVE_FACTS = {
 } as const;
 
 export type NormativeSnapshot = {
-  commissionMatrix: {
-    parameterized: false;
-    source: null;
-    bands: null;
-  };
+  commissionMatrix:
+    | { parameterized: false; source: null; bands: null }
+    | {
+        parameterized: true;
+        source: "PriceTableVersion";
+        bands: SystemCommissionTier[];
+        outOfTableCommissionPercent: number;
+        rateMethod: "INTERPOLATED_BY_SALE_PRICE";
+        engineRuleActive: boolean;
+      };
   supervisorCommission: {
     parameterized: false;
     share: null;
@@ -226,10 +252,27 @@ export function classifyCommercialChange(kind: NormativeChangeKind): NormativeIm
 }
 
 export function buildCurrentCommercialPolicyNormativeSnapshot(
-  release: ReleaseNormativeInput
+  release: ReleaseNormativeInput,
+  /** Matriz lida da Formação de Preço; nula quando não há as quatro tabelas publicadas. */
+  matrix: CommissionMatrixInput | null = null
 ): NormativeSnapshot {
   return {
-    commissionMatrix: { parameterized: false, source: null, bands: null },
+    commissionMatrix: matrix
+      ? {
+          parameterized: true,
+          source: "PriceTableVersion",
+          // Só o que é normativo entra no snapshot: republicar a tabela com as mesmas margens e comissões não muda o hash.
+          bands: matrix.tiers.map((tier) => ({
+            code: tier.code,
+            name: tier.name,
+            marginPercent: tier.marginPercent,
+            commissionPercent: tier.commissionPercent,
+          })),
+          outOfTableCommissionPercent: matrix.outOfTableCommissionPercent,
+          rateMethod: "INTERPOLATED_BY_SALE_PRICE",
+          engineRuleActive: matrix.engineRuleActive,
+        }
+      : { parameterized: false, source: null, bands: null },
     supervisorCommission: { parameterized: false, share: null },
     commissionRelease: {
       parameterized: true,
@@ -283,7 +326,12 @@ export function blockedNormativeCommissionSettingChanges(
 
 export function renderCommissionMatrixLines(snapshot: NormativeSnapshot): string[] {
   if (snapshot.commissionMatrix.parameterized) {
-    return ["Anexo I vinculado ao snapshot desta versão."];
+    return [
+      "Anexo I vinculado à Formação de Preço no snapshot desta versão:",
+      ...snapshot.commissionMatrix.bands.map(
+        (band) => `${band.name}: margem ${formatPercent(band.marginPercent)} → comissão ${formatPercent(band.commissionPercent)}`
+      ),
+    ];
   }
   return ["Anexo I: matriz normativa não parametrizada no IndusCost. O texto congelado desta versão permanece o documento."];
 }
@@ -343,12 +391,40 @@ const RESOLUTIONS: Record<string, FindingResolution> = {
   },
   COMMISSION_MATRIX_NOT_PARAMETERIZED: {
     owner: "SISTEMA",
-    where: "Motor de comissão (Comissões › Configurações / regras de comissão) — hoje só existe faixa por tabela de preço",
+    where: "Comercial › Formação de Preço › Tabelas a gerar",
     steps: [
-      "Decidir com a Diretoria: parametrizar a matriz por Margem Oficial no motor (faixas 1% / 1% / 2% / 3% / 4% e alçadas) — exige desenvolvimento no cálculo de comissão —",
-      "ou revisar formalmente o Anexo I no editor de conteúdo (nova versão) para descrever a regra que o sistema executa.",
-      "Só depois disso a divergência deixa de bloquear; não há como marcá-la como resolvida manualmente.",
+      "Gerar os DRAFTs comerciais das quatro tabelas (Atacado, Varejo 1, Varejo 2 e Varejo 3) informando a margem e a comissão de cada uma.",
+      "Publicar as quatro versões geradas.",
+      "Reabrir esta tela: a matriz é lida das tabelas publicadas a cada abertura.",
     ],
+  },
+  COMMISSION_MATRIX_MISMATCH: {
+    owner: "SISTEMA",
+    where: "Comercial › Formação de Preço › Tabelas a gerar (ou editor de conteúdo, Anexo I)",
+    steps: [
+      "Opção A (sistema): gerar e publicar nova versão das tabelas com a margem e a comissão do Anexo I.",
+      "Opção B (documento): abrir um rascunho e corrigir a tabela do Anexo I para os valores publicados na Formação de Preço.",
+    ],
+  },
+  COMMISSION_MATRIX_ENGINE_RULE_INACTIVE: {
+    owner: "SISTEMA",
+    where: "Comissões › Regras de comissão",
+    steps: ["Criar ou ativar uma regra com tipo de cálculo \"Faixa comercial\" para que o motor leia as tabelas da Formação de Preço."],
+  },
+  COMMISSION_MATRIX_INTERPOLATED: {
+    owner: "DECISÃO",
+    where: "Editor de conteúdo (Seção 7 / Anexo I) ou motor de comissão",
+    steps: [
+      "Opção A (documento): abrir um rascunho e incluir na Seção 7 ou no Anexo I que, entre uma faixa e a seguinte, o percentual é proporcional ao preço praticado. Ao salvar, esta pendência deixa de bloquear.",
+      "Opção B (sistema): mudar o motor de comissão para pagar em degrau (desenvolvimento no cálculo oficial).",
+      "Os percentuais e as margens das faixas já coincidem; falta só decidir o comportamento entre elas.",
+    ],
+  },
+  COMMISSION_MATRIX_ALIGNED: { owner: "DECISÃO", where: "—", steps: ["Nada a fazer."] },
+  APPROVAL_AUTHORITY_MANUAL_PROCESS: {
+    owner: "DECISÃO",
+    where: "Diretoria / Supervisão Comercial",
+    steps: ["Manter a aprovação prévia por alçada como processo manual registrado.", "Não bloqueia a publicação."],
   },
   SUPERVISOR_SHARE_NOT_PARAMETERIZED: {
     owner: "SISTEMA",
@@ -426,6 +502,165 @@ function finding(input: Omit<PrePublishFinding, "blocking" | "resolution">): Pre
   };
 }
 
+function formatPercent(value: number): string {
+  return `${value.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`;
+}
+
+function parsePercent(text: string): number | null {
+  const match = /(\d+(?:[.,]\d+)?)\s*%/.exec(text);
+  return match ? Number(match[1].replace(",", ".")) : null;
+}
+
+export type DocumentMatrixBand = {
+  label: string;
+  /** Início da faixa de margem (%); nulo na faixa "Abaixo de X". */
+  marginFrom: number | null;
+  commissionPercent: number;
+  approval: string;
+};
+
+/**
+ * Matriz do Anexo I como está escrita no conteúdo auditado (tabela "Margem
+ * Oficial do Item"). Sem a tabela (conteúdo vazio ou texto plano), vale a
+ * matriz do documento oficial v1.0.
+ */
+export function readDocumentCommissionMatrix(content: string): {
+  bands: DocumentMatrixBand[];
+  /** O texto da Seção 7 / Anexo I descreve percentual proporcional entre faixas. */
+  describesInterpolation: boolean;
+} {
+  const chapters = parsePolicyChapters(content).filter((chapter) => /^(7\.|ANEXO I\b)/i.test(chapter.title.trim()));
+  const table = chapters
+    .flatMap((chapter) => chapter.blocks)
+    .find((block) => block.type === "table" && /margem oficial/i.test(block.rows[0]?.[0] ?? ""));
+  const rows: Array<[string, string, string]> =
+    table && table.type === "table"
+      ? table.rows.slice(1).map((row) => [row[0] ?? "", row[1] ?? "", row[2] ?? ""])
+      : DOCUMENT_ANNEX_I_BANDS.map((band) => [band.label, formatPercent(band.commissionPercent * 100), band.approval]);
+  const bands = rows.flatMap(([label, commission, approval]): DocumentMatrixBand[] => {
+    const margin = parsePercent(label);
+    const commissionPercent = parsePercent(commission);
+    if (margin === null || commissionPercent === null) return [];
+    return [{ label, marginFrom: /abaixo/i.test(label) ? null : margin, commissionPercent, approval }];
+  });
+  const text = chapters
+    .flatMap((chapter) => chapter.blocks)
+    .map((block) => (block.type === "paragraph" || block.type === "bullet" ? block.text : ""))
+    .join(" ");
+  return { bands, describesInterpolation: /interpola|proporcional/i.test(text) };
+}
+
+const sameNumber = (a: number, b: number) => Math.abs(a - b) < 0.005;
+
+/**
+ * Anexo I × Formação de Preço. A faixa do documento que começa em X% de margem
+ * corresponde à tabela comercial cuja margem-alvo é X%; "Abaixo de X" é a
+ * comissão de preço fora da tabela. Nada aqui é marcado à mão.
+ */
+function auditCommissionMatrix(content: string, current: NormativeSnapshot | null): PrePublishFinding[] {
+  const document = readDocumentCommissionMatrix(content);
+  const documentText = `Anexo I: comissão por faixa de Margem Oficial — ${document.bands.map((band) => `${band.label} = ${formatPercent(band.commissionPercent)}`).join("; ")}.`;
+  const base = { category: "MATRIZ_COMISSAO" as const, policySection: POLICY_SECTIONS.matrix };
+  const matrix = current?.commissionMatrix;
+
+  if (!matrix || !matrix.parameterized) {
+    return [
+      finding({
+        ...base,
+        code: "COMMISSION_MATRIX_NOT_PARAMETERIZED",
+        severity: "BLOCKING",
+        document: documentText,
+        system: current
+          ? "A Formação de Preço não tem as quatro tabelas comerciais (Atacado, Varejo 1, Varejo 2 e Varejo 3) publicadas e vigentes com margem-alvo e comissão únicas por tabela; sem elas não há matriz para conferir."
+          : "Snapshot normativo atual não informado nesta auditoria; as tabelas publicadas da Formação de Preço não foram lidas.",
+        action: "Gerar e publicar as quatro tabelas comerciais na Formação de Preço com a margem e a comissão do Anexo I.",
+      }),
+    ];
+  }
+
+  const tiers = [...matrix.bands].sort((a, b) => a.marginPercent - b.marginPercent);
+  const systemText = `Formação de Preço (tabelas publicadas): ${tiers.map((tier) => `${tier.name} — margem ${formatPercent(tier.marginPercent)} → comissão ${formatPercent(tier.commissionPercent)}`).join("; ")}; preço abaixo do Atacado → ${formatPercent(matrix.outOfTableCommissionPercent)}.`;
+  const findings: PrePublishFinding[] = [];
+
+  const below = document.bands.find((band) => band.marginFrom === null);
+  const stepped = document.bands.filter((band) => band.marginFrom !== null).sort((a, b) => (a.marginFrom ?? 0) - (b.marginFrom ?? 0));
+  const differences: string[] = [];
+  if (stepped.length !== tiers.length) {
+    differences.push(`o Anexo I tem ${stepped.length} faixa(s) a partir de uma margem mínima e a Formação de Preço tem ${tiers.length} tabela(s)`);
+  } else {
+    stepped.forEach((band, index) => {
+      const tier = tiers[index];
+      if (!sameNumber(band.marginFrom ?? 0, tier.marginPercent)) {
+        differences.push(`faixa "${band.label}" começa em ${formatPercent(band.marginFrom ?? 0)} e a tabela ${tier.name} tem margem ${formatPercent(tier.marginPercent)}`);
+      }
+      if (!sameNumber(band.commissionPercent, tier.commissionPercent)) {
+        differences.push(`faixa "${band.label}" paga ${formatPercent(band.commissionPercent)} e a tabela ${tier.name} paga ${formatPercent(tier.commissionPercent)}`);
+      }
+    });
+  }
+  if (below && !sameNumber(below.commissionPercent, matrix.outOfTableCommissionPercent)) {
+    differences.push(`"${below.label}" paga ${formatPercent(below.commissionPercent)} e o motor paga ${formatPercent(matrix.outOfTableCommissionPercent)} abaixo do Atacado`);
+  }
+
+  if (differences.length > 0) {
+    findings.push(
+      finding({
+        ...base,
+        code: "COMMISSION_MATRIX_MISMATCH",
+        severity: "BLOCKING",
+        document: documentText,
+        system: `${systemText} Diferenças: ${differences.join("; ")}.`,
+        action: "Publicar nova versão das tabelas na Formação de Preço com a margem e a comissão do Anexo I, ou revisar formalmente o Anexo I.",
+      })
+    );
+  } else if (!matrix.engineRuleActive) {
+    findings.push(
+      finding({
+        ...base,
+        code: "COMMISSION_MATRIX_ENGINE_RULE_INACTIVE",
+        severity: "BLOCKING",
+        document: documentText,
+        system: `${systemText} Porém não há regra de comissão ativa do tipo "Faixa comercial": o motor não está lendo estas tabelas.`,
+        action: "Ativar em Comissões › Regras uma regra do tipo \"Faixa comercial\" antes de publicar.",
+      })
+    );
+  } else if (!document.describesInterpolation) {
+    findings.push(
+      finding({
+        ...base,
+        code: "COMMISSION_MATRIX_INTERPOLATED",
+        severity: "BLOCKING",
+        document: `${documentText} O texto descreve faixas em degrau: toda a faixa paga o mesmo percentual.`,
+        system: `${systemText} Os pontos da matriz coincidem, mas entre uma tabela e a seguinte o motor paga percentual proporcional ao preço vendido (interpolação linear), não o degrau. Ex.: um item vendido no meio do caminho entre ${tiers[0]?.name ?? "Atacado"} e ${tiers[1]?.name ?? "Varejo 1"} recebe ${formatPercent(((tiers[0]?.commissionPercent ?? 0) + (tiers[1]?.commissionPercent ?? 0)) / 2)}, e o Anexo I diz ${formatPercent(tiers[0]?.commissionPercent ?? 0)}.`,
+        action: "Descrever no Anexo I / Seção 7 que o percentual é proporcional entre faixas, ou mudar o motor para degrau.",
+      })
+    );
+  } else {
+    findings.push(
+      finding({
+        ...base,
+        code: "COMMISSION_MATRIX_ALIGNED",
+        severity: "INFORMATIONAL",
+        document: documentText,
+        system: `${systemText} Entre faixas o percentual é proporcional ao preço vendido, como o texto descreve.`,
+        action: "Nenhuma. Matriz do Anexo I alinhada à Formação de Preço.",
+      })
+    );
+  }
+
+  findings.push(
+    finding({
+      ...base,
+      code: "APPROVAL_AUTHORITY_MANUAL_PROCESS",
+      severity: "WARNING",
+      document: `Alçadas do Anexo I: ${document.bands.filter((band) => /aprova/i.test(band.approval)).map((band) => `${band.label} — ${band.approval}`).join("; ") || "aprovação prévia para margens baixas"}.`,
+      system: "O IndusCost não bloqueia nem registra a aprovação prévia por alçada no Pedido de Venda; a autorização é processo manual da Diretoria / Supervisão.",
+      action: "Manter a aprovação por alçada como processo manual registrado, ou desenvolver o bloqueio no Pedido de Venda; não bloqueia a publicação.",
+    })
+  );
+  return findings;
+}
+
 /**
  * Auditoria de publicação da POL-COM-001 v1.0 — documento → sistema e
  * sistema → documento. `current` é o snapshot normativo lido das fontes
@@ -469,17 +704,7 @@ export function auditPolCom001Publication(
       action: "Registrar a correção no relatório de publicação e na cópia controlada.",
     })
   );
-  findings.push(
-    finding({
-      code: "COMMISSION_MATRIX_NOT_PARAMETERIZED",
-      category: "MATRIZ_COMISSAO",
-      policySection: POLICY_SECTIONS.matrix,
-      severity: "BLOCKING",
-      document: "Anexo I: comissão por faixa de Margem Oficial — abaixo de 30% = 1,00% (Diretoria); 30%–34,99% = 1,00% (Supervisor); 35%–39,99% = 2,00%; 40%–49,99% = 3,00%; 50,00% ou mais = 4,00%.",
-      system: `Sem matriz de margem parametrizada. O motor executa ${SYSTEM_NORMATIVE_FACTS.commissionEngineSource}, não estas faixas.`,
-      action: "Parametrizar a matriz por Margem Oficial no motor de comissão (ou revisar formalmente o Anexo I) antes de publicar.",
-    })
-  );
+  findings.push(...auditCommissionMatrix(content, current ?? null));
   findings.push(
     finding({
       code: "SUPERVISOR_SHARE_NOT_PARAMETERIZED",
@@ -611,6 +836,7 @@ export function evaluatePublicationReadiness(findings: readonly PrePublishFindin
 export function buildPolCom001ReconciliationMatrix(current: NormativeSnapshot | null): ReconciliationRow[] {
   const audit = auditPolCom001Publication("", current);
   const byCode = new Map(audit.findings.map((item) => [item.code, item]));
+  const matrix = audit.findings.find((item) => item.code.startsWith("COMMISSION_MATRIX_"));
   const release = byCode.get("COMMISSION_RELEASE_ALIGNED") ?? byCode.get("COMMISSION_RELEASE_NOT_PROPORTIONAL") ?? byCode.get("COMMISSION_RELEASE_MISMATCH") ?? byCode.get("COMMISSION_RELEASE_UNVERIFIED");
   return [
     {
@@ -642,12 +868,21 @@ export function buildPolCom001ReconciliationMatrix(current: NormativeSnapshot | 
     },
     {
       section: POLICY_SECTIONS.matrix,
-      rule: "Matriz por Margem Oficial (Anexo I: 1% / 1% / 2% / 3% / 4%) e alçadas abaixo de 35%",
-      implementation: "CommissionRule.ratePercent por regra/faixa de tabela de preço; sem faixa de margem e sem alçada automática.",
-      status: "DIVERGENTE",
-      severity: "BLOCKING",
-      action: "Parametrizar a matriz por margem (ou revisar o Anexo I) antes de publicar.",
-      findingCode: "COMMISSION_MATRIX_NOT_PARAMETERIZED",
+      rule: "Matriz por Margem Oficial (Anexo I: 1% / 1% / 2% / 3% / 4%)",
+      implementation: matrix?.system ?? "Não conferido.",
+      status: matrix?.code === "COMMISSION_MATRIX_ALIGNED" ? "ALINHADO" : matrix?.code === "COMMISSION_MATRIX_NOT_PARAMETERIZED" ? "NÃO_IMPLEMENTADO" : "DIVERGENTE",
+      severity: matrix?.severity ?? "BLOCKING",
+      action: matrix?.action ?? "Auditar com o snapshot atual.",
+      findingCode: matrix?.code ?? null,
+    },
+    {
+      section: `${POLICY_SECTIONS.matrix} (alçadas)`,
+      rule: "Alçadas: aprovação prévia da Diretoria / Supervisor para margem abaixo de 35%",
+      implementation: "Sem bloqueio nem registro automático da aprovação no Pedido de Venda.",
+      status: "PROCESSO_MANUAL",
+      severity: "WARNING",
+      action: "Manter como processo manual registrado; não bloqueia.",
+      findingCode: byCode.has("APPROVAL_AUTHORITY_MANUAL_PROCESS") ? "APPROVAL_AUTHORITY_MANUAL_PROCESS" : null,
     },
     {
       section: POLICY_SECTIONS.coverage,

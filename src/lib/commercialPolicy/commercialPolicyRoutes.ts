@@ -17,6 +17,8 @@ import {
   buildTextPdf,
 } from "./commercialPolicyPdf.js";
 import { buildControlledCopyPdf } from "./commercialPolicyControlledCopyPdf.js";
+import { loadCommissionMatrixFromPriceTables } from "./commercialPolicyCommissionMatrix.server.js";
+import type { PolicyAutoFieldContext } from "./policyAutoFields.js";
 import { createPrismaCommercialPolicyStore } from "./commercialPolicyPrismaStore.js";
 import {
   auditPolCom001Publication,
@@ -27,6 +29,7 @@ import {
   comparePublishedPolicyToCurrentNormativeState,
   normativeSnapshotHash,
   sectionsAffectedByChanges,
+  type CommissionMatrixInput,
   type NormativeSnapshot,
   type ReleaseNormativeInput,
 } from "./commercialPolicyNormative.js";
@@ -52,8 +55,8 @@ import {
   versionPublicView,
   type PolicyActor,
 } from "./commercialPolicyService.js";
-import type { CommercialPolicyStore, StoredVersion } from "./commercialPolicyStore.js";
-import { sha256Hex, validatePolicyDraft, type PolicyQuestion, type PolicyVersionBody } from "./commercialPolicyRules.js";
+import type { CommercialPolicyStore, StoredAcceptance, StoredVersion } from "./commercialPolicyStore.js";
+import { COMMERCIAL_POLICY_AUDIENCE, sha256Hex, validatePolicyDraft, type PolicyQuestion, type PolicyVersionBody } from "./commercialPolicyRules.js";
 import {
   POL_COM_001_CLASSIFICATION,
   POL_COM_001_CNPJ,
@@ -149,7 +152,33 @@ export type CommercialPolicyRouteDeps = {
   countActiveSellers?: () => Promise<number>;
   /** Fonte oficial da regra de liberação (CommissionSettings). Nos testes, injetada. */
   loadRelease?: () => Promise<ReleaseNormativeInput>;
+  /** Matriz de comissão lida das tabelas publicadas da Formação de Preço. Nos testes, injetada. */
+  loadCommissionMatrix?: (at: Date) => Promise<CommissionMatrixInput | null>;
+  /** Nome e perfil de quem publicou a versão (aprovação eletrônica). Nos testes, injetada. */
+  loadUserIdentity?: (userId: string) => Promise<{ name: string; role: string } | null>;
 };
+
+/**
+ * Vigência informada pelo administrador ("AAAA-MM-DD", dia civil de Brasília).
+ * A política só tem efeito prospectivo: data anterior a hoje é recusada.
+ */
+export function parsePublicationEffectiveDate(
+  value: unknown,
+  now: Date
+): { ok: true; effectiveFrom: Date } | { ok: false; code: string; message: string } {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return { ok: false, code: "EFFECTIVE_FROM_REQUIRED", message: "Informe a data de vigência para publicar." };
+  }
+  const effectiveFrom = new Date(`${value}T00:00:00-03:00`);
+  if (Number.isNaN(effectiveFrom.getTime())) {
+    return { ok: false, code: "EFFECTIVE_FROM_REQUIRED", message: "Data de vigência inválida." };
+  }
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(now);
+  if (value < today) {
+    return { ok: false, code: "EFFECTIVE_FROM_IN_PAST", message: "A vigência não pode ser anterior à data da publicação." };
+  }
+  return { ok: true, effectiveFrom };
+}
 
 export function registerCommercialPolicyRoutes(app: express.Express, deps: CommercialPolicyRouteDeps): void {
   const store = deps.store ?? createPrismaCommercialPolicyStore();
@@ -163,15 +192,63 @@ export function registerCommercialPolicyRoutes(app: express.Express, deps: Comme
         partialPaymentEnabled: settings.partialPaymentEnabled,
       };
     });
+  const loadCommissionMatrix = deps.loadCommissionMatrix ?? ((at: Date) => loadCommissionMatrixFromPriceTables(prisma, at));
+  const loadUserIdentity =
+    deps.loadUserIdentity ??
+    ((userId: string) => prisma.appUser.findUnique({ where: { id: userId }, select: { name: true, role: true } }));
 
   /** Snapshot normativo atual; sem banco, o snapshot fica nulo e a auditoria registra WARNING em vez de fingir alinhamento. */
   async function currentNormativeState(): Promise<{ snapshot: NormativeSnapshot | null; settingsSource: string }> {
     try {
       const release = await loadRelease();
-      return { snapshot: buildCurrentCommercialPolicyNormativeSnapshot(release), settingsSource: "DATABASE" };
+      // Tabelas ilegíveis = matriz não conferida (a auditoria bloqueia); nunca "alinhada" por omissão.
+      const matrix = await loadCommissionMatrix(now()).catch(() => null);
+      return { snapshot: buildCurrentCommercialPolicyNormativeSnapshot(release, matrix), settingsSource: "DATABASE" };
     } catch {
       return { snapshot: null, settingsSource: "DATABASE_UNAVAILABLE" };
     }
+  }
+
+  const identityCache = new Map<string, { name: string; role: string } | null>();
+  /** Quem publicou a versão: é a aprovação eletrônica impressa no documento. */
+  async function approverOf(version: { publishedByUserId: string | null } | null): Promise<{ name: string; role: string } | null> {
+    const userId = version?.publishedByUserId;
+    if (!userId) return null;
+    if (!identityCache.has(userId)) {
+      identityCache.set(userId, await loadUserIdentity(userId).catch(() => null));
+    }
+    return identityCache.get(userId) ?? null;
+  }
+
+  async function adminView(version: StoredVersion) {
+    return { ...versionAdminView(version), approver: await approverOf(version) };
+  }
+
+  /** Dados reais que preenchem as lacunas do documento (datas, aprovação e termo de ciência). */
+  async function autoFieldsFor(input: {
+    version: StoredVersion | null;
+    label: string;
+    user: PolicyActor;
+    acceptance: StoredAcceptance | null;
+    at: Date;
+  }): Promise<PolicyAutoFieldContext> {
+    const { version, acceptance, user } = input;
+    const published = version && version.status !== "DRAFT" ? version : null;
+    return {
+      versionLabel: input.label,
+      publishedAt: published?.publishedAt?.toISOString() ?? null,
+      effectiveFrom: published?.effectiveFrom.toISOString() ?? null,
+      approver: await approverOf(published),
+      signer: acceptance
+        ? { name: acceptance.userNameSnapshot, email: acceptance.userEmailSnapshot, role: acceptance.roleSnapshot }
+        : user.role === COMMERCIAL_POLICY_AUDIENCE
+          ? { name: user.name, email: user.email, role: user.role }
+          : null,
+      acceptance: acceptance
+        ? { id: acceptance.id, acceptedAt: acceptance.acceptedAt.toISOString(), evidenceHash: acceptance.evidenceHash }
+        : null,
+      today: input.at.toISOString(),
+    };
   }
 
   function sendControlledCopy(res: express.Response, pdf: Buffer, copyId: string): express.Response {
@@ -218,6 +295,10 @@ export function registerCommercialPolicyRoutes(app: express.Express, deps: Comme
     if (!user) return;
     const result = await readPendingForSeller(store, user, now());
     if (result.ok === false) return res.status(result.status).json(result);
+    if (result.pending && result.version) {
+      const stored = await store.getVersion(result.version.id);
+      return res.json({ ...result, version: { ...result.version, approver: await approverOf(stored) } });
+    }
     return res.json(result);
   });
 
@@ -424,6 +505,7 @@ export function registerCommercialPolicyRoutes(app: express.Express, deps: Comme
       recipientName: user.name,
       recipientEmail: user.email,
       generatedAt: generatedAt.toISOString(),
+      autoFields: await autoFieldsFor({ version, label, user, acceptance: mine, at: generatedAt }),
     });
     return sendControlledCopy(res, pdf, copyId);
   });
@@ -474,6 +556,7 @@ export function registerCommercialPolicyRoutes(app: express.Express, deps: Comme
       recipientEmail: user.email,
       generatedAt: generatedAt.toISOString(),
       stamp: published ? null : "PRÉVIA — VERSÃO AINDA NÃO PUBLICADA",
+      autoFields: await autoFieldsFor({ version: published, label: POL_COM_001_VERSION_LABEL, user, acceptance: null, at: generatedAt }),
     });
     return sendControlledCopy(res, pdf, copyId);
   });
@@ -495,8 +578,17 @@ export function registerCommercialPolicyRoutes(app: express.Express, deps: Comme
   app.post("/api/admin/commercial-policy/official/pol-com-001", deps.requireAppAuth, async (req, res) => {
     const user = await actor(req, res);
     if (!user || !superAdmin(user, res)) return;
+    const vigencia = parsePublicationEffectiveDate(req.body?.effectiveFrom, now());
+    if (vigencia.ok === false) {
+      const officialHash = officialCommercialPolicyHash();
+      const alreadyPublished = (await store.listVersions()).some((row) => row.status === "PUBLISHED" && row.contentHash === officialHash);
+      if (!alreadyPublished) return res.status(422).json({ error: vigencia.code, code: vigencia.code, message: vigencia.message });
+    }
     const state = await currentNormativeState();
-    const published = await publishOfficialCommercialPolicy(store, user.id, now(), { currentSnapshot: state.snapshot });
+    const published = await publishOfficialCommercialPolicy(store, user.id, now(), {
+      currentSnapshot: state.snapshot,
+      effectiveFrom: vigencia.ok ? vigencia.effectiveFrom : undefined,
+    });
     if (published.ok === false) return res.status(published.status).json(published);
     if (!published.alreadyPublished) {
       try {
@@ -511,6 +603,7 @@ export function registerCommercialPolicyRoutes(app: express.Express, deps: Comme
             label: POL_COM_001_VERSION_LABEL,
             contentHash: published.version.contentHash,
             normativeSnapshotHash: published.version.normativeSnapshotHash ?? null,
+            effectiveFrom: published.version.effectiveFrom.toISOString(),
           },
         });
       } catch (error) {
@@ -588,9 +681,9 @@ export function registerCommercialPolicyRoutes(app: express.Express, deps: Comme
       currentSnapshotHash: state.snapshot ? normativeSnapshotHash(state.snapshot) : null,
       currentRelease: state.snapshot?.commissionRelease ?? null,
       settingsSource: state.settingsSource,
-      currentVersion: current ? versionAdminView(current) : null,
-      officialPublishedVersion: officialPublished ? versionAdminView(officialPublished) : null,
-      scheduledVersions: scheduled.map(versionAdminView),
+      currentVersion: current ? await adminView(current) : null,
+      officialPublishedVersion: officialPublished ? await adminView(officialPublished) : null,
+      scheduledVersions: await Promise.all(scheduled.map(adminView)),
       pendingDraft: draft
         ? {
             ...versionAdminView(draft),
@@ -664,7 +757,7 @@ export function registerCommercialPolicyRoutes(app: express.Express, deps: Comme
     const user = await actor(req, res);
     if (!user || !superAdmin(user, res)) return;
     const versions = await store.listVersions();
-    return res.json({ versions: versions.map(versionAdminView) });
+    return res.json({ versions: await Promise.all(versions.map(adminView)) });
   });
 
   app.post("/api/admin/commercial-policy/versions", deps.requireAppAuth, async (req, res) => {
@@ -725,9 +818,12 @@ export function registerCommercialPolicyRoutes(app: express.Express, deps: Comme
   app.post("/api/admin/commercial-policy/versions/:id/publish", deps.requireAppAuth, async (req, res) => {
     const user = await actor(req, res);
     if (!user || !superAdmin(user, res)) return;
+    const vigencia = parsePublicationEffectiveDate(req.body?.effectiveFrom, now());
+    if (vigencia.ok === false) return res.status(422).json({ error: vigencia.code, code: vigencia.code, message: vigencia.message });
     const state = await currentNormativeState();
     const published = await publishPolicyVersion(store, String(req.params.id ?? ""), user.id, now(), {
       currentSnapshot: state.snapshot,
+      effectiveFrom: vigencia.effectiveFrom,
     });
     if (published.ok === false) return res.status(published.status).json(published);
     try {
@@ -743,12 +839,13 @@ export function registerCommercialPolicyRoutes(app: express.Express, deps: Comme
           contentHash: published.version.contentHash,
           normativeSnapshotHash: published.version.normativeSnapshotHash ?? null,
           changeSetHash: published.version.changeSetHash ?? null,
+          effectiveFrom: published.version.effectiveFrom.toISOString(),
         },
       });
     } catch (error) {
       console.error("[commercial-policy-publish-audit]", error);
     }
-    return res.json({ version: versionAdminView(published.version) });
+    return res.json({ version: await adminView(published.version) });
   });
 
   app.post("/api/admin/commercial-policy/acceptances/:id/invalidate", deps.requireAppAuth, async (req, res) => {

@@ -246,6 +246,8 @@ export async function createDraftFromOfficialPolicy(
 export type PublishOptions = {
   /** Snapshot normativo lido das fontes oficiais no momento da publicação. */
   currentSnapshot?: NormativeSnapshot | null;
+  /** Vigência informada pelo administrador no ato da publicação; sem ela vale a do rascunho. */
+  effectiveFrom?: Date;
 };
 
 /**
@@ -306,6 +308,7 @@ export async function publishPolicyVersion(
     contentHash,
     publishedAt: now,
     publishedByUserId: actorUserId,
+    effectiveFrom: options.effectiveFrom,
   });
   if (!published) return fail(409, "VERSION_IMMUTABLE", "A versão deixou de ser rascunho.");
   if (published.effectiveFrom.getTime() <= now.getTime()) {
@@ -336,7 +339,7 @@ export async function publishOfficialCommercialPolicy(
   const versions = await store.listVersions();
   const existing = versions.find((row) => row.status === "PUBLISHED" && row.contentHash === hash);
   if (existing) return { ok: true, version: existing, alreadyPublished: true };
-  const draft = await createPolicyDraft(store, officialCommercialPolicyBody(), now);
+  const draft = await createPolicyDraft(store, { ...officialCommercialPolicyBody(), effectiveFrom: options.effectiveFrom }, now);
   if (draft.ok === false) return draft;
   const published = await publishPolicyVersion(store, draft.version.id, actorUserId, now, options);
   if (published.ok === false) return published;
