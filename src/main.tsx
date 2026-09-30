@@ -18,6 +18,7 @@ import "./project-executive-report-print.css";
 import "./project-intake-form-print.css";
 import "./components/finance/executive-report/finance-executive-report.css";
 import "./components/finance/executive-report/finance-executive-report-print.css";
+import "./components/legalExposure/exposure-legal-report-print.css";
 import "./components/finance/dre/finance-dre-print.css";
 
 // Sessão do Cloudflare Access expirada vira novo login, não "Failed to fetch".

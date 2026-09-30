@@ -1,5 +1,5 @@
 import type { NormalizedSourceBatch } from "../../legalExposureContracts.js";
-import { LEGAL_EXPOSURE_ENV, type LegalExposureEnv } from "../../legalExposureFeatureFlags.js";
+import { LEGAL_EXPOSURE_ENV, djenBaseUrl, type LegalExposureEnv } from "../../legalExposureFeatureFlags.js";
 import { legalExposureFetch } from "../../legalExposureHttp.js";
 import {
   DJEN_DEFAULT_PAGE_SIZE,
@@ -98,7 +98,7 @@ export async function searchDjen(input: {
   throttle?: DjenThrottle;
 }): Promise<NormalizedSourceBatch> {
   if (!hasDjenSearchFilter(input.query)) return emptyQueryBatch();
-  const base = input.env[LEGAL_EXPOSURE_ENV.djenBaseUrl]?.trim().replace(/\/$/, "") ?? "";
+  const base = djenBaseUrl(input.env);
   if (!base) {
     return {
       source: "DJEN",

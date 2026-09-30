@@ -1,0 +1,10 @@
+[Unit]
+Description=IndusCost Exposure — Escavador stale complement
+Documentation=file:README.md
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/induscost
+EnvironmentFile=-/opt/induscost/.env
+ExecStart=/usr/bin/flock -n /run/induscost-legal-escavador.lock /usr/bin/npm run legal-exposure:sync --prefix /opt/induscost -- --source=ESCAVADOR --mode=apply
+Nice=10

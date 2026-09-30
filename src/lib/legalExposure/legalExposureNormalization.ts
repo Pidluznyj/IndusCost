@@ -22,6 +22,40 @@ export function normalizeProcessNumber(value: string | null | undefined): string
   return digits;
 }
 
+export const INVALID_PROCESS_NUMBER = "INVALID_PROCESS_NUMBER" as const;
+
+export type CanonicalProcessKey =
+  | { ok: true; key: string; invalid: false }
+  | { ok: false; key: string; invalid: true; reason: typeof INVALID_PROCESS_NUMBER };
+
+/**
+ * Chave canônica de um CNJ. Zeros à esquerda são significativos (string, nunca Number).
+ * Números inválidos NÃO colidem entre si: cada registro físico fica com identidade própria.
+ */
+export function canonicalProcessKey(
+  value: string | null | undefined,
+  fallbackId?: string | null
+): CanonicalProcessKey {
+  const digits = normalizeProcessNumber(value);
+  if (digits) return { ok: true, key: digits, invalid: false };
+  const identity = String(fallbackId ?? "").trim() || `raw:${String(value ?? "").trim() || "empty"}`;
+  return { ok: false, key: `invalid:${identity}`, invalid: true, reason: INVALID_PROCESS_NUMBER };
+}
+
+export function canonicalProcessKeyValue(
+  value: string | null | undefined,
+  fallbackId?: string | null
+): string {
+  return canonicalProcessKey(value, fallbackId).key;
+}
+
+/** Aceita chave já canônica (20 dígitos ou invalid:…) ou um CNJ mascarado. */
+export function resolveProcessIndexKey(value: string | null | undefined, fallbackId?: string | null): string {
+  const raw = String(value ?? "").trim();
+  if (/^\d{20}$/.test(raw) || raw.startsWith("invalid:")) return raw;
+  return canonicalProcessKey(value, fallbackId).key;
+}
+
 export function formatProcessNumber(value: string | null | undefined): string {
   const digits = normalizeProcessNumber(value) ?? String(value ?? "").replace(/\D/g, "");
   if (digits.length !== 20) return String(value ?? "").trim() || "—";

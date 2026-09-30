@@ -11,7 +11,7 @@ import type { LegalExposureSource } from "./legalExposureContracts.js";
 export const LEGAL_EXPOSURE_AUTOSYNC_OFF_MESSAGE =
   "Apply global recusado: LEGAL_EXPOSURE_AUTOSYNC_ENABLED está desligado.";
 
-const SOURCES = new Set(["ALL", "DJEN", "DATAJUD", "DOMICILIO"]);
+const SOURCES = new Set(["ALL", "DJEN", "DATAJUD", "DOMICILIO", "ESCAVADOR", "TRIBUNAL_PUBLIC", "JUSBRASIL"]);
 
 export type LegalExposureSyncCliArgs = {
   mode: "preview" | "apply";

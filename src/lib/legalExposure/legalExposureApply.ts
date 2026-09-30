@@ -16,6 +16,7 @@ import {
   type NormalizedSourceBatch,
 } from "./legalExposureContracts.js";
 import { FINANCE_INTERNAL_GROUP_COMPANIES } from "@/src/lib/financeInternalGroupExclusions.js";
+import { isOfficialProcessSource, isLocatorSource, djenGroupRecipientPole } from "./legalExposureAuthority.js";
 import { pickCanonicalCase, upsertEntityLink } from "./legalExposureCanonical.js";
 import { correlateObservation } from "./legalExposureCorrelation.js";
 import { genericDiscoveryHasAdditionalEvidence, isTrustedDiscoveryAliasType } from "./legalExposureDiscovery.js";
@@ -26,6 +27,7 @@ import {
   movementFingerprint,
   normalizeLegalName,
   normalizeProcessNumber,
+  canonicalProcessKey,
   sanitizePayload,
   stableHash,
 } from "./legalExposureNormalization.js";
@@ -78,19 +80,20 @@ export function mergeExistingCaseMetadata(
   for (const field of OFFICIAL_PROCESS_FIELDS) {
     const incoming = nonemptyText(observation[field] as string | null | undefined);
     if (!incoming) continue;
+    if (isLocatorSource(source)) continue;
     if (source === "DJEN" && DJEN_PUBLICATION_FIELDS.has(field)) continue;
-    if (source === "DATAJUD" || !legalCase[field]) {
+    if (isOfficialProcessSource(source) || !legalCase[field]) {
       (legalCase as Record<string, unknown>)[field] = incoming;
     }
   }
   const claimValue = nonemptyText(observation.claimValue);
-  if (claimValue && (source === "DATAJUD" || !legalCase.claimValue)) {
+  if (claimValue && !isLocatorSource(source) && (isOfficialProcessSource(source) || !legalCase.claimValue)) {
     legalCase.claimValue = claimValue;
     legalCase.claimCurrency = nonemptyText(observation.claimCurrency) ?? legalCase.claimCurrency ?? "BRL";
   } else if (!legalCase.claimCurrency && nonemptyText(observation.claimCurrency)) {
     legalCase.claimCurrency = nonemptyText(observation.claimCurrency);
   }
-  if (observation.secrecy != null && (source === "DATAJUD" || legalCase.secrecy == null)) {
+  if (observation.secrecy != null && (isOfficialProcessSource(source) || legalCase.secrecy == null)) {
     legalCase.secrecy = observation.secrecy;
   }
 }
@@ -100,7 +103,7 @@ export function officialFieldConflict(
   observation: NormalizedCaseObservation,
   source: LegalExposureSource
 ): Array<{ field: string; official: string; incoming: string }> {
-  if (source === "DATAJUD" || source === "DJEN") return [];
+  if (source === "DATAJUD" || source === "DJEN" || source === "TRIBUNAL_PUBLIC") return [];
   const conflicts: Array<{ field: string; official: string; incoming: string }> = [];
   for (const field of ["className", "classCode", "tribunal", "degree", "courtUnit", "filedAt"] as const) {
     const official = nonemptyText(legalCase[field]);
@@ -116,7 +119,9 @@ function monitoringEnabled(memory: LegalExposureMemory, entityId: string, source
   if (source === "DOMICILIO") return entity.monitorDomicilio;
   if (source === "DATAJUD") return entity.monitorDatajud;
   if (source === "DJEN") return entity.monitorDjen;
-  if (source === "ESCAVADOR") return entity.monitorDatajud || entity.monitorDjen;
+  if (source === "ESCAVADOR" || source === "JUSBRASIL" || source === "TRIBUNAL_PUBLIC" || source === "WEB_DISCOVERY") {
+    return entity.monitorDatajud || entity.monitorDjen;
+  }
   return entity.monitorCertificates;
 }
 
@@ -219,6 +224,16 @@ function pushAlert(
   memory.alerts.push(alert);
 }
 
+function physicalCasesMatchingCnj(
+  memory: LegalExposureMemory,
+  processNumberNormalized: string
+): ExposureCaseRecord[] {
+  return memory.cases.filter((row) => {
+    const canon = canonicalProcessKey(row.processNumberNormalized || row.processNumber, row.id);
+    return canon.ok && canon.key === processNumberNormalized;
+  });
+}
+
 function entityContext(memory: LegalExposureMemory, entityId: string) {
   const entity = memory.entities.find((row) => row.id === entityId);
   if (!entity) return null;
@@ -298,9 +313,10 @@ function ensureCase(
   }
 
   let legalCase =
-    pickCanonicalCase(
-      memory.cases.filter((row) => row.processNumberNormalized === processNumberNormalized)
-    ) ?? null;
+    pickCanonicalCase(physicalCasesMatchingCnj(memory, processNumberNormalized)) ?? null;
+  if (!legalCase && isLocatorSource(input.batch.source)) {
+    return null;
+  }
   const created = !legalCase;
   if (!legalCase) {
     legalCase = {
@@ -364,7 +380,12 @@ function ensureCase(
     legalCase.updatedAt = input.now;
     legalCase.sourceUpdatedAt = observation.sourceUpdatedAt ?? legalCase.sourceUpdatedAt;
     mergeExistingCaseMetadata(legalCase, observation, input.batch.source);
-    if (observation.currentStatus && observation.currentStatus !== previousStatus) {
+    if (
+      observation.currentStatus &&
+      observation.currentStatus !== previousStatus &&
+      !isLocatorSource(input.batch.source) &&
+      (isOfficialProcessSource(input.batch.source) || !previousStatus)
+    ) {
       legalCase.currentStatus = observation.currentStatus;
       pushEvent(memory, input, {
         eventKey: `CASE_STATUS_CHANGED:${legalCase.id}:${previousStatus ?? "-"}:${observation.currentStatus}`,
@@ -381,7 +402,8 @@ function ensureCase(
       input.entityId === legalCase.entityId &&
       observation.entityPole !== "UNKNOWN" &&
       observation.entityPole !== previousPole &&
-      previousPole === "UNKNOWN"
+      previousPole === "UNKNOWN" &&
+      !isLocatorSource(input.batch.source)
     ) {
       legalCase.entityPole = observation.entityPole;
       const event = pushEvent(memory, input, {
@@ -418,15 +440,17 @@ function ensureCase(
     }
   }
 
-  upsertEntityLink(memory, {
-    caseId: legalCase.id,
-    entityId: input.entityId,
-    pole: observation.entityPole,
-    source: input.batch.source,
-    now: input.now,
-    createId: input.createId,
-  });
-  linkGroupCompaniesFromParties(memory, input, legalCase.id, observation.parties);
+  if (!isLocatorSource(input.batch.source)) {
+    upsertEntityLink(memory, {
+      caseId: legalCase.id,
+      entityId: input.entityId,
+      pole: observation.entityPole,
+      source: input.batch.source,
+      now: input.now,
+      createId: input.createId,
+    });
+    linkGroupCompaniesFromParties(memory, input, legalCase.id, observation.parties);
+  }
   if (!created && observation.entityPole === "PASSIVE") {
     const event = pushEvent(memory, input, {
       eventKey: `CASE_POLE_CONFIRMED:${legalCase.id}:${input.entityId}:PASSIVE`,
@@ -466,7 +490,7 @@ function ensureCase(
       caseId: legalCase.id,
       source: input.batch.source,
       sourceIdentifier: observation.sourceIdentifier,
-      confidence: "CONFIRMED",
+      confidence: isLocatorSource(input.batch.source) ? "UNCONFIRMED" : "CONFIRMED",
       firstSeenAt: input.now,
       lastSeenAt: input.now,
       sourceUpdatedAt: observation.sourceUpdatedAt,
@@ -482,9 +506,21 @@ function ensureCase(
     evidence.rawHash = stableHash(rawMetadata);
   }
 
+  if (!isLocatorSource(input.batch.source)) {
   for (const party of observation.parties) {
     const normalizedName = normalizeLegalName(party.name);
     const documentNormalized = party.document?.replace(/\D/g, "") || "";
+    let pole = party.pole;
+    const monitored = memory.entities.find((row) => row.id === input.entityId);
+    const groupNameMatch =
+      Boolean(monitored && normalizedName && normalizedName === normalizeLegalName(monitored.legalName));
+    if (
+      input.batch.source === "DJEN" &&
+      pole === "ACTIVE" &&
+      ((documentNormalized && GROUP_COMPANY_CNPJ.has(documentNormalized)) || groupNameMatch)
+    ) {
+      pole = djenGroupRecipientPole(pole);
+    }
     const found = memory.parties.find(
       (row) =>
         row.caseId === legalCase!.id &&
@@ -502,14 +538,14 @@ function ensureCase(
         documentNormalized,
         partyType: party.partyType,
         personType: party.personType ?? null,
-        pole: party.pole,
+        pole,
         source: input.batch.source,
         firstSeenAt: input.now,
         lastSeenAt: input.now,
       });
     } else {
       found.lastSeenAt = input.now;
-      if (found.pole === "UNKNOWN" && party.pole !== "UNKNOWN") found.pole = party.pole;
+      if (found.pole === "UNKNOWN" && pole !== "UNKNOWN") found.pole = pole;
       if (!found.personType && party.personType) found.personType = party.personType;
     }
   }
@@ -649,6 +685,7 @@ function ensureCase(
       pushAlert(memory, input, event, "DECISION");
     }
   }
+  }
 
   return legalCase;
 }
@@ -688,9 +725,7 @@ function applyCommunication(
   const normalizedStatus = normalizeCommunicationStatus(observation.sourceStatus);
   const processNumberNormalized = normalizeProcessNumber(observation.processNumber);
   const linked = processNumberNormalized
-    ? pickCanonicalCase(
-        memory.cases.filter((row) => row.processNumberNormalized === processNumberNormalized)
-      )
+    ? pickCanonicalCase(physicalCasesMatchingCnj(memory, processNumberNormalized))
     : undefined;
   const existing = memory.communications.find((row) => row.idempotencyKey === key);
   const rawMetadata = sanitizePayload(observation.rawMetadata);

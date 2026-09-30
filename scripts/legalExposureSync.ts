@@ -37,6 +37,8 @@ const { prisma } = await import("../src/lib/prisma.js");
 const service = createLegalExposureService({
   repository: createPrismaExposureRepository(prisma),
   recordIntegrationRun: async (input) => {
+    const startedAt = input.startedAt ?? new Date();
+    const finishedAt = input.finishedAt ?? new Date();
     await prisma.integrationRun.create({
       data: {
         sourceSystem: "CNJ",
@@ -45,8 +47,10 @@ const service = createLegalExposureService({
         status: input.status,
         success: input.status === "SUCCESS" || input.status === "NO_RESULTS" || input.status === "PARTIAL",
         summaryJson: input.summary as object,
-        startedAt: new Date(),
-        finishedAt: new Date(),
+        command: input.command ?? null,
+        startedAt,
+        finishedAt,
+        durationMs: input.durationMs ?? Math.max(0, finishedAt.getTime() - startedAt.getTime()),
       },
     });
   },

@@ -15,9 +15,10 @@ import {
 } from "@/src/lib/legalExposure/legalExposureContracts";
 import { EMPTY_CASE_LIST_FILTERS, ExposureCaseList } from "./ExposureCaseList";
 import { ExposureCaseDossier } from "./ExposureCaseDossier";
+import { buildCaseDataCoverage } from "@/src/lib/legalExposure/legalExposureCoverage";
 
 function item(partial: Partial<ExposureCaseListItem> = {}): ExposureCaseListItem {
-  return {
+  const defaults: ExposureCaseListItem = {
     id: "case-1",
     entityId: "ent-a",
     processNumber: "0001234-56.2024.5.09.0001",
@@ -88,7 +89,11 @@ function item(partial: Partial<ExposureCaseListItem> = {}): ExposureCaseListItem
     attentionLabels: ["Empresa do grupo no polo passivo"],
     multipleGroupEntities: false,
     secrecy: null,
-    ...partial,
+  };
+  const merged = { ...defaults, ...partial };
+  return {
+    ...merged,
+    coverage: partial.coverage ?? buildCaseDataCoverage({ item: merged }),
   };
 }
 
@@ -110,20 +115,103 @@ describe("ExposureCaseList", () => {
       />
     );
     assert.ok(html.includes("Industria Exemplo LTDA"));
-    assert.ok(html.includes("11.222.333/0001-81"));
     assert.ok(html.includes(CASE_VERIFIED_OFFICIAL_COPY));
-    assert.ok(html.includes(CASE_DATAJUD_AVAILABLE_COPY));
     assert.ok(html.includes("Ação Trabalhista - Rito Ordinário"));
     assert.ok(html.includes("09ª VARA DO TRABALHO DE CURITIBA"));
-    assert.ok(html.includes(CASE_POLE_PASSIVE_COPY));
+    assert.ok(html.includes("Ré · grupo") || html.includes(CASE_POLE_PASSIVE_COPY));
     assert.equal(html.includes("polo UNKNOWN"), false);
     assert.ok(html.includes("Maria Exemplo"));
-    assert.ok(html.includes("×"));
+    assert.ok(html.includes("Contra"));
+    assert.ok(html.includes("cursor-pointer") || html.includes('role="button"'));
     assert.ok(html.includes("Ver processo"));
-    assert.ok(html.includes("Limpar filtros"));
-    assert.ok(html.includes("Empresa"));
-    assert.ok(html.includes("Fonte"));
+    assert.ok(html.includes("Filtros avançados"));
+    assert.ok(html.includes("Buscar CNJ, parte, empresa ou assunto"));
+    assert.equal(html.includes("Limpar filtros"), false);
     assert.equal(html.includes("12345678909"), false);
+  });
+
+  it("amostra de 10 cards não vaza undefined, null, UNKNOWN nem [object Object]", () => {
+    const sample = Array.from({ length: 10 }, (_, index) =>
+      item({
+        id: `case-${index + 1}`,
+        processNumber: `000123${index}-56.2024.5.09.000${index % 9}`,
+        className: index % 3 === 0 ? null : "Ação Trabalhista - Rito Ordinário",
+        claimValueFormatted: index % 4 === 0 ? null : "R$ 10.000,00",
+        filedAt: index % 5 === 0 ? null : "2026-09-23T00:00:00.000Z",
+        stage: index % 2 === 0 ? "UNKNOWN" : "INSTRUCTION",
+        stageLabel: index % 2 === 0 ? "Desconhecida" : "Instrução",
+        latestMovement: index % 6 === 0 ? null : item().latestMovement,
+        claimants: index % 7 === 0 ? [] : item().claimants,
+        evidenceSources: index % 2 === 0 ? ["DJEN"] : ["DJEN", "DATAJUD"],
+      })
+    );
+    const html = renderToStaticMarkup(
+      <ExposureCaseList
+        cases={pageOf(sample, 10)}
+        entities={[{ id: "ent-a", legalName: "Industria Exemplo LTDA" }]}
+        filters={EMPTY_CASE_LIST_FILTERS}
+        onFilterChange={() => {}}
+        onClearFilters={() => {}}
+        onPageChange={() => {}}
+        onOpenCase={() => {}}
+      />
+    );
+    assert.equal(html.includes("undefined"), false);
+    assert.equal(html.includes(">null<") || html.includes(" null"), false);
+    assert.equal(html.includes("polo UNKNOWN"), false);
+    assert.equal(html.includes("[object Object]"), false);
+    assert.ok(html.includes("Reclamante"));
+    assert.ok(html.includes("DataJud") || html.includes("DJEN"));
+    for (const row of sample) {
+      assert.ok(html.includes(row.processNumber));
+    }
+  });
+
+  it("filtros avançados só aparecem quando a área é aberta", () => {
+    const collapsed = renderToStaticMarkup(
+      <ExposureCaseList
+        cases={pageOf([item()])}
+        entities={[{ id: "ent-a", legalName: "Industria Exemplo LTDA" }]}
+        filters={EMPTY_CASE_LIST_FILTERS}
+        onFilterChange={() => {}}
+        onClearFilters={() => {}}
+        onPageChange={() => {}}
+        onOpenCase={() => {}}
+      />
+    );
+    assert.ok(collapsed.includes("Filtros avançados"));
+    assert.ok(collapsed.includes("Empresa"));
+    assert.equal(collapsed.includes("Múltiplas empresas"), false);
+    const open = renderToStaticMarkup(
+      <ExposureCaseList
+        cases={pageOf([item()])}
+        entities={[{ id: "ent-a", legalName: "Industria Exemplo LTDA" }]}
+        filters={EMPTY_CASE_LIST_FILTERS}
+        defaultAdvancedFiltersOpen
+        onFilterChange={() => {}}
+        onClearFilters={() => {}}
+        onPageChange={() => {}}
+        onOpenCase={() => {}}
+      />
+    );
+    assert.ok(open.includes("Empresa"));
+    assert.ok(open.includes("Fonte"));
+    assert.ok(open.includes("Múltiplas empresas"));
+  });
+
+  it("Limpar filtros aparece somente com filtro ativo", () => {
+    const html = renderToStaticMarkup(
+      <ExposureCaseList
+        cases={pageOf([item()])}
+        entities={[]}
+        filters={{ ...EMPTY_CASE_LIST_FILTERS, q: "0001234" }}
+        onFilterChange={() => {}}
+        onClearFilters={() => {}}
+        onPageChange={() => {}}
+        onOpenCase={() => {}}
+      />
+    );
+    assert.ok(html.includes("Limpar filtros"));
   });
 
   it("DJEN sem DataJud mostra aguardando enriquecimento sem alerta vermelho", () => {
@@ -165,7 +253,7 @@ describe("ExposureCaseList", () => {
         onOpenCase={() => {}}
       />
     );
-    assert.ok(html.includes("21 processos encontrados"));
+    assert.ok(html.includes("21 processos únicos"));
     assert.ok(html.includes("Anterior"));
     assert.ok(html.includes("Próxima"));
     assert.ok(html.includes("Página 1 de 2"));
@@ -210,11 +298,9 @@ describe("ExposureCaseList — processo compartilhado", () => {
         onOpenCase={() => undefined}
       />
     );
-    assert.match(html, /2 empresas do grupo neste processo/);
     assert.match(html, /Comercio Outra LTDA/);
-    assert.match(html, /99\.888\.777\/0001-66/);
     assert.match(html, /Industria Exemplo LTDA/);
-    assert.match(html, /Ré \/ polo passivo/);
+    assert.match(html, /Ré · grupo/);
     assert.equal((html.match(/0001234-56\.2024\.5\.09\.0001/g) ?? []).length, 1, "o número do processo aparece uma vez");
   });
 });
@@ -253,18 +339,32 @@ describe("ExposureCaseDossier", () => {
         }}
         onClose={() => {}}
         onRefresh={() => {}}
+        onCompleteData={() => {}}
         onPdf={() => {}}
       />
     );
     assert.ok(html.includes("Resumo"));
-    assert.ok(html.includes("Partes"));
-    assert.ok(html.includes("Linha do Tempo"));
+    assert.ok(html.includes("Partes e representantes"));
+    assert.ok(html.includes("Linha do tempo"));
     assert.ok(html.includes("Comunicações"));
-    assert.ok(html.includes("Fontes"));
-    assert.ok(html.includes("Gerar PDF"));
+    assert.ok(html.includes("Fontes e evidências"));
+    assert.ok(html.includes("Relatório PDF"));
+    assert.ok(html.includes("Completar dados"));
     assert.ok(html.includes("Maria Exemplo"));
+    assert.ok(html.includes("Autor / reclamante") || html.includes("Reclamante"));
+    assert.ok(html.includes("Réus / empresas do grupo"));
+    assert.ok(html.includes(">VS<") || html.includes("VS</p>"));
+    assert.equal(html.includes("×"), false);
     assert.ok(html.includes('role="dialog"'));
+    assert.ok(html.includes('aria-labelledby="exposure-dossier-title"'));
+    assert.ok(html.includes('id="exposure-dossier-title"'));
+    assert.ok(html.includes("place-items-center"));
+    assert.equal(html.includes("justify-end"), false);
+    assert.equal(html.includes("max-w-3xl"), false);
     assert.equal(html.includes("12345678909"), false);
+    assert.ok(html.includes("Cobertura dos dados"));
+    assert.ok(html.includes("Ver diagnóstico das fontes"));
+    assert.ok(html.includes("Confirmado"));
   });
 
   it("partes e timeline do dossiê usam rótulos gerenciais", () => {
@@ -300,6 +400,7 @@ describe("ExposureCaseDossier", () => {
         initialTab="partes"
         onClose={() => {}}
         onRefresh={() => {}}
+        onCompleteData={() => {}}
         onPdf={() => {}}
       />
     );
@@ -331,10 +432,11 @@ describe("ExposureCaseDossier", () => {
         initialTab="timeline"
         onClose={() => {}}
         onRefresh={() => {}}
+        onCompleteData={() => {}}
         onPdf={() => {}}
       />
     );
-    assert.ok(timelineHtml.includes("MOVIMENTAÇÃO"));
+    assert.ok(timelineHtml.includes("Distribuição"));
     assert.ok(timelineHtml.includes("Ver detalhes"));
   });
 });
@@ -342,11 +444,20 @@ describe("ExposureCaseDossier", () => {
 describe("ExposurePage cases tab", () => {
   it("não renderiza polo literal e usa a lista executiva", () => {
     const pageSrc = readFileSync(join(process.cwd(), "src/components/legalExposure/ExposurePage.tsx"), "utf8");
+    const dossierSrc = readFileSync(join(process.cwd(), "src/components/legalExposure/ExposureCaseDossier.tsx"), "utf8");
     assert.match(pageSrc, /ExposureCaseList/);
+    assert.match(pageSrc, /ExposureOverview/);
     assert.match(pageSrc, /label: "Visão Geral"/);
     assert.match(pageSrc, /label: "Ação Requerida"/);
+    assert.match(pageSrc, /onOpenCase=\{\(caseId\) => void openDossier\(caseId\)\}/);
     assert.doesNotMatch(pageSrc, /label: "Linha do Tempo"/);
     assert.equal(pageSrc.includes("polo {item.entityPole}"), false);
     assert.equal(/legal-exposure\/cases\?page=1&pageSize=20/.test(pageSrc), false);
+    assert.match(dossierSrc, /place-items-center/);
+    assert.match(dossierSrc, /event\.key === "Escape"/);
+    assert.match(dossierSrc, /closeRef\.current\?\.focus\(\)/);
+    assert.match(dossierSrc, /Cobertura dos dados/);
+    assert.match(dossierSrc, /Ver diagnóstico das fontes/);
+    assert.match(dossierSrc, /exposure-coverage-panel/);
   });
 });

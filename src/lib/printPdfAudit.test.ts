@@ -221,6 +221,24 @@ describe("printPdfAudit — Relatório Presidencial", () => {
   });
 });
 
+describe("printPdfAudit — Exposure jurídico", () => {
+  it("usa branding, A4, no-print e não usa builder %PDF", () => {
+    const entry = getPrintPdfAuditEntry("legal-exposure-report");
+    assert.ok(entry);
+    assert.equal(entry!.printMode, "pdf-layout");
+    assert.equal(entry!.risk, "ok");
+    const css = read("src/components/legalExposure/exposure-legal-report-print.css");
+    const cover = read("src/components/legalExposure/ExposureLegalReportDocument.tsx");
+    const pdf = read("src/lib/legalExposure/legalExposurePdf.ts");
+    assert.match(css, /A4 portrait/);
+    assert.match(css, /@media print/);
+    assert.match(css, /exposure-legal-report-no-print/);
+    assert.match(css, /exposure-legal-print-page:last-child/);
+    assert.match(cover, /resolvePrintCoverLogoSrc/);
+    assert.doesNotMatch(pdf, /%PDF-1\.4/);
+  });
+});
+
 describe("printPdfAudit — Produtos Vendidos", () => {
   it("print usa cabeçalho institucional e shell oculto", () => {
     const page = read("src/components/commercial/SoldProductsReportPage.tsx");

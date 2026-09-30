@@ -51,11 +51,73 @@ describe("ExposureAlertsTab", () => {
     assert.ok(html.includes("Alto"));
     assert.ok(html.includes("Industria Exemplo LTDA"));
     assert.ok(html.includes("0001234-56.2024.5.09.0001"));
-    assert.ok(html.includes("Citação"));
+    assert.ok(html.includes("Revisar nova citação"));
     assert.ok(html.includes("DJEN") || html.includes("Djen") || html.includes("fonte"));
     assert.ok(html.includes("Reconhecer"));
     assert.ok(html.includes("Resolver"));
     assert.ok(html.includes("Ver processo"));
+    assert.ok(html.includes("Ação jurídica"));
+    assert.ok(html.includes('data-alert-channel="LEGAL"'));
+  });
+
+  it("separa alerta jurídico de falha técnica", () => {
+    const html = renderToStaticMarkup(
+      <ExposureAlertsTab
+        alerts={[
+          {
+            id: "alert-legal",
+            severity: "HIGH",
+            status: "OPEN",
+            requiresAction: true,
+            title: "Citação recebida",
+            summary: "Nova citação identificada no DJEN.",
+            createdAt: "2026-09-30T12:00:00.000Z",
+            eventType: "NEW_CITATION",
+            source: "DJEN",
+            detail: "Citação",
+            reference: {
+              caseId: "case-1",
+              processNumber: "0001234-56.2024.5.09.0001",
+              tribunal: "TRT9",
+              courtUnit: "09ª VARA",
+              entity: { id: "ent-a", legalName: "Industria Exemplo LTDA", displayCnpj: "11.222.333/0001-81" },
+            },
+          },
+          {
+            id: "alert-tech",
+            severity: "MEDIUM",
+            status: "OPEN",
+            requiresAction: true,
+            title: "Falha DataJud",
+            summary: "A consulta DataJud falhou.",
+            createdAt: "2026-09-30T12:05:00.000Z",
+            eventType: "SOURCE_FAILED",
+            source: "DATAJUD",
+            detail: "Falha",
+            reference: {
+              caseId: null,
+              processNumber: null,
+              tribunal: null,
+              courtUnit: null,
+              entity: { id: "ent-a", legalName: "Industria Exemplo LTDA", displayCnpj: "11.222.333/0001-81" },
+            },
+          },
+        ]}
+        canManage
+        busy={false}
+        onOpenCase={() => {}}
+        onAcknowledge={() => {}}
+        onResolve={() => {}}
+      />
+    );
+    assert.ok(html.includes("Revisar nova citação"));
+    assert.ok(html.includes("Verificar falha da fonte"));
+    assert.ok(html.includes("Ação jurídica"));
+    assert.ok(html.includes("Integração / fonte"));
+    assert.ok(html.includes('data-alert-channel="LEGAL"'));
+    assert.ok(html.includes('data-alert-channel="TECHNICAL"'));
+    assert.ok(html.includes("Jurídicas"));
+    assert.ok(html.includes("Integração/fontes"));
   });
 
   it("vazio de ação requerida não usa copy de processo", () => {
@@ -195,11 +257,11 @@ describe("ExposureSourcesTab", () => {
             healthy: false,
           },
         ]}
-        onTest={() => {}}
+        onRun={() => {}}
       />
     );
-    assert.equal((html.match(/Desligado/g) ?? []).length >= 2, true);
+    assert.equal((html.match(/Desligad/g) ?? []).length >= 2, true);
     assert.equal(html.includes("bg-red-"), false);
-    assert.ok(html.includes("Testar conexão"));
+    assert.ok(html.includes("Executar agora") || html.includes("política"));
   });
 });

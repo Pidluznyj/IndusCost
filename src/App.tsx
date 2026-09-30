@@ -22,6 +22,7 @@ import { TreasuryModule } from "./components/finance/treasury/TreasuryModule";
 import { InvestedCapitalRecoveryPage } from "./components/finance/investedCapitalRecovery/InvestedCapitalRecoveryPage";
 import { GoalsCockpitPage } from "./components/goals/GoalsCockpitPage";
 import { ExposurePage } from "./components/legalExposure/ExposurePage";
+import { ExposureLegalReportPrintView } from "./components/legalExposure/ExposureLegalReportPrintView";
 import { SatisfactionModule } from "./components/commercial/satisfaction/SatisfactionModule";
 import { SatisfactionResultsPage } from "./components/commercial/satisfaction/SatisfactionResultsPage";
 import { SatisfactionInvitationsPage } from "./components/commercial/satisfaction/SatisfactionInvitationsPage";
@@ -234,6 +235,14 @@ export default function App() {
       <Route path="/inventory-labels" element={<InventoryCountLabelsPage />} />
       <Route path="/r/:sub" element={<FleetPublicReservationShortLinkPage />} />
       <Route element={<RequireAuth />}>
+      <Route
+        path="/exposure/cases/:id/print"
+        element={<ExposureLegalReportPrintView kind="case" />}
+      />
+      <Route
+        path="/exposure/reports/group/print"
+        element={<ExposureLegalReportPrintView kind="group" />}
+      />
       <Route
         path="/employees/:employeeId/evaluations/:evaluationId/print"
         element={<ExperienceEvaluationPrintView />}

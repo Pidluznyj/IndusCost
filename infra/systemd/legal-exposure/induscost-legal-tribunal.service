@@ -1,0 +1,10 @@
+[Unit]
+Description=IndusCost Exposure — tribunal public portals
+Documentation=file:README.md
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/induscost
+EnvironmentFile=-/opt/induscost/.env
+ExecStart=/usr/bin/flock -n /run/induscost-legal-tribunal.lock /usr/bin/npm run legal-exposure:sync --prefix /opt/induscost -- --source=TRIBUNAL_PUBLIC --mode=apply
+Nice=10

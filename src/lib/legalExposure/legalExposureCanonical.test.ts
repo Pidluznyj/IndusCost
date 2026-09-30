@@ -15,9 +15,11 @@ import {
   buildExposureGroupReport,
   buildExposureProcessDossier,
   buildExecutiveNarrative,
+  listCanonicalCases,
 } from "./legalExposureExecutive.js";
 import { dossierPdfLines } from "./legalExposurePdf.js";
-import { normalizeProcessNumber } from "./legalExposureNormalization.js";
+import { canonicalProcessKey, normalizeProcessNumber } from "./legalExposureNormalization.js";
+import { collectGlobalCanonicalDatajudTargets } from "./legalExposurePipeline.js";
 import { maskCpf } from "./legalExposurePrivacy.js";
 import { createEmptyExposureMemory, type ExposureCaseRecord } from "./legalExposureStore.js";
 import { FINANCE_INTERNAL_GROUP_COMPANIES } from "@/src/lib/financeInternalGroupExclusions.js";
@@ -143,9 +145,49 @@ describe("canonical CNJ grouping", () => {
     const dash = buildExposureDashboard(memory);
     assert.equal(dash.cards.monitoredCases, 1);
     assert.equal(dash.cards.passiveCases, 1);
+    assert.ok(dash.dataQuality);
+    assert.ok(Array.isArray(dash.attentionNow));
     assert.equal(dash.entities.find((row) => row.id === "ent-a")?.monitoredCases, 1);
     assert.equal(dash.entities.find((row) => row.id === "ent-b")?.monitoredCases, 1);
     assert.equal(dash.entities.find((row) => row.id === "ent-a")?.polePassive ?? 0, dash.entities.find((row) => row.id === "ent-b")?.polePassive);
+  });
+
+  it("1 CNJ / 3 physical cases com máscaras diferentes = 1 card, 3 empresas, dashboard 1", () => {
+    const CNPJ_C = "26385089000100";
+    const memory = twoEntities();
+    memory.entities.push(entity("ent-c", CNPJ_C, "SM Exemplo LTDA"));
+    const digits = "00013848620265090009";
+    memory.cases.push({
+      ...physicalCase("case-a", "ent-a", "2026-09-01T10:00:00.000Z"),
+      processNumber: "0001384-86.2026.5.09.0009",
+      processNumberNormalized: "0001384-86.2026.5.09.0009",
+    });
+    memory.cases.push({
+      ...physicalCase("case-b", "ent-b", "2026-09-02T10:00:00.000Z"),
+      processNumber: "0001384 86 2026 5 09 0009",
+      processNumberNormalized: "0001384 86 2026 5 09 0009",
+    });
+    memory.cases.push({
+      ...physicalCase("case-c", "ent-c", "2026-09-03T10:00:00.000Z"),
+      processNumber: digits,
+      processNumberNormalized: digits,
+    });
+    const list = listCanonicalCases(memory, {});
+    assert.equal(new Set(list.map((row) => canonicalProcessKey(row.processNumber).key)).size, list.length);
+    const page = listCases(memory, {});
+    assert.equal(page.total, 1);
+    assert.equal(page.items.length, 1);
+    assert.equal(page.uniqueProcessCount, 1);
+    assert.equal(page.physicalCaseCount, 3);
+    assert.equal(page.items[0]?.groupEntities.length, 3);
+    const dash = buildExposureDashboard(memory);
+    assert.equal(dash.cards.monitoredCases, 1);
+    assert.equal(dash.entities.find((row) => row.id === "ent-a")?.monitoredCases, 1);
+    assert.equal(dash.entities.find((row) => row.id === "ent-b")?.monitoredCases, 1);
+    assert.equal(dash.entities.find((row) => row.id === "ent-c")?.monitoredCases, 1);
+    const report = buildExposureGroupReport(memory);
+    assert.equal(report.totals.uniqueProcesses, 1);
+    assert.equal(collectGlobalCanonicalDatajudTargets(memory).length, 1);
   });
 
   it("nova ingestão da segunda empresa não cria outro LegalCase", () => {

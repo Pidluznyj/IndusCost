@@ -1,0 +1,11 @@
+[Unit]
+Description=IndusCost Exposure — Jusbrasil timer
+
+[Timer]
+OnCalendar=*-*-* 04:10:00 America/Sao_Paulo
+Persistent=true
+AccuracySec=1min
+Unit=induscost-legal-jusbrasil.service
+
+[Install]
+WantedBy=timers.target

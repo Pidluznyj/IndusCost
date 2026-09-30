@@ -8,6 +8,10 @@
    * Relatório novo produto: modal em createPortal(document.body).
    * Esconde o app (#root) para não aparecer sidebar "IndusCost" nem o shell.
    */
+  body.exposure-legal-report-printing,
+  body.exposure-legal-report-printing * {
+    visibility: visible !important;
+  }
   body.np-report-printing #root,
   body.material-demand-printing #root,
   body.cnpj-intelligence-printing #root,

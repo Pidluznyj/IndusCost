@@ -10,12 +10,16 @@ import { saveAppLocalFile } from "@/src/lib/appLocalFileStorage.js";
 import { applyBatchToMemory } from "./legalExposureApply.js";
 import type { LegalAliasType, LegalExposureSource, NormalizedSourceBatch } from "./legalExposureContracts.js";
 import { LEGAL_ALIAS_TYPES } from "./legalExposureContracts.js";
-import { publicSourceConfiguration, escavadorRefreshHours, isEscavadorEnabled } from "./legalExposureFeatureFlags.js";
+import { publicSourceConfiguration, escavadorRefreshHours, isEscavadorEnabled, isJusbrasilEnabled, jusbrasilConfigured } from "./legalExposureFeatureFlags.js";
+import { SOURCE_FRESHNESS_POLICY } from "./legalExposureHealth.js";
 import {
   matchExposureGroupCompanies,
   OUTSIDE_GROUP_COMPANY_MESSAGE,
 } from "./legalExposureEntityForm.js";
-import { normalizeExposureCnpj, normalizeLegalName, normalizeProcessNumber, sanitizePayload } from "./legalExposureNormalization.js";
+import { normalizeExposureCnpj, normalizeLegalName, normalizeProcessNumber, canonicalProcessKey, sanitizePayload } from "./legalExposureNormalization.js";
+import { siblingAlertIds } from "./legalExposureFeedDedupe.js";
+import { buildSourceOperations } from "./legalExposureSourceOperations.js";
+import { integrationTargetOf } from "./legalExposureSourceSchedule.js";
 import { buildDjenDiscoveryTerms, isLegalAliasType } from "./legalExposureDiscovery.js";
 import {
   collectDatajudTargetsFromBatch,
@@ -78,6 +82,44 @@ export type ExposureServiceDeps = {
     mode: string;
     status: string;
     summary: unknown;
+    startedAt?: Date;
+    finishedAt?: Date | null;
+    durationMs?: number | null;
+    command?: string;
+  }) => Promise<string | void>;
+  listIntegrationRuns?: (input?: { target?: string; take?: number }) => Promise<
+    Array<{
+      id: string;
+      source: string;
+      job: string | null;
+      status: string;
+      trigger: string | null;
+      startedAt: string | null;
+      finishedAt: string | null;
+      durationMs: number | null;
+      outcome: string | null;
+      processesRequested: number | null;
+      processesFound: number | null;
+      movementsReceived: number | null;
+      communicationsReceived: number | null;
+      entitiesProcessed: number | null;
+      errorCode: string | null;
+      sanitizedError: string | null;
+      externalCall: boolean | null;
+    }>
+  >;
+  findRunningJob?: (target: string) => Promise<{ id: string; startedAt: Date | null } | null>;
+  beginIntegrationRun?: (input: {
+    target: string;
+    mode: string;
+    trigger: "SCHEDULED" | "MANUAL";
+    job?: string;
+  }) => Promise<{ id: string; startedAt: Date }>;
+  finishIntegrationRun?: (input: {
+    id: string;
+    status: string;
+    summary: Record<string, unknown>;
+    startedAt: Date;
   }) => Promise<void>;
 };
 
@@ -86,7 +128,11 @@ const TARGET: Record<string, string> = {
   DATAJUD: "LEGAL_EXPOSURE_DATAJUD",
   DJEN: "LEGAL_EXPOSURE_DJEN",
   ESCAVADOR: "LEGAL_EXPOSURE_ESCAVADOR",
+  TRIBUNAL_PUBLIC: "LEGAL_EXPOSURE_TRIBUNAL_PUBLIC",
+  JUSBRASIL: "LEGAL_EXPOSURE_JUSBRASIL",
 };
+
+const sourceJobLocks = new Set<string>();
 
 function disabledRunner(source: LegalExposureSource): NormalizedSourceBatch {
   return {
@@ -102,7 +148,7 @@ function disabledRunner(source: LegalExposureSource): NormalizedSourceBatch {
   };
 }
 
-async function defaultRunners(): Promise<ExposureRunners> {
+export async function defaultRunners(): Promise<ExposureRunners> {
   const { runDomicilioSync } = await import("./sources/domicilio/domicilioSyncRunner.server.js");
   const { runDatajudSync } = await import("./sources/datajud/datajudSyncRunner.server.js");
   const { runDjenSync } = await import("./sources/djen/djenSyncRunner.server.js");
@@ -441,9 +487,14 @@ export function createLegalExposureService(deps: ExposureServiceDeps) {
       return mutate(userId, (memory) => {
         const alert = memory.alerts.find((row) => row.id === id);
         if (!alert) throw new ExposureServiceError("Alerta não encontrado.", "NOT_FOUND");
-        alert.status = "ACKNOWLEDGED";
-        alert.acknowledgedAt = now().toISOString();
-        alert.acknowledgedByUserId = userId;
+        const ids = siblingAlertIds(memory, id);
+        for (const siblingId of ids) {
+          const sibling = memory.alerts.find((row) => row.id === siblingId);
+          if (!sibling || sibling.status === "RESOLVED") continue;
+          sibling.status = "ACKNOWLEDGED";
+          sibling.acknowledgedAt = now().toISOString();
+          sibling.acknowledgedByUserId = userId;
+        }
         audit(memory, userId, "ALERT_ACKNOWLEDGED", { entityId: alert.entityId }, { alertId: id });
       });
     },
@@ -451,9 +502,14 @@ export function createLegalExposureService(deps: ExposureServiceDeps) {
       return mutate(userId, (memory) => {
         const alert = memory.alerts.find((row) => row.id === id);
         if (!alert) throw new ExposureServiceError("Alerta não encontrado.", "NOT_FOUND");
-        alert.status = "RESOLVED";
-        alert.resolvedAt = now().toISOString();
-        alert.resolvedByUserId = userId;
+        const ids = siblingAlertIds(memory, id);
+        for (const siblingId of ids) {
+          const sibling = memory.alerts.find((row) => row.id === siblingId);
+          if (!sibling) continue;
+          sibling.status = "RESOLVED";
+          sibling.resolvedAt = now().toISOString();
+          sibling.resolvedByUserId = userId;
+        }
         audit(memory, userId, "ALERT_RESOLVED", { entityId: alert.entityId }, { alertId: id });
       });
     },
@@ -545,10 +601,17 @@ export function createLegalExposureService(deps: ExposureServiceDeps) {
     },
     async sourceStatus() {
       const memory = await deps.repository.load();
+      const runs = (await deps.listIntegrationRuns?.({ take: 50 })) ?? [];
       return {
         sources: sourceStatuses(memory, now()),
         configuration: publicSourceConfiguration(),
+        operations: buildSourceOperations({ memory, now: now(), runs }),
+        healthCheckExternalCall: false as const,
       };
+    },
+    async sourceRuns(source: string) {
+      const target = integrationTargetOf(source.replace(/^LEGAL_EXPOSURE_/, ""));
+      return (await deps.listIntegrationRuns?.({ target, take: 50 })) ?? [];
     },
     async sync(input: {
       source?: LegalExposureSource | "ALL";
@@ -559,6 +622,24 @@ export function createLegalExposureService(deps: ExposureServiceDeps) {
     }, userId: string | null) {
       const mode = input.mode === "apply" ? "apply" : "preview";
       const trigger: ExposureSyncTrigger = input.trigger === "SCHEDULED" ? "SCHEDULED" : "MANUAL";
+      const jobKey = String(input.source ?? "ALL");
+      if (sourceJobLocks.has(jobKey)) {
+        throw new ExposureServiceError("Execução já em andamento.", "CONFLICT");
+      }
+      const runningTarget = TARGET[jobKey] ?? (jobKey === "ALL" ? "LEGAL_EXPOSURE_ALL" : integrationTargetOf(jobKey));
+      const already = await deps.findRunningJob?.(runningTarget);
+      if (already?.startedAt && Date.now() - already.startedAt.getTime() < 45 * 60 * 1000) {
+        throw new ExposureServiceError("Execução já em andamento.", "CONFLICT");
+      }
+      sourceJobLocks.add(jobKey);
+      const startedAt = now();
+      const liveRun = await deps.beginIntegrationRun?.({
+        target: runningTarget,
+        mode: mode === "apply" ? "APPLY" : "PREVIEW",
+        trigger,
+        job: jobKey,
+      });
+      try {
       const runners = deps.runners ?? (await defaultRunners());
       const memory = await deps.repository.load();
       const pipelineAll = !input.source || input.source === "ALL";
@@ -566,6 +647,8 @@ export function createLegalExposureService(deps: ExposureServiceDeps) {
       const wantsDatajud = pipelineAll || input.source === "DATAJUD";
       const wantsDomicilio = pipelineAll || input.source === "DOMICILIO";
       const wantsEscavador = pipelineAll || input.source === "ESCAVADOR";
+      const wantsTribunal = input.source === "TRIBUNAL_PUBLIC";
+      const wantsJusbrasil = input.source === "JUSBRASIL";
       const scopedProcessNumber = input.entityId ? input.processNumber?.trim() || "" : "";
 
       let entities: ExposureEntityRecord[];
@@ -580,6 +663,8 @@ export function createLegalExposureService(deps: ExposureServiceDeps) {
 
       const batches: NormalizedSourceBatch[] = [];
       const summaryEntities: Array<EntitySyncCounters & { entityId: string; legalName: string }> = [];
+      const datajudHttpCache = new Map<string, NormalizedSourceBatch>();
+      const escavadorHttpCache = new Map<string, NormalizedSourceBatch>();
 
       function applyOwned(entityId: string, batch: NormalizedSourceBatch) {
         if (mode === "apply" && shouldApplyBatch(batch)) {
@@ -660,10 +745,15 @@ export function createLegalExposureService(deps: ExposureServiceDeps) {
               applyOwned(entity.id, batch);
             }
             for (const target of targets) {
-              const batch = await runners.datajud({
-                processNumber: target.processNumber,
-                tribunalAlias: target.tribunalAlias,
-              });
+              const cacheKey = `${target.processNumber}:${target.tribunalAlias}`;
+              let batch = datajudHttpCache.get(cacheKey);
+              if (!batch) {
+                batch = await runners.datajud({
+                  processNumber: target.processNumber,
+                  tribunalAlias: target.tribunalAlias,
+                });
+                datajudHttpCache.set(cacheKey, batch);
+              }
               owned.push(batch);
               applyOwned(entity.id, batch);
             }
@@ -684,13 +774,15 @@ export function createLegalExposureService(deps: ExposureServiceDeps) {
           const processes = new Map<string, string>();
           for (const row of memory.cases) {
             if (row.entityId !== entity.id && !linkedCaseIds.has(row.id)) continue;
-            processes.set(row.processNumberNormalized, row.processNumberNormalized);
+            const canon = canonicalProcessKey(row.processNumberNormalized || row.processNumber, row.id);
+            if (!canon.ok) continue;
+            processes.set(canon.key, canon.key);
           }
           const scoped = normalizeProcessNumber(scopedProcessNumber);
           for (const processNumber of processes.keys()) {
             if (scoped && processNumber !== scoped) continue;
             const caseIds = memory.cases
-              .filter((row) => row.processNumberNormalized === processNumber)
+              .filter((row) => canonicalProcessKey(row.processNumberNormalized || row.processNumber, row.id).key === processNumber)
               .map((row) => row.id);
             const lastEscavador = memory.evidences
               .filter((row) => caseIds.includes(row.caseId) && row.source === "ESCAVADOR")
@@ -700,7 +792,11 @@ export function createLegalExposureService(deps: ExposureServiceDeps) {
               lastEscavador == null ||
               now().getTime() - lastEscavador > refreshHours * 60 * 60 * 1000;
             if (!scoped && !stale) continue;
-            const batch = await runners.escavador({ processNumber });
+            let batch = escavadorHttpCache.get(processNumber);
+            if (!batch) {
+              batch = await runners.escavador({ processNumber });
+              escavadorHttpCache.set(processNumber, batch);
+            }
             owned.push(batch);
             applyOwned(entity.id, batch);
           }
@@ -714,6 +810,67 @@ export function createLegalExposureService(deps: ExposureServiceDeps) {
         });
       }
 
+      if (wantsTribunal || wantsJusbrasil) {
+        const unique = new Map<
+          string,
+          { entityId: string; tribunal: string | null; system: string | null; caseIds: string[] }
+        >();
+        for (const row of memory.cases) {
+          const canon = canonicalProcessKey(row.processNumberNormalized || row.processNumber, row.id);
+          if (!canon.ok) continue;
+          const existing = unique.get(canon.key);
+          if (existing) {
+            existing.caseIds.push(row.id);
+            continue;
+          }
+          unique.set(canon.key, {
+            entityId: row.entityId,
+            tribunal: row.tribunal,
+            system: row.systemName,
+            caseIds: [row.id],
+          });
+        }
+        const scoped = normalizeProcessNumber(scopedProcessNumber);
+        function staleFor(source: LegalExposureSource, caseIds: string[]): boolean {
+          const last = memory.evidences
+            .filter((row) => caseIds.includes(row.caseId) && row.source === source)
+            .map((row) => Date.parse(row.lastSeenAt))
+            .sort((a, b) => b - a)[0];
+          return last == null || now().getTime() - last > SOURCE_FRESHNESS_POLICY[source].staleAfterMs;
+        }
+        if (wantsTribunal) {
+          const { runTribunalPublicLookup } = await import("./sources/tribunalPublic/tribunalPublicRunner.server.js");
+          const seenTribunal = new Set<string>();
+          for (const [processNumber, meta] of unique) {
+            if (scoped && processNumber !== scoped) continue;
+            const tribunalKey = `${meta.tribunal ?? ""}:${meta.system ?? ""}`;
+            if (seenTribunal.has(tribunalKey)) continue;
+            seenTribunal.add(tribunalKey);
+            const batch = await runTribunalPublicLookup({
+              processNumber,
+              tribunal: meta.tribunal,
+              system: meta.system,
+            });
+            applyOwned(meta.entityId, batch);
+          }
+        }
+        if (wantsJusbrasil) {
+          const { fetchJusbrasilProcess } = await import("./sources/jusbrasil/jusbrasilClient.server.js");
+          if (!isJusbrasilEnabled() || !jusbrasilConfigured()) {
+            const batch = await fetchJusbrasilProcess({ processNumber: scoped || [...unique.keys()][0] || "" });
+            const entityId = [...unique.values()][0]?.entityId ?? entities[0]?.id;
+            if (entityId) applyOwned(entityId, batch);
+          } else {
+            for (const [processNumber, meta] of unique) {
+              if (scoped && processNumber !== scoped) continue;
+              if (!scoped && !staleFor("JUSBRASIL", meta.caseIds)) continue;
+              const batch = await fetchJusbrasilProcess({ processNumber });
+              applyOwned(meta.entityId, batch);
+            }
+          }
+        }
+      }
+
       audit(
         memory,
         userId,
@@ -722,24 +879,83 @@ export function createLegalExposureService(deps: ExposureServiceDeps) {
         { mode, source: input.source ?? "ALL", trigger }
       );
       await deps.repository.persist(memory);
+      const finishedAt = now();
+      const durationMs = Math.max(0, finishedAt.getTime() - startedAt.getTime());
+      const bySource = new Map<string, NormalizedSourceBatch[]>();
       for (const batch of batches) {
-        await deps.recordIntegrationRun?.({
-          target: TARGET[batch.source] ?? batch.source,
-          mode: mode === "apply" ? "APPLY" : "PREVIEW",
-          status: batch.outcome,
+        const list = bySource.get(batch.source) ?? [];
+        list.push(batch);
+        bySource.set(batch.source, list);
+      }
+      for (const [source, sourceBatches] of bySource) {
+        const worst = sourceBatches.find((row) => row.outcome === "RATE_LIMITED")
+          ?? sourceBatches.find((row) => row.outcome !== "SUCCESS" && row.outcome !== "NO_RESULTS" && row.outcome !== "PARTIAL")
+          ?? sourceBatches.find((row) => row.outcome === "PARTIAL")
+          ?? sourceBatches[0];
+        const processesFound = new Set(
+          sourceBatches.flatMap((row) => row.cases.map((item) => normalizeProcessNumber(item.processNumber) ?? item.processNumber))
+        ).size;
+        const summary = {
+          trigger,
+          job: source,
+          outcome: worst?.outcome ?? "SUCCESS",
+          externalCall: sourceBatches.some((row) => row.externalCall),
+          processesRequested: datajudHttpCache.size || processesFound,
+          processesFound,
+          communicationsReceived: sourceBatches.reduce((sum, row) => sum + row.communications.length, 0),
+          movementsReceived: sourceBatches.reduce((sum, row) => sum + row.cases.reduce((inner, item) => inner + (item.movements?.length ?? 0), 0), 0),
+          entitiesProcessed: summaryEntities.length,
+          errorCode: worst?.errorCode ?? null,
+          sanitizedError: worst?.errorMessageSanitized ?? null,
+        };
+        if (liveRun && source === jobKey) {
+          await deps.finishIntegrationRun?.({
+            id: liveRun.id,
+            status: worst?.outcome ?? "SUCCESS",
+            summary,
+            startedAt: liveRun.startedAt,
+          });
+        } else {
+          await deps.recordIntegrationRun?.({
+            target: TARGET[source] ?? source,
+            mode: mode === "apply" ? "APPLY" : "PREVIEW",
+            status: worst?.outcome ?? "SUCCESS",
+            startedAt,
+            finishedAt,
+            durationMs,
+            command: `${trigger}:${source}`,
+            summary,
+          });
+        }
+      }
+      if (liveRun && jobKey === "ALL") {
+        await deps.finishIntegrationRun?.({
+          id: liveRun.id,
+          status: batches.some((row) => row.outcome === "RATE_LIMITED")
+            ? "RATE_LIMITED"
+            : batches.every((row) => row.outcome === "SUCCESS" || row.outcome === "NO_RESULTS" || row.outcome === "PARTIAL")
+              ? "SUCCESS"
+              : "PARTIAL",
           summary: {
-            outcome: batch.outcome,
-            externalCall: batch.externalCall,
-            cases: batch.cases.length,
-            communications: batch.communications.length,
-            errorCode: batch.errorCode,
+            trigger,
+            job: "ALL",
+            outcome: "SUCCESS",
+            externalCall: batches.some((row) => row.externalCall),
+            entitiesProcessed: summaryEntities.length,
+            processesRequested: datajudHttpCache.size,
+            processesFound: datajudHttpCache.size,
           },
+          startedAt: liveRun.startedAt,
         });
       }
       return {
         mode,
         trigger,
         externalCall: batches.some((batch) => batch.externalCall),
+        durationMs,
+        startedAt: startedAt.toISOString(),
+        finishedAt: finishedAt.toISOString(),
+        uniqueDatajudTargets: datajudHttpCache.size,
         batches: batches.map((batch) => ({
           source: batch.source,
           outcome: batch.outcome,
@@ -752,6 +968,19 @@ export function createLegalExposureService(deps: ExposureServiceDeps) {
         })),
         summary: { entities: summaryEntities },
       };
+      } catch (error) {
+        if (liveRun) {
+          await deps.finishIntegrationRun?.({
+            id: liveRun.id,
+            status: "FAILED",
+            summary: { trigger, job: jobKey, outcome: "FAILED", sanitizedError: "Falha na execução." },
+            startedAt: liveRun.startedAt,
+          });
+        }
+        throw error;
+      } finally {
+        sourceJobLocks.delete(jobKey);
+      }
     },
     async testConnection(source: LegalExposureSource, input?: { entityId?: string }) {
       const started = Date.now();
@@ -877,31 +1106,54 @@ export function createLegalExposureService(deps: ExposureServiceDeps) {
         refreshingCases.delete(id);
       }
     },
-    async processPdf(id: string, userId: string) {
-      const dossier = await this.getCase(id, userId);
-      const { buildPagedPdf, dossierPdfLines } = await import("./legalExposurePdf.js");
-      return {
-        filename: `exposure-${dossier.processNumber.replace(/\D/g, "")}.pdf`,
-        buffer: buildPagedPdf({
-          title: "IndusCost · Exposure · Dossiê do processo",
-          lines: dossierPdfLines(dossier),
-        }),
-      };
+    async completeCaseData(id: string, userId: string) {
+      if (refreshingCases.has(id)) {
+        throw new ExposureServiceError("Atualização deste processo já está em andamento.", "CONFLICT");
+      }
+      const memory = await deps.repository.load();
+      const row = memory.cases.find((item) => item.id === id);
+      if (!row) throw new ExposureServiceError("Processo não encontrado.", "NOT_FOUND");
+      refreshingCases.add(id);
+      try {
+        const runners = deps.runners ?? (await defaultRunners());
+        const { enrichLegalProcessByCnj } = await import("./legalProcessEnrichment.server.js");
+        const timestamp = now().toISOString();
+        const result = await enrichLegalProcessByCnj({
+          memory,
+          entityId: row.entityId,
+          processNumber: row.processNumberNormalized,
+          tribunal: row.tribunal,
+          system: row.systemName,
+          runners,
+          now: timestamp,
+          createId,
+        });
+        audit(
+          memory,
+          userId,
+          "MANUAL_SYNC",
+          { entityId: row.entityId, caseId: id },
+          { kind: "COMPLETE_DATA", processNumber: row.processNumberNormalized, steps: result.steps }
+        );
+        await deps.repository.persist(memory);
+        const dossier = buildExposureProcessDossier(memory, id);
+        if (!dossier) throw new ExposureServiceError("Processo não encontrado.", "NOT_FOUND");
+        return {
+          steps: result.steps,
+          coverageBefore: result.coverageBefore,
+          coverageAfter: result.coverageAfter ?? dossier.coverage ?? null,
+          dossier,
+        };
+      } finally {
+        refreshingCases.delete(id);
+      }
     },
-    async groupPdf(entityId: string | null, userId: string) {
+    async groupReport(entityId: string | null, userId: string) {
       const memory = await deps.repository.load();
       await deps.repository.appendAudit(
         buildAuditRecord(userId, "VIEW_CASE", { entityId }, { report: "GROUP" })
       );
-      const report = buildExposureGroupReport(memory, entityId);
-      const { buildPagedPdf, groupReportPdfLines } = await import("./legalExposurePdf.js");
-      return {
-        filename: "exposure-relatorio-geral.pdf",
-        buffer: buildPagedPdf({
-          title: "IndusCost · Exposure · Relatório geral",
-          lines: groupReportPdfLines(report),
-        }),
-      };
+      return buildExposureGroupReport(memory, entityId);
     },
   };
 }
