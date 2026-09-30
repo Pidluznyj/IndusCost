@@ -133,7 +133,10 @@ export function ExposurePage() {
   const [aliasesByEntity, setAliasesByEntity] = useState<Record<string, ExposureAliasRow[]>>({});
   const [aliasDrafts, setAliasDrafts] = useState<Record<string, { value: string; type: LegalAliasType }>>({});
   const [aliasError, setAliasError] = useState<string | null>(null);
-  const companyActions = exposureEntityActions(permissions.canManage(LEGAL_EXPOSURE_RESOURCES.module));
+  // Booleano estável: o objeto de permissões é recriado a cada atualização da sessão (/api/auth/me);
+  // usá-lo como dependência da carga fazia a tela recarregar em laço até esgotar o navegador.
+  const canManageModule = permissions.canManage(LEGAL_EXPOSURE_RESOURCES.module);
+  const companyActions = exposureEntityActions(canManageModule);
 
   const reloadAliases = useCallback(async (list: MonitoredEntity[]) => {
     const entries = await Promise.all(
@@ -146,18 +149,22 @@ export function ExposurePage() {
   }, []);
 
   const reloadOverview = useCallback(async () => {
-    const [data, list, companies] = await Promise.all([
+    // Cada bloco é independente: a falha de um não esconde os outros nem dispara nova carga.
+    const [data, list, companies] = await Promise.allSettled([
       fetchJsonOk<Dashboard>("/api/legal-exposure/dashboard"),
       fetchJsonOk<MonitoredEntity[]>("/api/legal-exposure/entities"),
       fetchJsonOk<ExposureGroupCompany[]>(EXPOSURE_GROUP_COMPANIES_PATH),
     ]);
-    setDashboard(data);
-    setEntities(list);
-    setGroupCompanies(companies);
-    if (permissions.canManage(LEGAL_EXPOSURE_RESOURCES.module)) {
-      await reloadAliases(list);
+    if (data.status === "fulfilled") setDashboard(data.value);
+    if (list.status === "fulfilled") setEntities(list.value);
+    if (companies.status === "fulfilled") setGroupCompanies(companies.value);
+    const failure = [data, list, companies].find((result) => result.status === "rejected");
+    if (canManageModule && list.status === "fulfilled") {
+      await reloadAliases(list.value);
     }
-  }, [permissions, reloadAliases]);
+    if (failure && failure.status === "rejected") throw failure.reason;
+    setError(null);
+  }, [canManageModule, reloadAliases]);
 
   useEffect(() => {
     let cancelled = false;
