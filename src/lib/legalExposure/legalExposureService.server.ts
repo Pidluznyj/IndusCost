@@ -5,10 +5,15 @@
 
 import { randomUUID } from "node:crypto";
 import { isValidCnpj } from "@/src/lib/companyCnpjFormat.js";
+import { FINANCE_INTERNAL_GROUP_COMPANIES } from "@/src/lib/financeInternalGroupExclusions.js";
 import { saveAppLocalFile } from "@/src/lib/appLocalFileStorage.js";
 import { applyBatchToMemory } from "./legalExposureApply.js";
 import type { LegalExposureSource, NormalizedSourceBatch } from "./legalExposureContracts.js";
 import { publicSourceConfiguration } from "./legalExposureFeatureFlags.js";
+import {
+  matchExposureGroupCompanies,
+  OUTSIDE_GROUP_COMPANY_MESSAGE,
+} from "./legalExposureEntityForm.js";
 import { normalizeExposureCnpj, normalizeLegalName, sanitizePayload } from "./legalExposureNormalization.js";
 import {
   buildExposureDashboard,
@@ -131,6 +136,10 @@ export function createLegalExposureService(deps: ExposureServiceDeps) {
       const memory = await deps.repository.load();
       return memory.entities.map(publicEntity);
     },
+    async listGroupCompanies() {
+      const memory = await deps.repository.load();
+      return matchExposureGroupCompanies(FINANCE_INTERNAL_GROUP_COMPANIES, memory.entities);
+    },
     async createEntity(input: {
       cnpj: string;
       legalName: string;
@@ -141,6 +150,9 @@ export function createLegalExposureService(deps: ExposureServiceDeps) {
       const cnpj = normalizeExposureCnpj(input.cnpj);
       if (!cnpj || !isValidCnpj(cnpj)) {
         throw new ExposureServiceError("CNPJ inválido.", "VALIDATION");
+      }
+      if (!FINANCE_INTERNAL_GROUP_COMPANIES.some((company) => company.cnpj === cnpj)) {
+        throw new ExposureServiceError(OUTSIDE_GROUP_COMPANY_MESSAGE, "VALIDATION");
       }
       if (!input.legalName?.trim()) {
         throw new ExposureServiceError("Razão social obrigatória.", "VALIDATION");

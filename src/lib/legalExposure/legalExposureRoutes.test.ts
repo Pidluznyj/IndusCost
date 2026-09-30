@@ -3,6 +3,8 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { describe, it } from "node:test";
 import express from "express";
+import { FINANCE_INTERNAL_GROUP_COMPANIES } from "@/src/lib/financeInternalGroupExclusions.js";
+import { OUTSIDE_GROUP_COMPANY_MESSAGE } from "./legalExposureEntityForm.js";
 import { registerLegalExposureRoutes } from "./legalExposureRoutes.js";
 import { createLegalExposureService } from "./legalExposureService.server.js";
 import { createMemoryExposureRepository } from "./legalExposureRepository.server.js";
@@ -96,6 +98,99 @@ const full = {
 };
 
 describe("exposure routes", () => {
+  it("lista as empresas canônicas do grupo e recusa CNPJ de fora", async () => {
+    const denied = appFor({});
+    const deniedServer = await listen(denied.app);
+    try {
+      const response = await fetch(`${deniedServer.base}/api/legal-exposure/group-companies`);
+      assert.equal(response.status, 403);
+    } finally {
+      await deniedServer.close();
+    }
+
+    const viewOnly = appFor({ "admin.exposure": ["view"] });
+    const viewServer = await listen(viewOnly.app);
+    try {
+      const response = await fetch(`${viewServer.base}/api/legal-exposure/group-companies`);
+      assert.equal(response.status, 200);
+    } finally {
+      await viewServer.close();
+    }
+
+    const unauthenticated = express();
+    unauthenticated.use(express.json());
+    registerLegalExposureRoutes(unauthenticated, {
+      requireAppAuth: (_req, res) => {
+        res.status(401).json({ error: "UNAUTHORIZED" });
+      },
+      requireResource: () => (_req, _res, next) => next(),
+      getCurrentAppUser: async () => null,
+      service: createLegalExposureService({ repository: createMemoryExposureRepository() }),
+    });
+    const authServer = await listen(unauthenticated);
+    try {
+      const response = await fetch(`${authServer.base}/api/legal-exposure/group-companies`);
+      assert.equal(response.status, 401);
+    } finally {
+      await authServer.close();
+    }
+
+    const { app } = appFor(full);
+    const started = await listen(app);
+    try {
+      const official = FINANCE_INTERNAL_GROUP_COMPANIES[0];
+      assert.ok(official);
+      const before = await fetch(`${started.base}/api/legal-exposure/group-companies`);
+      const available = (await before.json()) as {
+        cnpj: string;
+        displayCnpj: string;
+        legalName: string;
+        registered: boolean;
+        entityId: string | null;
+        active: boolean | null;
+      }[];
+      assert.equal(before.status, 200);
+      assert.equal(available.length, FINANCE_INTERNAL_GROUP_COMPANIES.length);
+      assert.deepEqual(
+        available.map((row) => row.cnpj),
+        FINANCE_INTERNAL_GROUP_COMPANIES.map((row) => row.cnpj)
+      );
+      assert.equal(available[0]?.displayCnpj, official.displayCnpj);
+      assert.equal(available[0]?.legalName, official.name);
+      assert.equal(available[0]?.registered, false);
+
+      const outsider = await fetch(`${started.base}/api/legal-exposure/entities`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ cnpj: "11.222.333/0001-81", legalName: "Empresa de fora" }),
+      });
+      const outsiderBody = (await outsider.json()) as { error: string };
+      assert.equal(outsider.status, 400);
+      assert.equal(outsiderBody.error, OUTSIDE_GROUP_COMPANY_MESSAGE);
+
+      const created = await fetch(`${started.base}/api/legal-exposure/entities`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ cnpj: official.cnpj, legalName: official.name }),
+      });
+      assert.equal(created.status, 201);
+      const entity = (await created.json()) as { id: string };
+      const disabled = await fetch(`${started.base}/api/legal-exposure/entities/${entity.id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ active: false }),
+      });
+      assert.equal(disabled.status, 200);
+      const after = await fetch(`${started.base}/api/legal-exposure/group-companies`);
+      const listed = (await after.json()) as typeof available;
+      assert.equal(listed[0]?.registered, true);
+      assert.equal(listed[0]?.entityId, entity.id);
+      assert.equal(listed[0]?.active, false);
+    } finally {
+      await started.close();
+    }
+  });
+
   it("nega dashboard sem a permissão do módulo", async () => {
     const { app } = appFor({});
     const started = await listen(app);
@@ -111,10 +206,12 @@ describe("exposure routes", () => {
     const { app, calls } = appFor(full);
     const started = await listen(app);
     try {
+      const official = FINANCE_INTERNAL_GROUP_COMPANIES[0];
+      assert.ok(official);
       const created = await fetch(`${started.base}/api/legal-exposure/entities`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ cnpj: "11.222.333/0001-81", legalName: "Industria Exemplo LTDA" }),
+        body: JSON.stringify({ cnpj: official.cnpj, legalName: official.name }),
       });
       assert.equal(created.status, 201);
       const entity = (await created.json()) as { id: string };

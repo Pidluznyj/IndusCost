@@ -108,6 +108,14 @@ export function registerLegalExposureRoutes(
     }
   });
 
+  app.get("/api/legal-exposure/group-companies", auth, view, async (_req, res) => {
+    try {
+      res.json(await service.listGroupCompanies());
+    } catch (error) {
+      sendError(res, error);
+    }
+  });
+
   app.post("/api/legal-exposure/entities", auth, manage, async (req, res) => {
     try {
       res.status(201).json(await service.createEntity(req.body ?? {}, await userId(req)));

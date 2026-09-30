@@ -16,17 +16,20 @@ import {
 import {
   buildCreateEntityBody,
   buildUpdateEntityBody,
+  canSelectGroupCompany,
   EMPTY_COMPANIES_COPY,
   EMPTY_COMPANIES_MANAGE_HINT,
-  emptyCreateForm,
+  emptyCreateExtras,
   entityEditFormFrom,
+  EXPOSURE_GROUP_COMPANIES_PATH,
   exposureEntityActions,
   exposureEntityErrorText,
   exposureEntityRequest,
-  maskCnpjInput,
+  groupCompanyStatusLabel,
   MONITOR_GLOBAL_NOTE,
-  type EntityCreateForm,
+  type EntityCreateExtras,
   type EntityEditForm,
+  type ExposureGroupCompany,
   type MonitoredEntity,
 } from "@/src/lib/legalExposure/legalExposureEntityForm";
 import { LEGAL_EXPOSURE_RESOURCES } from "@/src/lib/legalExposure/legalExposurePermissions";
@@ -108,9 +111,12 @@ export function ExposurePage() {
   const [selectedCase, setSelectedCase] = useState<string | null>(null);
   const [timeline, setTimeline] = useState<{ items: { kind: string; at: string; title: string; source: string | null }[] } | null>(null);
   const [entities, setEntities] = useState<MonitoredEntity[]>([]);
+  const [groupCompanies, setGroupCompanies] = useState<ExposureGroupCompany[]>([]);
   const [dialog, setDialog] = useState<"create" | "edit" | null>(null);
+  const [createStep, setCreateStep] = useState<"select" | "details">("select");
+  const [selectedCompany, setSelectedCompany] = useState<ExposureGroupCompany | null>(null);
+  const [createExtras, setCreateExtras] = useState<EntityCreateExtras>(emptyCreateExtras);
   const [editing, setEditing] = useState<MonitoredEntity | null>(null);
-  const [createForm, setCreateForm] = useState<EntityCreateForm>(emptyCreateForm);
   const [editForm, setEditForm] = useState<EntityEditForm | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -118,12 +124,14 @@ export function ExposurePage() {
   const companyActions = exposureEntityActions(permissions.canManage(LEGAL_EXPOSURE_RESOURCES.module));
 
   const reloadOverview = useCallback(async () => {
-    const [data, list] = await Promise.all([
+    const [data, list, companies] = await Promise.all([
       fetchJsonOk<Dashboard>("/api/legal-exposure/dashboard"),
       fetchJsonOk<MonitoredEntity[]>("/api/legal-exposure/entities"),
+      fetchJsonOk<ExposureGroupCompany[]>(EXPOSURE_GROUP_COMPANIES_PATH),
     ]);
     setDashboard(data);
     setEntities(list);
+    setGroupCompanies(companies);
   }, []);
 
   useEffect(() => {
@@ -161,7 +169,9 @@ export function ExposurePage() {
   }
 
   function openCreate() {
-    setCreateForm(emptyCreateForm());
+    setCreateStep("select");
+    setSelectedCompany(null);
+    setCreateExtras(emptyCreateExtras());
     setFormError(null);
     setDialog("create");
   }
@@ -176,13 +186,22 @@ export function ExposurePage() {
   function closeDialog() {
     if (saving) return;
     setDialog(null);
+    setCreateStep("select");
+    setSelectedCompany(null);
     setEditing(null);
     setEditForm(null);
     setFormError(null);
   }
 
+  function selectGroupCompany(company: ExposureGroupCompany) {
+    if (!canSelectGroupCompany(company)) return;
+    setSelectedCompany(company);
+    setCreateStep("details");
+    setFormError(null);
+  }
+
   async function submitCreate() {
-    const built = buildCreateEntityBody(createForm);
+    const built = buildCreateEntityBody(selectedCompany, createExtras);
     if (!built.ok) {
       setFormError(built.error);
       return;
@@ -197,7 +216,9 @@ export function ExposurePage() {
         body: JSON.stringify(built.body),
       });
       setDialog(null);
-      setCreateForm(emptyCreateForm());
+      setCreateStep("select");
+      setSelectedCompany(null);
+      setCreateExtras(emptyCreateExtras());
       setNotice("Empresa adicionada.");
       await reloadOverview();
     } catch (err: unknown) {
@@ -441,38 +462,74 @@ export function ExposurePage() {
         </ul>
       ) : null}
 
-      {dialog === "create" ? (
+      {dialog === "create" && createStep === "select" ? (
+        <EntityDialog
+          title="Adicionar empresa"
+          submitLabel="Adicionar empresa"
+          showSubmit={false}
+          saving={saving}
+          error={formError}
+          onClose={closeDialog}
+          onSubmit={() => undefined}
+        >
+          <p className="text-sm font-normal normal-case text-muted-foreground">
+            Selecione uma empresa do grupo econômico para monitoramento jurídico.
+          </p>
+          <div className="space-y-2">
+            {groupCompanies.map((company) => {
+              const available = canSelectGroupCompany(company);
+              return (
+                <button
+                  key={company.cnpj}
+                  type="button"
+                  disabled={!available}
+                  onClick={() => selectGroupCompany(company)}
+                  className="flex w-full flex-col items-start rounded-xl border border-border px-3 py-2 text-left text-sm font-normal normal-case disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <span className="font-medium">{company.legalName}</span>
+                  <span className="text-muted-foreground">{company.displayCnpj}</span>
+                  <span>{groupCompanyStatusLabel(company)}</span>
+                </button>
+              );
+            })}
+          </div>
+        </EntityDialog>
+      ) : null}
+
+      {dialog === "create" && createStep === "details" && selectedCompany ? (
         <EntityDialog
           title="Adicionar empresa"
           submitLabel="Adicionar empresa"
           saving={saving}
           error={formError}
+          onBack={() => {
+            setCreateStep("select");
+            setFormError(null);
+          }}
           onClose={closeDialog}
           onSubmit={() => void submitCreate()}
         >
           <label className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            CNPJ *
+            Empresa
             <input
-              required
-              value={createForm.cnpj}
-              onChange={(event) => setCreateForm({ ...createForm, cnpj: maskCnpjInput(event.target.value) })}
-              className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm font-normal normal-case"
+              readOnly
+              value={selectedCompany.legalName}
+              className="mt-1 w-full rounded-lg border border-border bg-muted px-3 py-2 text-sm font-normal normal-case"
             />
           </label>
           <label className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            Razão social *
+            CNPJ
             <input
-              required
-              value={createForm.legalName}
-              onChange={(event) => setCreateForm({ ...createForm, legalName: event.target.value })}
-              className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm font-normal normal-case"
+              readOnly
+              value={selectedCompany.displayCnpj}
+              className="mt-1 w-full rounded-lg border border-border bg-muted px-3 py-2 text-sm font-normal normal-case"
             />
           </label>
           <label className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             Nome fantasia
             <input
-              value={createForm.tradeName}
-              onChange={(event) => setCreateForm({ ...createForm, tradeName: event.target.value })}
+              value={createExtras.tradeName}
+              onChange={(event) => setCreateExtras({ ...createExtras, tradeName: event.target.value })}
               className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm font-normal normal-case"
             />
           </label>
@@ -481,20 +538,21 @@ export function ExposurePage() {
               UF
               <input
                 maxLength={2}
-                value={createForm.state}
-                onChange={(event) => setCreateForm({ ...createForm, state: event.target.value.toUpperCase().slice(0, 2) })}
+                value={createExtras.state}
+                onChange={(event) => setCreateExtras({ ...createExtras, state: event.target.value.toUpperCase().slice(0, 2) })}
                 className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm font-normal normal-case"
               />
             </label>
             <label className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               Cidade
               <input
-                value={createForm.city}
-                onChange={(event) => setCreateForm({ ...createForm, city: event.target.value })}
+                value={createExtras.city}
+                onChange={(event) => setCreateExtras({ ...createExtras, city: event.target.value })}
                 className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm font-normal normal-case"
               />
             </label>
           </div>
+          <p className="text-xs font-normal normal-case text-muted-foreground">{MONITOR_GLOBAL_NOTE}</p>
         </EntityDialog>
       ) : null}
 
@@ -580,6 +638,8 @@ function EntityDialog({
   error,
   onClose,
   onSubmit,
+  onBack,
+  showSubmit = true,
   children,
 }: {
   title: string;
@@ -588,6 +648,8 @@ function EntityDialog({
   error: string | null;
   onClose: () => void;
   onSubmit: () => void;
+  onBack?: () => void;
+  showSubmit?: boolean;
   children: React.ReactNode;
 }) {
   return (
@@ -608,12 +670,19 @@ function EntityDialog({
         {error ? <p className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</p> : null}
         {children}
         <div className="flex justify-end gap-2">
+          {onBack ? (
+            <button type="button" className="mr-auto rounded-lg border border-border px-3 py-1.5 text-sm" onClick={onBack} disabled={saving}>
+              Voltar
+            </button>
+          ) : null}
           <button type="button" className="rounded-lg border border-border px-3 py-1.5 text-sm" onClick={onClose} disabled={saving}>
             Cancelar
           </button>
-          <button type="submit" className="rounded-lg bg-slate-900 px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-60" disabled={saving}>
-            {saving ? "Salvando..." : submitLabel}
-          </button>
+          {showSubmit ? (
+            <button type="submit" className="rounded-lg bg-slate-900 px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-60" disabled={saving}>
+              {saving ? "Salvando..." : submitLabel}
+            </button>
+          ) : null}
         </div>
       </form>
     </div>

@@ -21,9 +21,22 @@ export type MonitoredEntity = {
   lastSuccessfulSyncAt: string | null;
 };
 
-export type EntityCreateForm = {
+export type ExposureGroupCompany = {
   cnpj: string;
+  displayCnpj: string;
   legalName: string;
+  registered: boolean;
+  entityId: string | null;
+  active: boolean | null;
+};
+
+export type CanonicalGroupCompanyRef = {
+  cnpj: string;
+  displayCnpj: string;
+  name: string;
+};
+
+export type EntityCreateExtras = {
   tradeName: string;
   state: string;
   city: string;
@@ -66,8 +79,38 @@ export const EMPTY_COMPANIES_MANAGE_HINT =
   "Cadastre uma empresa do grupo para iniciar o monitoramento jurídico.";
 export const MONITOR_GLOBAL_NOTE =
   "As fontes somente serão consultadas quando estiverem configuradas e habilitadas globalmente.";
+export const OUTSIDE_GROUP_COMPANY_MESSAGE =
+  "A empresa informada não pertence ao grupo econômico configurado.";
+export const EXPOSURE_GROUP_COMPANIES_PATH = "/api/legal-exposure/group-companies";
 
 const ENTITY_COLLECTION = "/api/legal-exposure/entities";
+
+export function matchExposureGroupCompanies(
+  canonical: readonly CanonicalGroupCompanyRef[],
+  entities: readonly { id: string; cnpj: string; active: boolean }[]
+): ExposureGroupCompany[] {
+  return canonical.map((company) => {
+    const found = entities.find((entity) => entity.cnpj === company.cnpj);
+    return {
+      cnpj: company.cnpj,
+      displayCnpj: company.displayCnpj,
+      legalName: company.name,
+      registered: Boolean(found),
+      entityId: found?.id ?? null,
+      active: found ? found.active : null,
+    };
+  });
+}
+
+export function groupCompanyStatusLabel(company: ExposureGroupCompany): string {
+  if (!company.registered) return "Disponível";
+  if (company.active === false) return "Já cadastrada · inativa";
+  return "Já cadastrada";
+}
+
+export function canSelectGroupCompany(company: ExposureGroupCompany): boolean {
+  return !company.registered;
+}
 
 export function maskCnpjInput(value: string): string {
   const digits = normalizeCnpj(value).slice(0, 14);
@@ -79,8 +122,8 @@ export function maskCnpjInput(value: string): string {
   return out;
 }
 
-export function emptyCreateForm(): EntityCreateForm {
-  return { cnpj: "", legalName: "", tradeName: "", state: "", city: "" };
+export function emptyCreateExtras(): EntityCreateExtras {
+  return { tradeName: "", state: "", city: "" };
 }
 
 export function entityEditFormFrom(entity: MonitoredEntity): EntityEditForm {
@@ -102,21 +145,20 @@ export function exposureEntityActions(canManage: boolean) {
 }
 
 export function buildCreateEntityBody(
-  form: EntityCreateForm
+  company: ExposureGroupCompany | null,
+  extras: EntityCreateExtras
 ): { ok: true; body: EntityCreateBody } | { ok: false; error: string } {
-  const cnpj = form.cnpj.trim();
-  const legalName = form.legalName.trim();
-  if (!cnpj || !legalName) {
-    return { ok: false, error: "Informe CNPJ e razão social." };
+  if (!company || !canSelectGroupCompany(company)) {
+    return { ok: false, error: "Selecione uma empresa disponível do grupo econômico." };
   }
   return {
     ok: true,
     body: {
-      cnpj,
-      legalName,
-      tradeName: form.tradeName.trim() || null,
-      state: form.state.trim().toUpperCase() || null,
-      city: form.city.trim() || null,
+      cnpj: company.cnpj,
+      legalName: company.legalName,
+      tradeName: extras.tradeName.trim() || null,
+      state: extras.state.trim().toUpperCase() || null,
+      city: extras.city.trim() || null,
     },
   };
 }
