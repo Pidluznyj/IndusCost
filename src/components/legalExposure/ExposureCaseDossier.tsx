@@ -24,6 +24,7 @@ import {
   caseVerificationLabel,
   formatExposureDateTime,
 } from "@/src/lib/legalExposure/legalExposureCaseListUi";
+import { movementComplementsText } from "@/src/lib/legalExposure/legalExposureFeedUi";
 
 type Dossier = ExposureCaseListItem & {
   narrative?: string;
@@ -121,7 +122,11 @@ export function ExposureCaseDossier({ dossier, refreshing, onClose, onRefresh, o
             <p>Tribunal: {dossier.tribunal ?? "não informado"} · Grau: {dossier.degree ?? "não informado"}</p>
             <p>Vara: {dossier.courtUnit ?? "não informada"} · Sistema: {dossier.systemName ?? "não informado"}</p>
             <p>Classe: {dossier.className ?? "não informada"} · Área: {dossier.area ?? "não informada"}</p>
-            <p>Assunto principal: {dossier.subjects.find((row) => row.isMain)?.name ?? dossier.subjects[0]?.name ?? "não informado"}</p>
+            <p>
+              Assunto principal:{" "}
+              {dossier.subjects.find((row) => row.isMain)?.name ?? "não informado pela fonte"}
+            </p>
+            <p>Assuntos: {dossier.subjects.map((row) => row.name).join("; ") || "não informados"}</p>
             <p>Ajuizamento: {caseFiledAtLabel(dossier.filedAt)}</p>
             <p>Valor da causa: {dossier.claimValueFormatted ?? CASE_CLAIM_VALUE_UNKNOWN_COPY}</p>
             <p>Situação: {caseStatusLabel(dossier.currentStatus)}</p>
@@ -190,10 +195,11 @@ export function ExposureCaseDossier({ dossier, refreshing, onClose, onRefresh, o
                 <p className="text-xs uppercase">{row.kind} · {SOURCE_KIND_LABELS[row.source]}</p>
                 <p className="font-medium">{formatExposureDateTime(row.at) ?? row.at}</p>
                 <p>{row.title}</p>
+                {row.description ? <p className="text-muted-foreground">{row.description}</p> : null}
                 {row.courtUnit ? <p className="text-muted-foreground">{row.courtUnit}</p> : null}
                 {row.complements ? (
                   <button type="button" className="mt-1 text-xs underline" onClick={() => setOpenComplements(openComplements === row.title ? null : row.title)}>
-                    Ver detalhes
+                    {movementComplementsText(row.complements) ?? "Ver detalhes"}
                   </button>
                 ) : null}
                 {openComplements === row.title && row.complements ? (

@@ -15,6 +15,7 @@ import {
   type NormalizedCommunicationObservation,
   type NormalizedSourceBatch,
 } from "./legalExposureContracts.js";
+import { FINANCE_INTERNAL_GROUP_COMPANIES } from "@/src/lib/financeInternalGroupExclusions.js";
 import { pickCanonicalCase, upsertEntityLink } from "./legalExposureCanonical.js";
 import { correlateObservation } from "./legalExposureCorrelation.js";
 import { genericDiscoveryHasAdditionalEvidence, isTrustedDiscoveryAliasType } from "./legalExposureDiscovery.js";
@@ -45,6 +46,7 @@ export type ApplyBatchInput = {
 };
 
 const SUCCESSFUL_OUTCOMES = new Set(["SUCCESS", "PARTIAL", "NO_RESULTS"]);
+const GROUP_COMPANY_CNPJ = new Set(FINANCE_INTERNAL_GROUP_COMPANIES.map((row) => row.cnpj));
 
 const DJEN_PUBLICATION_FIELDS = new Set(["classCode", "className", "filedAt", "jurisdiction", "degree"]);
 const OFFICIAL_PROCESS_FIELDS = [
@@ -424,6 +426,7 @@ function ensureCase(
     now: input.now,
     createId: input.createId,
   });
+  linkGroupCompaniesFromParties(memory, input, legalCase.id, observation.parties);
   if (!created && observation.entityPole === "PASSIVE") {
     const event = pushEvent(memory, input, {
       eventKey: `CASE_POLE_CONFIRMED:${legalCase.id}:${input.entityId}:PASSIVE`,
@@ -648,6 +651,28 @@ function ensureCase(
   }
 
   return legalCase;
+}
+
+function linkGroupCompaniesFromParties(
+  memory: LegalExposureMemory,
+  input: ApplyBatchInput,
+  caseId: string,
+  parties: NormalizedCaseObservation["parties"]
+): void {
+  for (const party of parties) {
+    const cnpj = String(party.document ?? "").replace(/\D/g, "");
+    if (cnpj.length !== 14 || !GROUP_COMPANY_CNPJ.has(cnpj)) continue;
+    const entity = memory.entities.find((row) => row.cnpj === cnpj);
+    if (!entity) continue;
+    upsertEntityLink(memory, {
+      caseId,
+      entityId: entity.id,
+      pole: party.pole,
+      source: input.batch.source,
+      now: input.now,
+      createId: input.createId,
+    });
+  }
 }
 
 function applyCommunication(

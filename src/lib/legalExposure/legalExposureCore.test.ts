@@ -16,6 +16,7 @@ import { mapDatajudSearch } from "./sources/datajud/datajudMapper.js";
 import { mapDjenPublications } from "./sources/djen/djenMapper.js";
 import { matchDjenHit } from "./sources/djen/djenMatchEngine.js";
 import type { NormalizedSourceBatch } from "./legalExposureContracts.js";
+import { FINANCE_INTERNAL_GROUP_COMPANIES } from "@/src/lib/financeInternalGroupExclusions.js";
 
 const CNPJ = "11222333000181";
 const PROCESS = "0001234-56.2024.5.09.0001";
@@ -660,5 +661,34 @@ describe("exposure mappers", () => {
     assert.equal(mapped.cases[0]?.filedAt, null);
     assert.equal(mapped.cases[0]?.courtUnit, "09ª VARA DO TRABALHO DE CURITIBA");
     assert.equal((mapped.cases[0]?.rawMetadata as { tipoComunicacao?: string }).tipoComunicacao, "Intimação");
+    assert.equal(mapped.communications.length, 1);
+    assert.equal(mapped.communications[0]?.communicationType, "Intimação");
+  });
+
+  it("DJEN não persiste texto integral e mapeia destinatários oficiais", () => {
+    const mapped = mapDjenPublications({
+      items: [
+        {
+          id: "pub-1",
+          numeroProcesso: PROCESS,
+          siglaTribunal: "TRT9",
+          tipoComunicacao: "Intimação",
+          dataDisponibilizacao: "2026-09-30T12:00:00.000Z",
+          texto: "conteudo pessoal desnecessario",
+          destinatarios: [
+            {
+              nome: "Lazarios Comercio de Plasticos LTDA",
+              polo: "P",
+              cnpj: FINANCE_INTERNAL_GROUP_COMPANIES[0]!.cnpj,
+            },
+          ],
+        },
+      ],
+    });
+    assert.equal(mapped.cases[0]?.className, null);
+    assert.equal(JSON.stringify(mapped.cases[0]?.rawMetadata ?? {}).includes("conteudo pessoal"), false);
+    assert.equal(mapped.cases[0]?.parties[0]?.pole, "PASSIVE");
+    assert.equal(mapped.cases[0]?.parties[0]?.personType, "COMPANY");
+    assert.equal(mapped.communications[0]?.availableAt, "2026-09-30T12:00:00.000Z");
   });
 });

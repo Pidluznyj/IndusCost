@@ -22,6 +22,7 @@ import {
 } from "./legalExposureContracts.js";
 import { formatProcessNumber, normalizeLegalName } from "./legalExposureNormalization.js";
 import { maskPartyDocument } from "./legalExposurePrivacy.js";
+import { movementComplementsText } from "./legalExposureFeedUi.js";
 import {
   displayProcessClass,
   enrichmentStatusOf,
@@ -314,7 +315,7 @@ export function buildExposureProcessSummary(
   const nextHearing =
     mergedHearings.find((row) => row.scheduledAt && Date.parse(row.scheduledAt) > now.getTime()) ?? null;
   const latestMovement = latestMovementOf(movements);
-  const latestPublication = latestPublicationOf(evidences);
+  const latestPublication = latestPublicationOf(evidences, communications);
   const stage = classifyCaseStage({
     currentStatus: canonical.currentStatus,
     className: processClass.className ?? canonical.className,
@@ -399,7 +400,9 @@ export function buildExposureProcessSummary(
     area: canonical.area,
     nextHearing,
     movementCount: new Set(movements.map((row) => row.fingerprint)).size,
-    publicationCount: evidences.filter((row) => row.source === "DJEN").length,
+    publicationCount:
+      communications.filter((row) => row.source === "DJEN").length ||
+      evidences.filter((row) => row.source === "DJEN").length,
     communicationCount: communications.length,
     openAlertCount: openForProcess.length,
     attentionFlags: flags,
@@ -497,7 +500,7 @@ export function buildGroupedCaseTimeline(
     kind: "movement" as const,
     at: row.occurredAt ?? row.firstSeenAt,
     title: row.name,
-    description: null,
+    description: movementComplementsText(row.complements),
     source: row.source,
     sourceCode: row.sourceCode,
     courtUnit: row.courtUnit,
@@ -506,19 +509,23 @@ export function buildGroupedCaseTimeline(
     subject: null,
     status: null,
   }));
-  const communications = collectForCases(indexes.communicationsByCase, caseIds).map((row) => ({
-    kind: "communication" as const,
-    at: row.detectedAt,
-    title: row.subject || row.communicationType,
-    description: row.communicationType,
-    source: row.source,
-    sourceCode: null,
-    courtUnit: row.courtUnit,
-    complements: null,
-    communicationType: row.communicationType,
-    subject: row.subject,
-    status: row.normalizedStatus,
-  }));
+  const communications = collectForCases(indexes.communicationsByCase, caseIds);
+  const djenCommunications = communications.filter((row) => row.source === "DJEN");
+  const otherCommunications = communications
+    .filter((row) => row.source !== "DJEN")
+    .map((row) => ({
+      kind: "communication" as const,
+      at: row.availableAt ?? row.detectedAt,
+      title: row.subject || row.communicationType,
+      description: row.communicationType,
+      source: row.source,
+      sourceCode: null,
+      courtUnit: row.courtUnit,
+      complements: null,
+      communicationType: row.communicationType,
+      subject: row.subject,
+      status: row.normalizedStatus,
+    }));
   const events = collectForCases(indexes.eventsByCase, caseIds).map((row) => ({
     kind: "event" as const,
     at: row.detectedAt,
@@ -545,23 +552,52 @@ export function buildGroupedCaseTimeline(
     subject: null,
     status: row.status,
   }));
-  const publications = collectForCases(indexes.evidencesByCase, caseIds)
-    .filter((row) => row.source === "DJEN")
-    .map((row) => ({
-      kind: "publication" as const,
-      at: row.lastSeenAt,
-      title: "Publicação DJEN",
-      description: null,
-      source: row.source,
-      sourceCode: null,
-      courtUnit: null,
-      complements: null,
-      communicationType: null,
-      subject: null,
-      status: null,
-    }));
+  const publications = (
+    djenCommunications.length > 0
+      ? djenCommunications.map((row) => {
+          const raw = row.rawMetadata && typeof row.rawMetadata === "object" ? (row.rawMetadata as Record<string, unknown>) : null;
+          const tipo =
+            row.communicationType ||
+            (typeof raw?.tipoComunicacao === "string" ? raw.tipoComunicacao : null);
+          return {
+            kind: "publication" as const,
+            at: row.availableAt ?? row.detectedAt,
+            title: tipo || "Publicação DJEN",
+            description: row.subject,
+            source: row.source,
+            sourceCode: null,
+            courtUnit: row.courtUnit,
+            complements: null,
+            communicationType: row.communicationType,
+            subject: row.subject,
+            status: row.normalizedStatus,
+          };
+        })
+      : collectForCases(indexes.evidencesByCase, caseIds)
+          .filter((row) => row.source === "DJEN")
+          .map((row) => {
+            const raw = row.rawMetadata && typeof row.rawMetadata === "object" ? (row.rawMetadata as Record<string, unknown>) : null;
+            const available =
+              typeof raw?.dataDisponibilizacao === "string" ? raw.dataDisponibilizacao : row.lastSeenAt;
+            const tipo = typeof raw?.tipoComunicacao === "string" ? raw.tipoComunicacao : "Publicação DJEN";
+            const orgao = typeof raw?.nomeOrgao === "string" ? raw.nomeOrgao : null;
+            return {
+              kind: "publication" as const,
+              at: available,
+              title: tipo,
+              description: null,
+              source: row.source,
+              sourceCode: null,
+              courtUnit: orgao,
+              complements: null,
+              communicationType: tipo,
+              subject: null,
+              status: null,
+            };
+          })
+  );
   const kind = query.timelineKind;
-  let merged: ExposureTimelineItem[] = [...movements, ...communications, ...events, ...hearings, ...publications];
+  let merged: ExposureTimelineItem[] = [...movements, ...otherCommunications, ...events, ...hearings, ...publications];
   if (kind && kind !== "all") merged = merged.filter((row) => row.kind === kind);
   merged.sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
   const page = Number(query.page ?? 1) || 1;
@@ -576,29 +612,34 @@ export function buildExecutiveNarrative(item: ExposureCaseListItem): string {
   const filed = item.filedAt
     ? new Date(item.filedAt).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" })
     : null;
-  if (filed && companies.length > 0) {
+  if (filed) {
+    sentences.push(`Processo ${item.className ? item.className.toLowerCase() : "judicial"} ajuizado em ${filed}.`);
+  }
+  if (companies.length > 0) {
     sentences.push(
-      `Processo ${item.className ? item.className.toLowerCase() : "judicial"} ajuizado em ${filed} no qual ${companies.join(" e ")} ${companies.length > 1 ? "aparecem" : "aparece"} no polo passivo.`
-    );
-  } else if (companies.length > 0) {
-    sentences.push(
-      `Processo no qual ${companies.join(" e ")} ${companies.length > 1 ? "aparecem" : "aparece"} no polo passivo.`
+      `Empresa${companies.length > 1 ? "s" : ""} do grupo no polo passivo: ${companies.join(" e ")}.`
     );
   }
-  if (item.courtUnit) sentences.push(`O processo tramita na ${item.courtUnit}.`);
+  if (item.claimants.length > 0) {
+    sentences.push(`Autor/reclamante: ${item.claimants.map((row) => row.name).join("; ")}.`);
+  }
   if (item.claimValueFormatted) sentences.push(`Valor da causa: ${item.claimValueFormatted}.`);
+  if (item.courtUnit || item.tribunal) {
+    sentences.push(`Tramita em: ${[item.courtUnit, item.tribunal].filter(Boolean).join(" · ")}.`);
+  }
+  if (item.systemName) sentences.push(`Sistema: ${item.systemName}.`);
   if (item.movementCount > 0) sentences.push(`Foram identificadas ${item.movementCount} movimentações.`);
-  if (item.latestMovement?.occurredAt) {
-    const when = new Date(item.latestMovement.occurredAt).toLocaleDateString("pt-BR", {
-      timeZone: "America/Sao_Paulo",
-    });
-    sentences.push(`A última movimentação conhecida ocorreu em ${when}.`);
+  if (item.latestMovement?.name) {
+    const when = item.latestMovement.occurredAt
+      ? new Date(item.latestMovement.occurredAt).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" })
+      : null;
+    sentences.push(`Última movimentação: ${item.latestMovement.name}${when ? ` em ${when}` : ""}.`);
   }
   if (item.nextHearing?.scheduledAt) {
     const when = new Date(item.nextHearing.scheduledAt).toLocaleDateString("pt-BR", {
       timeZone: "America/Sao_Paulo",
     });
-    sentences.push(`Há audiência futura identificada para ${when}.`);
+    sentences.push(`Há audiência futura em ${when}.`);
   }
   return sentences.join(" ");
 }

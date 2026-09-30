@@ -20,6 +20,8 @@ import { dossierPdfLines } from "./legalExposurePdf.js";
 import { normalizeProcessNumber } from "./legalExposureNormalization.js";
 import { maskCpf } from "./legalExposurePrivacy.js";
 import { createEmptyExposureMemory, type ExposureCaseRecord } from "./legalExposureStore.js";
+import { FINANCE_INTERNAL_GROUP_COMPANIES } from "@/src/lib/financeInternalGroupExclusions.js";
+import { mapDjenPublications } from "./sources/djen/djenMapper.js";
 
 const CNPJ_A = "11222333000181";
 const CNPJ_B = "99888777000166";
@@ -384,5 +386,166 @@ describe("privacy and cards", () => {
     assert.equal(JSON.stringify(dossier).includes("12345678909"), false);
     assert.ok(dossier.claimants[0]?.documentMasked);
     assert.ok(dossier.narrative != null);
+  });
+});
+
+describe("datajud enrichment and cross-entity", () => {
+  const lazarios = FINANCE_INTERNAL_GROUP_COMPANIES[0]!;
+  const koppetel = FINANCE_INTERNAL_GROUP_COMPANIES[1]!;
+
+  function groupMemory() {
+    const memory = createEmptyExposureMemory();
+    memory.entities.push(entity("ent-lazarios", lazarios.cnpj, lazarios.name));
+    memory.entities.push(entity("ent-koppetel", koppetel.cnpj, koppetel.name));
+    return memory;
+  }
+
+  it("código TPU 51 é conclusão e não vira instrução; 11385 vira execução; 22 vira arquivo", () => {
+    assert.equal(
+      classifyCaseStage({
+        currentStatus: null,
+        className: "Ação Trabalhista",
+        archivedAt: null,
+        movements: [{ name: "Conclusão", sourceCode: "51" }],
+      }).stage,
+      "UNKNOWN"
+    );
+    assert.equal(
+      classifyCaseStage({
+        currentStatus: null,
+        className: "Ação Trabalhista",
+        archivedAt: null,
+        movements: [
+          { name: "Distribuição", sourceCode: "26" },
+          { name: "Execução/Cumprimento de Sentença Iniciada (o)", sourceCode: "11385" },
+        ],
+      }).stage,
+      "ENFORCEMENT"
+    );
+    assert.equal(
+      classifyCaseStage({
+        currentStatus: null,
+        className: "Agravo de Petição",
+        archivedAt: null,
+        movements: [{ name: "Baixa Definitiva", sourceCode: "22" }],
+      }).stage,
+      "ARCHIVED"
+    );
+  });
+
+  it("party DataJud com CNPJ do grupo cria segundo vínculo sem novo processo", () => {
+    const memory = groupMemory();
+    const createId = ids();
+    applyBatchToMemory(memory, {
+      entityId: "ent-lazarios",
+      now: "2026-09-30T12:00:00.000Z",
+      createId,
+      batch: batch("DJEN", [observation({ explicitCnpj: lazarios.cnpj, className: null, entityPole: "UNKNOWN" })]),
+    });
+    applyBatchToMemory(memory, {
+      entityId: "ent-lazarios",
+      now: "2026-09-30T13:00:00.000Z",
+      createId,
+      batch: batch("DATAJUD", [
+        observation({
+          explicitCnpj: null,
+          entityPole: "UNKNOWN",
+          parties: [
+            {
+              name: lazarios.name,
+              document: lazarios.cnpj,
+              partyType: "RECLAMADA",
+              personType: "COMPANY",
+              pole: "PASSIVE",
+            },
+            {
+              name: koppetel.name,
+              document: koppetel.cnpj,
+              partyType: "RECLAMADA",
+              personType: "COMPANY",
+              pole: "PASSIVE",
+            },
+          ],
+        }),
+      ]),
+    });
+    assert.equal(memory.cases.length, 1);
+    const group = resolveCanonicalCaseGroup(memory, PROCESS_DIGITS);
+    assert.equal(group.entityLinks.length, 2);
+    assert.equal(group.entityLinks.find((row) => row.entityId === "ent-koppetel")?.pole, "PASSIVE");
+    assert.equal(group.entityLinks.find((row) => row.entityId === "ent-lazarios")?.pole, "PASSIVE");
+  });
+
+  it("ausência de Koppetel no DataJud não remove vínculo anterior", () => {
+    const memory = groupMemory();
+    const createId = ids();
+    applyBatchToMemory(memory, {
+      entityId: "ent-lazarios",
+      now: "2026-09-30T12:00:00.000Z",
+      createId,
+      batch: batch("DJEN", [observation({ explicitCnpj: lazarios.cnpj, className: null })]),
+    });
+    applyBatchToMemory(memory, {
+      entityId: "ent-koppetel",
+      now: "2026-09-30T12:30:00.000Z",
+      createId,
+      batch: batch("DJEN", [observation({ explicitCnpj: koppetel.cnpj, entityPole: "PASSIVE", className: null })]),
+    });
+    applyBatchToMemory(memory, {
+      entityId: "ent-lazarios",
+      now: "2026-09-30T13:00:00.000Z",
+      createId,
+      batch: batch("DATAJUD", [
+        observation({
+          parties: [
+            {
+              name: lazarios.name,
+              document: lazarios.cnpj,
+              partyType: "RECLAMADA",
+              personType: "COMPANY",
+              pole: "PASSIVE",
+            },
+          ],
+        }),
+      ]),
+    });
+    assert.equal(memory.cases.length, 1);
+    assert.equal(resolveCanonicalCaseGroup(memory, PROCESS_DIGITS).entityLinks.length, 2);
+  });
+
+  it("DJEN publica duas vezes o mesmo CNJ e a mais recente prevalece", () => {
+    const memory = groupMemory();
+    const mapped = mapDjenPublications({
+      items: [
+        {
+          id: "pub-1",
+          numeroProcesso: PROCESS,
+          siglaTribunal: "TRT9",
+          nomeOrgao: "09ª VARA",
+          tipoComunicacao: "Intimação",
+          dataDisponibilizacao: "2026-09-01T12:00:00.000Z",
+        },
+        {
+          id: "pub-2",
+          numeroProcesso: PROCESS,
+          siglaTribunal: "TRT9",
+          nomeOrgao: "09ª VARA",
+          tipoComunicacao: "Citação",
+          dataDisponibilizacao: "2026-09-30T12:00:00.000Z",
+        },
+      ],
+    });
+    applyBatchToMemory(memory, {
+      entityId: "ent-lazarios",
+      now: "2026-09-30T14:00:00.000Z",
+      createId: ids(),
+      batch: mapped,
+    });
+    const item = listCases(memory, {}).items[0];
+    assert.equal(memory.cases.length, 1);
+    assert.equal(item?.publicationCount, 2);
+    assert.equal(item?.latestPublication?.type, "Citação");
+    const dossier = buildExposureProcessDossier(memory, memory.cases[0]!.id);
+    assert.equal(dossier?.timeline.filter((row) => row.kind === "publication").length, 2);
   });
 });

@@ -1,0 +1,122 @@
+{
+  "hits": {
+    "hits": [
+      {
+        "_source": {
+          "id": "TRT9_G1_00002860620215090021",
+          "tribunal": "TRT9",
+          "grau": "G1",
+          "numeroProcesso": "00002860620215090021",
+          "dataAjuizamento": "20210330114043",
+          "dataHoraUltimaAtualizacao": "2026-09-21T18:21:04.960000Z",
+          "nivelSigilo": 0,
+          "sistema": { "codigo": 1, "nome": "PJe" },
+          "formato": { "codigo": 1, "nome": "Eletrônico" },
+          "classe": { "codigo": 985, "nome": "Ação Trabalhista - Rito Ordinário" },
+          "orgaoJulgador": {
+            "codigo": 20364,
+            "nome": "02ª VARA DO TRABALHO DE MARINGÁ",
+            "codigoMunicipioIBGE": 4115200
+          },
+          "assuntos": [{ "codigo": 13994, "nome": "Aviso Prévio" }],
+          "movimentos": [
+            {
+              "codigo": 26,
+              "dataHora": "2021-03-30T11:40:44.000Z",
+              "nome": "Distribuição",
+              "complementosTabelados": [
+                {
+                  "codigo": 2,
+                  "descricao": "tipo_de_distribuicao_redistribuicao",
+                  "valor": 2,
+                  "nome": "sorteio"
+                }
+              ],
+              "orgaoJulgador": { "codigo": "20364", "nome": "02ª VARA DO TRABALHO DE MARINGÁ" }
+            },
+            {
+              "codigo": 51,
+              "dataHora": "2021-04-01T10:00:00.000Z",
+              "nome": "Conclusão",
+              "complementosTabelados": [],
+              "orgaoJulgador": { "codigo": "20364", "nome": "02ª VARA DO TRABALHO DE MARINGÁ" }
+            },
+            {
+              "codigo": 221,
+              "dataHora": "2022-01-10T14:00:00.000Z",
+              "nome": "Procedência em Parte",
+              "complementosTabelados": [],
+              "orgaoJulgador": { "codigo": "20364", "nome": "02ª VARA DO TRABALHO DE MARINGÁ" }
+            },
+            {
+              "codigo": 11384,
+              "dataHora": "2023-05-02T09:00:00.000Z",
+              "nome": "Liquidação iniciada",
+              "complementosTabelados": [],
+              "orgaoJulgador": { "codigo": "20364", "nome": "02ª VARA DO TRABALHO DE MARINGÁ" }
+            },
+            {
+              "codigo": 11385,
+              "dataHora": "2024-02-15T11:00:00.000Z",
+              "nome": "Execução/Cumprimento de Sentença Iniciada (o)",
+              "complementosTabelados": [],
+              "orgaoJulgador": { "codigo": "20364", "nome": "02ª VARA DO TRABALHO DE MARINGÁ" }
+            }
+          ]
+        }
+      },
+      {
+        "_source": {
+          "id": "TRT9_G2_00002860620215090021",
+          "tribunal": "TRT9",
+          "grau": "G2",
+          "numeroProcesso": "00002860620215090021",
+          "dataAjuizamento": "20230215150349",
+          "dataHoraUltimaAtualizacao": "2026-09-21T18:21:04.960000Z",
+          "nivelSigilo": 0,
+          "sistema": { "codigo": 1, "nome": "PJe" },
+          "formato": { "codigo": 1, "nome": "Eletrônico" },
+          "classe": { "codigo": 1004, "nome": "Agravo de Petição" },
+          "orgaoJulgador": {
+            "codigo": 71310,
+            "nome": "GAB. DES. MARLENE TERESINHA FUVERKI SUGUIMATSU",
+            "codigoMunicipioIBGE": 4106902
+          },
+          "assuntos": [{ "codigo": 13994, "nome": "Aviso Prévio" }],
+          "movimentos": [
+            {
+              "codigo": 26,
+              "dataHora": "2023-02-15T15:03:49.000Z",
+              "nome": "Distribuição",
+              "complementosTabelados": [],
+              "orgaoJulgador": {
+                "codigo": "71310",
+                "nome": "GAB. DES. MARLENE TERESINHA FUVERKI SUGUIMATSU"
+              }
+            },
+            {
+              "codigo": 239,
+              "dataHora": "2023-08-01T16:00:00.000Z",
+              "nome": "Não-Provimento",
+              "complementosTabelados": [],
+              "orgaoJulgador": {
+                "codigo": "71310",
+                "nome": "GAB. DES. MARLENE TERESINHA FUVERKI SUGUIMATSU"
+              }
+            },
+            {
+              "codigo": 22,
+              "dataHora": "2024-09-01T10:00:00.000Z",
+              "nome": "Baixa Definitiva",
+              "complementosTabelados": [],
+              "orgaoJulgador": {
+                "codigo": "71310",
+                "nome": "GAB. DES. MARLENE TERESINHA FUVERKI SUGUIMATSU"
+              }
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

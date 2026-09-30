@@ -8,8 +8,8 @@
 import { datajudConfigured, isDatajudEnabled, LEGAL_EXPOSURE_ENV } from "../src/lib/legalExposure/legalExposureFeatureFlags.js";
 import { legalExposureFetch } from "../src/lib/legalExposure/legalExposureHttp.js";
 import { normalizeProcessNumber, sanitizeErrorMessage } from "../src/lib/legalExposure/legalExposureNormalization.js";
-import { buildDatajudProcessQuery } from "../src/lib/legalExposure/sources/datajud/datajudContracts.js";
-import { datajudProbePlan, datajudSchemaPaths } from "../src/lib/legalExposure/sources/datajud/datajudSchemaProbe.js";
+import { buildDatajudProcessQuery, DATAJUD_HTTP_TIMEOUT_MS } from "../src/lib/legalExposure/sources/datajud/datajudContracts.js";
+import { datajudFieldInventory, datajudProbePlan, datajudSchemaPaths } from "../src/lib/legalExposure/sources/datajud/datajudSchemaProbe.js";
 
 const args = process.argv.slice(2);
 const plan = datajudProbePlan(args);
@@ -41,6 +41,7 @@ const result = await legalExposureFetch({
   fetchImpl: fetch,
   url: `${base}${path}`,
   path,
+  timeoutMs: DATAJUD_HTTP_TIMEOUT_MS,
   init: {
     method: "POST",
     headers: {
@@ -57,6 +58,9 @@ console.log(
       executed: result.outcome === "SUCCESS",
       outcome: result.outcome,
       process: normalized,
+      tribunal: tribunal.toLowerCase(),
+      cnpjDiscovery: process.env[LEGAL_EXPOSURE_ENV.datajudCnpjDiscovery] ?? "0",
+      inventory: result.outcome === "SUCCESS" ? datajudFieldInventory(result.body) : null,
       paths: result.outcome === "SUCCESS" ? datajudSchemaPaths(result.body).slice(0, 200) : [],
       sanitizedError: sanitizeErrorMessage(result.errorMessageSanitized),
     },

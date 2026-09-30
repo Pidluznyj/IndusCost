@@ -10,7 +10,12 @@ import {
   type ExposureCaseLatestPublication,
   type LegalExposureSource,
 } from "./legalExposureContracts.js";
-import type { ExposureCaseRecord, ExposureEvidenceRecord, ExposureMovementRecord } from "./legalExposureStore.js";
+import type {
+  ExposureCaseRecord,
+  ExposureCommunicationRecord,
+  ExposureEvidenceRecord,
+  ExposureMovementRecord,
+} from "./legalExposureStore.js";
 
 const OFFICIAL_CONFIRMATION_SOURCES = new Set<LegalExposureSource>(["DJEN", "DATAJUD"]);
 const PROCESSUAL_CLASS_SOURCES = new Set<LegalExposureSource>(["DATAJUD"]);
@@ -90,22 +95,46 @@ export function latestMovementOf(movements: ExposureMovementRecord[]): ExposureC
   };
 }
 
-export function latestPublicationOf(evidences: ExposureEvidenceRecord[]): ExposureCaseLatestPublication | null {
+export function latestPublicationOf(
+  evidences: ExposureEvidenceRecord[],
+  communications: ExposureCommunicationRecord[] = []
+): ExposureCaseLatestPublication | null {
+  let bestComm: ExposureCommunicationRecord | null = null;
+  let bestCommTime = Number.NEGATIVE_INFINITY;
+  for (const row of communications) {
+    if (row.source !== "DJEN") continue;
+    const time = Date.parse(row.availableAt || row.detectedAt) || 0;
+    if (!bestComm || time > bestCommTime) {
+      bestComm = row;
+      bestCommTime = time;
+    }
+  }
+  if (bestComm) {
+    return {
+      type: bestComm.communicationType,
+      availableAt: bestComm.availableAt,
+      courtUnit: bestComm.courtUnit,
+    };
+  }
   const djen = evidences.filter((row) => row.source === "DJEN");
   let best: ExposureEvidenceRecord | null = null;
   let bestTime = Number.NEGATIVE_INFINITY;
   for (const row of djen) {
-    const time = evidenceTime(row);
-    if (!best || time > bestTime) {
+    const raw = asRecord(row.rawMetadata);
+    const available = textField(raw?.dataDisponibilizacao) ?? textField(raw?.data_disponibilizacao);
+    const time = (available ? Date.parse(available) : Number.NaN);
+    const fallback = evidenceTime(row);
+    const resolved = Number.isFinite(time) ? time : fallback;
+    if (!best || resolved > bestTime) {
       best = row;
-      bestTime = time;
+      bestTime = resolved;
     }
   }
   if (!best) return null;
   const raw = asRecord(best.rawMetadata);
   return {
     type: textField(raw?.tipoComunicacao),
-    availableAt: textField(raw?.dataDisponibilizacao),
+    availableAt: textField(raw?.dataDisponibilizacao) ?? textField(raw?.data_disponibilizacao),
     courtUnit: textField(raw?.nomeOrgao),
   };
 }
