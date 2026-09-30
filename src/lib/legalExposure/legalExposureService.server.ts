@@ -14,7 +14,7 @@ import {
   matchExposureGroupCompanies,
   OUTSIDE_GROUP_COMPANY_MESSAGE,
 } from "./legalExposureEntityForm.js";
-import { normalizeExposureCnpj, normalizeLegalName, sanitizePayload } from "./legalExposureNormalization.js";
+import { normalizeExposureCnpj, normalizeLegalName, normalizeProcessNumber, sanitizePayload } from "./legalExposureNormalization.js";
 import {
   buildExposureDashboard,
   caseTimeline,
@@ -94,6 +94,65 @@ async function defaultRunners(): Promise<ExposureRunners> {
       }),
     djen: (input) => runDjenSync(input ?? {}),
   };
+}
+
+function failClosedBatch(source: LegalExposureSource, message: string): NormalizedSourceBatch {
+  return {
+    source,
+    outcome: "CONFIGURATION_ERROR",
+    errorCode: "CONFIGURATION_ERROR",
+    errorMessageSanitized: message,
+    retryAfterSeconds: null,
+    externalCall: false,
+    cases: [],
+    communications: [],
+    candidates: [],
+  };
+}
+
+function shouldApplyBatch(batch: NormalizedSourceBatch): boolean {
+  return (
+    batch.externalCall ||
+    batch.outcome === "NO_RESULTS" ||
+    batch.outcome === "SUCCESS" ||
+    batch.outcome === "PARTIAL"
+  );
+}
+
+function datajudTribunalAlias(value: string | null | undefined): string | null {
+  const alias = String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "");
+  return alias || null;
+}
+
+function collectDatajudTargets(batch: NormalizedSourceBatch): Array<{ processNumber: string; tribunalAlias: string }> {
+  const seen = new Set<string>();
+  const out: Array<{ processNumber: string; tribunalAlias: string }> = [];
+  for (const observation of batch.cases) {
+    const processNumber = normalizeProcessNumber(observation.processNumber);
+    const tribunalAlias = datajudTribunalAlias(observation.tribunal);
+    if (!processNumber || !tribunalAlias) continue;
+    const key = `${processNumber}:${tribunalAlias}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ processNumber, tribunalAlias });
+  }
+  return out;
+}
+
+function entityTribunalAliases(memory: LegalExposureMemory, entityId: string): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const row of memory.jurisdictions) {
+    if (!row.enabled || row.entityId !== entityId) continue;
+    const alias = datajudTribunalAlias(row.tribunal);
+    if (!alias || seen.has(alias)) continue;
+    seen.add(alias);
+    out.push(alias);
+  }
+  return out;
 }
 
 export function createLegalExposureService(deps: ExposureServiceDeps) {
@@ -399,41 +458,91 @@ export function createLegalExposureService(deps: ExposureServiceDeps) {
       const mode = input.mode === "apply" ? "apply" : "preview";
       const runners = deps.runners ?? (await defaultRunners());
       const memory = await deps.repository.load();
-      const selected = input.source && input.source !== "ALL" ? [input.source] : (["DOMICILIO", "DATAJUD", "DJEN"] as const);
-      const batches: NormalizedSourceBatch[] = [];
-      for (const source of selected) {
-        if (source === "DOMICILIO") batches.push(await runners.domicilio());
-        if (source === "DATAJUD") {
-          const aliases = [
-            ...new Set(
-              memory.jurisdictions
-                .filter((row) => row.enabled && (!input.entityId || row.entityId === input.entityId))
-                .map((row) => row.tribunal)
-            ),
-          ];
-          const targets = aliases.length > 0 ? aliases : [""];
-          for (const tribunalAlias of targets) {
-            batches.push(await runners.datajud({ processNumber: input.processNumber, tribunalAlias }));
-          }
-        }
-        if (source === "DJEN") batches.push(await runners.djen({ numeroProcesso: input.processNumber }));
+      const pipelineAll = !input.source || input.source === "ALL";
+      const wantsDjen = pipelineAll || input.source === "DJEN";
+      const wantsDatajud = pipelineAll || input.source === "DATAJUD";
+      const wantsDomicilio = pipelineAll || input.source === "DOMICILIO";
+      const scopedProcessNumber = input.entityId ? input.processNumber?.trim() || "" : "";
+
+      let entities: ExposureEntityRecord[];
+      if (input.entityId) {
+        const entity = memory.entities.find((row) => row.id === input.entityId);
+        if (!entity) throw new ExposureServiceError("Empresa não encontrada.", "NOT_FOUND");
+        if (!entity.active) throw new ExposureServiceError("Empresa inativa.", "VALIDATION");
+        entities = [entity];
+      } else {
+        entities = memory.entities.filter((row) => row.active);
       }
-      audit(memory, userId, "MANUAL_SYNC", { entityId: input.entityId ?? null }, { mode, source: input.source ?? "ALL" });
-      if (mode === "apply") {
-        const entities = memory.entities.filter((row) => row.active && (!input.entityId || row.id === input.entityId));
-        for (const entity of entities) {
-          for (const batch of batches) {
-            if (batch.externalCall || batch.outcome === "NO_RESULTS" || batch.outcome === "SUCCESS" || batch.outcome === "PARTIAL") {
-              applyBatchToMemory(memory, {
-                entityId: entity.id,
-                batch,
-                now: now().toISOString(),
-                createId,
-              });
+
+      const batches: NormalizedSourceBatch[] = [];
+
+      async function collectEntityBatches(entity: ExposureEntityRecord): Promise<NormalizedSourceBatch[]> {
+        const collected: NormalizedSourceBatch[] = [];
+        let djenBatch: NormalizedSourceBatch | null = null;
+
+        if (wantsDjen) {
+          if (scopedProcessNumber) {
+            djenBatch = await runners.djen({ numeroProcesso: scopedProcessNumber });
+          } else if (entity.legalName.trim()) {
+            djenBatch = await runners.djen({ nomeParte: entity.legalName.trim() });
+          } else {
+            djenBatch = failClosedBatch("DJEN", "DJEN exige nomeParte ou numeroProcesso.");
+          }
+          collected.push(djenBatch);
+        }
+
+        if (wantsDatajud) {
+          if (pipelineAll) {
+            const targets = djenBatch ? collectDatajudTargets(djenBatch) : [];
+            if (targets.length === 0) {
+              collected.push(failClosedBatch("DATAJUD", "DataJud exige número de processo conhecido."));
+            } else {
+              for (const target of targets) {
+                collected.push(
+                  await runners.datajud({
+                    processNumber: target.processNumber,
+                    tribunalAlias: target.tribunalAlias,
+                  })
+                );
+              }
+            }
+          } else {
+            const knownProcess = normalizeProcessNumber(scopedProcessNumber);
+            const aliases = entityTribunalAliases(memory, entity.id);
+            if (!knownProcess) {
+              collected.push(failClosedBatch("DATAJUD", "DataJud exige número de processo conhecido."));
+            } else if (aliases.length === 0) {
+              collected.push(failClosedBatch("DATAJUD", "DataJud exige tribunal do processo conhecido."));
+            } else {
+              for (const tribunalAlias of aliases) {
+                collected.push(await runners.datajud({ processNumber: knownProcess, tribunalAlias }));
+              }
             }
           }
         }
+
+        if (wantsDomicilio) {
+          collected.push(await runners.domicilio());
+        }
+        return collected;
       }
+
+      for (const entity of entities) {
+        const owned = await collectEntityBatches(entity);
+        for (const batch of owned) {
+          if (mode === "apply" && shouldApplyBatch(batch)) {
+            applyBatchToMemory(memory, {
+              entityId: entity.id,
+              batch,
+              now: now().toISOString(),
+              createId,
+            });
+          }
+          batches.push(batch);
+        }
+      }
+
+      audit(memory, userId, "MANUAL_SYNC", { entityId: input.entityId ?? null }, { mode, source: input.source ?? "ALL" });
       await deps.repository.persist(memory);
       for (const batch of batches) {
         await deps.recordIntegrationRun?.({
