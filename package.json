@@ -52,6 +52,7 @@
     "sync:nomus:receipts:recent:apply": "tsx scripts/nomusReceivableReceiptsSync.ts apply --maxPages 3 --json",
     "audit:commission:receipt-competence": "tsx scripts/auditCommissionReceiptCompetence.ts",
     "audit:commission:coverage": "tsx scripts/auditCommissionCoverage.ts",
+    "audit:commission:outlook": "tsx scripts/auditCommissionOutlookOpenBalance.ts",
     "commission:coverage:bootstrap:preview": "tsx scripts/commissionCoverageBootstrapPreview.ts",
     "commission:coverage:legacy-import": "tsx scripts/commissionLegacyCoverageImport.ts",
     "audit:finance:ar-received-decomposition": "tsx scripts/auditFinanceArReceivedDecomposition.ts",

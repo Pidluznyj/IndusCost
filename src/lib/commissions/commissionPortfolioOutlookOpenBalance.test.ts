@@ -23,7 +23,12 @@ import {
   type OutlookScheduleInput,
   type OutlookTitleFacts,
 } from "./commissionPortfolioOutlook.js";
-import { auditCommissionPortfolioOutlook } from "./commissionPortfolioOutlookAudit.js";
+import {
+  auditCommissionPortfolioOutlook,
+  buildOutlookAuditCsv,
+  formatOutlookAuditReport,
+  OUTLOOK_AUDIT_CAUSES,
+} from "./commissionPortfolioOutlookAudit.js";
 import { parseCommissionPortfolioOutlookQuery, resolveOutlookOpenBalance } from "./commissionPortfolioOutlook.server.js";
 import {
   forecastCommissionFromMaterializedSchedule,
@@ -548,50 +553,150 @@ describe("auditoria CR a CR: regra antiga × regra nova", () => {
     ...partial,
   });
 
-  it("explica a diferença por causa, fecha os totais com o detalhe e não conta o que está fora do período", () => {
-    const facts = [
-      // 1: em aberto, sem diferença.
-      cr({ scheduleId: "ok", receivableId: 1 }),
-      // 2: versão substituída do mesmo título 1 — a regra antiga somava de novo (300).
-      cr({ scheduleId: "versao-antiga", receivableId: 1, orderSnapshotStatus: "SUPERSEDED" }),
-      // 3: saldo real 2.000, eventos só de 5.000 — antiga 150, nova 60.
-      cr({ scheduleId: "falta-receipt", receivableId: 3, balanceReceivable: 2_000, receipts: [receipt(3, "2026-09-10", 5_000)] }),
-      // 4: quitado com desconto — antiga 15, nova 0.
-      cr({ scheduleId: "desconto", receivableId: 4, balanceReceivable: 0, receipts: [receipt(4, "2026-09-10", 9_500)] }),
-      // 5: cancelado na origem sem recebimento — antiga 300, nova 0.
-      cr({ scheduleId: "cancelado", receivableId: 5, titleCancelled: true }),
-      // 6: vencido em julho: fora do período nas duas regras.
-      cr({ scheduleId: "julho", receivableId: 6, dueDate: "2026-07-10" }),
-    ];
-    const titles = new Map<number, OutlookTitleFacts>([
-      [1, title()],
-      [3, title({ balance: 2_000, balanceRaw: 2_000, amountReceived: 8_000 })],
-      [4, title({ balance: 0, balanceRaw: 0, amountReceived: 9_500 })],
-      [5, title({ cancelled: true })],
-      [6, title({ dueDate: "2026-07-10" })],
-    ]);
-    const audit = auditCommissionPortfolioOutlook(facts, titles, { fromMonth: "2026-09", toMonth: null, today: TODAY });
+  // Um CR por causa. Todos de R$ 10.000 com R$ 300 de comissão, vencendo em outubro/2026, salvo indicação.
+  const facts = [
+    cr({ scheduleId: "ok", receivableId: 1 }),
+    cr({ scheduleId: "snapshot-antigo", receivableId: 1, orderSnapshotStatus: "SUPERSEDED", scheduleCreatedAt: "2026-08-01T00:00:00.000Z" }),
+    cr({ scheduleId: "duplicado-novo", receivableId: 2, scheduleCreatedAt: "2026-09-02T00:00:00.000Z" }),
+    cr({ scheduleId: "duplicado-velho", receivableId: 2, scheduleCreatedAt: "2026-09-01T00:00:00.000Z" }),
+    cr({ scheduleId: "excecao", receivableId: 3, customerExcludedByActiveRule: true }),
+    cr({ scheduleId: "grupo", receivableId: 4, groupCompany: true }),
+    cr({ scheduleId: "cancelado", receivableId: 5, titleCancelled: true }),
+    cr({ scheduleId: "suspenso", receivableId: 6, titleSuspended: true }),
+    cr({ scheduleId: "removido-na-origem", receivableId: 7, balanceReceivable: null }),
+    cr({ scheduleId: "sem-registro", receivableId: 8, balanceReceivable: null, dueDate: null }),
+    cr({ scheduleId: "quitado-sem-evento", receivableId: 9, balanceReceivable: 0 }),
+    cr({ scheduleId: "receipt-incompleto", receivableId: 10, balanceReceivable: 2_000, receipts: [receipt(10, "2026-09-10", 5_000)] }),
+    cr({ scheduleId: "desconto", receivableId: 11, balanceReceivable: 0, receipts: [receipt(11, "2026-09-10", 9_500)] }),
+    cr({ scheduleId: "saldo-menor", receivableId: 12, balanceReceivable: 3_000, receipts: [receipt(12, "2026-09-10", 5_000)] }),
+    cr({ scheduleId: "vencido-julho", receivableId: 13, dueDate: "2026-07-10" }),
+    cr({ scheduleId: "vencido-agosto-parcial", receivableId: 14, dueDate: "2026-08-20", balanceReceivable: 4_000, receipts: [receipt(14, "2026-08-25", 6_000)] }),
+    cr({ scheduleId: "quitado-julho", receivableId: 15, dueDate: "2026-07-05", balanceReceivable: 0, receipts: [receipt(15, "2026-07-06", 10_000)] }),
+  ];
+  const titles = new Map<number, OutlookTitleFacts>([
+    [1, title()],
+    [2, title()],
+    [3, title()],
+    [4, title({ groupCompany: true })],
+    [5, title({ cancelled: true })],
+    [6, title({ suspended: true })],
+    [7, title({ balance: null, sourcePresenceStatus: "MISSING_CONFIRMED" })],
+    [9, title({ balance: 0, balanceRaw: 0, amountReceived: 0 })],
+    [10, title({ balance: 2_000, balanceRaw: 2_000, amountReceived: 8_000 })],
+    [11, title({ balance: 0, balanceRaw: 0, amountReceived: 9_500 })],
+    [12, title({ balance: 3_000, balanceRaw: 3_000, amountReceived: 5_000 })],
+    [13, title({ dueDate: "2026-07-10" })],
+    [14, title({ dueDate: "2026-08-20", balance: 4_000, balanceRaw: 4_000, amountReceived: 6_000 })],
+    [15, title({ dueDate: "2026-07-05", balance: 0, balanceRaw: 0, amountReceived: 10_000 })],
+  ]);
+  const audit = auditCommissionPortfolioOutlook(facts, titles, { fromMonth: "2026-09", toMonth: null, today: TODAY });
+  const causeOf = (scheduleId: string) => audit.rows.find((row) => row.fact.scheduleId === scheduleId)?.cause ?? null;
 
-    assert.equal(audit.legacyForecastTotal, 300 + 300 + 150 + 15 + 300);
-    assert.equal(audit.newForecastTotal, 300 + 60);
-    assert.equal(audit.difference, 705);
-    assert.equal(audit.newForecastTotal, audit.cards.forecast, "o total novo é o mesmo número da tela");
-    assert.equal(audit.rows.reduce((sum, row) => sum + row.difference, 0), audit.difference);
-    assert.equal(audit.byCause.reduce((sum, entry) => sum + entry.difference, 0), audit.difference);
+  it("classifica cada CR divergente pela causa objetiva", () => {
     assert.deepEqual(
-      audit.rows.map((row) => [row.fact.scheduleId, row.difference, row.classification.split(":")[0]]),
+      audit.rows.filter((row) => row.cause).map((row) => [row.fact.scheduleId, row.cause, row.titleDifference]),
       [
-        ["ok", 0, "OK"],
-        ["versao-antiga", 300, "duplicidade"],
-        ["falta-receipt", 90, "provável inflação"],
-        ["desconto", 15, "provável inflação"],
-        ["cancelado", 300, "título cancelado na origem"],
-        ["julho", 0, "OK"],
+        ["snapshot-antigo", "SNAPSHOT_SUBSTITUIDO", 300],
+        ["duplicado-velho", "SCHEDULE_DUPLICADO", 300],
+        ["excecao", "EXCLUSAO_CLIENTE", 300],
+        ["grupo", "EMPRESA_GRUPO", 300],
+        ["cancelado", "CANCELADO", 300],
+        ["suspenso", "COBRANCA_SUSPENSA", 300],
+        ["removido-na-origem", "TITULO_NAO_ENCONTRADO", 300],
+        ["sem-registro", "TITULO_NAO_ENCONTRADO", 300],
+        ["quitado-sem-evento", "TITULO_QUITADO", 300],
+        ["receipt-incompleto", "RECEIPT_INCOMPLETO", 90],
+        ["desconto", "DESCONTO_ABATIMENTO", 15],
+        ["saldo-menor", "SALDO_REAL_MENOR", 60],
       ]
     );
-    assert.equal(audit.rows.find((row) => row.fact.scheduleId === "falta-receipt")?.receiptGap, 3_000);
-    assert.equal(audit.rows.find((row) => row.fact.scheduleId === "julho")?.inPeriod, false);
-    assert.equal(audit.forecastBeforePeriod, 300);
-    assert.deepEqual(audit.bySeller, [{ seller: "Vendedor do pedido", legacy: 1065, next: 360 }]);
+    assert.equal(causeOf("ok"), null);
+    assert.equal(causeOf("duplicado-novo"), null);
+    // Todas as causas pedidas existem no catálogo.
+    for (const cause of ["SNAPSHOT_SUBSTITUIDO", "SALDO_REAL_MENOR", "RECEIPT_INCOMPLETO", "TITULO_QUITADO", "DESCONTO_ABATIMENTO", "CANCELADO", "COBRANCA_SUSPENSA", "EXCLUSAO_CLIENTE", "EMPRESA_GRUPO", "SCHEDULE_DUPLICADO", "TITULO_NAO_ENCONTRADO", "OUTRO"]) {
+      assert.ok((OUTLOOK_AUDIT_CAUSES as readonly string[]).includes(cause), cause);
+    }
+  });
+
+  it("fecha a conciliação: antiga − nova = diferença removida = soma das causas, com a não explicada visível", () => {
+    const { reconciliation } = audit;
+    // No período (venc. a partir de 09/2026): 10 CRs sem evento × 300 + 150 + 15 + 150 dos parcialmente recebidos.
+    assert.equal(reconciliation.legacyForecastTotal, 3_315);
+    // ok 300 + duplicado-novo 300 + receipt-incompleto 60 + saldo-menor 90.
+    assert.equal(reconciliation.newForecastTotal, 750);
+    assert.equal(reconciliation.newForecastTotal, audit.cards.forecast, "o total novo é o card da tela");
+    assert.equal(reconciliation.removedDifference, 2_565);
+    assert.equal(reconciliation.legacyForecastTotal - reconciliation.newForecastTotal, reconciliation.removedDifference);
+    assert.equal(reconciliation.byCause.reduce((sum, entry) => sum + entry.difference, 0), reconciliation.removedDifference);
+    assert.equal(reconciliation.explainedDifference, 2_565);
+    assert.equal(reconciliation.unexplainedDifference, 0);
+    assert.equal(reconciliation.balanced, true);
+    assert.deepEqual(
+      reconciliation.byCause.map((entry) => [entry.cause, entry.count, entry.difference]),
+      [
+        ["SNAPSHOT_SUBSTITUIDO", 1, 300],
+        ["SCHEDULE_DUPLICADO", 1, 300],
+        ["EXCLUSAO_CLIENTE", 1, 300],
+        ["EMPRESA_GRUPO", 1, 300],
+        ["CANCELADO", 1, 300],
+        ["COBRANCA_SUSPENSA", 1, 300],
+        // "sem-registro" não tem vencimento: a regra antiga também não o somava no período.
+        ["TITULO_NAO_ENCONTRADO", 1, 300],
+        ["TITULO_QUITADO", 1, 300],
+        ["RECEIPT_INCOMPLETO", 1, 90],
+        ["DESCONTO_ABATIMENTO", 1, 15],
+        ["SALDO_REAL_MENOR", 1, 60],
+      ]
+    );
+    assert.equal(audit.rows.reduce((sum, row) => sum + row.difference, 0), reconciliation.removedDifference);
+  });
+
+  it("título não encontrado sai do total, mas aparece como pendência de dados com a comissão potencial", () => {
+    assert.deepEqual(audit.dataPending, { count: 2, potentialCommission: 600, inPeriodPotentialCommission: 300 });
+    const pending = audit.rows.filter((row) => row.dataPending);
+    assert.deepEqual(pending.map((row) => [row.fact.scheduleId, row.line.forecastCommission, row.pendingPotentialCommission]), [
+      ["removido-na-origem", 0, 300],
+      ["sem-registro", 0, 300],
+    ]);
+  });
+
+  it("vencidos antes de 09/2026 ainda em aberto ficam separados da previsão mensal e entram no saldo gerencial", () => {
+    assert.deepEqual(audit.overdueBeforePeriod, { count: 2, openPrincipal: 14_000, forecast: 420, legacyForecast: 420 });
+    assert.deepEqual(
+      audit.months.map((month) => [month.month, month.forecast]),
+      [["2026-09", 0], ["2026-10", 750]]
+    );
+    assert.equal(audit.managerialOpenCommission, 750 + 420);
+    // Quitado em julho não é pendência econômica.
+    assert.equal(audit.rows.find((row) => row.fact.scheduleId === "quitado-julho")?.line.forecastCommission, 0);
+  });
+
+  it("relatório e CSV trazem a conciliação e todos os campos do CR divergente", () => {
+    const report = formatOutlookAuditReport(audit, { today: TODAY, fromMonth: "2026-09", toMonth: null, seller: null, totalSchedules: facts.length, top: 40 }).join("\n");
+    assert.match(report, /PREVISÃO REGRA ANTIGA/);
+    assert.match(report, /− PREVISÃO REGRA NOVA/);
+    assert.match(report, /= DIFERENÇA REMOVIDA/);
+    assert.match(report, /SOMA DAS CAUSAS/);
+    assert.match(report, /DIFERENÇA NÃO EXPLICADA \(OUTRO\)/);
+    assert.match(report, /PASS: soma das causas = diferença removida/);
+    assert.match(report, /PENDÊNCIA DE DADOS \/ NÃO CONCILIADO/);
+    assert.match(report, /VENCIDOS ANTES DE 2026-09 AINDA EM ABERTO/);
+    assert.match(report, /SALDO GERENCIAL/);
+    assert.match(report, /schedule receipt-incompleto · snapshot vigente \(ACTIVE\) · atribuída 300,00 · antiga 150,00 · nova 60,00 · diferença 90,00 · causa RECEIPT_INCOMPLETO/);
+    assert.match(report, /original 10000,00 · balanceReceivable 2000,00 · amountReceived 8000,00 · Σ receipts 5000,00/);
+    assert.match(report, /schedule snapshot-antigo · snapshot substituído \(SUPERSEDED\)/);
+
+    const csv = buildOutlookAuditCsv(audit).split("\r\n");
+    const header = csv[0]!.replace("\uFEFF", "").split(";");
+    for (const column of ["vendedor", "pedido", "nf", "cr", "parcela", "vencimento", "valor_original", "balance_receivable", "amount_received_titulo", "soma_receipts", "schedule_id", "snapshot_pv", "comissao_atribuida", "previsao_antiga", "previsao_nova", "diferenca_titulo", "causa", "pendencia_de_dados", "vencido_antes_do_periodo"]) {
+      assert.ok(header.includes(column), column);
+    }
+    assert.equal(csv.filter((line) => line.trim()).length, facts.length + 1);
+  });
+
+  it("conciliação que não fecha é reportada como FAIL, nunca escondida", () => {
+    const broken = { ...audit, reconciliation: { ...audit.reconciliation, unexplainedDifference: 12.34, balanced: false } };
+    const report = formatOutlookAuditReport(broken, { today: TODAY, fromMonth: "2026-09", toMonth: null, seller: null, totalSchedules: facts.length, top: 5 }).join("\n");
+    assert.match(report, /FAIL: soma das causas ≠ diferença removida/);
   });
 });
