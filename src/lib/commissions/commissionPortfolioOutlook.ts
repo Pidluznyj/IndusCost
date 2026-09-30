@@ -8,17 +8,27 @@
  * Competência do realizado: receiptDate.
  * Competência do previsto: dueDate da parte ainda não recebida.
  * settlementDate não entra.
+ *
+ * Comissão futura = parte da comissão do CR vinculada ao saldo AINDA EM ABERTO
+ * do título na origem (balanceReceivable), nunca acima do que os eventos de
+ * recebimento deixam por realizar. Evento de recebimento faltando, desconto ou
+ * baixa sem recebimento não viram comissão a receber.
  */
-import { roundMoney } from "./commission-money.shared.js";
+import {
+  computeCommissionReleasedFromReceivablePrincipal,
+  formatBrl,
+  roundMoney,
+} from "./commission-money.shared.js";
 import {
   COMMISSION_PORTFOLIO_OUTLOOK_START_YEAR_MONTH,
   formatCommissionYearMonthKey,
   formatCommissionYearMonthLongLabel,
 } from "./commissionCoverageCutover.js";
+import { isCommissionSnapshotActive } from "./commissionScheduleVigency.js";
 
 export const COMMISSION_PORTFOLIO_OUTLOOK_NOTE =
-  "Projeção de leitura. A comissão continua a do pedido, rateada pelo CR. " +
-  "Recebimento realiza pela data do recebimento. O que falta segue o vencimento. " +
+  "Mostra quanto de comissão ainda falta receber sobre os títulos em aberto. " +
+  "A comissão continua a do pedido, rateada pelo CR; o que falta segue o saldo do título e o mês do vencimento. " +
   "Esta consulta não fecha mês, não cobre recebimento e não paga o vendedor.";
 
 /** Primeiro mês (`YYYY-MM`) da previsão. Antes dele, vale o relatório do Nomus. */
@@ -51,6 +61,24 @@ export type OutlookReceiptInput = {
 export type OutlookScheduleInput = {
   scheduleId: string;
   scheduleStatus: string;
+  /**
+   * Status do CommissionOrderSnapshot pai. Só ACTIVE é a versão vigente do pedido
+   * (regra de commissionScheduleVigency): schedule de versão substituída não conta.
+   */
+  orderSnapshotStatus: string | null;
+  /** createdAt do schedule (ISO). Desempata quando o título tem mais de um schedule vigente. */
+  scheduleCreatedAt?: string | null;
+  /** Título cancelado na origem (status = false): fora do fechamento oficial. */
+  titleCancelled?: boolean;
+  /** Cobrança suspensa na origem: fora do fechamento oficial. */
+  titleSuspended?: boolean;
+  /**
+   * Cliente com regra ativa em Exceções por cliente na data da venda, mesmo que o
+   * schedule tenha sido materializado antes da regra (o fechamento aplica a regra viva).
+   */
+  customerExcludedByActiveRule?: boolean;
+  /** Título de empresa do grupo: fora da comissão, como no fechamento. */
+  groupCompany?: boolean;
   salesOrderId: string;
   orderCode: string;
   customerId: string;
@@ -76,6 +104,24 @@ export type OutlookScheduleInput = {
   /** Pagamento ao vendedor já liquidado (lote PAID) neste CR. */
   paidToSellerAmount: number;
   receipts: OutlookReceiptInput[];
+};
+
+/** Dados do título na origem usados pela previsão e pela auditoria read-only. */
+export type OutlookTitleFacts = {
+  dueDate: string | null;
+  /** Saldo em aberto oficial; null = título fora do universo operacional (não encontrado ou removido na origem). */
+  balance: number | null;
+  /** balanceReceivable como veio da origem, sem tratamento (auditoria). */
+  balanceRaw: number | null;
+  amountReceivable: number | null;
+  amountReceived: number | null;
+  invoiceNumber: string | null;
+  settlementDate: string | null;
+  cancelled: boolean;
+  suspended: boolean;
+  sourcePresenceStatus: string | null;
+  /** Sacado é empresa do grupo (fora da comissão). */
+  groupCompany?: boolean;
 };
 
 export type OutlookQuery = {
@@ -115,7 +161,8 @@ export type OutlookLineStatus =
   | "CUSTOMER_EXCLUDED"
   | "SEM_VENDEDOR"
   | "CANCELADA"
-  | "INCONSISTENCIA_SEM_RECEBIMENTO";
+  | "INCONSISTENCIA_SEM_RECEBIMENTO"
+  | "TITULO_NAO_ENCONTRADO";
 
 export type OutlookLine = {
   scheduleId: string;
@@ -134,11 +181,20 @@ export type OutlookLine = {
   dueMonth: string | null;
   nominalAmount: number;
   balanceReceivable: number | null;
+  /** Saldo em aberto limitado ao nominal (juros não contam). null = título não encontrado. */
+  openPrincipal: number | null;
   eligibleReceived: number;
   allocatedCommission: number;
   sharePercent: number;
   realizedCommission: number;
+  /** Comissão futura: vinculada ao saldo ainda em aberto do título. */
   forecastCommission: number;
+  /**
+   * Comissão que não é futura (o título não tem saldo que a sustente) nem
+   * realizada (não há evento de recebimento): desconto, baixa sem recebimento,
+   * evento faltando ou título não encontrado. Fica fora dos totais.
+   */
+  unreconciledCommission: number;
   releasedCommission: number;
   paidCommission: number;
   balanceToPay: number;
@@ -149,27 +205,33 @@ export type OutlookLine = {
   receipts: OutlookReceiptEvent[];
 };
 
+/** Realizado (já aconteceu) e previsto (ainda a receber) nunca são somados: são universos diferentes. */
 export type OutlookMonth = {
   month: string;
   label: string;
   kind: "past" | "current" | "future";
   realized: number;
   forecast: number;
-  expected: number;
   released: number;
   paid: number;
   balanceToPay: number;
 };
 
 export type OutlookCards = {
+  /** Histórico: comissão dos recebimentos do período. Já aconteceu. */
   realized: number;
+  /** Comissão ainda a receber: vinculada ao saldo dos CRs em aberto. */
   forecast: number;
-  expected: number;
   released: number;
   paid: number;
+  /** Liberada e ainda não paga ao vendedor. */
   balanceToPay: number;
+  /** Realizada aguardando fechamento. */
   awaitingClosing: number;
+  /** Parte do `forecast` cujo título já venceu. */
   overdueForecast: number;
+  /** Comissão fora da previsão por falta de saldo em aberto e de evento de recebimento. */
+  unreconciled: number;
 };
 
 export type OutlookPayload = {
@@ -217,6 +279,9 @@ function inMonthRange(month: string, from: string | null, to: string | null): bo
 
 function economicStatus(input: {
   scheduleStatus: string;
+  voided: boolean;
+  customerExcluded: boolean;
+  titleMissing: boolean;
   sellerMissing: boolean;
   inconsistency: boolean;
   allocated: number;
@@ -226,7 +291,8 @@ function economicStatus(input: {
   paid: number;
   overdue: boolean;
 }): OutlookLineStatus {
-  if (input.scheduleStatus === "CUSTOMER_EXCLUDED") return "CUSTOMER_EXCLUDED";
+  if (input.voided) return "CANCELADA";
+  if (input.customerExcluded || input.scheduleStatus === "CUSTOMER_EXCLUDED") return "CUSTOMER_EXCLUDED";
   if (
     input.scheduleStatus === "SUPERSEDED" ||
     input.scheduleStatus === "STALE" ||
@@ -237,6 +303,7 @@ function economicStatus(input: {
   }
   if (input.sellerMissing) return "SEM_VENDEDOR";
   if (input.inconsistency) return "INCONSISTENCIA_SEM_RECEBIMENTO";
+  if (input.titleMissing && input.realized <= 0) return "TITULO_NAO_ENCONTRADO";
   if (input.allocated <= 0 && input.realized <= 0) return "PREVISTA";
   if (input.realized > 0 && input.forecast <= 0 && input.paid + 0.001 >= input.realized) return "PAGA";
   if (input.realized > 0 && input.forecast <= 0 && input.released + 0.001 >= input.realized && input.paid + 0.001 < input.realized) {
@@ -248,10 +315,56 @@ function economicStatus(input: {
   return "PREVISTA";
 }
 
-function projectSchedule(fact: OutlookScheduleInput, today: string): OutlookLine {
+const VOID_SUPERSEDED_SNAPSHOT =
+  "Schedule de uma versão substituída do pedido. Só a versão vigente conta, como no fechamento.";
+const VOID_DUPLICATE_SCHEDULE =
+  "O título tem mais de um schedule vigente. Vale o mais recente, o mesmo que o fechamento escolhe.";
+const VOID_TITLE_CANCELLED = "Título cancelado na origem. Fica fora do fechamento e não gera comissão a receber.";
+const VOID_TITLE_SUSPENDED =
+  "Título com cobrança suspensa na origem. Fica fora do fechamento e não gera comissão a receber.";
+
+/**
+ * Schedules que não podem contar, com o motivo. Espelha a seleção do fechamento
+ * (keepSchedulesFromActiveSnapshot + pickMaterializedScheduleForReceivable):
+ * uma comissão por título, sempre da versão vigente do pedido, e título
+ * cancelado ou suspenso fora.
+ */
+function resolveVoidReasons(facts: readonly OutlookScheduleInput[]): Map<string, string> {
+  const reasons = new Map<string, string>();
+  const currentByReceivable = new Map<number, OutlookScheduleInput[]>();
+  for (const fact of facts) {
+    if (!isCommissionSnapshotActive(fact.orderSnapshotStatus)) {
+      reasons.set(fact.scheduleId, VOID_SUPERSEDED_SNAPSHOT);
+      continue;
+    }
+    if (fact.titleCancelled) reasons.set(fact.scheduleId, VOID_TITLE_CANCELLED);
+    else if (fact.titleSuspended) reasons.set(fact.scheduleId, VOID_TITLE_SUSPENDED);
+    const list = currentByReceivable.get(fact.receivableId) ?? [];
+    list.push(fact);
+    currentByReceivable.set(fact.receivableId, list);
+  }
+  for (const list of currentByReceivable.values()) {
+    if (list.length < 2) continue;
+    // Mesma ordem do motor: mais recente primeiro; ACTIVE vence os demais desfechos.
+    const ordered = [...list].sort(
+      (a, b) =>
+        compareDate(b.scheduleCreatedAt ?? "", a.scheduleCreatedAt ?? "") || compareDate(a.scheduleId, b.scheduleId)
+    );
+    const winner = ordered.find((row) => row.scheduleStatus === "ACTIVE") ?? ordered[0]!;
+    for (const row of ordered) {
+      if (row !== winner && !reasons.has(row.scheduleId)) reasons.set(row.scheduleId, VOID_DUPLICATE_SCHEDULE);
+    }
+  }
+  return reasons;
+}
+
+function projectSchedule(fact: OutlookScheduleInput, today: string, voidReason: string | null): OutlookLine {
   const nominal = roundMoney(Math.max(0, fact.nominalAmount));
   const storedAllocated = roundMoney(Math.max(0, fact.allocatedCommission));
+  const customerExcluded = fact.customerExcludedByActiveRule === true || fact.groupCompany === true;
   const excluded =
+    voidReason != null ||
+    customerExcluded ||
     fact.scheduleStatus === "CUSTOMER_EXCLUDED" ||
     fact.scheduleStatus === "SUPERSEDED" ||
     fact.scheduleStatus === "STALE" ||
@@ -273,10 +386,14 @@ function projectSchedule(fact: OutlookScheduleInput, today: string): OutlookLine
     })
     .sort((a, b) => compareDate(a.receiptDate, b.receiptDate) || a.externalId - b.externalId);
 
-  const settledWithoutReceipt =
-    receipts.length === 0 &&
-    fact.balanceReceivable === 0 &&
-    roundMoney(fact.amountReceivedOnTitle ?? 0) > 0;
+  // Saldo oficial do título, limitado ao nominal: juros e multa no saldo não aumentam a comissão.
+  const titleFound = fact.balanceReceivable != null;
+  const openPrincipal = titleFound
+    ? roundMoney(Math.min(nominal, Math.max(0, fact.balanceReceivable ?? 0)))
+    : null;
+
+  // Título sem saldo e sem nenhum evento de recebimento: baixado/cancelado na origem.
+  const settledWithoutReceipt = receipts.length === 0 && titleFound && openPrincipal === 0 && nominal > 0;
 
   let eligibleUsed = 0;
   const drafted = receipts.map((row) => {
@@ -333,7 +450,39 @@ function projectSchedule(fact: OutlookScheduleInput, today: string): OutlookLine
   const realized = settledWithoutReceipt
     ? 0
     : roundMoney(events.reduce((sum, row) => sum + row.realizedCommission, 0));
-  const forecast = settledWithoutReceipt ? 0 : roundMoney(Math.max(0, allocated - realized));
+  // O que os eventos de recebimento deixam por realizar é só o teto. O futuro é a
+  // parte da comissão proporcional ao saldo ainda em aberto (mesma regra canônica
+  // de proporção pelo principal usada na liberação).
+  const remainingByReceipts = roundMoney(Math.max(0, allocated - realized));
+  const futureByBalance =
+    openPrincipal == null
+      ? 0
+      : computeCommissionReleasedFromReceivablePrincipal({
+          commissionExpectedAmount: allocated,
+          receivableOriginalAmount: nominal,
+          receivedAmount: openPrincipal,
+        });
+  const forecast = roundMoney(Math.min(remainingByReceipts, futureByBalance));
+  // Sobra de centavo do rateio não é divergência.
+  const gap = roundMoney(remainingByReceipts - forecast);
+  const unreconciled = gap > 0.01 ? gap : 0;
+  const inconsistency = voidReason
+    ? voidReason
+    : fact.groupCompany
+    ? "Empresa do grupo: fora da comissão, como no fechamento."
+    : fact.customerExcludedByActiveRule
+    ? "Cliente com regra ativa em Exceções por cliente: sem comissão, como no fechamento."
+    : excluded || sellerMissing
+    ? null
+    : settledWithoutReceipt
+    ? "Título baixado na origem sem evento de recebimento. A previsão não inventa receiptDate nem comissão futura."
+    : !titleFound && unreconciled > 0
+      ? "Título não encontrado no contas a receber sincronizado. Sem saldo oficial não há comissão futura."
+      : unreconciled > 0
+        ? `Saldo em aberto do título (${formatBrl(openPrincipal ?? 0)}) menor que o que falta pelos eventos de recebimento ` +
+          `(${formatBrl(roundMoney(nominal - eligibleUsed))}). ${formatBrl(unreconciled)} de comissão ficam fora da previsão: ` +
+          "desconto, abatimento ou recebimento sem evento sincronizado."
+        : null;
   const releasedFromReceipts = roundMoney(
     events.reduce((sum, row) => sum + row.releasedCommission, 0)
   );
@@ -347,6 +496,9 @@ function projectSchedule(fact: OutlookScheduleInput, today: string): OutlookLine
   const overdue = Boolean(fact.dueDate && fact.dueDate < today && forecast > 0);
   const status = economicStatus({
     scheduleStatus: fact.scheduleStatus,
+    voided: voidReason != null,
+    customerExcluded,
+    titleMissing: !titleFound,
     sellerMissing,
     inconsistency: settledWithoutReceipt,
     allocated,
@@ -374,20 +526,20 @@ function projectSchedule(fact: OutlookScheduleInput, today: string): OutlookLine
     dueMonth,
     nominalAmount: nominal,
     balanceReceivable: fact.balanceReceivable,
+    openPrincipal,
     eligibleReceived: settledWithoutReceipt ? 0 : eligibleUsed,
     allocatedCommission: allocated,
     sharePercent: fact.sharePercent,
     realizedCommission: realized,
     forecastCommission: forecast,
+    unreconciledCommission: unreconciled,
     releasedCommission: released,
     paidCommission: roundMoney(Math.min(paid, realized)),
     balanceToPay,
     awaitingClosing,
     status,
     daysOverdue: overdue && fact.dueDate ? civilDayDiff(today, fact.dueDate) : null,
-    inconsistency: settledWithoutReceipt
-      ? "Título baixado na origem sem evento de recebimento. A previsão não inventa receiptDate."
-      : null,
+    inconsistency,
     receipts: events,
   };
 }
@@ -420,24 +572,33 @@ function monthKind(month: string, todayMonth: string): OutlookMonth["kind"] {
   return "current";
 }
 
+/** Todas as linhas projetadas, sem filtro nem paginação (tela e auditoria usam a mesma regra). */
+export function projectCommissionPortfolioOutlookLines(
+  facts: readonly OutlookScheduleInput[],
+  today: string
+): OutlookLine[] {
+  const voidReasons = resolveVoidReasons(facts);
+  return facts.map((fact) => projectSchedule(fact, today, voidReasons.get(fact.scheduleId) ?? null));
+}
+
 export function buildCommissionPortfolioOutlook(
   facts: readonly OutlookScheduleInput[],
   query: OutlookQuery,
   today: string
 ): OutlookPayload {
-  const projected = facts.map((fact) => projectSchedule(fact, today)).filter((line) => lineVisible(line, query));
+  const projected = projectCommissionPortfolioOutlookLines(facts, today).filter((line) => lineVisible(line, query));
   const from = query.fromMonth;
   const to = query.toMonth;
 
   const cards: OutlookCards = {
     realized: 0,
     forecast: 0,
-    expected: 0,
     released: 0,
     paid: 0,
     balanceToPay: 0,
     awaitingClosing: 0,
     overdueForecast: 0,
+    unreconciled: 0,
   };
   const monthMap = new Map<string, OutlookMonth>();
 
@@ -450,7 +611,6 @@ export function buildCommissionPortfolioOutlook(
       kind: monthKind(month, today.slice(0, 7)),
       realized: 0,
       forecast: 0,
-      expected: 0,
       released: 0,
       paid: 0,
       balanceToPay: 0,
@@ -493,6 +653,9 @@ export function buildCommissionPortfolioOutlook(
         cards.overdueForecast = roundMoney(cards.overdueForecast + line.forecastCommission);
       }
     }
+    if (line.unreconciledCommission > 0 && line.dueMonth && inMonthRange(line.dueMonth, from, to)) {
+      cards.unreconciled = roundMoney(cards.unreconciled + line.unreconciledCommission);
+    }
     // Só o realizado de recebimentos do período: um recebimento fora do filtro
     // (ex.: antes do primeiro mês da previsão) não entra, mesmo com a linha visível.
     cards.awaitingClosing = roundMoney(
@@ -500,14 +663,12 @@ export function buildCommissionPortfolioOutlook(
     );
   }
 
-  cards.expected = roundMoney(cards.realized + cards.forecast);
   cards.balanceToPay = roundMoney(Math.max(0, cards.released - cards.paid));
 
   const months = [...monthMap.values()]
     .sort((a, b) => compareDate(a.month, b.month))
     .map((row) => ({
       ...row,
-      expected: roundMoney(row.realized + row.forecast),
       balanceToPay: roundMoney(Math.max(0, row.released - row.paid)),
     }));
 
@@ -529,9 +690,16 @@ export function buildCommissionPortfolioOutlook(
 }
 
 export function outlookInvariantsHold(line: OutlookLine): boolean {
-  if (roundMoney(line.realizedCommission + line.forecastCommission) > roundMoney(line.allocatedCommission + 0.001)) {
+  if (line.realizedCommission < 0 || line.forecastCommission < 0 || line.unreconciledCommission < 0) return false;
+  if (line.forecastCommission > roundMoney(line.allocatedCommission + 0.001)) return false;
+  if (
+    roundMoney(line.realizedCommission + line.forecastCommission + line.unreconciledCommission) >
+    roundMoney(line.allocatedCommission + 0.011)
+  ) {
     return false;
   }
+  // Sem saldo em aberto na origem não existe comissão futura.
+  if (line.forecastCommission > 0 && !(line.openPrincipal != null && line.openPrincipal > 0)) return false;
   if (line.eligibleReceived > roundMoney(line.nominalAmount + 0.001)) return false;
   if (line.paidCommission > roundMoney(line.realizedCommission + 0.001)) return false;
   const ids = line.receipts.map((row) => row.externalId);

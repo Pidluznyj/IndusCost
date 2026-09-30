@@ -36,6 +36,7 @@ function query(partial: Partial<OutlookQuery> = {}): OutlookQuery {
 function schedule(partial: Partial<OutlookScheduleInput> & Pick<OutlookScheduleInput, "scheduleId">): OutlookScheduleInput {
   return {
     scheduleStatus: "ACTIVE",
+    orderSnapshotStatus: "ACTIVE",
     salesOrderId: "so-1",
     orderCode: "PV-1",
     customerId: "c-1",
@@ -52,7 +53,8 @@ function schedule(partial: Partial<OutlookScheduleInput> & Pick<OutlookScheduleI
     nominalAmount: 10_000,
     allocatedCommission: 300,
     sharePercent: 100,
-    balanceReceivable: 10_000,
+    // Título em aberto por padrão: o saldo acompanha o nominal do fixture.
+    balanceReceivable: partial.nominalAmount ?? 10_000,
     amountReceivedOnTitle: 0,
     paidToSellerAmount: 0,
     receipts: [],
@@ -285,7 +287,7 @@ describe("previsão de comissões", () => {
     );
     assert.equal(payload.lines[0]?.status, "SEM_VENDEDOR");
     assert.equal(payload.lines[0]?.allocatedCommission, 0);
-    assert.equal(payload.cards.expected, 0);
+    assert.equal(payload.cards.realized + payload.cards.forecast, 0);
   });
 
   it("14. cliente excluído não gera previsto nem realizado", () => {
@@ -301,7 +303,7 @@ describe("previsão de comissões", () => {
       TODAY
     );
     assert.equal(payload.lines[0]?.status, "CUSTOMER_EXCLUDED");
-    assert.equal(payload.cards.expected, 0);
+    assert.equal(payload.cards.realized + payload.cards.forecast, 0);
   });
 
   it("15. schedule substituído fica cancelado e fora do total", () => {
@@ -311,7 +313,7 @@ describe("previsão de comissões", () => {
       TODAY
     );
     assert.equal(payload.lines[0]?.status, "CANCELADA");
-    assert.equal(payload.cards.expected, 0);
+    assert.equal(payload.cards.realized + payload.cards.forecast, 0);
   });
 
   it("16 e 17. liberado pelo fechamento IndusCost e pago pelo lote ou pelo histórico Nomus", () => {
@@ -507,7 +509,6 @@ describe("previsão de comissões", () => {
     const september = payload.months.find((row) => row.month === "2026-09");
     assert.equal(payload.cards.realized, september?.realized);
     assert.equal(payload.cards.forecast, 0);
-    assert.equal(payload.cards.expected, payload.cards.realized + payload.cards.forecast);
     assert.equal(september?.kind, "current");
   });
 });
@@ -578,7 +579,6 @@ describe("previsão só de setembro/2026 em diante", () => {
     );
     assert.equal(payload.cards.realized, 300);
     assert.equal(payload.cards.forecast, 300);
-    assert.equal(payload.cards.expected, 600);
     assert.equal(payload.cards.overdueForecast, 0);
     assert.equal(payload.cards.awaitingClosing, 300);
 
@@ -665,6 +665,6 @@ describe("previsão só de setembro/2026 em diante", () => {
         ["sem-vendedor-outubro", "SEM_VENDEDOR"],
       ]
     );
-    assert.equal(payload.cards.expected, 0);
+    assert.equal(payload.cards.realized + payload.cards.forecast, 0);
   });
 });

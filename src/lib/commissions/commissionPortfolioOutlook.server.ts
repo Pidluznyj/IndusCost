@@ -7,6 +7,11 @@ import { prisma } from "@/src/lib/prisma.js";
 import { toCivilDateKey } from "@/src/lib/financeCivilDate.js";
 import type { CommissionAccessScope } from "./commissionAccessScope.js";
 import { decimalToNumber } from "./commission-money.js";
+import { isNomusSourceOperationallyPresent } from "@/src/lib/nomus/nomusSourcePresencePolicy.js";
+import { commissionActiveSnapshotWhere } from "./commissionScheduleVigency.js";
+import { resolveCustomerExclusionForSale } from "./commissionCustomerExclusionApply.js";
+import { loadActiveCustomerExclusionRuleSnapshots } from "./commissionCustomerExclusionRules.server.js";
+import { isCommissionInternalGroupReceivable } from "./commissionInternalGroupExclusion.js";
 import {
   buildCommissionPortfolioOutlook,
   clampOutlookFromMonth,
@@ -14,7 +19,23 @@ import {
   type OutlookPayload,
   type OutlookQuery,
   type OutlookScheduleInput,
+  type OutlookTitleFacts,
 } from "./commissionPortfolioOutlook.js";
+
+/**
+ * Saldo em aberto do título: o saldo da origem; sem ele, original − recebido.
+ * Mesma regra de resolveOpenReceivableBalance do motor de fechamento.
+ */
+export function resolveOutlookOpenBalance(input: {
+  balanceReceivable: number | null;
+  amountReceivable: number | null;
+  amountReceived: number | null;
+}): number {
+  if (input.balanceReceivable != null && Number.isFinite(input.balanceReceivable)) {
+    return Math.max(0, input.balanceReceivable);
+  }
+  return Math.max(0, (input.amountReceivable ?? 0) - (input.amountReceived ?? 0));
+}
 
 const SCHEDULE_STATUSES = ["ACTIVE", "CUSTOMER_EXCLUDED", "ORPHAN", "ERROR"] as const;
 
@@ -75,10 +96,7 @@ export async function getCommissionPortfolioOutlook(
   today: string = toCivilDateKey(new Date()) ?? new Date().toISOString().slice(0, 10)
 ): Promise<OutlookPayload> {
   const query = parseCommissionPortfolioOutlookQuery(rawQuery, scope);
-  const where: Prisma.CommissionReceivableScheduleWhereInput = {
-    status: { in: [...SCHEDULE_STATUSES] },
-    ...sellerWhere(scope),
-  };
+  const where: Prisma.CommissionReceivableScheduleWhereInput = { ...sellerWhere(scope) };
   const and: Prisma.CommissionReceivableScheduleWhereInput[] = [];
   if (query.canonicalSellerId) and.push({ canonicalSellerId: query.canonicalSellerId });
   if (query.customerId) and.push({ customerId: query.customerId });
@@ -87,11 +105,35 @@ export async function getCommissionPortfolioOutlook(
   }
   if (and.length > 0) where.AND = and;
 
+  const { facts } = await loadCommissionPortfolioOutlookFacts(where);
+  return buildCommissionPortfolioOutlook(facts, query, today);
+}
+
+/**
+ * Carrega os fatos da previsão em lote (sem consulta por título). Somente leitura.
+ *
+ * Só entram schedules da versão VIGENTE do pedido (snapshot pai ACTIVE), como no
+ * fechamento. `includeSupersededSnapshots` existe apenas para a auditoria medir
+ * quanto as versões substituídas inflavam a previsão antiga.
+ */
+export async function loadCommissionPortfolioOutlookFacts(
+  scopeWhere: Prisma.CommissionReceivableScheduleWhereInput = {},
+  options: { includeSupersededSnapshots?: boolean } = {}
+): Promise<{ facts: OutlookScheduleInput[]; titles: Map<number, OutlookTitleFacts> }> {
+  const where: Prisma.CommissionReceivableScheduleWhereInput = {
+    ...scopeWhere,
+    status: { in: [...SCHEDULE_STATUSES] },
+    ...(options.includeSupersededSnapshots ? {} : commissionActiveSnapshotWhere()),
+  };
+
+  // Regras vivas de Exceções por cliente: valem mesmo para schedule materializado antes da regra.
+  const exclusionRulesPromise = loadActiveCustomerExclusionRuleSnapshots();
   const schedules = await prisma.commissionReceivableSchedule.findMany({
     where,
     select: {
       id: true,
       status: true,
+      createdAt: true,
       receivableId: true,
       receivableCode: true,
       installmentNumber: true,
@@ -103,10 +145,12 @@ export async function getCommissionPortfolioOutlook(
       receivableSharePercent: true,
       scheduledCommissionAmount: true,
       salesOrder: { select: { orderCode: true, externalSellerId: true } },
-      customer: { select: { companyName: true, tradeName: true } },
+      customer: { select: { companyName: true, tradeName: true, taxId: true, nomusExternalPersonId: true } },
       canonicalSeller: { select: { name: true } },
       orderSnapshot: {
         select: {
+          status: true,
+          saleDate: true,
           rawSellerId: true,
           sellerResolutionStatus: true,
           canonicalSellerName: true,
@@ -118,12 +162,7 @@ export async function getCommissionPortfolioOutlook(
   });
 
   const receivableIds = [...new Set(schedules.map((row) => row.receivableId))];
-  const titles = new Map<number, {
-    dueDate: string | null;
-    balance: number | null;
-    amountReceived: number | null;
-    invoiceNumber: string | null;
-  }>();
+  const titles = new Map<number, OutlookTitleFacts>();
   const receiptsByReceivable = new Map<number, OutlookScheduleInput["receipts"]>();
   const paidByReceivable = new Map<number, number>();
 
@@ -134,9 +173,16 @@ export async function getCommissionPortfolioOutlook(
         select: {
           externalId: true,
           dueDate: true,
+          settlementDate: true,
+          amountReceivable: true,
           balanceReceivable: true,
           amountReceived: true,
           sourceInvoiceNumber: true,
+          status: true,
+          suspendCollection: true,
+          sourcePresenceStatus: true,
+          personName: true,
+          personCnpj: true,
         },
       }),
       prisma.nomusReceivableReceipt.findMany({
@@ -171,11 +217,29 @@ export async function getCommissionPortfolioOutlook(
     ]);
 
     for (const row of arRows) {
+      const amountReceivable = row.amountReceivable == null ? null : decimalToNumber(row.amountReceivable);
+      const amountReceived = row.amountReceived == null ? null : decimalToNumber(row.amountReceived);
+      const balanceRaw = row.balanceReceivable == null ? null : decimalToNumber(row.balanceReceivable);
       titles.set(row.externalId, {
         dueDate: toCivilDateKey(row.dueDate),
-        balance: row.balanceReceivable == null ? null : decimalToNumber(row.balanceReceivable),
-        amountReceived: row.amountReceived == null ? null : decimalToNumber(row.amountReceived),
+        // Título removido na origem (ausência confirmada) não tem saldo oficial.
+        balance: isNomusSourceOperationallyPresent(row.sourcePresenceStatus)
+          ? resolveOutlookOpenBalance({
+              balanceReceivable: balanceRaw,
+              amountReceivable,
+              amountReceived,
+            })
+          : null,
+        balanceRaw,
+        amountReceivable,
+        amountReceived,
         invoiceNumber: row.sourceInvoiceNumber,
+        settlementDate: toCivilDateKey(row.settlementDate),
+        // Mesmo recorte do fechamento: status false = cancelado; cobrança suspensa fica fora.
+        cancelled: row.status === false,
+        suspended: row.suspendCollection === true,
+        sourcePresenceStatus: row.sourcePresenceStatus,
+        groupCompany: isCommissionInternalGroupReceivable({ customerName: row.personName, customerCnpj: row.personCnpj }),
       });
     }
 
@@ -216,11 +280,27 @@ export async function getCommissionPortfolioOutlook(
     }
   }
 
+  const exclusionRules = await exclusionRulesPromise;
   const facts: OutlookScheduleInput[] = schedules.map((row) => {
     const title = titles.get(row.receivableId);
     return {
       scheduleId: row.id,
       scheduleStatus: row.status,
+      orderSnapshotStatus: row.orderSnapshot.status,
+      scheduleCreatedAt: row.createdAt.toISOString(),
+      titleCancelled: title?.cancelled ?? false,
+      titleSuspended: title?.suspended ?? false,
+      groupCompany: title?.groupCompany ?? false,
+      // Mesma aplicação da Provisão por pedido: regra ativa na data da venda.
+      customerExcludedByActiveRule:
+        resolveCustomerExclusionForSale({
+          customerId: row.customerId,
+          customerExternalId: row.customer.nomusExternalPersonId ?? null,
+          customerTaxId: row.customer.taxId ?? null,
+          customerName: row.orderSnapshot.customerNameSnapshot,
+          referenceDate: row.orderSnapshot.saleDate,
+          rules: exclusionRules,
+        }) != null,
       salesOrderId: row.salesOrderId,
       orderCode: row.salesOrder.orderCode,
       customerId: row.customerId,
@@ -248,5 +328,5 @@ export async function getCommissionPortfolioOutlook(
     };
   });
 
-  return buildCommissionPortfolioOutlook(facts, query, today);
+  return { facts, titles };
 }

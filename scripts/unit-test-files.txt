@@ -329,6 +329,7 @@ src/lib/salesOrderResultPage.test.ts
 src/lib/salesOrderResultReceivableTermChart.test.tsx
 src/lib/nomus/nomusReceivableReceiptCoverage.test.ts
 src/lib/commissions/commissionPortfolioOutlook.test.ts
+src/lib/commissions/commissionPortfolioOutlookOpenBalance.test.ts
 src/lib/commissionPortfolioOutlookUi.test.tsx
 src/lib/inventory/inventoryManagerialValuation.test.ts
 src/lib/inventory/inventoryPositionReport.test.ts

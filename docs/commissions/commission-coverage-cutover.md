@@ -54,9 +54,10 @@ COMMISSION_PORTFOLIO_OUTLOOK_START_DATE = "2026-09-01"     // primeiro mês da P
   põe o piso no início do período (`clampOutlookFromMonth` em `parseCommissionPortfolioOutlookQuery`:
   vazio, inválido ou anterior vira 09/2026; um período todo anterior volta vazio). A tela abre em
   09/2026, os campos De/Até não aceitam mês anterior e o aviso `COMMISSION_PORTFOLIO_OUTLOOK_HISTORY_NOTE`
-  indica o Nomus. Os cards só somam recebimentos e previstos do período (inclusive "Realizado ainda
-  fora de fechamento"). O detalhe do título continua com o histórico completo dele, para o realizado
-  e o previsto fecharem com a comissão atribuída. O cutover oficial acima não muda.
+  indica o Nomus. Os cards só consideram recebimentos e vencimentos do período (inclusive "Realizada
+  aguardando fechamento"). O detalhe do título continua com o histórico completo dele. O cutover
+  oficial acima não muda. A regra da comissão ainda a receber (saldo em aberto do título, versão
+  vigente do pedido) está em `commission-portfolio-outlook.md`.
 
 ## 3. receiptDate é a competência natural
 

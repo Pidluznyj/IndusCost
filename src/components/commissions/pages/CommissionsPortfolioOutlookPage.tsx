@@ -26,7 +26,7 @@ import {
 } from "@/src/lib/commissions/commissionPortfolioOutlook";
 
 const STATUS_LABEL: Record<string, string> = {
-  PREVISTA: "Prevista",
+  PREVISTA: "A receber",
   PARCIALMENTE_RECEBIDA: "Parcialmente recebida",
   REALIZADA: "Realizada",
   LIBERADA: "Liberada",
@@ -36,6 +36,7 @@ const STATUS_LABEL: Record<string, string> = {
   SEM_VENDEDOR: "Sem vendedor",
   CANCELADA: "Cancelada",
   INCONSISTENCIA_SEM_RECEBIMENTO: "Baixa sem recebimento",
+  TITULO_NAO_ENCONTRADO: "Título não encontrado",
 };
 
 type Filters = {
@@ -209,82 +210,84 @@ export function CommissionsPortfolioOutlookPage() {
       {data ? (
         <>
           <CommissionsKpiSection
-            title="Recebimento do cliente"
-            eyebrow="Realizado na data do recebimento. O previsto permanece no vencimento."
-            testId="commissions-outlook-receipt"
+            title="Comissão ainda a receber"
+            eyebrow="Só o que está vinculado ao saldo dos títulos ainda em aberto. Fica no mês do vencimento."
+            testId="commissions-outlook-future"
           >
             <SystemTotalizerCard
               className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
-              label="Realizado no período"
-              amount={cards?.realized ?? 0}
-              amountFormat="currency"
-              tone="success"
-              subtitle="O cliente pagou"
-              helperText="O cliente pagou. Não é o pagamento ao vendedor."
-            />
-            <SystemTotalizerCard
-              className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
-              label="Ainda previsto"
+              label="Comissão ainda a receber"
               amount={cards?.forecast ?? 0}
               amountFormat="currency"
-              tone="info"
-              subtitle="No mês do vencimento"
-              helperText="Ainda depende de recebimento e permanece na data de vencimento, mesmo se estiver vencido."
+              tone="money"
+              subtitle="Vinculada ao saldo dos CRs ainda em aberto"
+              helperText="Parte da comissão do pedido proporcional ao saldo que o cliente ainda não pagou. Não inclui o que já foi recebido."
+              testId="commissions-outlook-card-future"
             />
             <SystemTotalizerCard
               className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
-              label="Total esperado"
-              amount={cards?.expected ?? 0}
+              label="A vencer"
+              amount={Math.max(0, (cards?.forecast ?? 0) - (cards?.overdueForecast ?? 0))}
               amountFormat="currency"
-              tone="money"
-              subtitle="Realizado + previsto"
-              helperText="Realizado mais o que ainda está previsto. Não soma pedido, nota e título de novo."
+              tone="info"
+              subtitle="Títulos dentro do prazo"
+              helperText="Parte da comissão ainda a receber cujo título ainda não venceu."
+            />
+            <SystemTotalizerCard
+              className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
+              label="Vencida e não recebida"
+              amount={cards?.overdueForecast ?? 0}
+              amountFormat="currency"
+              tone="warning"
+              subtitle="Títulos vencidos em aberto"
+              helperText="Parte da comissão ainda a receber cujo título já venceu. Continua no mês do vencimento."
             />
           </CommissionsKpiSection>
-          {(cards?.overdueForecast ?? 0) > 0 ? (
-            <p className="text-sm text-amber-800">
-              Vencido e ainda não recebido: {formatFinanceCurrency(cards?.overdueForecast ?? 0)}. O mês previsto
-              continua sendo o do vencimento.
+          {(cards?.unreconciled ?? 0) > 0 ? (
+            <p className="text-sm text-amber-800" data-testid="commissions-outlook-unreconciled">
+              Fora da previsão: {formatFinanceCurrency(cards?.unreconciled ?? 0)} de comissão em títulos sem saldo em
+              aberto e sem evento de recebimento (desconto, baixa sem recebimento ou recebimento não sincronizado).
+              Abra o título para ver o motivo.
             </p>
           ) : null}
 
           <CommissionsKpiSection
-            title="Pagamento ao vendedor"
-            eyebrow="Liberado entrou em fechamento. Pago saiu para o vendedor."
+            title="Comissão já realizada"
+            eyebrow="O cliente já pagou. Estes valores não se somam à comissão ainda a receber."
             testId="commissions-outlook-payout"
           >
             <SystemTotalizerCard
               className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
-              label="Liberado"
-              amount={cards?.released ?? 0}
+              label="Realizada aguardando fechamento"
+              amount={cards?.awaitingClosing ?? 0}
               amountFormat="currency"
-              subtitle="Em fechamento ou histórico"
-              helperText="Parcela do realizado já contemplada em fechamento ou no histórico. Não significa pago ao vendedor."
+              subtitle="Cliente já pagou; ainda não liberada"
+              helperText="Comissão de recebimentos do período que ainda não entrou em fechamento."
             />
             <SystemTotalizerCard
               className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
-              label="Pago"
+              label="Liberada e ainda não paga"
+              amount={cards?.balanceToPay ?? 0}
+              amountFormat="currency"
+              tone="warning"
+              subtitle="Já entrou em fechamento"
+              helperText="Diferença entre o que já foi liberado e o que já foi pago ao vendedor."
+            />
+            <SystemTotalizerCard
+              className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
+              label="Paga"
               amount={cards?.paid ?? 0}
               amountFormat="currency"
               tone="success"
               subtitle="Histórico Nomus ou lote"
               helperText="Valor já pago ao vendedor pelo histórico Nomus ou por lote com status pago."
             />
-            <SystemTotalizerCard
-              className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
-              label="Saldo a pagar"
-              amount={cards?.balanceToPay ?? 0}
-              amountFormat="currency"
-              tone="warning"
-              subtitle="Liberado e ainda não pago"
-              helperText="Diferença entre o que já foi liberado e o que já foi pago ao vendedor."
-            />
           </CommissionsKpiSection>
-          {(cards?.awaitingClosing ?? 0) > 0 ? (
-            <p className="text-sm text-slate-600">
-              Realizado ainda fora de fechamento: {formatFinanceCurrency(cards?.awaitingClosing ?? 0)}.
-            </p>
-          ) : null}
+          <p className="text-sm text-slate-600" data-testid="commissions-outlook-realized-note">
+            Realizado no período: {formatFinanceCurrency(cards?.realized ?? 0)} (liberado{" "}
+            {formatFinanceCurrency(cards?.released ?? 0)}). É histórico: o cliente já pagou e o valor não entra na
+            comissão ainda a receber.
+          </p>
 
           <CommissionsTableScroll>
             <table className="min-w-full text-sm">
@@ -292,15 +295,14 @@ export function CommissionsPortfolioOutlookPage() {
                 <tr className="border-b text-left text-xs uppercase text-slate-500">
                   <th className="px-2 py-2">Mês</th>
                   <th className="px-2 py-2">Quando</th>
-                  <th className="px-2 py-2 text-right">Realizado</th>
-                  <th className="px-2 py-2 text-right">Previsto</th>
-                  <th className="px-2 py-2 text-right">Total esperado</th>
+                  <th className="px-2 py-2 text-right">Ainda a receber</th>
+                  <th className="px-2 py-2 text-right">Já realizado (histórico)</th>
                 </tr>
               </thead>
               <tbody>
                 {data.months.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="px-2 py-4 text-slate-500">
+                    <td colSpan={4} className="px-2 py-4 text-slate-500">
                       Nenhum mês no filtro.
                     </td>
                   </tr>
@@ -320,9 +322,8 @@ export function CommissionsPortfolioOutlookPage() {
                       <td className="px-2 py-2">
                         {month.kind === "past" ? "Passado" : month.kind === "current" ? "Mês atual" : "Futuro"}
                       </td>
-                      <td className="px-2 py-2 text-right">{formatFinanceCurrency(month.realized)}</td>
-                      <td className="px-2 py-2 text-right">{formatFinanceCurrency(month.forecast)}</td>
-                      <td className="px-2 py-2 text-right">{formatFinanceCurrency(month.expected)}</td>
+                      <td className="px-2 py-2 text-right font-medium">{formatFinanceCurrency(month.forecast)}</td>
+                      <td className="px-2 py-2 text-right text-slate-500">{formatFinanceCurrency(month.realized)}</td>
                     </tr>
                   ))
                 )}
@@ -345,7 +346,7 @@ export function CommissionsPortfolioOutlookPage() {
                     <th className="px-2 py-2">Vencimento</th>
                     <th className="px-2 py-2 text-right">Atribuída</th>
                     <th className="px-2 py-2 text-right">Realizada</th>
-                    <th className="px-2 py-2 text-right">Prevista</th>
+                    <th className="px-2 py-2 text-right">A receber</th>
                     <th className="px-2 py-2">Status</th>
                   </tr>
                 </thead>
@@ -376,7 +377,9 @@ export function CommissionsPortfolioOutlookPage() {
                         <tr className="bg-slate-50">
                           <td colSpan={10} className="px-3 py-3 text-xs text-slate-700">
                             <p>
-                              Base do CR {formatFinanceCurrency(line.nominalAmount)} · elegível recebido{" "}
+                              Base do CR {formatFinanceCurrency(line.nominalAmount)} · saldo em aberto{" "}
+                              {line.openPrincipal == null ? "não encontrado" : formatFinanceCurrency(line.openPrincipal)} ·
+                              elegível recebido{" "}
                               {formatFinanceCurrency(line.eligibleReceived)} · liberado{" "}
                               {formatFinanceCurrency(line.releasedCommission)} · pago{" "}
                               {formatFinanceCurrency(line.paidCommission)} · saldo a pagar{" "}
