@@ -104,6 +104,40 @@ export function policyRoleLabel(role: string): string {
  */
 export type PolicyIdentity = { name: string; role: string; jobTitle?: string | null };
 
+/** Colaborador de Pessoas/RH candidato a representar um usuário no documento. */
+export type PolicyIdentityEmployee = { name: string; status?: string | null; jobTitle?: string | null };
+
+/**
+ * Nome completo e cargo de um usuário, pelo cadastro de Pessoas/RH. Ordem:
+ *  1. colaborador vinculado ao usuário (Acesso ao sistema);
+ *  2. colaborador da mesma Pessoa canônica do usuário;
+ *  3. colaborador cujo e-mail corporativo é o e-mail de login.
+ * Em 2 e 3 vale o colaborador ativo; havendo mais de um ativo, não se escolhe
+ * (evita imprimir o cargo de outra pessoa). Sem colaborador, o nome vem da
+ * Pessoa canônica e a função é o perfil de acesso.
+ */
+export function resolvePolicyIdentity(input: {
+  user: { name: string; role: string };
+  linkedEmployee?: PolicyIdentityEmployee | null;
+  personDisplayName?: string | null;
+  personEmployees?: PolicyIdentityEmployee[];
+  emailEmployees?: PolicyIdentityEmployee[];
+}): PolicyIdentity {
+  const pick = (list: PolicyIdentityEmployee[] | undefined): PolicyIdentityEmployee | null => {
+    const rows = list ?? [];
+    const active = rows.filter((row) => (row.status ?? "ACTIVE") === "ACTIVE");
+    if (active.length === 1) return active[0]!;
+    if (active.length === 0 && rows.length === 1) return rows[0]!;
+    return null;
+  };
+  const employee = input.linkedEmployee ?? pick(input.personEmployees) ?? pick(input.emailEmployees);
+  return {
+    name: employee?.name?.trim() || input.personDisplayName?.trim() || input.user.name,
+    role: input.user.role,
+    jobTitle: employee?.jobTitle?.trim() || null,
+  };
+}
+
 /** Cargo cadastrado; sem cargo, o perfil de acesso em texto de leitura. */
 export function policyFunctionLabel(identity: { role: string; jobTitle?: string | null }): string {
   return identity.jobTitle?.trim() || policyRoleLabel(identity.role);

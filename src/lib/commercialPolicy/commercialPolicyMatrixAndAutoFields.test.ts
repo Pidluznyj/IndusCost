@@ -15,7 +15,7 @@ import {
   type CommissionMatrixInput,
 } from "./commercialPolicyNormative.js";
 import { loadCommissionMatrixFromPriceTables } from "./commercialPolicyCommissionMatrix.server.js";
-import { applyPolicyAutoFields, policyCommissionMatrixFromSnapshot, type PolicyAutoFieldContext } from "./policyAutoFields.js";
+import { applyPolicyAutoFields, policyCommissionMatrixFromSnapshot, resolvePolicyIdentity, type PolicyAutoFieldContext } from "./policyAutoFields.js";
 import { resolveCommercialCommissionFromTiers } from "../commercialMarginCore.js";
 import { roundRatePercent } from "../commissions/commission-commercial-tier.js";
 import { OUT_OF_TABLE_COMMISSION_PERCENT } from "../commissions/commissionOutOfTable.js";
@@ -331,6 +331,28 @@ describe("campos automáticos do documento", () => {
     const withoutTitle = text({ ...published, signer: { name: "Ana", email: "ana@koppetel.com", role: "SELLER", jobTitle: null } });
     assert.match(withoutTitle, /Paulo Diretor — Super administrador/);
     assert.match(withoutTitle, /Função: Vendedor\(a\)/);
+  });
+
+  it("a identidade vem de Pessoas/RH: vínculo do usuário, mesma Pessoa canônica ou e-mail corporativo", () => {
+    const user = { name: "Paulo", role: "SUPER_ADMIN" };
+    const director = { name: "Paulo Pidluznyj", status: "ACTIVE", jobTitle: "Diretor" };
+    // 1. Colaborador vinculado ao usuário.
+    assert.deepEqual(resolvePolicyIdentity({ user, linkedEmployee: director }), { name: "Paulo Pidluznyj", role: "SUPER_ADMIN", jobTitle: "Diretor" });
+    // 2. Sem vínculo direto, mas usuário e colaborador são a mesma Pessoa canônica.
+    assert.deepEqual(resolvePolicyIdentity({ user, personDisplayName: "Paulo Pidluznyj", personEmployees: [director] }), {
+      name: "Paulo Pidluznyj",
+      role: "SUPER_ADMIN",
+      jobTitle: "Diretor",
+    });
+    // 3. Só o e-mail corporativo do colaborador coincide com o login.
+    assert.deepEqual(resolvePolicyIdentity({ user, emailEmployees: [director] }).jobTitle, "Diretor");
+    // Vínculo encerrado não ganha do ativo; dois ativos não são escolhidos no chute.
+    const former = { name: "Paulo Pidluznyj", status: "INACTIVE", jobTitle: "Analista" };
+    assert.equal(resolvePolicyIdentity({ user, personEmployees: [former, director] }).jobTitle, "Diretor");
+    const ambiguous = resolvePolicyIdentity({ user, personDisplayName: "Paulo Pidluznyj", personEmployees: [director, { ...director, jobTitle: "Sócio" }] });
+    assert.deepEqual(ambiguous, { name: "Paulo Pidluznyj", role: "SUPER_ADMIN", jobTitle: null });
+    // Sem colaborador nenhum: nome do login e perfil de acesso, como antes.
+    assert.deepEqual(resolvePolicyIdentity({ user }), { name: "Paulo", role: "SUPER_ADMIN", jobTitle: null });
   });
 
   it("o termo de ciência vem preenchido com o usuário logado e, após o aceite, com a assinatura eletrônica", () => {

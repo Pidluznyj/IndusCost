@@ -1,4 +1,25 @@
 import React, { useEffect, useMemo, useState } from "react";
+import {
+  ArrowLeft,
+  ArrowRight,
+  Ban,
+  BookOpen,
+  CalendarClock,
+  Check,
+  Clock,
+  FileDown,
+  Handshake,
+  ListChecks,
+  Lock,
+  Menu,
+  PenLine,
+  Percent,
+  Search,
+  ShieldCheck,
+  Users,
+  X,
+  type LucideIcon,
+} from "lucide-react";
 import { POL_COM_001_CHAPTERS, type OfficialPolicyBlock, type OfficialPolicyChapter } from "@/src/lib/commercialPolicy/official/polCom001V1Document.js";
 import {
   POL_COM_001_APPROVER,
@@ -30,13 +51,13 @@ const NOTICE_PHRASES = [
 ];
 
 /** Atalhos da capa para o que mais pesa na rotina do vendedor (só navegação; o texto é o do documento). */
-const KEY_POINTS: Array<{ chapterId: string; label: string; teaser: string }> = [
-  { chapterId: "10-responsabilidade-comercial-e-carteira", label: "Carteira", teaser: "Clientes e carteira são ativos da empresa; a atribuição é responsabilidade, não propriedade." },
-  { chapterId: "anexo-i-matriz-de-referencia-de-formacao-de-preco-comissao-e-alcada", label: "Matriz de comissão", teaser: "Níveis de referência da Formação de Preço; entre dois níveis, interpolação pelo preço praticado — Anexo I." },
-  { chapterId: "11-inatividade-de-cliente-e-revisao-de-carteira", label: "90 dias", teaser: "Sem novo faturamento válido e sem CRM válido, a exclusividade é revista." },
-  { chapterId: "8-vendas-recorrentes-oem-cobertura-e-canais-de-entrada", label: "Cobertura", teaser: "Venda já iniciada fica com o responsável; nova demanda segue a Seção 8." },
-  { chapterId: "22-condutas-vedadas", label: "Condutas vedadas", teaser: "O que nunca fazer com preço, margem, registros, campanhas e comissão." },
-  { chapterId: "23-confidencialidade-documento-controlado-e-uso-restrito", label: "Uso restrito", teaser: "Documento controlado: ler e aceitar não autoriza divulgar." },
+const KEY_POINTS: Array<{ chapterId: string; label: string; teaser: string; icon: LucideIcon }> = [
+  { icon: Users, chapterId: "10-responsabilidade-comercial-e-carteira", label: "Carteira", teaser: "Clientes e carteira são ativos da empresa; a atribuição é responsabilidade, não propriedade." },
+  { icon: Percent, chapterId: "anexo-i-matriz-de-referencia-de-formacao-de-preco-comissao-e-alcada", label: "Matriz de comissão", teaser: "Níveis de referência da Formação de Preço; entre dois níveis, interpolação pelo preço praticado — Anexo I." },
+  { icon: CalendarClock, chapterId: "11-inatividade-de-cliente-e-revisao-de-carteira", label: "90 dias", teaser: "Sem novo faturamento válido e sem CRM válido, a exclusividade é revista." },
+  { icon: Handshake, chapterId: "8-vendas-recorrentes-oem-cobertura-e-canais-de-entrada", label: "Cobertura", teaser: "Venda já iniciada fica com o responsável; nova demanda segue a Seção 8." },
+  { icon: Ban, chapterId: "22-condutas-vedadas", label: "Condutas vedadas", teaser: "O que nunca fazer com preço, margem, registros, campanhas e comissão." },
+  { icon: Lock, chapterId: "23-confidencialidade-documento-controlado-e-uso-restrito", label: "Uso restrito", teaser: "Documento controlado: ler e aceitar não autoriza divulgar." },
 ];
 
 function isKeyPoint(text: string): boolean {
@@ -75,22 +96,22 @@ function titleCase(text: string): string {
 const PolicyTable: React.FC<{ rows: string[][] }> = ({ rows }) => {
   const [head, ...body] = rows;
   return (
-    <div className="overflow-x-auto rounded-xl border border-slate-200 shadow-sm">
+    <div className="overflow-x-auto rounded-2xl border border-slate-200/80">
       <table className="w-full border-collapse text-[15px]">
         {head ? (
-          <thead className="bg-slate-900 text-slate-50">
+          <thead className="bg-[#F7F5F0] text-[#1F2F4F]">
             <tr>
               {head.map((cell, cellIndex) => (
-                <th key={cellIndex} className="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wide">{cell}</th>
+                <th key={cellIndex} className="border-b border-slate-200 px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.1em]">{cell}</th>
               ))}
             </tr>
           </thead>
         ) : null}
         <tbody>
           {body.map((row, rowIndex) => (
-            <tr key={rowIndex} className={rowIndex % 2 === 1 ? "bg-slate-50" : "bg-white"}>
+            <tr key={rowIndex} className="bg-white">
               {row.map((cell, cellIndex) => (
-                <td key={cellIndex} className={`border-t border-slate-200 px-4 py-2.5 align-top leading-relaxed ${cellIndex === 0 ? "font-medium text-slate-900" : "text-slate-700"}`}>{cell}</td>
+                <td key={cellIndex} className={`px-5 py-3 align-top leading-relaxed ${rowIndex > 0 ? "border-t border-slate-200/80" : ""} ${cellIndex === 0 ? "font-semibold text-slate-900" : "text-slate-700"}`}>{cell}</td>
               ))}
             </tr>
           ))}
@@ -104,8 +125,9 @@ const PolicyTable: React.FC<{ rows: string[][] }> = ({ rows }) => {
  * Leitor do documento oficial. É o MESMO renderizador para o vendedor
  * (modo aceite) e para a prévia do SUPER_ADMIN (modo preview, sem
  * "Concluir leitura"). Renderiza texto, listas, glossário e tabelas.
- * Tom: documento corporativo controlado — capa como termo de referência,
- * índice com progresso, pontos-chave destacados, leitura em coluna de texto.
+ * Tom: leitura acolhedora e executiva — papel claro, azul-marinho e um
+ * dourado discreto; capa que recebe o leitor e explica o percurso, índice
+ * claro com progresso, pontos que valem guardar e coluna de texto confortável.
  */
 export const CommercialPolicyReader: React.FC<{
   effectiveFrom: string | null;
@@ -146,6 +168,11 @@ export const CommercialPolicyReader: React.FC<{
     setChapterId(initialChapterId);
     setVisited((current) => new Set(current).add(initialChapterId));
   }, [initialChapterId]);
+
+  // O índice acompanha a leitura: o capítulo aberto fica sempre à vista.
+  useEffect(() => {
+    document.querySelector('nav[aria-label="Capítulos da política"] [aria-current="page"]')?.scrollIntoView({ block: "nearest" });
+  }, [chapterId]);
 
   const index = Math.max(0, chapters.findIndex((chapter) => chapter.id === chapterId));
   const chapter = chapters[index] ?? chapters[0];
@@ -195,6 +222,8 @@ export const CommercialPolicyReader: React.FC<{
 
   const vigencia = effectiveFrom ? new Date(effectiveFrom).toLocaleDateString("pt-BR") : "a definir na publicação";
   const isLast = index >= chapters.length - 1;
+  const nextChapter = !isLast ? chapters[index + 1] : null;
+  const firstName = signer?.name?.trim().split(/\s+/)[0] ?? null;
 
   const renderIndexItem = (item: OfficialPolicyChapter) => {
     const kind = chapterKind(item);
@@ -205,17 +234,26 @@ export const CommercialPolicyReader: React.FC<{
         <button
           type="button"
           aria-current={active ? "page" : undefined}
-          className={`group flex w-full items-start gap-2 rounded-lg border-l-2 px-2.5 py-2 text-left text-[13px] leading-snug transition ${
-            active ? "border-amber-400 bg-slate-800 text-white" : "border-transparent text-slate-300 hover:bg-slate-800/70 hover:text-white"
+          className={`group flex w-full items-start gap-3 rounded-xl px-3 py-2.5 text-left text-[13.5px] leading-snug transition ${
+            active ? "bg-[#1F2F4F]/[0.06] text-[#1F2F4F]" : "text-slate-600 hover:bg-slate-900/[0.035] hover:text-slate-900"
           }`}
           onClick={() => openChapter(item.id)}
         >
-          <span className={`mt-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full border text-[10px] ${seen ? "border-emerald-400 bg-emerald-400 text-slate-900" : "border-slate-600 text-transparent"}`} aria-hidden="true">
-            ✓
+          <span
+            className={`mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full border transition ${
+              active
+                ? "border-[#1F2F4F] bg-[#1F2F4F] text-white"
+                : seen
+                  ? "border-emerald-600/30 bg-emerald-50 text-emerald-700"
+                  : "border-slate-300 bg-white text-transparent"
+            }`}
+            aria-hidden="true"
+          >
+            {seen && !active ? <Check className="h-3 w-3" strokeWidth={3} /> : <span className="h-1.5 w-1.5 rounded-full bg-current" />}
           </span>
           <span className="min-w-0">
-            <span className={`block text-[10px] font-semibold uppercase tracking-wider ${active ? "text-amber-300" : "text-slate-500 group-hover:text-slate-400"}`}>{kind.short}</span>
-            <span className="block">{titleCase(kind.title)}</span>
+            <span className={`block text-[10.5px] font-semibold uppercase tracking-[0.12em] ${active ? "text-[#9A6B1F]" : "text-slate-400"}`}>{kind.short}</span>
+            <span className={`block ${active ? "font-semibold" : ""}`}>{titleCase(kind.title)}</span>
           </span>
         </button>
       </li>
@@ -225,7 +263,7 @@ export const CommercialPolicyReader: React.FC<{
   const renderBlock = (block: OfficialPolicyBlock, blockIndex: number) => {
     if (block.type === "heading") {
       return (
-        <h3 key={blockIndex} className="pt-4 font-serif text-xl font-semibold tracking-tight text-slate-900">{block.text}</h3>
+        <h3 key={blockIndex} className="pt-5 font-serif text-[22px] font-semibold leading-snug tracking-tight text-[#1F2F4F]">{block.text}</h3>
       );
     }
     if (block.type === "table") return <PolicyTable key={blockIndex} rows={block.rows} />;
@@ -233,21 +271,21 @@ export const CommercialPolicyReader: React.FC<{
     // Listas (princípios, condutas vedadas) ficam uniformes: destacar um item entre iguais distorce a leitura.
     if (block.type === "bullet") {
       return (
-        <div key={blockIndex} className="flex gap-3 px-3 py-1.5">
-          <span className="mt-[11px] h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" aria-hidden="true" />
-          <p className="text-[16px] leading-7 text-slate-800">{block.text}</p>
+        <div key={blockIndex} className="flex gap-3.5 pl-1">
+          <span className="mt-[13px] h-1.5 w-1.5 shrink-0 rounded-full bg-[#C9A35A]" aria-hidden="true" />
+          <p className="text-[17px] leading-8 text-slate-700">{block.text}</p>
         </div>
       );
     }
     if (isKeyPoint(block.text)) {
       return (
-        <div key={blockIndex} className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 shadow-sm">
-          <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.18em] text-amber-800">Ponto-chave</p>
-          <p className="text-[16px] leading-7 text-slate-900">{block.text}</p>
-        </div>
+        <aside key={blockIndex} className="rounded-r-xl border-l-[3px] border-[#C9A35A] bg-[#FBF6EA] px-5 py-4">
+          <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-[#9A6B1F]">Vale guardar</p>
+          <p className="text-[17px] leading-8 text-slate-800">{block.text}</p>
+        </aside>
       );
     }
-    return <p key={blockIndex} className="text-[16px] leading-7 text-slate-800">{block.text}</p>;
+    return <p key={blockIndex} className="text-[17px] leading-8 text-slate-700">{block.text}</p>;
   };
 
   const cover = chapter?.id === "capa";
@@ -257,226 +295,293 @@ export const CommercialPolicyReader: React.FC<{
   const coverIntro = cover ? chapter.blocks.filter((block) => block.type === "paragraph").slice(3) : [];
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col bg-slate-100">
-      {/* Cabeçalho: identificação do documento controlado + busca. */}
-      <header className="border-b border-slate-200 bg-white px-4 py-3 sm:px-6">
-        <div className={`mx-auto flex ${frame} flex-wrap items-start justify-between gap-3`}>
-          <div className="flex min-w-0 items-start gap-3">
-            <div className="hidden shrink-0 rounded-md border-2 border-amber-600 px-2 py-1 text-center sm:block" aria-hidden="true">
-              <p className="text-[9px] font-black uppercase leading-tight tracking-widest text-amber-700">Documento<br />controlado</p>
-            </div>
-            <div className="min-w-0">
-              <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-amber-700">
-                Uso interno e restrito{mode === "preview" ? " · prévia do super admin" : ""}
-              </p>
-              <h1 className="font-serif text-xl font-semibold leading-tight tracking-tight text-slate-900">{documentTitle}</h1>
-              <p className="text-xs text-slate-600">
-                {POL_COM_001_CODE} · Versão {versionLabel} · {POL_COM_001_COMPANY} · CNPJ {POL_COM_001_CNPJ} · Vigência: {vigencia}
-              </p>
-            </div>
+    <div className="flex min-h-0 flex-1 flex-col bg-[#F7F5F0] text-slate-800">
+      {/* Cabeçalho enxuto: identificação, busca e uma linha fina de progresso. */}
+      <header className="border-b border-slate-200/80 bg-white/90 backdrop-blur">
+        <div className={`mx-auto flex ${frame} flex-wrap items-center gap-x-5 gap-y-2 px-4 py-3 sm:px-6`}>
+          <div className="min-w-0 flex-1">
+            <p className="flex flex-wrap items-center gap-x-2 text-[11px] font-medium text-slate-500">
+              <span className="inline-flex items-center gap-1 rounded-full bg-[#FBF6EA] px-2 py-0.5 font-semibold text-[#9A6B1F]">
+                <Lock className="h-3 w-3" aria-hidden="true" /> Documento controlado
+              </span>
+              <span>Uso interno e restrito{mode === "preview" ? " · prévia do super admin" : ""}</span>
+            </p>
+            <h1 className="mt-1 truncate font-serif text-lg font-semibold leading-tight tracking-tight text-[#1F2F4F]">{documentTitle}</h1>
+            <p className="truncate text-xs text-slate-500">
+              {POL_COM_001_CODE} · Versão {versionLabel} · {POL_COM_001_COMPANY} · CNPJ {POL_COM_001_CNPJ} · Vigência: {vigencia}
+            </p>
           </div>
-          <div className="flex items-center gap-2">
-            <button type="button" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-800 hover:bg-slate-50" onClick={onGeneratePdf}>
-              Gerar cópia controlada em PDF
+          <div className="flex w-full items-center gap-2 sm:w-auto">
+            <button
+              type="button"
+              className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 md:hidden"
+              onClick={() => setIndexOpen((open) => !open)}
+            >
+              {indexOpen ? <X className="h-3.5 w-3.5" aria-hidden="true" /> : <Menu className="h-3.5 w-3.5" aria-hidden="true" />}
+              {indexOpen ? "Fechar índice" : "Índice"}
+            </button>
+            <div className="relative min-w-0 flex-1 sm:w-72 sm:flex-none">
+              <label className="sr-only" htmlFor="policy-search">Buscar na política</label>
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
+              <input
+                id="policy-search"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                className="w-full rounded-full border border-slate-200 bg-[#F7F5F0] py-2 pl-9 pr-3 text-sm placeholder:text-slate-400 focus:border-[#1F2F4F]/40 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#1F2F4F]/10"
+                placeholder="Buscar: 90 dias, cobertura, comissão…"
+              />
+            </div>
+            <button
+              type="button"
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
+              onClick={onGeneratePdf}
+            >
+              <FileDown className="h-3.5 w-3.5" aria-hidden="true" />
+              <span className="hidden lg:inline">Gerar cópia controlada em PDF</span>
+              <span className="lg:hidden">PDF</span>
             </button>
           </div>
         </div>
-        <div className={`mx-auto mt-3 flex ${frame} flex-wrap items-center gap-3`}>
-          <label className="sr-only" htmlFor="policy-search">Buscar na política</label>
-          <input
-            id="policy-search"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            className="min-w-[14rem] flex-1 rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-sm placeholder:text-slate-400 focus:bg-white"
-            placeholder="Buscar na política: 90 dias, cobertura, comissão, CRM…"
-          />
-          <button type="button" className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold md:hidden" onClick={() => setIndexOpen((open) => !open)}>
-            {indexOpen ? "Fechar índice" : "Índice"}
-          </button>
-          <p className="text-xs text-slate-600">
-            {visited.size} de {chapters.length} capítulos · leitura ≈ {readingMinutes(totalWords)} min
-          </p>
-        </div>
         {hits.length > 0 ? (
-          <ul className={`mx-auto mt-2 max-h-40 ${frame} space-y-1 overflow-auto rounded-lg border border-slate-200 bg-white p-2 text-xs shadow-sm`}>
+          <ul className={`mx-auto mb-2 max-h-44 ${frame} space-y-0.5 overflow-auto rounded-2xl border border-slate-200 bg-white p-2 text-[13px] shadow-lg shadow-slate-900/5 sm:mx-6`}>
             {hits.map((hit, hitIndex) => (
               <li key={`${hit.chapterId}-${hitIndex}`}>
-                <button type="button" className="w-full rounded px-2 py-1 text-left hover:bg-slate-50" onClick={() => openChapter(hit.chapterId)}>
-                  <span className="font-semibold text-slate-900">{hit.chapterTitle}. </span>
+                <button type="button" className="w-full rounded-xl px-3 py-2 text-left hover:bg-[#F7F5F0]" onClick={() => openChapter(hit.chapterId)}>
+                  <span className="font-semibold text-[#1F2F4F]">{titleCase(hit.chapterTitle)}. </span>
                   <span className="text-slate-600">…{hit.snippet}…</span>
                 </button>
               </li>
             ))}
           </ul>
         ) : null}
+        <div className="h-[3px] bg-slate-200/70" role="progressbar" aria-label="Progresso da leitura" aria-valuenow={progress} aria-valuemin={0} aria-valuemax={100}>
+          <div className="h-full rounded-r-full bg-gradient-to-r from-[#1F2F4F] to-[#C9A35A] transition-all duration-500" style={{ width: `${progress}%` }} />
+        </div>
       </header>
 
       <div className={`mx-auto flex min-h-0 w-full ${frame} flex-1`}>
-        {/* Índice: escuro, com progresso e capítulos lidos marcados; rola sozinho. */}
-        <aside className={`${indexOpen ? "block" : "hidden"} min-h-0 w-full bg-slate-900 text-slate-200 md:block md:w-80 md:shrink-0 md:overflow-y-auto`}>
+        {/* Índice: claro e discreto, com os capítulos lidos marcados; rola sozinho. */}
+        <aside className={`${indexOpen ? "block" : "hidden"} min-h-0 w-full border-r border-slate-200/80 bg-white md:block md:w-[19rem] md:shrink-0 md:overflow-y-auto`}>
           <nav aria-label="Capítulos da política" className="max-h-[70vh] overflow-auto p-4 md:max-h-none md:overflow-visible">
-            <div className="mb-4">
-              <div className="flex items-center justify-between text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-                <span>Progresso da leitura</span>
-                <span className="text-slate-200">{progress}%</span>
+            <div className="mb-4 rounded-2xl bg-[#F7F5F0] px-4 py-3.5">
+              <div className="flex items-baseline justify-between">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">Sua leitura</p>
+                <p className="font-serif text-lg font-semibold text-[#1F2F4F]">{progress}%</p>
               </div>
-              <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-slate-700" role="progressbar" aria-valuenow={progress} aria-valuemin={0} aria-valuemax={100}>
-                <div className="h-full rounded-full bg-emerald-400 transition-all" style={{ width: `${progress}%` }} />
-              </div>
-              <p className="mt-1 text-[11px] text-slate-400">Capítulo {index + 1} de {chapters.length}</p>
+              <p className="mt-0.5 text-xs text-slate-500">
+                {visited.size} de {chapters.length} capítulos · cerca de {readingMinutes(totalWords)} min no total
+              </p>
             </div>
             <ul className="space-y-0.5">{chapters.filter((item) => chapterKind(item).kind === "capa").map(renderIndexItem)}</ul>
-            <p className="mt-3 px-2 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">Seções</p>
+            <p className="mt-4 px-3 text-[10.5px] font-semibold uppercase tracking-[0.14em] text-slate-400">Seções</p>
             <ul className="mt-1 space-y-0.5">{sections.map(renderIndexItem)}</ul>
             {annexes.length ? (
               <>
-                <p className="mt-3 px-2 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">Anexos</p>
+                <p className="mt-4 px-3 text-[10.5px] font-semibold uppercase tracking-[0.14em] text-slate-400">Anexos</p>
                 <ul className="mt-1 space-y-0.5">{annexes.map(renderIndexItem)}</ul>
               </>
             ) : null}
           </nav>
         </aside>
 
-        {/* Coluna de leitura: folha branca com medida de texto confortável. */}
-        <main id="policy-chapter" tabIndex={-1} className="min-w-0 flex-1 overflow-auto bg-slate-100 px-3 py-4 outline-none sm:px-6 sm:py-6">
+        {/* Coluna de leitura: papel claro, medida de texto confortável. */}
+        <main id="policy-chapter" tabIndex={-1} className="min-w-0 flex-1 overflow-auto px-3 py-5 outline-none sm:px-8 sm:py-8">
           {cover ? (
             <div className={`mx-auto ${fluid ? "max-w-5xl" : "max-w-4xl"} space-y-5`}>
-              <section className="overflow-hidden rounded-2xl bg-slate-900 text-slate-50 shadow-xl">
-                <div className="border-b border-slate-700/60 px-6 py-4 sm:px-10">
-                  <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-300">
-                    <span>{POL_COM_001_COMPANY}</span>
-                    <span className="rounded border border-amber-400/70 px-2 py-0.5 text-amber-300">{POL_COM_001_CLASSIFICATION}</span>
-                  </div>
-                </div>
-                <div className="px-6 py-8 sm:px-10 sm:py-12">
-                  <p className="text-xs font-semibold uppercase tracking-[0.25em] text-amber-300">{POL_COM_001_CODE} · Versão {versionLabel}</p>
-                  <h2 className="mt-3 font-serif text-3xl font-semibold leading-tight tracking-tight sm:text-5xl">{titleCase(coverTitle)}</h2>
+              <section className="relative overflow-hidden rounded-3xl border border-slate-200/80 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04),0_12px_40px_-12px_rgba(15,23,42,0.12)]">
+                <div className="absolute inset-x-0 top-0 h-1.5 bg-gradient-to-r from-[#1F2F4F] via-[#1F2F4F] to-[#C9A35A]" aria-hidden="true" />
+                <div className="pointer-events-none absolute -right-24 -top-24 h-72 w-72 rounded-full bg-[#FBF6EA]" aria-hidden="true" />
+                <div className="relative px-6 pb-8 pt-10 sm:px-12 sm:pb-10 sm:pt-14">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">{POL_COM_001_COMPANY}</p>
+                  <p className="mt-6 text-[15px] text-slate-600">
+                    {firstName ? `Olá, ${firstName}.` : "Boas-vindas."} Esta é a política que orienta o nosso trabalho comercial.
+                  </p>
+                  <h2 className="mt-2 max-w-3xl font-serif text-[2.1rem] font-semibold leading-[1.12] tracking-tight text-[#1F2F4F] sm:text-5xl">{titleCase(coverTitle)}</h2>
                   {coverSubtitle && coverSubtitle.type === "paragraph" ? (
-                    <p className="mt-4 max-w-2xl text-base leading-relaxed text-slate-300 sm:text-lg">{coverSubtitle.text}</p>
+                    <p className="mt-4 max-w-2xl text-base leading-relaxed text-slate-600 sm:text-lg">{coverSubtitle.text}</p>
                   ) : null}
-                  <div className="mt-8 flex flex-wrap items-center gap-3">
+                  <div className="mt-8 flex flex-wrap items-center gap-x-5 gap-y-3">
                     <button
                       type="button"
-                      className="rounded-lg bg-amber-400 px-5 py-3 text-sm font-bold text-slate-900 shadow hover:bg-amber-300"
+                      className="inline-flex items-center gap-2 rounded-full bg-[#1F2F4F] px-6 py-3.5 text-sm font-semibold text-white shadow-lg shadow-[#1F2F4F]/20 transition hover:bg-[#182540]"
                       onClick={() => chapters[1] && openChapter(chapters[1].id)}
                     >
-                      Começar a leitura
+                      Começar a leitura <ArrowRight className="h-4 w-4" aria-hidden="true" />
                     </button>
-                    <span className="text-sm text-slate-300">{chapters.length} capítulos · cerca de {readingMinutes(totalWords)} minutos</span>
+                    <span className="inline-flex items-center gap-1.5 text-sm text-slate-500">
+                      <Clock className="h-4 w-4" aria-hidden="true" />
+                      {chapters.length} capítulos · cerca de {readingMinutes(totalWords)} minutos · no seu ritmo
+                    </span>
                   </div>
                 </div>
-                {coverTable && coverTable.type === "table" ? (
-                  <dl className="grid gap-x-6 gap-y-3 border-t border-slate-700/60 bg-slate-950/40 px-6 py-5 text-sm sm:grid-cols-2 sm:px-10 lg:grid-cols-4">
-                    {coverTable.rows.map((row) => (
-                      <div key={row[0]}>
-                        <dt className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{row[0]}</dt>
-                        <dd className="mt-0.5 font-medium text-slate-100">{row[1]}</dd>
-                      </div>
-                    ))}
-                  </dl>
-                ) : null}
+                <ol className="relative grid gap-px border-t border-slate-200/80 bg-slate-200/80 sm:grid-cols-3">
+                  {[
+                    { icon: BookOpen, title: "1. Leia com calma", text: "Capítulo a capítulo, com os pontos importantes em destaque." },
+                    { icon: ListChecks, title: "2. Confira o que entendeu", text: "Perguntas rápidas sobre situações do dia a dia." },
+                    { icon: PenLine, title: "3. Assine eletronicamente", text: "Você recebe um certificado do seu aceite." },
+                  ].map((stepItem) => (
+                    <li key={stepItem.title} className="flex items-start gap-3 bg-white px-6 py-4 sm:px-7">
+                      <span className="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#F7F5F0] text-[#1F2F4F]">
+                        <stepItem.icon className="h-4 w-4" aria-hidden="true" />
+                      </span>
+                      <span>
+                        <span className="block text-sm font-semibold text-slate-900">{stepItem.title}</span>
+                        <span className="block text-[13px] leading-relaxed text-slate-500">{stepItem.text}</span>
+                      </span>
+                    </li>
+                  ))}
+                </ol>
               </section>
 
-              <section className="rounded-2xl border border-amber-200 bg-amber-50 p-5 sm:p-6">
-                <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-amber-800">Antes de começar</p>
-                <h3 className="mt-1 font-serif text-xl font-semibold text-slate-900">Documento controlado — uso interno e restrito</h3>
-                <p className="mt-2 text-[15px] leading-7 text-slate-800">
-                  Este documento contém informações comerciais, estratégicas, operacionais e de remuneração de uso exclusivo interno.
-                  Sua divulgação, reprodução, compartilhamento, encaminhamento ou disponibilização a terceiros sem autorização expressa da empresa/Diretoria é vedada, ressalvadas as hipóteses legais aplicáveis.
-                  O uso ou compartilhamento não autorizado poderá resultar na adoção das medidas administrativas, contratuais e legais cabíveis.
-                  A leitura e o aceite eletrônico desta Política não autorizam sua distribuição externa.
-                </p>
-              </section>
-
-              <section className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
-                <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">O que esta política define para você</p>
-                <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              <section className="rounded-3xl border border-slate-200/80 bg-white p-6 sm:p-8">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">O que esta política define para você</p>
+                <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                   {KEY_POINTS.filter((point) => chapters.some((item) => item.id === point.chapterId)).map((point) => (
                     <button
                       key={point.chapterId}
                       type="button"
-                      className="group rounded-xl border border-slate-200 p-4 text-left transition hover:border-slate-900 hover:shadow-md"
+                      className="group rounded-2xl border border-slate-200/80 bg-white p-4 text-left transition hover:-translate-y-0.5 hover:border-[#1F2F4F]/30 hover:shadow-lg hover:shadow-slate-900/5"
                       onClick={() => openChapter(point.chapterId)}
                     >
-                      <p className="text-sm font-bold text-slate-900">{point.label}</p>
+                      <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-[#F7F5F0] text-[#1F2F4F] transition group-hover:bg-[#1F2F4F] group-hover:text-white">
+                        <point.icon className="h-[18px] w-[18px]" aria-hidden="true" />
+                      </span>
+                      <p className="mt-3 text-[15px] font-semibold text-slate-900">{point.label}</p>
                       <p className="mt-1 text-[13px] leading-relaxed text-slate-600">{point.teaser}</p>
-                      <p className="mt-2 text-[11px] font-semibold text-amber-700 group-hover:underline">Ler a seção →</p>
+                      <p className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-[#9A6B1F]">
+                        Ler a seção <ArrowRight className="h-3 w-3 transition group-hover:translate-x-0.5" aria-hidden="true" />
+                      </p>
                     </button>
                   ))}
                 </div>
                 <p className="mt-4 text-xs text-slate-500">Os atalhos só levam ao capítulo; o texto normativo é sempre o do documento. A leitura integral é obrigatória para o aceite.</p>
               </section>
 
-              {coverIntro.length ? (
-                <section className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
-                  <div className="space-y-3">{coverIntro.map((block, blockIndex) => renderBlock(block, blockIndex))}</div>
-                  <dl className="mt-4 grid gap-3 border-t border-slate-200 pt-4 text-xs text-slate-600 sm:grid-cols-3">
-                    <div><dt className="font-semibold text-slate-500">Área responsável</dt><dd>{POL_COM_001_AREA}</dd></div>
-                    <div><dt className="font-semibold text-slate-500">Aprovador</dt><dd>{POL_COM_001_APPROVER}</dd></div>
-                    <div><dt className="font-semibold text-slate-500">Vigência</dt><dd>{vigencia}</dd></div>
+              <section className="flex gap-4 rounded-3xl border border-[#E9DDBF] bg-[#FBF6EA] p-5 sm:p-6">
+                <span className="mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white text-[#9A6B1F]">
+                  <ShieldCheck className="h-[18px] w-[18px]" aria-hidden="true" />
+                </span>
+                <div>
+                  <h3 className="font-serif text-lg font-semibold text-[#1F2F4F]">Documento controlado — uso interno e restrito</h3>
+                  <p className="mt-1.5 text-[14.5px] leading-7 text-slate-700">
+                    Este documento contém informações comerciais, estratégicas, operacionais e de remuneração de uso exclusivo interno.
+                    Sua divulgação, reprodução, compartilhamento, encaminhamento ou disponibilização a terceiros sem autorização expressa da empresa/Diretoria é vedada, ressalvadas as hipóteses legais aplicáveis.
+                    O uso ou compartilhamento não autorizado poderá resultar na adoção das medidas administrativas, contratuais e legais cabíveis.
+                    A leitura e o aceite eletrônico desta Política não autorizam sua distribuição externa.
+                  </p>
+                </div>
+              </section>
+
+              {coverTable && coverTable.type === "table" ? (
+                <section className="rounded-3xl border border-slate-200/80 bg-white p-6 sm:p-8">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Identificação do documento</p>
+                  <dl className="mt-4 grid gap-x-8 gap-y-4 text-sm sm:grid-cols-2 lg:grid-cols-4">
+                    {coverTable.rows.map((row) => (
+                      <div key={row[0]} className="border-l-2 border-slate-200 pl-3">
+                        <dt className="text-[11px] font-medium text-slate-500">{row[0]}</dt>
+                        <dd className="mt-0.5 font-semibold text-slate-900">{row[1]}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                  {coverIntro.length ? <div className="mt-6 space-y-3 border-t border-slate-200/80 pt-5">{coverIntro.map((block, blockIndex) => renderBlock(block, blockIndex))}</div> : null}
+                  <dl className="mt-5 grid gap-3 border-t border-slate-200/80 pt-4 text-xs text-slate-600 sm:grid-cols-3">
+                    <div><dt className="font-medium text-slate-500">Área responsável</dt><dd className="font-semibold text-slate-800">{POL_COM_001_AREA}</dd></div>
+                    <div><dt className="font-medium text-slate-500">Aprovador</dt><dd className="font-semibold text-slate-800">{POL_COM_001_APPROVER}</dd></div>
+                    <div><dt className="font-medium text-slate-500">Vigência</dt><dd className="font-semibold text-slate-800">{vigencia}</dd></div>
                   </dl>
                 </section>
               ) : null}
             </div>
           ) : (
-            <article className={`mx-auto ${fluid ? "max-w-4xl" : "max-w-3xl"} rounded-2xl border border-slate-200 bg-white px-5 py-7 shadow-sm sm:px-10 sm:py-10`}>
-              <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-amber-700">
-                {meta.short}{meta.short ? " · " : ""}{POL_COM_001_CODE} v{versionLabel}
+            <article className={`mx-auto ${fluid ? "max-w-4xl" : "max-w-3xl"} rounded-3xl border border-slate-200/80 bg-white px-6 py-8 shadow-[0_1px_2px_rgba(15,23,42,0.04),0_12px_40px_-16px_rgba(15,23,42,0.10)] sm:px-14 sm:py-12`}>
+              <p className="flex flex-wrap items-center gap-x-2 text-xs text-slate-500">
+                <span className="rounded-full bg-[#FBF6EA] px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.1em] text-[#9A6B1F]">{meta.short || "Capítulo"}</span>
+                <span>Capítulo {index + 1} de {chapters.length}</span>
+                <span aria-hidden="true">·</span>
+                <span className="inline-flex items-center gap-1"><Clock className="h-3.5 w-3.5" aria-hidden="true" /> cerca de {readingMinutes(chapterWords(chapter))} min</span>
               </p>
-              <h2 className="mt-2 font-serif text-3xl font-semibold leading-tight tracking-tight text-slate-900">{titleCase(meta.title)}</h2>
-              <p className="mt-1 text-xs text-slate-500">≈ {readingMinutes(chapterWords(chapter))} min de leitura · capítulo {index + 1} de {chapters.length}</p>
-              <div className="my-5 h-px bg-gradient-to-r from-amber-400 via-slate-200 to-transparent" aria-hidden="true" />
+              <h2 className="mt-4 font-serif text-[2rem] font-semibold leading-[1.15] tracking-tight text-[#1F2F4F] sm:text-[2.4rem]">{titleCase(meta.title)}</h2>
+              <div className="my-7 h-px bg-gradient-to-r from-[#C9A35A] via-slate-200 to-transparent" aria-hidden="true" />
               {chapter?.id === "4-definicoes" ? (
-                <div className="mb-6 space-y-3">
+                <div className="mb-7 space-y-3">
                   <label className="sr-only" htmlFor="glossary-search">Glossário</label>
-                  <input
-                    id="glossary-search"
-                    value={glossaryQuery}
-                    onChange={(event) => setGlossaryQuery(event.target.value)}
-                    className="w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-sm"
-                    placeholder="Filtrar termos: Pedido de Venda, Margem Oficial, Registro Material…"
-                  />
-                  <dl className="divide-y divide-slate-200 overflow-hidden rounded-xl border border-slate-200">
+                  <div className="relative">
+                    <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
+                    <input
+                      id="glossary-search"
+                      value={glossaryQuery}
+                      onChange={(event) => setGlossaryQuery(event.target.value)}
+                      className="w-full rounded-full border border-slate-200 bg-[#F7F5F0] py-2.5 pl-9 pr-3 text-sm focus:border-[#1F2F4F]/40 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#1F2F4F]/10"
+                      placeholder="Filtrar termos: Pedido de Venda, Margem Oficial, Registro Material…"
+                    />
+                  </div>
+                  <dl className="divide-y divide-slate-200/80 overflow-hidden rounded-2xl border border-slate-200/80">
                     {glossary.map((term) => (
-                      <div key={term.term} className="grid gap-1 bg-white px-4 py-3 sm:grid-cols-[minmax(10rem,14rem)_1fr] sm:gap-4">
-                        <dt className="font-semibold text-slate-900">{term.term}</dt>
-                        <dd className="text-[15px] leading-7 text-slate-700">{term.definition}</dd>
+                      <div key={term.term} className="grid gap-1 bg-white px-5 py-3.5 sm:grid-cols-[minmax(10rem,14rem)_1fr] sm:gap-5">
+                        <dt className="font-semibold text-[#1F2F4F]">{term.term}</dt>
+                        <dd className="text-[15.5px] leading-7 text-slate-700">{term.definition}</dd>
                       </div>
                     ))}
                   </dl>
                 </div>
               ) : null}
-              <div className="space-y-4">{chapter?.blocks.map(renderBlock)}</div>
-              <div className="mt-8 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-5 text-xs text-slate-500">
-                <span>{POL_COM_001_CLASSIFICATION}</span>
-                {!isLast && chapters[index + 1] ? (
-                  <button type="button" className="font-semibold text-slate-900 hover:underline" onClick={() => openChapter(chapters[index + 1].id)}>
-                    Continuar: {chapterKind(chapters[index + 1]).short || titleCase(chapterKind(chapters[index + 1]).title)} →
-                  </button>
-                ) : null}
-              </div>
+              <div className="space-y-5">{chapter?.blocks.map(renderBlock)}</div>
+              {nextChapter ? (
+                <button
+                  type="button"
+                  className="group mt-10 flex w-full items-center justify-between gap-4 rounded-2xl border border-slate-200/80 bg-[#F7F5F0] px-5 py-4 text-left transition hover:border-[#1F2F4F]/30 hover:bg-white hover:shadow-lg hover:shadow-slate-900/5"
+                  onClick={() => openChapter(nextChapter.id)}
+                >
+                  <span className="min-w-0">
+                    <span className="block text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">Continuar a leitura</span>
+                    <span className="mt-0.5 block truncate font-serif text-lg font-semibold text-[#1F2F4F]">
+                      {chapterKind(nextChapter).short ? `${chapterKind(nextChapter).short} — ` : ""}{titleCase(chapterKind(nextChapter).title)}
+                    </span>
+                  </span>
+                  <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#1F2F4F] text-white transition group-hover:translate-x-0.5">
+                    <ArrowRight className="h-4 w-4" aria-hidden="true" />
+                  </span>
+                </button>
+              ) : null}
+              <p className="mt-8 border-t border-slate-200/80 pt-4 text-[11px] text-slate-400">{POL_COM_001_CLASSIFICATION}</p>
             </article>
           )}
         </main>
       </div>
 
-      {/* Rodapé: navegação e conclusão. */}
-      <footer className="border-t border-slate-200 bg-white px-4 py-3 sm:px-6">
+      {/* Rodapé: onde estou, voltar e avançar. */}
+      <footer className="border-t border-slate-200/80 bg-white/95 px-4 py-3 backdrop-blur sm:px-6">
         <div className={`mx-auto flex ${frame} flex-wrap items-center justify-between gap-3`}>
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Uso interno e restrito · documento controlado</p>
+          <p className="text-xs text-slate-500">
+            <span className="font-semibold text-slate-700">Capítulo {index + 1} de {chapters.length}</span>
+            <span className="hidden sm:inline"> · {cover ? "Capa e identificação" : `${meta.short ? `${meta.short} — ` : ""}${titleCase(meta.title)}`}</span>
+          </p>
           <div className="flex items-center gap-2">
-            <button type="button" className="rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-800 hover:bg-slate-50 disabled:opacity-40" disabled={index <= 0} onClick={() => openChapter(chapters[index - 1].id)}>
-              Anterior
+            <button
+              type="button"
+              className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-40"
+              disabled={index <= 0}
+              onClick={() => openChapter(chapters[index - 1].id)}
+            >
+              <ArrowLeft className="h-4 w-4" aria-hidden="true" /> Anterior
             </button>
             {!isLast ? (
-              <button type="button" className="rounded-lg bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white hover:bg-slate-800" onClick={() => openChapter(chapters[index + 1].id)}>
-                Próximo
+              <button
+                type="button"
+                className="inline-flex items-center gap-1.5 rounded-full bg-[#1F2F4F] px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#182540]"
+                onClick={() => openChapter(chapters[index + 1].id)}
+              >
+                Próximo <ArrowRight className="h-4 w-4" aria-hidden="true" />
               </button>
             ) : mode === "preview" || !onFinish ? (
               <p className="px-3 py-2.5 text-sm font-semibold text-slate-500">Fim do documento</p>
             ) : (
-              <button type="button" className="rounded-lg bg-amber-400 px-5 py-2.5 text-sm font-bold text-slate-900 hover:bg-amber-300" onClick={onFinish}>
-                Concluir leitura
+              <button
+                type="button"
+                className="inline-flex items-center gap-1.5 rounded-full bg-emerald-700 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-800"
+                onClick={onFinish}
+              >
+                <Check className="h-4 w-4" aria-hidden="true" /> Concluir leitura
               </button>
             )}
           </div>

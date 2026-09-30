@@ -17,7 +17,7 @@ import {
 } from "./commercialPolicyPdf.js";
 import { buildAcceptanceCertificatePdf, buildControlledCopyPdf } from "./commercialPolicyControlledCopyPdf.js";
 import { loadCommissionMatrixFromPriceTables } from "./commercialPolicyCommissionMatrix.server.js";
-import { policyCommissionMatrixFromSnapshot, policyFunctionLabel, type PolicyAutoFieldContext, type PolicyIdentity } from "./policyAutoFields.js";
+import { policyCommissionMatrixFromSnapshot, policyFunctionLabel, resolvePolicyIdentity, type PolicyAutoFieldContext, type PolicyIdentity } from "./policyAutoFields.js";
 import { createPrismaCommercialPolicyStore } from "./commercialPolicyPrismaStore.js";
 import {
   auditPolCom001Publication,
@@ -208,13 +208,40 @@ export function registerCommercialPolicyRoutes(app: express.Express, deps: Comme
   const loadUserIdentity =
     deps.loadUserIdentity ??
     (async (userId: string): Promise<PolicyIdentity | null> => {
-      // Nome completo e cargo vêm do cadastro de Pessoas/RH vinculado ao usuário; sem vínculo, nome e perfil do login.
+      // Nome completo e cargo vêm de Pessoas/RH: vínculo direto do usuário, mesma Pessoa canônica ou e-mail corporativo.
+      const employeeSelect = { name: true, status: true, Role: { select: { name: true } } } as const;
       const row = await prisma.appUser.findUnique({
         where: { id: userId },
-        select: { name: true, role: true, employee: { select: { name: true, Role: { select: { name: true } } } } },
+        select: {
+          name: true,
+          email: true,
+          role: true,
+          employee: { select: employeeSelect },
+          person: { select: { displayName: true, employees: { select: employeeSelect } } },
+        },
       });
       if (!row) return null;
-      return { name: row.employee?.name?.trim() || row.name, role: row.role, jobTitle: row.employee?.Role?.name?.trim() || null };
+      const toEmployee = (item: { name: string; status: string | null; Role: { name: string } | null }) => ({
+        name: item.name,
+        status: item.status,
+        jobTitle: item.Role?.name ?? null,
+      });
+      const email = row.email.trim().toLowerCase();
+      const byEmail =
+        row.employee || !email
+          ? []
+          : await prisma.employee.findMany({
+              where: { corporateEmail: { equals: email, mode: "insensitive" } },
+              select: employeeSelect,
+              take: 5,
+            });
+      return resolvePolicyIdentity({
+        user: { name: row.name, role: row.role },
+        linkedEmployee: row.employee ? toEmployee(row.employee) : null,
+        personDisplayName: row.person?.displayName ?? null,
+        personEmployees: (row.person?.employees ?? []).map(toEmployee),
+        emailEmployees: byEmail.map(toEmployee),
+      });
     });
 
   /** Snapshot normativo atual; sem banco, o snapshot fica nulo e a auditoria registra WARNING em vez de fingir alinhamento. */
