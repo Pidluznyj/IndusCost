@@ -12,6 +12,7 @@ import { clearDomicilioTokenCacheForTests } from "./sources/domicilio/domicilioA
 import { runDomicilioSync } from "./sources/domicilio/domicilioSyncRunner.server.js";
 import { runDatajudSync } from "./sources/datajud/datajudSyncRunner.server.js";
 import { searchDjen } from "./sources/djen/djenClient.server.js";
+import { createDjenThrottle } from "./sources/djen/djenThrottle.js";
 import { listDomicilioCommunications } from "./sources/domicilio/domicilioMonitoringClient.server.js";
 
 function auth(permissions: string[]): AuthPermissionInput {
@@ -145,7 +146,7 @@ describe("exposure science and secrets", () => {
     assert.equal(rows.every((row) => typeof row.configured === "boolean"), true);
   });
 
-  it("DJEN 429 respeita uma única tentativa", async () => {
+  it("DJEN 429 faz no máximo um retry", async () => {
     let calls = 0;
     const fetchImpl: typeof fetch = async () => {
       calls += 1;
@@ -154,9 +155,10 @@ describe("exposure science and secrets", () => {
     const batch = await searchDjen({
       env: { DJEN_BASE_URL: "https://fixture.invalid" },
       fetchImpl,
+      throttle: createDjenThrottle({ intervalMs: 500, sleep: async () => {} }),
       query: { nomeParte: "Industria Exemplo LTDA" },
     });
-    assert.equal(calls, 1);
+    assert.equal(calls, 2);
     assert.equal(batch.outcome, "RATE_LIMITED");
   });
 });

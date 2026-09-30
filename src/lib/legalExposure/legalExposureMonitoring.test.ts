@@ -10,6 +10,7 @@ import { LEGAL_EXPOSURE_AUTOSYNC_OFF_MESSAGE, legalExposureAutosyncApplyAllowed,
 import { createEmptyExposureMemory, type LegalExposureMemory } from "./legalExposureStore.js";
 import { searchDjen } from "./sources/djen/djenClient.server.js";
 import { clampDjenMaxPages, djenHasNextPage } from "./sources/djen/djenContracts.js";
+import { createDjenThrottle } from "./sources/djen/djenThrottle.js";
 
 const USER = "00000000-0000-4000-8000-000000000099";
 const PROCESS = "00002860620215090021";
@@ -126,6 +127,7 @@ describe("djen pagination", () => {
     const batch = await searchDjen({
       env: { DJEN_BASE_URL: "https://fixture.invalid", DJEN_MAX_PAGES: "2" },
       fetchImpl,
+      throttle: createDjenThrottle({ intervalMs: 500, sleep: async () => {} }),
       query: { nomeParte: "Lazarios Comercio de Plasticos LTDA" },
     });
     assert.equal(calls.length, 2);
@@ -155,9 +157,10 @@ describe("djen pagination", () => {
     const batch = await searchDjen({
       env: { DJEN_BASE_URL: "https://fixture.invalid", DJEN_MAX_PAGES: "5" },
       fetchImpl,
+      throttle: createDjenThrottle({ intervalMs: 500, sleep: async () => {} }),
       query: { nomeParte: "Koppetel Comercio de Plasticos LTDA" },
     });
-    assert.equal(calls, 2);
+    assert.equal(calls, 3);
     assert.equal(batch.outcome, "PARTIAL");
     assert.equal(batch.errorCode, "RATE_LIMITED");
     assert.equal(batch.cases.length, 20);

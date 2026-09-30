@@ -6,6 +6,7 @@ import {
 } from "../../legalExposureFeatureFlags.js";
 import { searchDjen } from "./djenClient.server.js";
 import { DJEN_EMPTY_QUERY_MESSAGE, hasDjenSearchFilter } from "./djenContracts.js";
+import type { DjenThrottle } from "./djenThrottle.js";
 
 function disabled(): NormalizedSourceBatch {
   return {
@@ -26,6 +27,7 @@ export async function runDjenSync(input: {
   fetchImpl?: typeof fetch;
   nomeParte?: string;
   numeroProcesso?: string;
+  throttle?: DjenThrottle;
 }): Promise<NormalizedSourceBatch> {
   const env = input.env ?? process.env;
   if (!isDjenEnabled(env) || !djenConfigured(env)) return disabled();
@@ -45,6 +47,7 @@ export async function runDjenSync(input: {
   return searchDjen({
     env,
     fetchImpl: input.fetchImpl ?? fetch,
+    throttle: input.throttle,
     query: {
       nomeParte: input.nomeParte,
       numeroProcesso: input.numeroProcesso,

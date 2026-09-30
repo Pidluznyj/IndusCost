@@ -5,11 +5,13 @@ import {
   DJEN_DEFAULT_PAGE_SIZE,
   DJEN_EMPTY_QUERY_MESSAGE,
   clampDjenMaxPages,
+  clampDjenMinRequestIntervalMs,
   djenHasNextPage,
   hasDjenSearchFilter,
   type DjenSearchQuery,
 } from "./djenContracts.js";
 import { mapDjenPublicationPage, mapDjenPublications } from "./djenMapper.js";
+import { getSharedDjenThrottle, type DjenThrottle } from "./djenThrottle.js";
 
 function emptyQueryBatch(): NormalizedSourceBatch {
   return {
@@ -42,7 +44,6 @@ function mergeDjenPages(pages: NormalizedSourceBatch[]): NormalizedSourceBatch {
   const cases = pages.flatMap((page) => page.cases);
   const candidates = pages.flatMap((page) => page.candidates);
   const communications = pages.flatMap((page) => page.communications);
-  const last = pages[pages.length - 1]!;
   const hadResults = cases.length + candidates.length + communications.length > 0;
   const hardFailure = pages.find(
     (page) =>
@@ -94,6 +95,7 @@ export async function searchDjen(input: {
   env: LegalExposureEnv;
   fetchImpl: typeof fetch;
   query: DjenSearchQuery;
+  throttle?: DjenThrottle;
 }): Promise<NormalizedSourceBatch> {
   if (!hasDjenSearchFilter(input.query)) return emptyQueryBatch();
   const base = input.env[LEGAL_EXPOSURE_ENV.djenBaseUrl]?.trim().replace(/\/$/, "") ?? "";
@@ -112,23 +114,44 @@ export async function searchDjen(input: {
   }
   const itensPorPagina = input.query.itensPorPagina ?? DJEN_DEFAULT_PAGE_SIZE;
   const maxPages = clampDjenMaxPages(input.env[LEGAL_EXPOSURE_ENV.djenMaxPages]);
+  const intervalMs = clampDjenMinRequestIntervalMs(
+    input.env[LEGAL_EXPOSURE_ENV.djenMinRequestIntervalMs]
+  );
+  const throttle = input.throttle ?? getSharedDjenThrottle(intervalMs);
   const startPage = input.query.pagina ?? 1;
   const pages: NormalizedSourceBatch[] = [];
   const path = "/api/v1/comunicacao";
 
-  for (let offset = 0; offset < maxPages; offset += 1) {
-    const pagina = startPage + offset;
+  async function fetchPage(pagina: number) {
     const params = new URLSearchParams();
     if (input.query.nomeParte) params.set("nomeParte", input.query.nomeParte);
     if (input.query.numeroProcesso) params.set("numeroProcesso", input.query.numeroProcesso);
     params.set("pagina", String(pagina));
     params.set("itensPorPagina", String(itensPorPagina));
-    const result = await legalExposureFetch({
+    const url = `${base}${path}?${params.toString()}`;
+    await throttle.waitBeforeRequest();
+    let result = await legalExposureFetch({
       fetchImpl: input.fetchImpl,
-      url: `${base}${path}?${params.toString()}`,
+      url,
       path,
       init: { method: "GET" },
     });
+    if (result.outcome === "RATE_LIMITED") {
+      await throttle.waitAfterRateLimit(result.retryAfterSeconds);
+      result = await legalExposureFetch({
+        fetchImpl: input.fetchImpl,
+        url,
+        path,
+        init: { method: "GET" },
+      });
+      throttle.noteRequest();
+    }
+    return result;
+  }
+
+  for (let offset = 0; offset < maxPages; offset += 1) {
+    const pagina = startPage + offset;
+    const result = await fetchPage(pagina);
     if (result.outcome !== "SUCCESS") {
       pages.push({
         source: "DJEN",

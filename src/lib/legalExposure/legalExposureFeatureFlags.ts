@@ -20,6 +20,7 @@ export const LEGAL_EXPOSURE_ENV = {
   djen: "DJEN_ENABLED",
   djenBaseUrl: "DJEN_BASE_URL",
   djenMaxPages: "DJEN_MAX_PAGES",
+  djenMinRequestIntervalMs: "DJEN_MIN_REQUEST_INTERVAL_MS",
   autosync: "LEGAL_EXPOSURE_AUTOSYNC_ENABLED",
 } as const;
 
