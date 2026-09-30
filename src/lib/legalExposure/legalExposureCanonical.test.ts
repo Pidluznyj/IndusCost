@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { applyBatchToMemory, mergeExistingCaseMetadata } from "./legalExposureApply.js";
-import { pickCanonicalCase, resolveCanonicalCaseGroup } from "./legalExposureCanonical.js";
+import {
+  applyCanonicalEntityLinks,
+  missingLegacyEntityLinks,
+  pickCanonicalCase,
+  previewCanonicalGroups,
+  resolveCanonicalCaseGroup,
+} from "./legalExposureCanonical.js";
 import { classifyCaseStage } from "./legalExposureCaseStage.js";
 import type { NormalizedCaseObservation, NormalizedSourceBatch } from "./legalExposureContracts.js";
 import { buildExposureDashboard, listCases } from "./legalExposureReadModel.js";
@@ -259,6 +265,92 @@ describe("canonical CNJ grouping", () => {
     assert.ok(lines.some((line) => line.includes("Lazarios")));
     const report = buildExposureGroupReport(memory);
     assert.equal(report.totals.uniqueProcesses, 1);
+  });
+
+  it("união de fatos de irmãos físicos não perde movimento nem evidência", () => {
+    const memory = twoEntities();
+    const at = "2026-09-01T10:00:00.000Z";
+    memory.cases.push(physicalCase("case-a", "ent-a", at));
+    memory.cases.push(physicalCase("case-b", "ent-b", "2026-09-02T10:00:00.000Z"));
+    const movement = (
+      id: string,
+      caseId: string,
+      fingerprint: string,
+      name: string
+    ) => {
+      memory.movements.push({
+        id,
+        caseId,
+        source: "DATAJUD",
+        sourceCode: id,
+        name,
+        occurredAt: at,
+        courtUnit: "09ª VARA",
+        complements: null,
+        fingerprint,
+        firstSeenAt: at,
+        rawMetadata: null,
+        createdAt: at,
+      });
+    };
+    movement("m1", "case-a", "fp-1", "Distribuído");
+    movement("m2", "case-a", "fp-2", "Citação");
+    movement("m3", "case-a", "fp-shared", "Conclusos");
+    movement("m4", "case-b", "fp-shared", "Conclusos");
+    movement("m5", "case-b", "fp-4", "Audiência");
+    movement("m6", "case-b", "fp-5", "Juntada");
+    movement("m7", "case-b", "fp-6", "Despacho");
+    movement("m8", "case-b", "fp-7", "Sentença");
+    const evidence = (id: string, caseId: string, source: "DJEN" | "DATAJUD" | "ESCAVADOR", identifier: string) => {
+      memory.evidences.push({
+        id,
+        caseId,
+        source,
+        sourceIdentifier: identifier,
+        confidence: "CONFIRMED",
+        firstSeenAt: at,
+        lastSeenAt: at,
+        sourceUpdatedAt: at,
+        rawMetadata: { keep: true },
+        rawHash: id,
+        createdAt: at,
+        updatedAt: at,
+      });
+    };
+    evidence("e1", "case-a", "DJEN", "pub-1");
+    evidence("e2", "case-a", "DATAJUD", "hit-1");
+    evidence("e3", "case-b", "ESCAVADOR", "esc-1");
+    const page = listCases(memory, {});
+    assert.equal(page.total, 1);
+    assert.equal(page.items[0]?.movementCount, 7);
+    const caseIds = new Set(page.items[0]?.caseIds);
+    const uniqueEvidences = new Set(
+      memory.evidences.filter((row) => caseIds.has(row.caseId)).map((row) => `${row.source}:${row.sourceIdentifier}`)
+    );
+    assert.equal(uniqueEvidences.size, 3);
+    const dashboard = buildExposureDashboard(memory);
+    assert.equal(dashboard.cards.monitoredCases, 1);
+    assert.equal(dashboard.entities.find((row) => row.id === "ent-a")?.monitoredCases, 1);
+    assert.equal(dashboard.entities.find((row) => row.id === "ent-b")?.monitoredCases, 1);
+  });
+
+  it("backfill de links é idempotente e não apaga cases", () => {
+    const memory = twoEntities();
+    memory.cases.push(physicalCase("case-a", "ent-a", "2026-09-01T10:00:00.000Z"));
+    memory.cases.push(physicalCase("case-b", "ent-b", "2026-09-02T10:00:00.000Z"));
+    let n = 0;
+    const createId = () => `link-${++n}`;
+    const first = applyCanonicalEntityLinks(memory, createId, "2026-09-30T12:00:00.000Z");
+    assert.equal(first.created, 2);
+    assert.equal(missingLegacyEntityLinks(memory).length, 0);
+    const second = applyCanonicalEntityLinks(memory, createId, "2026-09-30T12:01:00.000Z");
+    assert.equal(second.created, 0);
+    assert.equal(memory.cases.length, 2);
+    assert.equal(memory.entityLinks.length, 2);
+    const preview = previewCanonicalGroups(memory);
+    assert.equal(preview.entityLinksToCreate, 0);
+    assert.equal(preview.physicalCases, 2);
+    assert.equal(preview.uniqueCnj, 1);
   });
 });
 

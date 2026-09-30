@@ -121,25 +121,116 @@ export function previewCanonicalGroups(memory: LegalExposureMemory) {
     list.push(row);
     byProcess.set(row.processNumberNormalized, list);
   }
+  const entityById = new Map(memory.entities.map((row) => [row.id, row]));
   const groups = [...byProcess.entries()].map(([processNumberNormalized, siblings]) => {
     const group = resolveCanonicalCaseGroup(memory, processNumberNormalized);
     const caseIdSet = new Set(group.caseIds);
+    const companies = group.entityLinks.map((link) => {
+      const entity = entityById.get(link.entityId);
+      return {
+        entityId: link.entityId,
+        legalName: entity?.legalName ?? "",
+        pole: link.pole,
+      };
+    });
     return {
       processNumberNormalized,
       processNumber: group.canonicalCase?.processNumber ?? siblings[0]?.processNumber ?? "",
       physicalCaseCount: siblings.length,
       caseIds: group.caseIds,
       entityIds: group.entityLinks.map((row) => row.entityId),
+      companies,
       evidenceCount: memory.evidences.filter((row) => caseIdSet.has(row.caseId)).length,
       movementCount: memory.movements.filter((row) => caseIdSet.has(row.caseId)).length,
       communicationCount: memory.communications.filter((row) => row.caseId && caseIdSet.has(row.caseId)).length,
       eventCount: memory.events.filter((row) => row.caseId && caseIdSet.has(row.caseId)).length,
+      partyCount: memory.parties.filter((row) => caseIdSet.has(row.caseId)).length,
     };
   });
+  const duplicated = groups.filter((row) => row.physicalCaseCount > 1);
+  const pending = missingLegacyEntityLinks(memory);
   return {
     physicalCases: memory.cases.length,
+    uniqueCnj: groups.length,
     uniqueProcesses: groups.length,
-    duplicatedProcesses: groups.filter((row) => row.physicalCaseCount > 1),
+    duplicateCnjGroups: duplicated.length,
+    entityLinksExisting: memory.entityLinks.length,
+    entityLinksToCreate: pending.length,
+    casesWithoutEntity: memory.cases.filter((row) => !row.entityId).length,
+    casesWithoutNormalizedNumber: memory.cases.filter((row) => !row.processNumberNormalized).length,
+    movements: memory.movements.length,
+    evidences: memory.evidences.length,
+    communications: memory.communications.length,
+    duplicatedProcesses: duplicated.map((row) => ({
+      processNumber: row.processNumber,
+      processNumberNormalized: row.processNumberNormalized,
+      physicalCases: row.physicalCaseCount,
+      companies: row.companies,
+      caseIds: row.caseIds,
+      evidenceCount: row.evidenceCount,
+      movementCount: row.movementCount,
+      communicationCount: row.communicationCount,
+      eventCount: row.eventCount,
+      partyCount: row.partyCount,
+    })),
     groups,
   };
+}
+
+export function missingLegacyEntityLinks(memory: LegalExposureMemory): Array<{
+  caseId: string;
+  entityId: string;
+  pole: LegalCasePole;
+  source: LegalExposureSource;
+  firstSeenAt: string;
+  lastSeenAt: string;
+}> {
+  const existing = new Set(memory.entityLinks.map((row) => `${row.caseId}:${row.entityId}`));
+  const missing: Array<{
+    caseId: string;
+    entityId: string;
+    pole: LegalCasePole;
+    source: LegalExposureSource;
+    firstSeenAt: string;
+    lastSeenAt: string;
+  }> = [];
+  for (const legalCase of memory.cases) {
+    if (!legalCase.entityId) continue;
+    const key = `${legalCase.id}:${legalCase.entityId}`;
+    if (existing.has(key)) continue;
+    existing.add(key);
+    missing.push({
+      caseId: legalCase.id,
+      entityId: legalCase.entityId,
+      pole: legalCase.entityPole,
+      source: legalCase.primarySource,
+      firstSeenAt: legalCase.firstSeenAt,
+      lastSeenAt: legalCase.lastSeenAt,
+    });
+  }
+  return missing;
+}
+
+export function applyCanonicalEntityLinks(
+  memory: LegalExposureMemory,
+  createId: () => string,
+  now = new Date().toISOString()
+): { created: number; skipped: number } {
+  const pending = missingLegacyEntityLinks(memory);
+  for (const row of pending) {
+    memory.entityLinks.push({
+      id: createId(),
+      caseId: row.caseId,
+      entityId: row.entityId,
+      pole: row.pole,
+      confidence: "CONFIRMED",
+      firstSource: row.source,
+      lastSource: row.source,
+      firstSeenAt: row.firstSeenAt,
+      lastSeenAt: row.lastSeenAt,
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
+  return { created: pending.length, skipped: memory.cases.length - pending.length };
 }
