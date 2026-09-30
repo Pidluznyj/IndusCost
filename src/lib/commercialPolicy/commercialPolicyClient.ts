@@ -25,6 +25,8 @@ export type PendingPolicy = {
   effectiveFrom: string;
   publishedAt: string | null;
   whatChanged?: string[];
+  /** Quem publicou a versão (aprovação eletrônica impressa no documento). */
+  approver?: { name: string; role: string } | null;
 };
 
 export type PendingResponse = {

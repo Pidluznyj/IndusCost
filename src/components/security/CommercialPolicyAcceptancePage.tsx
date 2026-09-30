@@ -161,6 +161,13 @@ export const CommercialPolicyAcceptancePage: React.FC = () => {
           </button>
           <button
             type="button"
+            className="block rounded-lg border border-border px-3 py-2 text-sm font-semibold"
+            onClick={() => void downloadAuthenticatedFile(`/api/commercial-policy/versions/${policy.id}/document`, "POL-COM-001-copia-controlada-assinada.pdf")}
+          >
+            Baixar política com o termo de ciência assinado
+          </button>
+          <button
+            type="button"
             className="block rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground"
             onClick={() => {
               void loadMe().then(() => navigate("/home", { replace: true }));
@@ -175,6 +182,8 @@ export const CommercialPolicyAcceptancePage: React.FC = () => {
 
   // Toda versão (oficial ou editada no painel) é lida no mesmo leitor estruturado.
   const chapters = parsePolicyChapters(policy.content);
+  // O termo de ciência já vem com os dados de quem está logado: o vendedor só confere e aceita.
+  const signer = authUser ? { name: authUser.name, email: authUser.email, role: authUser.role } : null;
   if (step === 0 && chapters.length > 0) {
     return (
       <div className="flex h-screen flex-col bg-background">
@@ -198,6 +207,9 @@ export const CommercialPolicyAcceptancePage: React.FC = () => {
           title={policy.title}
           versionLabel={policy.label}
           effectiveFrom={policy.effectiveFrom}
+          publishedAt={policy.publishedAt}
+          approver={policy.approver ?? null}
+          signer={signer}
           initialChapterId={reviewChapterId}
           onGeneratePdf={() => void downloadAuthenticatedFile(`/api/commercial-policy/versions/${policy.id}/document`, "POL-COM-001-copia-controlada.pdf")}
           onFinish={() => setStep(1)}

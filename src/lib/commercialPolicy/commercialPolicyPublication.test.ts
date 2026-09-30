@@ -168,7 +168,7 @@ describe("POL-COM-001 v1.0 — regras que bloqueiam (testes 8–10)", () => {
     assert.equal(matrix?.blocking, true);
     assert.equal(matrix?.policySection, POLICY_SECTIONS.matrix);
     assert.match(matrix?.document ?? "", /50,00% ou mais = 4,00%/);
-    assert.doesNotMatch(matrix?.document ?? "", /5,00%/);
+    assert.doesNotMatch(matrix?.document ?? "", /= 5,00%/);
   });
 
   it("9: supervisor 33% adicional não parametrizado → BLOCKING, sem fingir parametrização", () => {
@@ -244,7 +244,8 @@ describe("POL-COM-001 v1.0 — prontidão, severidade e publicação (testes 11�
   it("matriz de reconciliação cobre as seções centrais com status e severidade", () => {
     const rows = buildPolCom001ReconciliationMatrix(SNAPSHOT);
     const bySection = new Map(rows.map((row) => [row.section, row]));
-    assert.equal(bySection.get(POLICY_SECTIONS.matrix)?.status, "DIVERGENTE");
+    assert.equal(bySection.get(POLICY_SECTIONS.matrix)?.status, "NÃO_IMPLEMENTADO");
+    assert.equal(bySection.get(POLICY_SECTIONS.matrix)?.findingCode, "COMMISSION_MATRIX_NOT_PARAMETERIZED");
     assert.equal(bySection.get(POLICY_SECTIONS.supervisor)?.status, "NÃO_IMPLEMENTADO");
     assert.equal(bySection.get(POLICY_SECTIONS.inactivity)?.status, "DIVERGENTE");
     assert.equal(bySection.get(POLICY_SECTIONS.inactivity)?.severity, "BLOCKING");

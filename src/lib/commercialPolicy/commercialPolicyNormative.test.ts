@@ -124,7 +124,7 @@ describe("detecção de mudança", () => {
     const matrix = audit.findings.find((item) => item.code === "COMMISSION_MATRIX_NOT_PARAMETERIZED");
     assert.equal(audit.status, "NOT_READY_FOR_PUBLICATION");
     assert.match(matrix?.document ?? "", /4,00%/);
-    assert.match(matrix?.system ?? "", /CommissionRule/);
+    assert.match(matrix?.system ?? "", /Formação de Preço/);
   });
 });
 

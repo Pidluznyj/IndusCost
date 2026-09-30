@@ -61,6 +61,7 @@ type VersionView = {
   whatChanged: string[];
   normativeSnapshot?: unknown;
   changeSet?: PolicyChange[];
+  approver?: { name: string; role: string } | null;
 };
 
 type Integrity = {
@@ -105,7 +106,22 @@ type Acceptance = {
 
 type Coverage = { required: number; signed: number; pending: number; percent: number };
 
-type PreviewDoc = { chapters: PolicyChapter[] | null; title: string; label: string; effectiveFrom: string | null; origin: string };
+type PreviewDoc = {
+  chapters: PolicyChapter[] | null;
+  title: string;
+  label: string;
+  /** Nulos enquanto a versão não for publicada: o documento mostra "definida na publicação". */
+  effectiveFrom: string | null;
+  publishedAt: string | null;
+  approver: { name: string; role: string } | null;
+  origin: string;
+};
+
+/** Hoje no fuso local, no formato do <input type="date">. */
+function todayInputValue(): string {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+}
 
 const PUBLICATION_LABEL: Record<Integrity["publicationStatus"], string> = {
   NOT_PUBLISHED: "Não publicada",
@@ -304,6 +320,7 @@ export const CommercialPolicyAdminPanel: React.FC = () => {
   const [previewView, setPreviewView] = useState<"admin" | "seller">("admin");
   const [sellerFinishNotice, setSellerFinishNotice] = useState(false);
   const [previewPendingOpen, setPreviewPendingOpen] = useState(false);
+  const [publishEffectiveFrom, setPublishEffectiveFrom] = useState(todayInputValue);
   const [divergencesOpen, setDivergencesOpen] = useState(false);
   const [confirmPublish, setConfirmPublish] = useState<{ kind: "official" } | { kind: "version"; id: string; label: string } | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -365,7 +382,11 @@ export const CommercialPolicyAdminPanel: React.FC = () => {
 
   const publishOfficial = () =>
     void run("Publicação", async () => {
-      const result = await api<{ alreadyPublished: boolean }>("/api/admin/commercial-policy/official/pol-com-001", { method: "POST" });
+      const result = await api<{ alreadyPublished: boolean }>("/api/admin/commercial-policy/official/pol-com-001", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ effectiveFrom: publishEffectiveFrom }),
+      });
       if (!result.ok) return result;
       setNotice({
         tone: "ok",
@@ -378,7 +399,11 @@ export const CommercialPolicyAdminPanel: React.FC = () => {
 
   const publishVersion = (id: string, label: string) =>
     void run("Publicação", async () => {
-      const result = await api<{ version: VersionView }>(`/api/admin/commercial-policy/versions/${id}/publish`, { method: "POST" });
+      const result = await api<{ version: VersionView }>(`/api/admin/commercial-policy/versions/${id}/publish`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ effectiveFrom: publishEffectiveFrom }),
+      });
       if (!result.ok) return result;
       setEditingId(null);
       setNotice({ tone: "ok", text: `Versão ${label} publicada. Vendedores sem aceite desta versão serão bloqueados no próximo acesso.` });
@@ -453,16 +478,17 @@ export const CommercialPolicyAdminPanel: React.FC = () => {
     integrity && integrity.publicationStatus !== "PUBLISHED" ? integrity.findings.filter((item) => item.severity === "BLOCKING").length : 0;
 
   const openOfficialPreview = () => {
-    setPreviewDoc({ chapters: null, title: doc?.title ?? "", label: doc?.versionLabel ?? "1.0", effectiveFrom: published?.effectiveFrom ?? null, origin: "documento oficial" });
+    setPreviewDoc({ chapters: null, title: doc?.title ?? "", label: doc?.versionLabel ?? "1.0", effectiveFrom: published?.effectiveFrom ?? null, publishedAt: published?.publishedAt ?? null, approver: published?.approver ?? null, origin: "documento oficial" });
     setPreviewView("admin");
     setPreviewPendingOpen(false);
   };
   const openVersionPreview = (version: VersionView) => {
-    setPreviewDoc({ chapters: parsePolicyChapters(version.content), title: version.title, label: version.label, effectiveFrom: version.effectiveFrom, origin: `versão ${version.label} (${STATUS_LABEL[version.status] ?? version.status})` });
+    const isDraft = version.status === "DRAFT";
+    setPreviewDoc({ chapters: parsePolicyChapters(version.content), title: version.title, label: version.label, effectiveFrom: isDraft ? null : version.effectiveFrom, publishedAt: isDraft ? null : version.publishedAt, approver: version.approver ?? null, origin: `versão ${version.label} (${STATUS_LABEL[version.status] ?? version.status})` });
     setPreviewView("seller");
   };
   const openEditorPreview = (payload: EditorPayload, label: string) => {
-    setPreviewDoc({ chapters: parsePolicyChapters(payload.content), title: payload.title, label, effectiveFrom: payload.effectiveFrom, origin: "rascunho em edição (não salvo)" });
+    setPreviewDoc({ chapters: parsePolicyChapters(payload.content), title: payload.title, label, effectiveFrom: null, publishedAt: null, approver: null, origin: "rascunho em edição (não salvo)" });
     setPreviewView("seller");
   };
 
@@ -569,8 +595,21 @@ export const CommercialPolicyAdminPanel: React.FC = () => {
                 {confirmPublish.kind === "official" ? "Confirmar publicação da POL-COM-001 versão 1.0?" : `Confirmar publicação da versão ${confirmPublish.label}?`}
               </p>
               <p className="mt-1">A versão publicada fica imutável, o snapshot normativo atual é congelado e todos os vendedores precisarão aceitar esta versão no próximo acesso.</p>
+              <label className="mt-3 block font-semibold" htmlFor="policy-publish-effective-from">Vigência a partir de</label>
+              <input
+                id="policy-publish-effective-from"
+                type="date"
+                required
+                min={todayInputValue()}
+                value={publishEffectiveFrom}
+                onChange={(event) => setPublishEffectiveFrom(event.target.value)}
+                className="mt-1 rounded-lg border border-amber-300 bg-white px-2 py-1.5"
+              />
+              <p className="mt-1 text-slate-700">
+                A data de aprovação é a de hoje, registrada em seu nome como aprovação eletrônica. A vigência informada aqui entra na capa, no Anexo I e no termo de ciência de cada vendedor.
+              </p>
               <div className="mt-2 flex gap-2">
-                <button type="button" className="rounded-lg bg-primary px-3 py-2 font-semibold text-primary-foreground" onClick={() => { const target = confirmPublish; setConfirmPublish(null); if (target.kind === "official") publishOfficial(); else publishVersion(target.id, target.label); }}>Publicar agora</button>
+                <button type="button" disabled={!publishEffectiveFrom} className="rounded-lg bg-primary px-3 py-2 font-semibold text-primary-foreground disabled:opacity-50" onClick={() => { const target = confirmPublish; setConfirmPublish(null); if (target.kind === "official") publishOfficial(); else publishVersion(target.id, target.label); }}>Publicar agora</button>
                 <button type="button" className="rounded-lg border border-border px-3 py-2 font-semibold" onClick={() => setConfirmPublish(null)}>Cancelar</button>
               </div>
             </div>
@@ -850,7 +889,7 @@ export const CommercialPolicyAdminPanel: React.FC = () => {
           <div className="relative flex min-h-0 flex-1 bg-background">
             <div className="flex min-h-0 min-w-0 flex-1 flex-col">
               {previewView === "admin" ? (
-                <CommercialPolicyReader fluid mode="preview" chapters={previewDoc.chapters ?? undefined} title={previewDoc.title} versionLabel={previewDoc.label} effectiveFrom={previewDoc.effectiveFrom} onGeneratePdf={() => generatePdf()} />
+                <CommercialPolicyReader fluid mode="preview" chapters={previewDoc.chapters ?? undefined} title={previewDoc.title} versionLabel={previewDoc.label} effectiveFrom={previewDoc.effectiveFrom} publishedAt={previewDoc.publishedAt} approver={previewDoc.approver} onGeneratePdf={() => generatePdf()} />
               ) : (
                 <>
                   <div className="border-b border-border bg-sky-50 px-4 py-2 text-xs text-sky-950">
@@ -874,7 +913,7 @@ export const CommercialPolicyAdminPanel: React.FC = () => {
                       <button type="button" className="font-semibold underline" onClick={() => setSellerFinishNotice(false)}>Entendi</button>
                     </div>
                   ) : null}
-                  <CommercialPolicyReader fluid mode="acceptance" chapters={previewDoc.chapters ?? undefined} title={previewDoc.title} versionLabel={previewDoc.label} effectiveFrom={previewDoc.effectiveFrom} onGeneratePdf={() => generatePdf()} onFinish={() => setSellerFinishNotice(true)} />
+                  <CommercialPolicyReader fluid mode="acceptance" chapters={previewDoc.chapters ?? undefined} title={previewDoc.title} versionLabel={previewDoc.label} effectiveFrom={previewDoc.effectiveFrom} publishedAt={previewDoc.publishedAt} approver={previewDoc.approver} onGeneratePdf={() => generatePdf()} onFinish={() => setSellerFinishNotice(true)} />
                 </>
               )}
             </div>

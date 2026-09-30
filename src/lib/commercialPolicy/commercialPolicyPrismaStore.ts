@@ -243,6 +243,7 @@ export function createPrismaCommercialPolicyStore(client: PrismaClient = prisma)
           contentHash: patch.contentHash,
           publishedAt: patch.publishedAt,
           publishedByUserId: patch.publishedByUserId,
+          ...(patch.effectiveFrom ? { effectiveFrom: patch.effectiveFrom } : {}),
         },
       });
       if (updated.count !== 1) return null;

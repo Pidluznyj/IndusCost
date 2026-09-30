@@ -103,7 +103,8 @@ export type CommercialPolicyStore = {
   retirePublishedExcept(policyId: string, keepId: string): Promise<void>;
   /** Vigência prospectiva: aposenta as publicadas com effectiveFrom anterior à da versão que passou a vigorar. */
   retirePublishedEffectiveBefore(policyId: string, effectiveBefore: Date, keepId: string): Promise<void>;
-  markPublished(id: string, patch: { contentHash: string; publishedAt: Date; publishedByUserId: string }): Promise<StoredVersion | null>;
+  /** `effectiveFrom`: vigência informada pelo administrador no ato da publicação. */
+  markPublished(id: string, patch: { contentHash: string; publishedAt: Date; publishedByUserId: string; effectiveFrom?: Date }): Promise<StoredVersion | null>;
   attachNormative(id: string, patch: {
     normativeSnapshot: unknown;
     normativeSnapshotHash: string;
@@ -232,6 +233,7 @@ export function createMemoryCommercialPolicyStore(): CommercialPolicyStore & {
       row.contentHash = patch.contentHash;
       row.publishedAt = patch.publishedAt;
       row.publishedByUserId = patch.publishedByUserId;
+      if (patch.effectiveFrom) row.effectiveFrom = patch.effectiveFrom;
       return row;
     },
     async attachNormative(id, patch) {
