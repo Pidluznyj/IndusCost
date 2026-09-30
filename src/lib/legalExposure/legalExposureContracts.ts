@@ -235,6 +235,18 @@ export type ExposureCaseListItem = {
   enrichmentStatus: CaseEnrichmentStatus;
   latestMovement: ExposureCaseLatestMovement | null;
   latestPublication: ExposureCaseLatestPublication | null;
+  /**
+   * Todas as empresas do grupo que aparecem neste mesmo número de processo
+   * (inclui a principal). Um processo é listado uma vez, não uma por empresa.
+   */
+  involvedEntities: ExposureCaseInvolvedEntity[];
+};
+
+export type ExposureCaseInvolvedEntity = {
+  caseId: string;
+  entity: ExposureCaseListEntity;
+  entityPole: LegalCasePole;
+  verificationStatus: CaseVerificationStatus;
 };
 
 export type CommunicationKind =

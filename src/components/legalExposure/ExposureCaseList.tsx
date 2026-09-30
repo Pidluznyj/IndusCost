@@ -101,8 +101,27 @@ function CaseCard(props: { item: ExposureCaseListItem; onOpenCase: (caseId: stri
           {caseVerificationLabel(item.verificationStatus)}
         </span>
       </div>
-      <p className="mt-1 font-medium">{item.entity.legalName || "Empresa não identificada"}</p>
-      <p className="text-xs text-muted-foreground">CNPJ {item.entity.displayCnpj}</p>
+      {item.involvedEntities.length > 1 ? (
+        <div className="mt-2 rounded-lg border border-border bg-muted/30 p-2" data-testid="case-involved-entities">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            {item.involvedEntities.length} empresas do grupo neste processo
+          </p>
+          <ul className="mt-1 space-y-1">
+            {item.involvedEntities.map((involved) => (
+              <li key={involved.caseId} className="flex flex-wrap items-center gap-2 text-sm">
+                <span className="font-medium">{involved.entity.legalName || "Empresa não identificada"}</span>
+                <span className="text-xs text-muted-foreground">CNPJ {involved.entity.displayCnpj}</span>
+                <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs text-slate-700">{casePoleLabel(involved.entityPole)}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : (
+        <>
+          <p className="mt-1 font-medium">{item.entity.legalName || "Empresa não identificada"}</p>
+          <p className="text-xs text-muted-foreground">CNPJ {item.entity.displayCnpj}</p>
+        </>
+      )}
 
       <div className="mt-3 grid gap-3 md:grid-cols-3">
         <div className="space-y-1 text-sm">

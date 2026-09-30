@@ -51,6 +51,7 @@ function item(partial: Partial<ExposureCaseListItem> = {}): ExposureCaseListItem
       courtUnit: "09ª VARA DO TRABALHO DE CURITIBA",
     },
     latestPublication: { type: "Intimação", availableAt: "2026-09-30T12:00:00.000Z", courtUnit: "09ª VARA" },
+    involvedEntities: [],
     ...partial,
   };
 }
@@ -130,6 +131,41 @@ describe("ExposureCaseList", () => {
     assert.ok(html.includes("Anterior"));
     assert.ok(html.includes("Próxima"));
     assert.ok(html.includes("Página 1 de 2"));
+  });
+});
+
+describe("ExposureCaseList — processo compartilhado", () => {
+  it("lista todas as empresas do grupo envolvidas no mesmo processo, com o polo de cada uma", () => {
+    const entityB = { id: "ent-b", legalName: "Comercio Outra LTDA", tradeName: null, cnpj: "99888777000166", displayCnpj: "99.888.777/0001-66" };
+    const html = renderToStaticMarkup(
+      <ExposureCaseList
+        cases={{
+          items: [
+            item({
+              involvedEntities: [
+                { caseId: "case-2", entity: entityB, entityPole: "PASSIVE", verificationStatus: "CONFIRMED_OFFICIAL" },
+                { caseId: "case-1", entity: item().entity, entityPole: "UNKNOWN", verificationStatus: "REVIEW_REQUIRED" },
+              ],
+            }),
+          ],
+          total: 1,
+          page: 1,
+          pageSize: 20,
+        }}
+        entities={[]}
+        filters={EMPTY_CASE_LIST_FILTERS}
+        onFilterChange={() => undefined}
+        onClearFilters={() => undefined}
+        onPageChange={() => undefined}
+        onOpenCase={() => undefined}
+      />
+    );
+    assert.match(html, /2 empresas do grupo neste processo/);
+    assert.match(html, /Comercio Outra LTDA/);
+    assert.match(html, /99\.888\.777\/0001-66/);
+    assert.match(html, /Industria Exemplo LTDA/);
+    assert.match(html, /Ré \/ polo passivo/);
+    assert.equal((html.match(/0001234-56\.2024\.5\.09\.0001/g) ?? []).length, 1, "o número do processo aparece uma vez");
   });
 });
 

@@ -5,12 +5,10 @@
 
 import React, { useCallback, useEffect, useState } from "react";
 import {
-  ABSENCE_IS_NOT_CLEARANCE_COPY,
   CNDT_DOES_NOT_MEAN_NO_CASES_COPY,
   LEGAL_EXPOSURE_PAGE_SIZE_DEFAULT,
   LIKELY_REVIEW_COPY,
-  NO_CASES_IDENTIFIED_COPY,
-  OFFICIAL_COMMUNICATIONS_PORTAL_URL,
+  SOURCE_LABELS,
   SOURCE_STATUS_LABELS,
   type ExposureCaseListItem,
   type LegalAliasType,
@@ -53,6 +51,20 @@ import {
   ExposureCaseList,
   type ExposureCaseListFilters,
 } from "./ExposureCaseList";
+import {
+  ExposureAlertsTab,
+  ExposureCertificatesTab,
+  ExposureCommunicationsTab,
+  ExposureSourcesTab,
+  ExposureTimelineTab,
+  type ExposureAlertItem,
+  type ExposureCertificateItem,
+  type ExposureCommunicationItem,
+  type ExposureEventItem,
+  type ExposureTimelineCase,
+  type ExposureTimelineItem,
+} from "./ExposureFeed";
+import { formatExposureDateTime } from "@/src/lib/legalExposure/legalExposureCaseListUi";
 
 type TabId =
   | "overview"
@@ -124,10 +136,12 @@ export function ExposurePage() {
   const [error, setError] = useState<string | null>(null);
   const [cases, setCases] = useState<Page<ExposureCaseListItem> | null>(null);
   const [caseFilters, setCaseFilters] = useState<ExposureCaseListFilters>(EMPTY_CASE_LIST_FILTERS);
-  const [communications, setCommunications] = useState<{ items: { id: string; communicationType: string; processNumber: string | null; tribunal: string | null; sourceStatus: string; source: string; detectedAt: string; caseId: string | null }[] } | null>(null);
-  const [alerts, setAlerts] = useState<{ items: { id: string; title: string; summary: string; severity: string; requiresAction: boolean }[] } | null>(null);
+  const [communications, setCommunications] = useState<{ items: ExposureCommunicationItem[] } | null>(null);
+  const [alerts, setAlerts] = useState<{ items: ExposureAlertItem[] } | null>(null);
   const [selectedCase, setSelectedCase] = useState<string | null>(null);
-  const [timeline, setTimeline] = useState<{ items: { kind: string; at: string; title: string; source: string | null }[] } | null>(null);
+  const [timeline, setTimeline] = useState<{ items: ExposureTimelineItem[]; case: ExposureTimelineCase | null } | null>(null);
+  const [feed, setFeed] = useState<{ items: ExposureEventItem[] } | null>(null);
+  const [certificates, setCertificates] = useState<ExposureCertificateItem[] | null>(null);
   const [entities, setEntities] = useState<MonitoredEntity[]>([]);
   const [groupCompanies, setGroupCompanies] = useState<ExposureGroupCompany[]>([]);
   const [dialog, setDialog] = useState<"create" | "edit" | null>(null);
@@ -223,6 +237,35 @@ export function ExposurePage() {
     setTab("action");
     const data = await fetchJsonOk<NonNullable<typeof alerts>>("/api/legal-exposure/alerts?status=OPEN&page=1&pageSize=20");
     setAlerts(data);
+  }
+
+  async function updateAlert(alertId: string, action: "acknowledge" | "resolve") {
+    setSaving(true);
+    setError(null);
+    try {
+      await fetchJsonOk(`/api/legal-exposure/alerts/${alertId}/${action}`, { method: "POST" });
+      setNotice(action === "acknowledge" ? "Ciência registrada no IndusCost (não substitui o portal oficial)." : "Alerta marcado como resolvido.");
+      await openAction();
+    } catch (err: unknown) {
+      setError(exposureEntityErrorText(err));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  /** Linha do tempo sem processo escolhido: novidades de todas as empresas. */
+  async function openFeed() {
+    setSelectedCase(null);
+    setTimeline(null);
+    setTab("timeline");
+    const data = await fetchJsonOk<NonNullable<typeof feed>>("/api/legal-exposure/events?page=1&pageSize=30");
+    setFeed(data);
+  }
+
+  async function openCertificates() {
+    setTab("certificates");
+    const data = await fetchJsonOk<ExposureCertificateItem[]>("/api/legal-exposure/certificates");
+    setCertificates(data);
   }
 
   function openCreate() {
@@ -375,6 +418,8 @@ export function ExposurePage() {
               if (item.id === "cases") void openCases();
               else if (item.id === "communications") void openCommunications();
               else if (item.id === "action") void openAction();
+              else if (item.id === "timeline") void openFeed();
+              else if (item.id === "certificates") void openCertificates();
               else setTab(item.id);
             }}
             className={`rounded-full border px-3 py-1 text-sm ${tab === item.id ? "border-slate-900 bg-slate-900 text-white" : "border-border bg-card"}`}
@@ -472,18 +517,14 @@ export function ExposurePage() {
       ) : null}
 
       {tab === "action" && (
-        <div className="space-y-3">
-          {(alerts?.items ?? []).filter((item) => item.requiresAction).map((item) => (
-            <article key={item.id} className="rounded-xl border border-border bg-card p-4">
-              <p className="text-xs font-semibold uppercase tracking-wide text-red-700">{item.severity}</p>
-              <h3 className="text-base font-semibold">{item.title}</h3>
-              <p className="text-sm text-muted-foreground">{item.summary}</p>
-            </article>
-          ))}
-          {alerts && alerts.items.filter((item) => item.requiresAction).length === 0 ? (
-            <p className="text-sm">{NO_CASES_IDENTIFIED_COPY}</p>
-          ) : null}
-        </div>
+        <ExposureAlertsTab
+          alerts={alerts?.items ?? null}
+          canManage={companyActions.showEdit}
+          busy={saving}
+          onOpenCase={(caseId) => void openTimeline(caseId)}
+          onAcknowledge={(alertId) => void updateAlert(alertId, "acknowledge")}
+          onResolve={(alertId) => void updateAlert(alertId, "resolve")}
+        />
       )}
 
       {tab === "cases" && (
@@ -510,60 +551,31 @@ export function ExposurePage() {
       )}
 
       {tab === "communications" && (
-        <div className="space-y-3">
-          {(communications?.items ?? []).map((item) => (
-            <article key={item.id} className="rounded-xl border border-border bg-card p-4">
-              <p className="text-xs font-semibold uppercase">{item.communicationType}</p>
-              <p className="text-sm">Processo {item.processNumber ?? "—"}</p>
-              <p className="text-sm">Tribunal {item.tribunal ?? "—"}</p>
-              <p className="text-sm">Detectada {item.detectedAt}</p>
-              <p className="text-sm">Fonte {item.source}</p>
-              <p className="text-sm">Situação oficial {item.sourceStatus || "—"}</p>
-              <div className="mt-2 flex gap-3">
-                {item.caseId ? (
-                  <button type="button" className="text-sm font-semibold underline" onClick={() => void openTimeline(item.caseId!)}>
-                    Ver processo
-                  </button>
-                ) : null}
-                <a className="text-sm font-semibold underline" href={OFFICIAL_COMMUNICATIONS_PORTAL_URL} target="_blank" rel="noreferrer">
-                  Abrir portal oficial
-                </a>
-              </div>
-            </article>
-          ))}
-          {communications && communications.items.length === 0 ? <p className="text-sm">{NO_CASES_IDENTIFIED_COPY}</p> : null}
-        </div>
+        <ExposureCommunicationsTab communications={communications?.items ?? null} onOpenCase={(caseId) => void openTimeline(caseId)} />
       )}
 
       {tab === "timeline" && (
-        <div className="space-y-2">
-          {!selectedCase ? <p className="text-sm">Abra um processo para ver a linha do tempo.</p> : null}
-          {(timeline?.items ?? []).map((item, index) => (
-            <div key={`${item.kind}-${index}`} className="rounded-xl border border-border px-4 py-2 text-sm">
-              <span className="font-medium">{item.title}</span>
-              <span className="text-muted-foreground"> · {item.at} · {item.source ?? "interno"}</span>
-            </div>
-          ))}
-        </div>
+        <ExposureTimelineTab
+          legalCase={selectedCase ? timeline?.case ?? null : null}
+          timeline={selectedCase ? timeline?.items ?? null : null}
+          feed={feed?.items ?? null}
+          onOpenCase={(caseId) => void openTimeline(caseId)}
+          onClearCase={() => void openFeed()}
+        />
       )}
 
-      {tab === "certificates" && dashboard ? (
-        <div className="space-y-2 text-sm">
-          <p>Certidão TRT — última emissão: {dashboard.certificates.trt?.issuedAt ?? "não registrada"}</p>
-          <p>CNDT — última emissão: {dashboard.certificates.cndt?.issuedAt ?? "não registrada"}</p>
-          <p>{dashboard.certificates.cndtNote || CNDT_DOES_NOT_MEAN_NO_CASES_COPY}</p>
-        </div>
-      ) : null}
+      {tab === "certificates" ? <ExposureCertificatesTab certificates={certificates} entities={entities} /> : null}
 
-      {tab === "sources" && dashboard ? <SourceGrid sources={dashboard.sources} certificates={dashboard.certificates} /> : null}
+      {tab === "sources" && dashboard ? <ExposureSourcesTab sources={dashboard.sources} /> : null}
 
       {tab === "settings" && dashboard ? (
         <div className="space-y-6">
           <ul className="space-y-2 text-sm">
             {dashboard.configuration.map((row) => (
               <li key={row.source}>
-                {row.source}: {row.configured ? "configurado" : "não configurado"}
-                {row.enabled ? "" : " · desligado"}
+                <span className="font-medium">{SOURCE_LABELS[row.source as keyof typeof SOURCE_LABELS] ?? row.source}</span>:{" "}
+                {row.configured ? "configurada" : "não configurada"}
+                {row.enabled ? " · monitoramento ligado" : " · monitoramento desligado"}
               </li>
             ))}
             <li className="text-muted-foreground">{LIKELY_REVIEW_COPY} permanece como revisão humana. Segredos não são exibidos.</li>
@@ -941,16 +953,16 @@ function SourceGrid({
         <div key={source.source} className={`rounded-xl border p-3 text-sm ${statusClass(source.status)}`}>
           <p className="font-semibold">{source.label}</p>
           <p>{source.statusLabel}</p>
-          <p>Último sucesso: {source.lastSuccessfulAt ?? "—"}</p>
+          <p>Última consulta com sucesso: {formatExposureDateTime(source.lastSuccessfulAt) ?? "nunca"}</p>
         </div>
       ))}
       <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
         <p className="font-semibold">Certidão TRT</p>
-        <p>Última emissão: {certificates.trt?.issuedAt ?? "—"}</p>
+        <p>Última emissão: {formatExposureDateTime(certificates.trt?.issuedAt) ?? "não registrada"}</p>
       </div>
       <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
         <p className="font-semibold">CNDT</p>
-        <p>Última emissão: {certificates.cndt?.issuedAt ?? "—"}</p>
+        <p>Última emissão: {formatExposureDateTime(certificates.cndt?.issuedAt) ?? "não registrada"}</p>
         <p className="mt-1 text-xs">{CNDT_DOES_NOT_MEAN_NO_CASES_COPY}</p>
       </div>
     </div>

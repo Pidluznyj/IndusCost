@@ -334,3 +334,71 @@ describe("exposure case list read model", () => {
     assert.equal(CASE_VERIFIED_OFFICIAL_COPY.includes("ativo"), false);
   });
 });
+
+describe("mesmo processo em mais de uma empresa do grupo", () => {
+  function twoEntitiesSameProcess() {
+    const memory = twoEntities();
+    const createId = ids();
+    applyBatchToMemory(memory, {
+      entityId: "ent-a",
+      now: "2026-09-30T12:00:00.000Z",
+      createId,
+      batch: batch({ source: "DJEN", cases: [djenCase({ processNumber: PROCESS_A, cnpj: CNPJ_A })] }),
+    });
+    applyBatchToMemory(memory, {
+      entityId: "ent-b",
+      now: "2026-09-30T12:05:00.000Z",
+      createId,
+      batch: batch({
+        source: "DATAJUD",
+        cases: [
+          {
+            ...djenCase({ processNumber: PROCESS_A, cnpj: CNPJ_B }),
+            className: "Ação Trabalhista - Rito Ordinário",
+            entityPole: "PASSIVE" as const,
+            sourceIdentifier: "TRT9_G1_a",
+            officialIdentifier: "TRT9_G1_a",
+            rawMetadata: { id: "TRT9_G1_a" },
+          },
+        ],
+      }),
+    });
+    applyBatchToMemory(memory, {
+      entityId: "ent-a",
+      now: "2026-09-30T12:06:00.000Z",
+      createId,
+      batch: batch({ source: "DJEN", cases: [djenCase({ processNumber: PROCESS_B, cnpj: CNPJ_A })] }),
+    });
+    return memory;
+  }
+
+  it("o processo aparece uma vez, com as empresas envolvidas listadas e os dados completados entre os registros", () => {
+    const page = listCases(twoEntitiesSameProcess(), {});
+    assert.equal(page.total, 2);
+    const shared = page.items.find((row) => row.processNumber === PROCESS_A);
+    assert.ok(shared);
+    assert.deepEqual(
+      shared.involvedEntities.map((row) => [row.entity.legalName, row.entityPole]),
+      [["Comercio Outra LTDA", "PASSIVE"], ["Industria Exemplo LTDA", "UNKNOWN"]]
+    );
+    assert.equal(shared.entityId, "ent-b", "o registro mais recente é a base do cartão");
+    assert.equal(shared.className, "Ação Trabalhista - Rito Ordinário");
+    assert.deepEqual([...shared.evidenceSources].sort(), ["DATAJUD", "DJEN"]);
+    assert.equal(shared.verificationStatus, "CONFIRMED_OFFICIAL");
+    assert.equal(shared.enrichmentStatus, "DATAJUD_ENRICHED");
+    const single = page.items.find((row) => row.processNumber === PROCESS_B);
+    assert.equal(single?.involvedEntities.length, 1);
+    assert.equal(single?.involvedEntities[0]?.caseId, single?.id);
+  });
+
+  it("filtrar por empresa mantém o processo compartilhado e continua listando todas as envolvidas", () => {
+    const onlyA = listCases(twoEntitiesSameProcess(), { entityId: "ent-a" });
+    assert.equal(onlyA.total, 2);
+    const shared = onlyA.items.find((row) => row.processNumber === PROCESS_A);
+    assert.equal(shared?.entityId, "ent-a");
+    assert.equal(shared?.involvedEntities.length, 2);
+    const onlyB = listCases(twoEntitiesSameProcess(), { entityId: "ent-b" });
+    assert.equal(onlyB.total, 1);
+    assert.equal(onlyB.items[0]?.involvedEntities.length, 2);
+  });
+});
