@@ -54,6 +54,7 @@ src/lib/customerCnpjRiskSummary.test.ts
 src/lib/customerCommercialOwnerGrid.test.ts
 src/lib/crmCustomerCommercialOwner.test.ts
 src/lib/customerListQuery.test.ts
+src/lib/customerListReportExport.test.ts
 src/lib/crmCustomerCommercialOwnerFilter.test.ts
 src/lib/commercial/customerCommercialOwnerInactivity.test.ts
 src/lib/commercial/customerCommercialOwnerInactivity.server.test.ts

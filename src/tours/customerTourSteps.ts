@@ -8,8 +8,9 @@ export const CUSTOMER_TOUR_STEPS: GuidedTourStep[] = [
   },
   {
     target: "customers-toolbar",
-    title: "Importar e novo",
-    description: "Importe planilhas padronizadas ou cadastre um **Novo cliente** manualmente.",
+    title: "Ações da lista",
+    description:
+      "Exporte a grade com o filtro atual em Excel ou PDF, consulte CNPJ, importe planilhas ou cadastre um **Novo cliente**.",
   },
   {
     target: "customers-table",

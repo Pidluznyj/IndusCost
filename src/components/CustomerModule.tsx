@@ -19,6 +19,8 @@ import {
   SearchCheck,
   Sparkles,
   Pencil,
+  FileSpreadsheet,
+  Printer,
 } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { buildCustomerIntelligencePath } from "@/src/lib/customerIntelligenceNavigation";
@@ -50,6 +52,12 @@ import { TourHelpButton } from "@/src/components/tour/TourHelpButton";
 import { CUSTOMER_TOUR_STEPS } from "@/src/tours/customerTourSteps";
 import { formatCustomerListRange } from "@/src/lib/customerListQuery";
 import { canAssignCustomerCommercialOwnerAccess } from "@/src/lib/customerCommercialOwnerAssignAccess";
+import {
+  buildCustomerListExportQuery,
+  downloadCustomerListReportExport,
+  getCustomerListReportExportPdfUrl,
+  getCustomerListReportExportXlsxUrl,
+} from "@/src/lib/customerListReportExportUi";
 
 type CustomerListMeta = {
   page: number;
@@ -102,6 +110,8 @@ export const CustomerModule = () => {
   const [tourOpen, setTourOpen] = useState(false);
   const [formTab, setFormTab] = useState<CustomerFormTab>("cadastro");
   const [ownerSelectFocus, setOwnerSelectFocus] = useState(false);
+  const [exportingXlsx, setExportingXlsx] = useState(false);
+  const [exportingPdf, setExportingPdf] = useState(false);
 
   // Form State
   const [formData, setFormData] = useState<Partial<Customer>>({
@@ -267,6 +277,41 @@ export const CustomerModule = () => {
     setIntelligenceOpen(true);
   };
 
+  const listExportQuery = buildCustomerListExportQuery({
+    search: debouncedSearch,
+    commercialOwner: ownerFilter,
+  });
+
+  const handleExportXlsx = async () => {
+    setExportingXlsx(true);
+    try {
+      await downloadCustomerListReportExport(
+        getCustomerListReportExportXlsxUrl(listExportQuery),
+        "clientes-relatorio.xlsx"
+      );
+    } catch (error) {
+      console.error("Erro ao exportar Excel de clientes:", error);
+      alert("Não foi possível exportar o Excel de clientes.");
+    } finally {
+      setExportingXlsx(false);
+    }
+  };
+
+  const handleExportPdf = async () => {
+    setExportingPdf(true);
+    try {
+      await downloadCustomerListReportExport(
+        getCustomerListReportExportPdfUrl(listExportQuery),
+        "clientes-relatorio.pdf"
+      );
+    } catch (error) {
+      console.error("Erro ao exportar PDF de clientes:", error);
+      alert("Não foi possível gerar o PDF de clientes.");
+    } finally {
+      setExportingPdf(false);
+    }
+  };
+
   const listRows = customers;
 
   return (
@@ -305,8 +350,38 @@ export const CustomerModule = () => {
             ))}
           </select>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <TourHelpButton onClick={() => setTourOpen(true)} />
+          <button
+            type="button"
+            data-testid="customers-export-report-xlsx"
+            disabled={exportingXlsx || exportingPdf}
+            onClick={() => void handleExportXlsx()}
+            title="Exportar Excel da grade com o filtro atual"
+            className="flex items-center gap-2 bg-accent text-accent-foreground px-4 py-2 rounded-lg font-medium hover:opacity-90 transition-opacity text-sm disabled:opacity-60"
+          >
+            {exportingXlsx ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <FileSpreadsheet className="h-4 w-4" />
+            )}
+            Excel
+          </button>
+          <button
+            type="button"
+            data-testid="customers-export-report-pdf"
+            disabled={exportingXlsx || exportingPdf}
+            onClick={() => void handleExportPdf()}
+            title="Exportar PDF da grade com o filtro atual"
+            className="flex items-center gap-2 bg-accent text-accent-foreground px-4 py-2 rounded-lg font-medium hover:opacity-90 transition-opacity text-sm disabled:opacity-60"
+          >
+            {exportingPdf ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Printer className="h-4 w-4" />
+            )}
+            PDF
+          </button>
           <button
             type="button"
             onClick={() => openCnpjLookup()}
