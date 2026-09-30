@@ -7,12 +7,16 @@
  *
  * Aqui o `fetch` global é embrulhado: numa falha de rede em chamada same-origin,
  * uma sonda GET com `redirect: "manual"` diz se a borda está redirecionando
- * (`opaqueredirect`). Se estiver, a página é recarregada — navegação de topo
- * segue o redirect, o usuário refaz o login do Access e volta para a mesma URL.
+ * (`opaqueredirect`). Se estiver, o usuário é avisado e a página é recarregada —
+ * navegação de topo segue o redirect, ele refaz o login do Access e volta para
+ * a mesma URL.
  *
  * Não altera respostas nem repete a chamada original (POST nunca é reenviado).
  */
 
+export const APP_EDGE_SESSION_EXPIRED_EVENT = "app-edge-session-expired";
+/** Tempo para o usuário ler o aviso antes do redirecionamento automático. */
+export const EDGE_SESSION_AUTO_RELOAD_MS = 4_000;
 export const EDGE_SESSION_PROBE_PATH = "/api/auth/me";
 export const EDGE_SESSION_RELOAD_STORAGE_KEY = "induscost:edge-session-reload-at";
 /** Janela anti-loop: no máximo um reload automático por intervalo. */
@@ -99,17 +103,26 @@ export function claimEdgeSessionReload(
 }
 
 let installed = false;
+let edgeSessionExpired = false;
 
+/** Para o aviso que montar depois do evento já ter sido disparado. */
+export function isEdgeSessionExpired(): boolean {
+  return edgeSessionExpired;
+}
+
+/**
+ * Instala a guarda. A guarda só sinaliza (`APP_EDGE_SESSION_EXPIRED_EVENT`);
+ * quem avisa o usuário e recarrega a página é o `EdgeSessionExpiredNotice`.
+ */
 export function installEdgeSessionGuard(): void {
   if (typeof window === "undefined" || installed) return;
   installed = true;
 
-  let reloading = false;
   window.fetch = createEdgeSessionGuardFetch({
     fetch: window.fetch.bind(window),
     origin: window.location.origin,
     onEdgeSessionExpired: () => {
-      if (reloading) return;
+      if (edgeSessionExpired) return;
       let storage: Storage | null = null;
       try {
         storage = window.sessionStorage;
@@ -117,8 +130,8 @@ export function installEdgeSessionGuard(): void {
         storage = null;
       }
       if (!claimEdgeSessionReload(storage, Date.now())) return;
-      reloading = true;
-      window.location.reload();
+      edgeSessionExpired = true;
+      window.dispatchEvent(new CustomEvent(APP_EDGE_SESSION_EXPIRED_EVENT));
     },
   });
 }
