@@ -60,6 +60,10 @@ export function createPrismaExposureRepository(prisma: PrismaClient): LegalExpos
         connections,
         jurisdictions,
         cases,
+        entityLinks,
+        subjects,
+        hearings,
+        attorneys,
         evidences,
         parties,
         movements,
@@ -74,6 +78,10 @@ export function createPrismaExposureRepository(prisma: PrismaClient): LegalExpos
         prisma.legalSourceConnection.findMany(),
         prisma.legalExposureJurisdiction.findMany(),
         prisma.legalCase.findMany(),
+        prisma.legalCaseEntityLink.findMany(),
+        prisma.legalCaseSubject.findMany(),
+        prisma.legalCaseHearing.findMany(),
+        prisma.legalCaseAttorney.findMany(),
         prisma.legalCaseSourceEvidence.findMany(),
         prisma.legalCaseParty.findMany(),
         prisma.legalCaseMovement.findMany(),
@@ -112,12 +120,36 @@ export function createPrismaExposureRepository(prisma: PrismaClient): LegalExpos
         })),
         cases: cases.map((row) => ({
           ...row,
+          claimValue: row.claimValue == null ? null : row.claimValue.toString(),
           filedAt: iso(row.filedAt),
+          archivedAt: iso(row.archivedAt),
           firstSeenAt: row.firstSeenAt.toISOString(),
           lastSeenAt: row.lastSeenAt.toISOString(),
           sourceUpdatedAt: iso(row.sourceUpdatedAt),
           createdAt: row.createdAt.toISOString(),
           updatedAt: row.updatedAt.toISOString(),
+        })),
+        entityLinks: entityLinks.map((row) => ({
+          ...row,
+          firstSeenAt: row.firstSeenAt.toISOString(),
+          lastSeenAt: row.lastSeenAt.toISOString(),
+          createdAt: row.createdAt.toISOString(),
+          updatedAt: row.updatedAt.toISOString(),
+        })),
+        subjects: subjects.map((row) => ({
+          ...row,
+          firstSeenAt: row.firstSeenAt.toISOString(),
+          lastSeenAt: row.lastSeenAt.toISOString(),
+        })),
+        hearings: hearings.map((row) => ({
+          ...row,
+          scheduledAt: iso(row.scheduledAt),
+          firstSeenAt: row.firstSeenAt.toISOString(),
+        })),
+        attorneys: attorneys.map((row) => ({
+          ...row,
+          firstSeenAt: row.firstSeenAt.toISOString(),
+          lastSeenAt: row.lastSeenAt.toISOString(),
         })),
         evidences: evidences.map((row) => ({
           ...row,
@@ -271,6 +303,13 @@ export function createPrismaExposureRepository(prisma: PrismaClient): LegalExpos
             filedAt: date(row.filedAt),
             currentStatus: row.currentStatus,
             entityPole: row.entityPole,
+            systemName: row.systemName,
+            area: row.area,
+            claimValue: row.claimValue == null ? null : new Prisma.Decimal(row.claimValue),
+            claimCurrency: row.claimCurrency,
+            archivedAt: date(row.archivedAt),
+            secrecy: row.secrecy,
+            priority: row.priority,
             firstSeenAt: new Date(row.firstSeenAt),
             lastSeenAt: new Date(row.lastSeenAt),
             primarySource: row.primarySource,
@@ -280,6 +319,64 @@ export function createPrismaExposureRepository(prisma: PrismaClient): LegalExpos
             where: { id: row.id },
             create: { id: row.id, entityId: row.entityId, ...data, ...persistTimestamps(row) },
             update: { ...data, updatedAt: new Date(row.updatedAt) },
+          });
+        }
+        for (const row of next.entityLinks) {
+          if (!/^[0-9a-f-]{36}$/i.test(row.id)) continue;
+          await tx.legalCaseEntityLink.upsert({
+            where: { id: row.id },
+            create: {
+              id: row.id,
+              caseId: row.caseId,
+              entityId: row.entityId,
+              pole: row.pole,
+              confidence: row.confidence,
+              firstSource: row.firstSource,
+              lastSource: row.lastSource,
+              firstSeenAt: new Date(row.firstSeenAt),
+              lastSeenAt: new Date(row.lastSeenAt),
+              ...persistTimestamps(row),
+            },
+            update: {
+              pole: row.pole,
+              confidence: row.confidence,
+              lastSource: row.lastSource,
+              lastSeenAt: new Date(row.lastSeenAt),
+              updatedAt: new Date(row.updatedAt),
+            },
+          });
+        }
+        for (const row of next.subjects) {
+          await tx.legalCaseSubject.upsert({
+            where: { id: row.id },
+            create: {
+              ...row,
+              firstSeenAt: new Date(row.firstSeenAt),
+              lastSeenAt: new Date(row.lastSeenAt),
+            },
+            update: { lastSeenAt: new Date(row.lastSeenAt), isMain: row.isMain, fullPath: row.fullPath, code: row.code },
+          });
+        }
+        for (const row of next.hearings) {
+          await tx.legalCaseHearing.upsert({
+            where: { id: row.id },
+            create: {
+              ...row,
+              scheduledAt: date(row.scheduledAt),
+              firstSeenAt: new Date(row.firstSeenAt),
+            },
+            update: {},
+          });
+        }
+        for (const row of next.attorneys) {
+          await tx.legalCaseAttorney.upsert({
+            where: { id: row.id },
+            create: {
+              ...row,
+              firstSeenAt: new Date(row.firstSeenAt),
+              lastSeenAt: new Date(row.lastSeenAt),
+            },
+            update: { lastSeenAt: new Date(row.lastSeenAt) },
           });
         }
         for (const row of next.evidences) {
