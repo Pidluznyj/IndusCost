@@ -20,12 +20,7 @@ import {
 import { cn } from "@/src/lib/utils";
 import type { CrmCommercialIntelResponse } from "@/src/lib/crmCommercialIntelligence";
 import type { CrmCustomerListItem } from "@/src/lib/crmCustomersListTypes";
-import {
-  computePortfolioEmptySummary,
-  CRM_PORTFOLIO_FILTER_CHIPS,
-  buildCustomerListStatusTags,
-} from "@/src/components/crm/crmCustomerPortfolioUi";
-import type { PortfolioEmptySummary } from "@/src/components/crm/crmCustomerPortfolioUi";
+import { buildCustomerListStatusTags } from "@/src/components/crm/crmCustomerPortfolioUi";
 import {
   crmContactChannelLabel,
   crmContactReasonLabel,
@@ -106,55 +101,6 @@ function SummaryMetric({
   );
 }
 
-export type CrmCustomerPortfolioEmptyStateProps = {
-  summary: PortfolioEmptySummary;
-  scopeLabel: string;
-};
-
-export const CrmCustomerPortfolioEmptyState: React.FC<CrmCustomerPortfolioEmptyStateProps> = ({
-  summary,
-  scopeLabel,
-}) => (
-  <div className="rounded-2xl border border-dashed border-border bg-gradient-to-br from-muted/30 to-card p-10 sm:p-12 text-center space-y-6">
-    <UserCircle className="h-14 w-14 text-muted-foreground/40 mx-auto" />
-    <div className="space-y-2 max-w-lg mx-auto">
-      <p className="text-lg font-bold text-foreground">Selecione um cliente da carteira</p>
-      <p className="text-sm text-muted-foreground leading-relaxed">
-        Use a busca e os filtros à esquerda para localizar um cliente. O cockpit comercial abre aqui
-        com resumo de vendas, relacionamento, agenda e histórico.
-      </p>
-      <p className="text-xs text-muted-foreground italic">{scopeLabel}</p>
-    </div>
-    {summary.totalListed > 0 ? (
-      <div className="max-w-3xl mx-auto space-y-2">
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 text-left">
-          <SummaryMetric label="Na lista" value={String(summary.totalListed)} icon={Target} />
-          <SummaryMetric
-            label="Na lista: carteira aberta"
-            value={String(summary.withOpenPortfolio)}
-            icon={Wallet}
-          />
-          <SummaryMetric
-            label="Na lista: follow-up atrasado"
-            value={String(summary.withOverdueFollowUp)}
-            icon={CalendarClock}
-          />
-          <SummaryMetric
-            label="Na lista: sem contato"
-            value={String(summary.withoutContact)}
-            icon={MessageSquare}
-          />
-        </div>
-        {/* Estes quatro contam a lista exibida, não o universo do filtro. O
-            total do filtro fica na faixa de auditoria acima (totals do backend). */}
-        <p className="text-[11px] text-muted-foreground text-center">
-          Indicadores da lista exibida. O total do filtro aparece na faixa de auditoria
-          acima.
-        </p>
-      </div>
-    ) : null}
-  </div>
-);
 
 export type CrmCustomerIdentityCardProps = {
   customer: CrmCustomerListItem;
@@ -163,14 +109,12 @@ export type CrmCustomerIdentityCardProps = {
   intelligencePath: string;
   onRegisterContact: () => void;
   onEditProfile: () => void;
-  onChangeCustomer: () => void;
   formatters: Formatters;
 };
 
 /**
- * Cartão de identidade do cliente — resumo do cliente resolvido pelos
- * filtros da carteira. Substitui a antiga listagem em tabela: em vez de
- * navegar várias linhas, a busca resolve para este cartão único.
+ * Cartão de identidade do cliente — abre o modal do cliente da Carteira
+ * (nome, documento, situação, responsável e as ações principais).
  */
 export const CrmCustomerIdentityCard: React.FC<CrmCustomerIdentityCardProps> = ({
   customer,
@@ -179,7 +123,6 @@ export const CrmCustomerIdentityCard: React.FC<CrmCustomerIdentityCardProps> = (
   intelligencePath,
   onRegisterContact,
   onEditProfile,
-  onChangeCustomer,
   formatters,
 }) => {
   const { getCustomerDisplayName, getCustomerTaxId, formatCityState, displayLine } = formatters;
@@ -197,26 +140,8 @@ export const CrmCustomerIdentityCard: React.FC<CrmCustomerIdentityCardProps> = (
 
   return (
     <section className="rounded-2xl border border-border bg-card p-6 shadow-sm space-y-5">
-      <div className="flex items-center justify-between">
-        <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-          Cliente selecionado pelos filtros
-        </p>
-        <button
-          type="button"
-          onClick={onChangeCustomer}
-          className="text-xs font-bold text-primary hover:underline"
-        >
-          Trocar cliente
-        </button>
-      </div>
-      {/*
-        Empilhado sempre — SEM lg:flex-row. Esse breakpoint é do VIEWPORT, não
-        da largura do cartão: numa tela larga ele forçava nome+ações lado a
-        lado mesmo com o cartão ocupando só metade da tela (grid 50/50 dos
-        filtros), espremendo o nome numa coluna estreita e quebrando palavras
-        no meio (ex.: "Eletrodomesticos" virando "Eletrod/omestic/os").
-      */}
-      <div className="space-y-4">
+      {/* No modal o cartão ocupa a largura toda: identidade à esquerda, ações à direita. */}
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div className="flex items-start gap-3 min-w-0">
           <div className="rounded-xl bg-primary/10 p-2.5 text-primary shrink-0">
             <Building2 className="h-5 w-5" />
@@ -261,7 +186,7 @@ export const CrmCustomerIdentityCard: React.FC<CrmCustomerIdentityCardProps> = (
             </div>
           </div>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex shrink-0 flex-wrap gap-2">
           <Link
             to={intelligencePath}
             className="inline-flex items-center gap-2 rounded-xl border border-primary/30 bg-primary/10 px-4 py-2.5 text-sm font-semibold text-primary hover:bg-primary/15"
@@ -649,5 +574,3 @@ export const CrmCustomerAccountCockpit: React.FC<CrmCustomerAccountCockpitProps>
     </div>
   );
 };
-
-export { computePortfolioEmptySummary, CRM_PORTFOLIO_FILTER_CHIPS };

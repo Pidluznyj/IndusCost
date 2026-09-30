@@ -11,6 +11,13 @@
  * ocupar a tela de ponta a ponta, fora da coluna do resumo. Os testes de
  * tabela/paginação foram substituídos pelos do novo contrato abaixo.
  *
+ * 30/09/2026: a pedido do usuário, a Carteira voltou a listar os clientes do
+ * filtro num grid (dados de cadastro + último contato, follow-up e última
+ * compra, com ações na linha) e o detalhe do cliente — identidade, resumo
+ * comercial, relacionamento, agenda, histórico, próximas ações e linha do
+ * tempo — passou para um modal aberto por "Ver cliente". O cartão-resumo único
+ * e os chips de desambiguação saíram.
+ *
  * Testes no estilo já usado pelo projeto (`crmCommercialLayout.test.ts`,
  * `crmPortfolioScopeLabels.test.ts`) — leitura estática do código-fonte —
  * porque `CrmModule.tsx` concentra o estado das 3 abas num único
@@ -56,7 +63,8 @@ describe("Gestão por Responsável — contrato de período e comparação", () 
 
 describe("Carteira de Clientes — contrato de período e resumo do cliente", () => {
   const section = read("src/components/crm/CrmCustomerPortfolioSection.tsx");
-  const finder = read("src/components/crm/CrmCustomerPortfolioFinder.tsx");
+  const table = read("src/components/crm/CrmCustomerPortfolioTable.tsx");
+  const modal = read("src/components/crm/CrmCustomerAccountModal.tsx");
   const cockpit = read("src/components/crm/CrmCustomerAccountCockpit.tsx");
   const module_ = read("src/components/CrmModule.tsx");
 
@@ -73,34 +81,74 @@ describe("Carteira de Clientes — contrato de período e resumo do cliente", ()
     assert.match(section, /O período filtra os pedidos\/venda do resumo comercial/);
   });
 
-  it("o grid da carteira não lista clientes — vira o resumo do cliente resolvido pelos filtros", () => {
-    // Missão de redesign (10/09/2026): a tabela operacional de linhas foi
-    // substituída por um cartão-resumo único, com desambiguação leve (chips)
-    // só quando a busca ainda é ambígua. Nunca mais uma tabela de dados aqui.
-    assert.match(section, /CrmCustomerPortfolioFinder/);
-    assert.doesNotMatch(section, /CrmCustomerPortfolioTable/);
-    assert.match(section, /xl:grid-cols-2/);
+  it("o grid lista os clientes do filtro numa tabela, na largura toda, abaixo dos filtros", () => {
+    assert.match(section, /<CrmCustomerPortfolioTable/);
+    assert.doesNotMatch(section, /CrmCustomerPortfolioFinder/);
+    assert.doesNotMatch(section, /xl:grid-cols-2/);
+    assert.match(table, /<table/);
+    assert.ok(section.indexOf('aria-label="Filtros da carteira"') < section.indexOf("<CrmCustomerPortfolioTable"));
   });
 
-  it("resolve para 1 cliente automaticamente e mostra o cartão de identidade", () => {
-    assert.match(finder, /customers\.length === 1/);
-    assert.match(finder, /CrmCustomerIdentityCard/);
+  it("o grid traz cadastro e CRM: último contato, próximo follow-up e última compra", () => {
+    for (const column of ["Cliente", "Cidade / UF", "Responsável", "Situação", "Último contato", "Próximo follow-up", "Última compra", "Compras no período", "Ações"]) {
+      assert.ok(table.includes(`>${column}</th>`), `coluna ausente: ${column}`);
+    }
+    assert.match(table, /customer\.lastContactAt/);
+    assert.match(table, /customer\.nextFollowUpAt/);
+    assert.match(table, /customer\.lastOrderAt/);
   });
 
-  it("2+ resultados viram chips clicáveis, nunca uma tabela", () => {
-    assert.doesNotMatch(finder, /<table/);
-    assert.match(finder, /onSelectCustomer\(c\.id\)/);
-  });
-
-  it("'Trocar cliente' limpa a seleção e os filtros para uma nova busca", () => {
-    assert.match(cockpit, /onChangeCustomer/);
-    assert.match(module_, /handleChangeCrmPortfolioCustomer/);
-    assert.match(module_, /setSelectedId\(null\)/);
-  });
-
-  it("cada linha tem ação explícita para o Cliente 360", () => {
-    assert.match(cockpit, /Inteligência/);
+  it("cada linha tem as ações do dia a dia: registrar contato, ver cliente e Cliente 360", () => {
+    assert.match(table, /Registrar contato/);
+    assert.match(table, /Ver cliente/);
+    assert.match(table, /intelligencePathFor\(customer\.id\)/);
     assert.match(module_, /buildCustomerIntelligencePath/);
+    // As ações não disparam o clique da linha.
+    assert.match(table, /onClick=\{\(event\) => event\.stopPropagation\(\)\}/);
+    // Registrar contato pela linha usa o mesmo modal e recarrega a Carteira, não os Relatórios.
+    assert.match(module_, /openContactFromPortfolio/);
+    assert.match(module_, /contactFromPortfolioRef/);
+  });
+
+  it("'Ver cliente' abre o detalhe num modal: identidade, cockpit e abas do cliente", () => {
+    assert.match(section, /<CrmCustomerAccountModal/);
+    assert.match(modal, /role="dialog"/);
+    assert.match(modal, /aria-modal="true"/);
+    const open = section.indexOf("<CrmCustomerAccountModal");
+    const close = section.indexOf("</CrmCustomerAccountModal>");
+    assert.ok(open > 0 && close > open);
+    const body = section.slice(open, close);
+    assert.match(body, /<CrmCustomerIdentityCard/);
+    assert.match(body, /<CrmCustomerAccountCockpit/);
+    assert.match(body, /\{children\}/);
+    // Nada do cliente fica solto na página, fora do modal.
+    assert.equal(section.split("<CrmCustomerAccountCockpit").length - 1, 1);
+    assert.match(cockpit, /Inteligência/);
+  });
+
+  it("uma busca que acha um único cliente não abre o modal sozinha", () => {
+    assert.doesNotMatch(section, /customers\.length === 1/);
+    assert.doesNotMatch(table, /customers\.length === 1/);
+  });
+
+  it("fechar o modal só desfaz a seleção: filtros, busca e página ficam como estavam", () => {
+    const start = module_.indexOf("const handleCloseCrmPortfolioCustomer =");
+    assert.ok(start > 0);
+    const body = module_.slice(start, module_.indexOf("}, []);", start));
+    assert.match(body, /setSelectedId\(null\)/);
+    assert.doesNotMatch(body, /handleClearPortfolioFilters|setPortfolioOffset/);
+    assert.doesNotMatch(module_, /handleChangeCrmPortfolioCustomer/);
+  });
+
+  it("o grid pagina o universo do filtro com a mesma busca e os mesmos filtros", () => {
+    assert.match(module_, /hasMore: data\?\.pagination\?\.hasMore === true/);
+    const start = module_.indexOf("const handlePortfolioPageChange =");
+    assert.ok(start > 0);
+    const body = module_.slice(start, module_.indexOf("};", start));
+    assert.match(body, /loadCrmCustomers\(searchApplied, crmCustomerFilter, offset, portfolioSellerKey, portfolioPeriod\)/);
+    assert.match(table, /Anterior/);
+    assert.match(table, /Próxima/);
+    assert.match(table, /disabled=\{!hasMore \|\| loading\}/);
   });
 
   it("toda mudança de filtro (busca, chip, responsável, período, limpar) zera a paginação", () => {
@@ -127,7 +175,6 @@ describe("Invariantes da V2 preservados (não regredir)", () => {
   const customersListTypes = read("src/lib/crmCustomersListTypes.ts");
   const qualityTotals = read("src/lib/crmCustomersListQualityTotals.ts");
   const dashboardBasic = read("src/lib/crmDashboardBasicService.ts");
-  const cockpit = read("src/components/crm/CrmCustomerAccountCockpit.tsx");
   const section = read("src/components/crm/CrmCustomerPortfolioSection.tsx");
 
   it("crmCustomersList.ts e crmCustomersListTypes.ts não foram tocados por esta missão", () => {
@@ -150,10 +197,11 @@ describe("Invariantes da V2 preservados (não regredir)", () => {
     assert.match(dashboardBasic, /fetchCrmManualOwnerCustomerIds/);
   });
 
-  it("os rótulos 'Na lista:' do cockpit (V2) continuam intactos", () => {
-    assert.match(cockpit, /Na lista: carteira aberta/);
-    assert.match(cockpit, /Na lista: follow-up atrasado/);
-    assert.match(cockpit, /Na lista: sem contato/);
+  it("os rótulos 'Na lista:' (V2) continuam intactos, agora no cabeçalho do grid", () => {
+    const table = read("src/components/crm/CrmCustomerPortfolioTable.tsx");
+    assert.match(table, /Na lista: carteira aberta/);
+    assert.match(table, /Na lista: follow-up atrasado/);
+    assert.match(table, /Na lista: sem contato/);
   });
 
   it("a faixa de auditoria da Carteira (V2) continua expondo o total do universo e o aviso de truncamento", () => {

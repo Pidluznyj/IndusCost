@@ -135,3 +135,14 @@ export function computePortfolioEmptySummary(
     withoutContact: customers.filter((c) => !c.lastContactAt).length,
   };
 }
+
+/** "hoje", "ontem" ou "há N dias" a partir de uma data ISO. Vazio se a data for inválida. */
+export function describeDaysAgo(iso: string | null | undefined, now: number = Date.now()): string {
+  if (!iso) return "";
+  const at = Date.parse(iso);
+  if (!Number.isFinite(at)) return "";
+  const days = Math.floor((now - at) / 86_400_000);
+  if (days <= 0) return "hoje";
+  if (days === 1) return "ontem";
+  return `há ${days} dias`;
+}

@@ -121,9 +121,10 @@ describe("crmCommercialLayout", () => {
     assert.match(crm, /CrmCustomerPortfolioSection/);
     assert.match(crm, /CockpitTabs/);
     assert.match(portfolio, /CRM_PORTFOLIO_FILTER_CHIPS/);
-    // 10/09/2026: filtros e resumo do cliente dividem a tela meio a meio
-    // (era uma coluna estreita de filtros + tabela larga).
-    assert.match(portfolio, /xl:grid-cols-2/);
+    // 30/09/2026: filtros em barra, grid de clientes na largura toda e o
+    // cockpit do cliente dentro do modal aberto por "Ver cliente".
+    assert.match(portfolio, /CrmCustomerPortfolioTable/);
+    assert.match(portfolio, /CrmCustomerAccountModal/);
     assert.match(cockpit, /Resumo comercial/);
     assert.match(cockpit, /Agenda comercial/);
   });

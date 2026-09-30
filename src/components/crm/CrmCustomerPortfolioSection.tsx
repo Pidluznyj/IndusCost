@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from "react";
+import React from "react";
 import { Filter, GitCompare, Link2, Search, ShoppingCart, UserX, Users, X } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import type {
@@ -15,15 +15,15 @@ import {
 import {
   CRM_PORTFOLIO_FILTER_CHIPS,
   buildActivePortfolioFilterChips,
-  computePortfolioEmptySummary,
 } from "@/src/components/crm/crmCustomerPortfolioUi";
 import {
   CrmCustomerAccountCockpit,
-  CrmCustomerPortfolioEmptyState,
+  CrmCustomerIdentityCard,
   type CrmAccountCockpitActivity,
   type CrmAccountCockpitProfile,
 } from "@/src/components/crm/CrmCustomerAccountCockpit";
-import { CrmCustomerPortfolioFinder } from "@/src/components/crm/CrmCustomerPortfolioFinder";
+import { CrmCustomerAccountModal } from "@/src/components/crm/CrmCustomerAccountModal";
+import { CrmCustomerPortfolioTable } from "@/src/components/crm/CrmCustomerPortfolioTable";
 import { CrmPeriodFilterBar } from "@/src/components/crm/CrmPeriodFilterBar";
 import type { CrmPeriodFilter } from "@/src/components/crm/crmPeriodFilter";
 import type { CrmCommercialIntelResponse } from "@/src/lib/crmCommercialIntelligence";
@@ -64,11 +64,21 @@ export type CrmCustomerPortfolioSectionProps = {
   onPeriodFilterChange: (next: CrmPeriodFilter) => void;
   periodYearOptions: number[];
   formatNumberPt?: (v: number | null | undefined) => string;
+  /** Paginação do grid (a API devolve uma página do universo do filtro). */
+  pageOffset: number;
+  pageSize: number;
+  hasMore: boolean;
+  onPageChange: (offset: number) => void;
   selectedId: string | null;
+  /** "Ver cliente" no grid: abre o modal do cliente. */
   onSelectCustomer: (id: string) => void;
-  /** "Trocar cliente" no cartão de resumo — limpa a seleção e os filtros para buscar outro. */
-  onChangeCustomer: () => void;
+  /** Fecha o modal do cliente; o grid e os filtros ficam como estavam. */
+  onCloseCustomer: () => void;
   selectedCustomer: CrmCustomerListItem | null;
+  canRegisterContact: boolean;
+  /** "Registrar contato" direto na linha do grid, sem abrir o cliente. */
+  onRegisterContactFor: (customer: CrmCustomerListItem) => void;
+  intelligencePathFor: (customerId: string) => string;
   intel: CrmCommercialIntelResponse | null;
   intelLoading: boolean;
   intelError: string | null;
@@ -117,10 +127,17 @@ export const CrmCustomerPortfolioSection: React.FC<CrmCustomerPortfolioSectionPr
   onPeriodFilterChange,
   periodYearOptions,
   formatNumberPt,
+  pageOffset,
+  pageSize,
+  hasMore,
+  onPageChange,
   selectedId,
   onSelectCustomer,
-  onChangeCustomer,
+  onCloseCustomer,
   selectedCustomer,
+  canRegisterContact,
+  onRegisterContactFor,
+  intelligencePathFor,
   intel,
   intelLoading,
   intelError,
@@ -134,17 +151,7 @@ export const CrmCustomerPortfolioSection: React.FC<CrmCustomerPortfolioSectionPr
   formatters,
   children,
 }) => {
-  const emptySummary = computePortfolioEmptySummary(customers);
   const fmt = formatNumberPt ?? ((v: number | null | undefined) => String(v ?? 0));
-
-  // Ao abrir um cliente na tabela, o cockpit some visualmente logo abaixo —
-  // rola até ele para não parecer que "não aconteceu nada".
-  const cockpitRef = useRef<HTMLDivElement | null>(null);
-  useEffect(() => {
-    if (selectedId) {
-      cockpitRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-    }
-  }, [selectedId]);
 
   const selectedSellerLabel =
     portfolioSellerKey !== SELLER_KEY_ALL
@@ -241,8 +248,9 @@ export const CrmCustomerPortfolioSection: React.FC<CrmCustomerPortfolioSectionPr
           <div>
             <h3 className="text-lg font-bold text-foreground">Carteira de Clientes</h3>
             <p className="text-sm text-muted-foreground mt-0.5 max-w-2xl">
-              Gestão comercial por responsável da carteira: busque um cliente para abrir o resumo e o
-              cockpit comercial dele. O vendedor do pedido (Nomus) é só auditoria.
+              Gestão comercial por responsável da carteira: escolha o responsável ou busque um cliente,
+              acompanhe último contato e última compra no grid e abra o cliente para ver o detalhe. O
+              vendedor do pedido (Nomus) é só auditoria.
             </p>
             <p className="text-xs text-muted-foreground mt-1 italic">{scopeLabel}</p>
             {period?.dateFrom || period?.dateTo ? (
@@ -276,175 +284,188 @@ export const CrmCustomerPortfolioSection: React.FC<CrmCustomerPortfolioSectionPr
       ) : null}
       {totals ? <CrmCommercialAuditStrip metrics={auditMetrics} /> : null}
 
-      <div className="grid gap-6 xl:grid-cols-2">
-        <aside className="min-w-0">
-          <div className="rounded-2xl border border-border bg-muted/25 p-5 shadow-sm space-y-5 xl:sticky xl:top-4">
-            <div className="flex items-center gap-2.5">
-              <span className="rounded-lg border border-border/60 bg-background p-1.5 text-muted-foreground shrink-0">
-                <Filter className="h-4 w-4" />
-              </span>
-              <div>
-                <p className="text-sm font-semibold text-foreground">Filtros da carteira</p>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  {isOwnSellerOnly
-                    ? "Somente clientes sob sua responsabilidade comercial."
-                    : "Clientes agrupados pelo responsável comercial da carteira."}
-                </p>
-              </div>
-            </div>
+      <div className="rounded-2xl border border-border bg-muted/25 p-5 shadow-sm space-y-4" aria-label="Filtros da carteira">
+        <div className="flex items-center gap-2.5">
+          <span className="rounded-lg border border-border/60 bg-background p-1.5 text-muted-foreground shrink-0">
+            <Filter className="h-4 w-4" />
+          </span>
+          <div>
+            <p className="text-sm font-semibold text-foreground">Filtros da carteira</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              {isOwnSellerOnly
+                ? "Somente clientes sob sua responsabilidade comercial."
+                : "Clientes agrupados pelo responsável comercial da carteira."}
+            </p>
+          </div>
+        </div>
 
-            {showSellerFilter ? (
-              <div>
-                <label
-                  htmlFor="crm-portfolio-seller-filter"
-                  className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground"
-                  title={CRM_UI_TOOLTIPS.commercialOwner}
-                >
-                  Responsável da carteira
-                </label>
-                <select
-                  id="crm-portfolio-seller-filter"
-                  value={portfolioSellerKey}
-                  onChange={(e) => onPortfolioSellerChange(e.target.value)}
-                  className="mt-2 w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/25"
-                  title={CRM_UI_TOOLTIPS.commercialOwner}
-                >
-                  <option value={SELLER_KEY_ALL}>Todos os responsáveis</option>
-                  {sellerOptions.map((opt) => {
-                    const key = buildSellerOptionKey(opt);
-                    return (
-                      <option key={key} value={key}>
-                        {formatSellerOptionLabel(opt)}
-                      </option>
-                    );
-                  })}
-                </select>
-              </div>
-            ) : null}
-
-            <form onSubmit={onSearchSubmit} className="space-y-3">
-              <label className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                Buscar
+        {/* Responsável e busca lado a lado; o grid de clientes fica logo abaixo, na largura toda. */}
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)] lg:items-end">
+          {showSellerFilter ? (
+            <div>
+              <label
+                htmlFor="crm-portfolio-seller-filter"
+                className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground"
+                title={CRM_UI_TOOLTIPS.commercialOwner}
+              >
+                Responsável da carteira
               </label>
-              <div className="relative">
+              <select
+                id="crm-portfolio-seller-filter"
+                value={portfolioSellerKey}
+                onChange={(e) => onPortfolioSellerChange(e.target.value)}
+                className="mt-2 w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/25"
+                title={CRM_UI_TOOLTIPS.commercialOwner}
+              >
+                <option value={SELLER_KEY_ALL}>Todos os responsáveis</option>
+                {sellerOptions.map((opt) => {
+                  const key = buildSellerOptionKey(opt);
+                  return (
+                    <option key={key} value={key}>
+                      {formatSellerOptionLabel(opt)}
+                    </option>
+                  );
+                })}
+              </select>
+            </div>
+          ) : null}
+
+          <form onSubmit={onSearchSubmit} className={cn(!showSellerFilter && "lg:col-span-2")}>
+            <label
+              htmlFor="crm-portfolio-search"
+              className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground"
+            >
+              Buscar
+            </label>
+            <div className="mt-2 flex gap-2">
+              <div className="relative min-w-0 flex-1">
                 <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <input
+                  id="crm-portfolio-search"
                   type="text"
                   placeholder="Nome, fantasia, CNPJ/CPF, cidade ou UF…"
-                  className="w-full pl-11 pr-3 py-3 rounded-xl border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/25"
+                  className="w-full pl-11 pr-3 py-2.5 rounded-xl border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/25"
                   value={searchInput}
                   onChange={(e) => onSearchInputChange(e.target.value)}
                 />
               </div>
               <button
                 type="submit"
-                className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground hover:opacity-90"
+                className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground hover:opacity-90"
               >
                 <Search className="h-4 w-4" />
                 Buscar
               </button>
-            </form>
-
-            {activeChips.length > 0 ? (
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                    Filtros ativos
-                  </p>
-                  <button
-                    type="button"
-                    onClick={onClearAllFilters}
-                    className="text-[11px] font-semibold text-primary hover:underline"
-                  >
-                    Limpar filtros
-                  </button>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {activeChips.map((chip) => (
-                    <span
-                      key={chip.key}
-                      className="inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary"
-                    >
-                      {chip.label}
-                      <button
-                        type="button"
-                        onClick={() => onClearChip(chip.key)}
-                        className="rounded-full p-0.5 hover:bg-primary/20"
-                        aria-label={`Remover filtro ${chip.label}`}
-                      >
-                        <X className="h-3 w-3" />
-                      </button>
-                    </span>
-                  ))}
-                </div>
-              </div>
-            ) : null}
-
-            <div className="space-y-2">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                Filtros rápidos
-              </p>
-              <div className="flex flex-wrap gap-2">
-                {CRM_PORTFOLIO_FILTER_CHIPS.map((chip) => (
-                  <button
-                    key={chip.value}
-                    type="button"
-                    onClick={() => onFilterChange(chip.value)}
-                    className={cn(
-                      "rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors",
-                      crmCustomerFilter === chip.value
-                        ? "border-primary bg-primary/15 text-primary ring-2 ring-primary/25 shadow-sm"
-                        : "border-border bg-background text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-                    )}
-                  >
-                    {chip.label}
-                  </button>
-                ))}
-              </div>
             </div>
+          </form>
+        </div>
 
-            {customersWithoutPeriodOrders && !customersLoading && !customersError ? (
-              <div
-                className="rounded-lg border border-sky-200/80 bg-sky-50/60 px-3 py-2 text-[11px] text-sky-950 leading-relaxed"
-                role="status"
+        <div className="space-y-2">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+            Filtros rápidos
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {CRM_PORTFOLIO_FILTER_CHIPS.map((chip) => (
+              <button
+                key={chip.value}
+                type="button"
+                onClick={() => onFilterChange(chip.value)}
+                className={cn(
+                  "rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors",
+                  crmCustomerFilter === chip.value
+                    ? "border-primary bg-primary/15 text-primary ring-2 ring-primary/25 shadow-sm"
+                    : "border-border bg-background text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                )}
               >
-                {CRM_PORTFOLIO_NO_ORDERS_IN_PERIOD_NOTE}
-              </div>
-            ) : null}
-
+                {chip.label}
+              </button>
+            ))}
           </div>
-        </aside>
+        </div>
 
-        <div className="min-w-0">
-          <CrmCustomerPortfolioFinder
-            customers={customers}
-            loading={listEmptyKind === "loading"}
-            error={listEmptyKind === "error" ? customersError : null}
-            hasActiveFilters={activeChips.length > 0}
-            emptyTitle={listEmptyCopy?.title ?? "Nenhum cliente encontrado"}
-            emptyBody={listEmptyCopy?.body ?? "Ajuste os filtros para ver clientes da carteira."}
-            onClearFilters={onClearAllFilters}
-            selectedId={selectedId}
-            selectedCustomer={selectedCustomer}
-            onSelectCustomer={onSelectCustomer}
-            onChangeCustomer={onChangeCustomer}
+        {activeChips.length > 0 ? (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                Filtros ativos
+              </p>
+              <button
+                type="button"
+                onClick={onClearAllFilters}
+                className="text-[11px] font-semibold text-primary hover:underline"
+              >
+                Limpar filtros
+              </button>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {activeChips.map((chip) => (
+                <span
+                  key={chip.key}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary"
+                >
+                  {chip.label}
+                  <button
+                    type="button"
+                    onClick={() => onClearChip(chip.key)}
+                    className="rounded-full p-0.5 hover:bg-primary/20"
+                    aria-label={`Remover filtro ${chip.label}`}
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </span>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
+        {customersWithoutPeriodOrders && !customersLoading && !customersError ? (
+          <div
+            className="rounded-lg border border-sky-200/80 bg-sky-50/60 px-3 py-2 text-[11px] text-sky-950 leading-relaxed"
+            role="status"
+          >
+            {CRM_PORTFOLIO_NO_ORDERS_IN_PERIOD_NOTE}
+          </div>
+        ) : null}
+      </div>
+
+      <CrmCustomerPortfolioTable
+        customers={customers}
+        loading={customersLoading}
+        error={listEmptyKind === "error" ? customersError : null}
+        emptyTitle={listEmptyCopy?.title ?? "Nenhum cliente encontrado"}
+        emptyBody={listEmptyCopy?.body ?? "Ajuste os filtros para ver clientes da carteira."}
+        hasActiveFilters={activeChips.length > 0}
+        onClearFilters={onClearAllFilters}
+        showOwnerColumn={!isOwnSellerOnly}
+        totalInScope={totals?.totalCustomersInScope ?? null}
+        offset={pageOffset}
+        pageSize={pageSize}
+        hasMore={hasMore}
+        onPageChange={onPageChange}
+        selectedId={selectedId}
+        onViewCustomer={onSelectCustomer}
+        canRegisterContact={canRegisterContact}
+        onRegisterContact={onRegisterContactFor}
+        intelligencePathFor={intelligencePathFor}
+        formatNumberPt={fmt}
+        formatters={formatters}
+      />
+
+      {/* "Ver cliente": tudo o que é do cliente abre em modal, por cima do grid. */}
+      {selectedCustomer ? (
+        <CrmCustomerAccountModal
+          customerName={formatters.getCustomerDisplayName(selectedCustomer)}
+          onClose={onCloseCustomer}
+        >
+          <CrmCustomerIdentityCard
+            customer={selectedCustomer}
             showSellerColumn={!isOwnSellerOnly}
             intel={intel}
             intelligencePath={intelligencePath}
             onRegisterContact={onRegisterContact}
             onEditProfile={onEditProfile}
-            totals={totals}
-            formatNumberPt={fmt}
             formatters={formatters}
           />
-        </div>
-      </div>
-
-      {/* Daqui para baixo: ponta a ponta horizontal, não preso à coluna do resumo acima. */}
-      {!selectedCustomer ? (
-        <CrmCustomerPortfolioEmptyState summary={emptySummary} scopeLabel={scopeLabel} />
-      ) : (
-        <div ref={cockpitRef} className="scroll-mt-4 space-y-6">
           <CrmCustomerAccountCockpit
             customer={selectedCustomer}
             intel={intel}
@@ -460,8 +481,8 @@ export const CrmCustomerPortfolioSection: React.FC<CrmCustomerPortfolioSectionPr
             formatters={formatters}
           />
           {children}
-        </div>
-      )}
+        </CrmCustomerAccountModal>
+      ) : null}
     </section>
   );
 };

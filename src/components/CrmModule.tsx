@@ -1423,7 +1423,9 @@ export const CrmModule = () => {
     sourceInfo: CrmCustomersListResponse["sourceInfo"] | null;
     totals: CrmCustomersListResponse["totals"] | null;
     period: CrmCustomersListResponse["period"] | null;
-  }>({ sourceInfo: null, totals: null, period: null });
+    /** Há mais clientes depois da página exibida no grid da Carteira. */
+    hasMore: boolean;
+  }>({ sourceInfo: null, totals: null, period: null, hasMore: false });
   const [searchInput, setSearchInput] = useState("");
   const [searchApplied, setSearchApplied] = useState("");
   const [crmCustomerFilter, setCrmCustomerFilter] = useState<CrmCustomerListFilter>("all");
@@ -1831,6 +1833,7 @@ export const CrmModule = () => {
           sourceInfo: data?.sourceInfo ?? null,
           totals: data?.totals ?? null,
           period: data?.period ?? null,
+          hasMore: data?.pagination?.hasMore === true,
         });
         setSelectedId((prev) => {
           if (!prev) return null;
@@ -1838,7 +1841,7 @@ export const CrmModule = () => {
         });
       } catch (e) {
         setCustomers([]);
-        setCustomersListMeta({ sourceInfo: null, totals: null, period: null });
+        setCustomersListMeta({ sourceInfo: null, totals: null, period: null, hasMore: false });
         const raw = e instanceof Error ? e.message : "Não foi possível carregar a lista de clientes.";
         setCustomersError(clampMessage(raw));
       } finally {
@@ -2142,7 +2145,11 @@ export const CrmModule = () => {
     }
   };
 
+  /** Contato aberto pela linha do grid da Carteira (e não pelos Relatórios). */
+  const contactFromPortfolioRef = useRef(false);
+
   const openModal = () => {
+    contactFromPortfolioRef.current = false;
     setContactTarget(null);
     setModalOpen(true);
   };
@@ -2150,14 +2157,23 @@ export const CrmModule = () => {
   /** "Registrar contato" nas listas de Relatórios — mesmo modal e mesmo endpoint canônico. */
   const openContactFromReports = useCallback(
     (customer: { customerId: string; displayName: string; taxId: string }) => {
+      contactFromPortfolioRef.current = false;
       setContactTarget({ id: customer.customerId, displayName: customer.displayName, taxId: customer.taxId });
       setModalOpen(true);
     },
     []
   );
 
+  /** "Registrar contato" na linha do grid da Carteira — sem precisar abrir o cliente. */
+  const openContactFromPortfolio = useCallback((customer: CrmCustomerListItem) => {
+    contactFromPortfolioRef.current = true;
+    setContactTarget({ id: customer.id, displayName: customer.displayName, taxId: customer.taxId });
+    setModalOpen(true);
+  }, []);
+
   /** O modal não chama isto durante o salvamento (evita perder o envio). */
   const closeContactModal = useCallback(() => {
+    contactFromPortfolioRef.current = false;
     setModalOpen(false);
     setContactTarget(null);
   }, []);
@@ -2206,11 +2222,17 @@ export const CrmModule = () => {
     void loadCrmCustomers("", "all", 0, SELLER_KEY_ALL, defaultPeriod);
   };
 
-  /** "Trocar cliente" no cartão de resumo da Carteira: sai da seleção atual e limpa os filtros para uma nova busca. */
-  const handleChangeCrmPortfolioCustomer = () => {
-    setSelectedId(null);
-    handleClearPortfolioFilters();
+  /** Paginação do grid da Carteira: mesma busca e filtros, outra página. */
+  const handlePortfolioPageChange = (nextOffset: number) => {
+    const offset = Math.max(0, nextOffset);
+    setPortfolioOffset(offset);
+    void loadCrmCustomers(searchApplied, crmCustomerFilter, offset, portfolioSellerKey, portfolioPeriod);
   };
+
+  /** Fecha o modal do cliente da Carteira; grid, filtros e página ficam como estavam. */
+  const handleCloseCrmPortfolioCustomer = useCallback(() => {
+    setSelectedId(null);
+  }, []);
 
   const selectCustomerById = useCallback(
     (customerId: string, meta?: { displayName?: string; taxId?: string }) => {
@@ -2265,7 +2287,10 @@ export const CrmModule = () => {
 
   /** Contato gravado: fecha o modal e recarrega último contato / próxima ação. */
   const handleContactSaved = async () => {
-    const fromReports = contactTarget != null;
+    const fromPortfolioRow = contactFromPortfolioRef.current;
+    const fromReports = contactTarget != null && !fromPortfolioRow;
+    const savedCustomerId = contactTarget?.id ?? selectedId;
+    contactFromPortfolioRef.current = false;
     setModalOpen(false);
     setContactTarget(null);
     setToast("Contato registrado com sucesso.");
@@ -2275,10 +2300,13 @@ export const CrmModule = () => {
       setReportsRefreshToken((n) => n + 1);
       return;
     }
-    if (!selectedId) return;
+    if (!selectedId && !fromPortfolioRow) return;
     try {
-      await loadActivities(selectedId);
-      await loadCommercialIntel(selectedId);
+      // Cliente aberto no modal e é o mesmo do contato: atualiza linha do tempo e resumo.
+      if (selectedId && selectedId === savedCustomerId) {
+        await loadActivities(selectedId);
+        await loadCommercialIntel(selectedId);
+      }
       if (canCrmGeneral) await loadManagementDashboard();
       await loadCrmCustomers(searchApplied, crmCustomerFilter, portfolioOffset, portfolioSellerKey, portfolioPeriod);
     } catch (err) {
@@ -2554,10 +2582,17 @@ export const CrmModule = () => {
           onPeriodFilterChange={handlePortfolioPeriodChange}
           periodYearOptions={periodYearOptions}
           formatNumberPt={formatNumberPt}
+          pageOffset={portfolioOffset}
+          pageSize={CRM_LIST_LIMIT}
+          hasMore={customersListMeta.hasMore}
+          onPageChange={handlePortfolioPageChange}
           selectedId={selectedId}
           onSelectCustomer={setSelectedId}
-          onChangeCustomer={handleChangeCrmPortfolioCustomer}
+          onCloseCustomer={handleCloseCrmPortfolioCustomer}
           selectedCustomer={selectedCustomer}
+          canRegisterContact={canRegisterCrmContact}
+          onRegisterContactFor={openContactFromPortfolio}
+          intelligencePathFor={buildCustomerIntelligencePath}
           intel={commercialIntel}
           intelLoading={commercialIntelLoading}
           intelError={commercialIntelError}

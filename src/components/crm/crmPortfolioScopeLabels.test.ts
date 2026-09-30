@@ -70,8 +70,8 @@ describe("computePortfolioEmptySummary — é da página, por contrato", () => {
 });
 
 describe("Carteira — rótulos não podem passar página por universo", () => {
-  const cockpit = readFileSync(
-    join(process.cwd(), "src/components/crm/CrmCustomerAccountCockpit.tsx"),
+  const table = readFileSync(
+    join(process.cwd(), "src/components/crm/CrmCustomerPortfolioTable.tsx"),
     "utf8"
   );
   const section = readFileSync(
@@ -80,25 +80,18 @@ describe("Carteira — rótulos não podem passar página por universo", () => {
   );
 
   it("os cards page-scoped se identificam como da lista", () => {
-    // Restrito ao empty state: o cockpit do cliente selecionado tem um
-    // "Carteira aberta" legítimo (métrica do próprio cliente, não da página).
-    const start = cockpit.indexOf("CrmCustomerPortfolioEmptyState: React.FC");
-    const end = cockpit.indexOf("export type CrmCustomerAccountCockpitProps");
-    assert.ok(start > 0 && end > start, "bloco do empty state não localizado");
-    const emptyState = cockpit.slice(start, end);
-
+    // Os três contadores do cabeçalho do grid contam só a página exibida.
     for (const label of [
       "Na lista: carteira aberta",
       "Na lista: follow-up atrasado",
       "Na lista: sem contato",
     ]) {
-      assert.ok(emptyState.includes(label), `rótulo ausente: ${label}`);
+      assert.ok(table.includes(label), `rótulo ausente: ${label}`);
     }
-    // Rótulos absolutos não podem voltar nesses quatro cards.
-    assert.doesNotMatch(emptyState, /label="Carteira aberta"/);
-    assert.doesNotMatch(emptyState, /label="Follow-up atrasado"/);
-    assert.doesNotMatch(emptyState, /label="Sem contato"/);
-    assert.match(emptyState, /Indicadores da lista exibida/);
+    assert.match(table, /computePortfolioEmptySummary\(customers\)/);
+    // O total anunciado no grid é o do universo do filtro, vindo do backend.
+    assert.match(table, /totalInScope/);
+    assert.doesNotMatch(table, /customers\.length\)? cliente\(s\) no filtro/);
   });
 
   it("a faixa de auditoria expõe o total do universo do filtro", () => {
