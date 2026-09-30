@@ -454,6 +454,117 @@ describe("exposure apply", () => {
       new Set([g1Id, g2Id])
     );
   });
+
+  it("DataJud enriquece processo já criado pelo DJEN", () => {
+    const memory = entityMemory();
+    const createId = ids();
+    applyBatchToMemory(memory, {
+      entityId: "ent-1",
+      now: "2026-09-30T12:00:00.000Z",
+      createId,
+      batch: batch({
+        source: "DJEN",
+        cases: [
+          {
+            processNumber: PROCESS,
+            tribunal: "TRT9",
+            jurisdiction: null,
+            degree: null,
+            courtUnit: "Vara parcial",
+            classCode: null,
+            className: "Intimação",
+            filedAt: null,
+            currentStatus: null,
+            entityPole: "UNKNOWN",
+            sourceIdentifier: PROCESS_DIGITS,
+            sourceUpdatedAt: "2026-09-30T12:00:00.000Z",
+            explicitCnpj: CNPJ,
+            candidateName: null,
+            officialIdentifier: PROCESS_DIGITS,
+            parties: [],
+            movements: [],
+            rawMetadata: { tipoComunicacao: "Intimação" },
+          },
+        ],
+      }),
+    });
+    assert.equal(memory.cases[0]?.className, null);
+    applyBatchToMemory(memory, {
+      entityId: "ent-1",
+      now: "2026-09-30T13:00:00.000Z",
+      createId,
+      batch: batch({
+        source: "DATAJUD",
+        cases: [
+          {
+            processNumber: PROCESS,
+            tribunal: "TRT9",
+            jurisdiction: "Justiça do Trabalho",
+            degree: "G1",
+            courtUnit: "09ª VARA DO TRABALHO DE CURITIBA",
+            classCode: "985",
+            className: "Ação Trabalhista - Rito Ordinário",
+            filedAt: "2026-09-23T00:00:00.000Z",
+            currentStatus: null,
+            entityPole: "UNKNOWN",
+            sourceIdentifier: "TRT9_G1_fixture",
+            sourceUpdatedAt: "2026-09-30T13:00:00.000Z",
+            explicitCnpj: CNPJ,
+            candidateName: null,
+            officialIdentifier: "TRT9_G1_fixture",
+            parties: [],
+            movements: [],
+            rawMetadata: { id: "TRT9_G1_fixture" },
+          },
+        ],
+      }),
+    });
+    const legalCase = memory.cases[0];
+    assert.equal(memory.cases.length, 1);
+    assert.equal(legalCase?.courtUnit, "09ª VARA DO TRABALHO DE CURITIBA");
+    assert.equal(legalCase?.classCode, "985");
+    assert.equal(legalCase?.className, "Ação Trabalhista - Rito Ordinário");
+    assert.equal(legalCase?.filedAt, "2026-09-23T00:00:00.000Z");
+    assert.equal(legalCase?.jurisdiction, "Justiça do Trabalho");
+    assert.equal(legalCase?.degree, "G1");
+    assert.equal(legalCase?.entityPole, "UNKNOWN");
+    assert.equal(legalCase?.primarySource, "DJEN");
+
+    applyBatchToMemory(memory, {
+      entityId: "ent-1",
+      now: "2026-09-30T14:00:00.000Z",
+      createId,
+      batch: batch({
+        source: "DJEN",
+        cases: [
+          {
+            processNumber: PROCESS,
+            tribunal: "TRT9",
+            jurisdiction: null,
+            degree: null,
+            courtUnit: "Vara parcial",
+            classCode: null,
+            className: null,
+            filedAt: null,
+            currentStatus: null,
+            entityPole: "UNKNOWN",
+            sourceIdentifier: PROCESS_DIGITS,
+            sourceUpdatedAt: "2026-09-30T14:00:00.000Z",
+            explicitCnpj: CNPJ,
+            candidateName: null,
+            officialIdentifier: PROCESS_DIGITS,
+            parties: [],
+            movements: [],
+            rawMetadata: { tipoComunicacao: "Intimação" },
+          },
+        ],
+      }),
+    });
+    assert.equal(memory.cases[0]?.className, "Ação Trabalhista - Rito Ordinário");
+    assert.equal(memory.cases[0]?.filedAt, "2026-09-23T00:00:00.000Z");
+    assert.equal(memory.cases[0]?.courtUnit, "09ª VARA DO TRABALHO DE CURITIBA");
+    assert.equal(memory.cases[0]?.jurisdiction, "Justiça do Trabalho");
+  });
 });
 
 describe("exposure freshness", () => {
@@ -529,5 +640,25 @@ describe("exposure mappers", () => {
     });
     assert.equal(mapped.cases.length, 0);
     assert.equal(mapped.candidates.length, 1);
+  });
+
+  it("tipoComunicacao DJEN não vira classe processual", () => {
+    const mapped = mapDjenPublications({
+      items: [
+        {
+          numeroProcesso: PROCESS,
+          siglaTribunal: "TRT9",
+          nomeOrgao: "09ª VARA DO TRABALHO DE CURITIBA",
+          tipoComunicacao: "Intimação",
+          nomeParte: "Industria Exemplo LTDA",
+        },
+      ],
+    });
+    assert.equal(mapped.cases.length, 1);
+    assert.equal(mapped.cases[0]?.className, null);
+    assert.equal(mapped.cases[0]?.classCode, null);
+    assert.equal(mapped.cases[0]?.filedAt, null);
+    assert.equal(mapped.cases[0]?.courtUnit, "09ª VARA DO TRABALHO DE CURITIBA");
+    assert.equal((mapped.cases[0]?.rawMetadata as { tipoComunicacao?: string }).tipoComunicacao, "Intimação");
   });
 });

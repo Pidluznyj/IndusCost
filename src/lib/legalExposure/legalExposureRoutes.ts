@@ -46,6 +46,8 @@ function queryOf(req: express.Request) {
     q: text("q"),
     from: text("from"),
     to: text("to"),
+    verification: text("verification"),
+    enrichment: text("enrichment"),
     page: q.page,
     pageSize: q.pageSize,
   };

@@ -66,7 +66,8 @@ export function mapDjenPublicationPage(body: unknown): DjenMappedPage {
         degree: null,
         courtUnit: text(row.nomeOrgao),
         classCode: null,
-        className: text(row.tipoComunicacao),
+        // tipoComunicacao é publicação (Intimação/Citação), não classe processual.
+        className: null,
         filedAt: null,
         currentStatus: null,
         entityPole: "UNKNOWN",

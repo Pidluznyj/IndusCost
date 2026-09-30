@@ -6,12 +6,18 @@ import { formatCnpj } from "@/src/lib/companyCnpjFormat.js";
 import {
   ABSENCE_IS_NOT_CLEARANCE_COPY,
   CNDT_DOES_NOT_MEAN_NO_CASES_COPY,
+  LEGAL_EXPOSURE_SOURCES,
   clampPage,
   isHealthyStatus,
   NO_CASES_IDENTIFIED_COPY,
   slicePage,
   SOURCE_LABELS,
   SOURCE_STATUS_LABELS,
+  type CaseEnrichmentStatus,
+  type CaseVerificationStatus,
+  type ExposureCaseListItem,
+  type ExposureCaseLatestMovement,
+  type ExposureCaseLatestPublication,
   type LegalExposureSource,
   type Page,
   type SourcePublicStatus,
@@ -19,7 +25,12 @@ import {
 import { publicSourceConfiguration } from "./legalExposureFeatureFlags.js";
 import { isCriticalMonitoringSource, resolveSourceHealth } from "./legalExposureHealth.js";
 import { formatProcessNumber } from "./legalExposureNormalization.js";
-import type { LegalExposureMemory } from "./legalExposureStore.js";
+import type {
+  ExposureCaseRecord,
+  ExposureEvidenceRecord,
+  ExposureMovementRecord,
+  LegalExposureMemory,
+} from "./legalExposureStore.js";
 
 const STATUS_RANK: Record<string, number> = {
   NOT_CONFIGURED: 0,
@@ -44,6 +55,8 @@ export type ExposureListQuery = {
   q?: string | null;
   from?: string | null;
   to?: string | null;
+  verification?: string | null;
+  enrichment?: string | null;
   page?: unknown;
   pageSize?: unknown;
 };
@@ -186,39 +199,191 @@ function latestCertificate(memory: LegalExposureMemory, type: "TRT_LABOR_CASES" 
   };
 }
 
-export function listCases(memory: LegalExposureMemory, query: ExposureListQuery): Page<{
-  id: string;
-  entityId: string;
-  processNumber: string;
-  tribunal: string | null;
-  entityPole: string;
-  currentStatus: string | null;
-  primarySource: string;
-  firstSeenAt: string;
-  lastSeenAt: string;
-}> {
+const OFFICIAL_CONFIRMATION_SOURCES = new Set<LegalExposureSource>(["DJEN", "DATAJUD"]);
+const PROCESSUAL_CLASS_SOURCES = new Set<LegalExposureSource>(["DATAJUD"]);
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+function textField(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function uniqueSources(sources: LegalExposureSource[]): LegalExposureSource[] {
+  const present = new Set(sources);
+  return LEGAL_EXPOSURE_SOURCES.filter((source) => present.has(source));
+}
+
+function evidenceTime(row: ExposureEvidenceRecord): number {
+  return Date.parse(row.lastSeenAt || row.sourceUpdatedAt || row.firstSeenAt) || 0;
+}
+
+function movementTime(row: ExposureMovementRecord): number {
+  const occurred = row.occurredAt ? Date.parse(row.occurredAt) : Number.NaN;
+  if (Number.isFinite(occurred)) return occurred;
+  return Date.parse(row.firstSeenAt) || 0;
+}
+
+export function evidenceSourcesOf(evidences: ExposureEvidenceRecord[]): LegalExposureSource[] {
+  return uniqueSources(evidences.map((row) => row.source));
+}
+
+export function verificationStatusOf(evidences: ExposureEvidenceRecord[]): CaseVerificationStatus {
+  const confirmedOfficial = evidences.some(
+    (row) => row.confidence === "CONFIRMED" && OFFICIAL_CONFIRMATION_SOURCES.has(row.source)
+  );
+  return confirmedOfficial ? "CONFIRMED_OFFICIAL" : "REVIEW_REQUIRED";
+}
+
+export function enrichmentStatusOf(evidences: ExposureEvidenceRecord[]): CaseEnrichmentStatus {
+  const hasDatajud = evidences.some((row) => row.source === "DATAJUD" && row.confidence === "CONFIRMED");
+  if (hasDatajud) return "DATAJUD_ENRICHED";
+  const hasDjen = evidences.some((row) => row.source === "DJEN" && row.confidence === "CONFIRMED");
+  if (hasDjen) return "DJEN_ONLY";
+  return "PARTIAL";
+}
+
+export function displayProcessClass(
+  legalCase: Pick<ExposureCaseRecord, "classCode" | "className">,
+  evidences: ExposureEvidenceRecord[]
+): { classCode: string | null; className: string | null } {
+  const processual = evidences.some(
+    (row) => row.confidence === "CONFIRMED" && PROCESSUAL_CLASS_SOURCES.has(row.source)
+  );
+  if (!processual) return { classCode: null, className: null };
+  return { classCode: legalCase.classCode, className: legalCase.className };
+}
+
+export function latestMovementOf(
+  movements: ExposureMovementRecord[]
+): ExposureCaseLatestMovement | null {
+  const dated = movements.filter((row) => row.occurredAt && Number.isFinite(Date.parse(row.occurredAt)));
+  const pool = dated.length > 0 ? dated : movements;
+  let best: ExposureMovementRecord | null = null;
+  let bestTime = Number.NEGATIVE_INFINITY;
+  for (const row of pool) {
+    const time = movementTime(row);
+    if (!best || time > bestTime) {
+      best = row;
+      bestTime = time;
+    }
+  }
+  if (!best) return null;
+  return {
+    name: best.name,
+    occurredAt: best.occurredAt,
+    source: best.source,
+    courtUnit: best.courtUnit,
+  };
+}
+
+export function latestPublicationOf(
+  evidences: ExposureEvidenceRecord[]
+): ExposureCaseLatestPublication | null {
+  const djen = evidences.filter((row) => row.source === "DJEN");
+  let best: ExposureEvidenceRecord | null = null;
+  let bestTime = Number.NEGATIVE_INFINITY;
+  for (const row of djen) {
+    const time = evidenceTime(row);
+    if (!best || time > bestTime) {
+      best = row;
+      bestTime = time;
+    }
+  }
+  if (!best) return null;
+  const raw = asRecord(best.rawMetadata);
+  return {
+    type: textField(raw?.tipoComunicacao),
+    availableAt: textField(raw?.dataDisponibilizacao),
+    courtUnit: textField(raw?.nomeOrgao),
+  };
+}
+
+function toListItem(
+  row: ExposureCaseRecord,
+  memory: {
+    entityById: Map<string, LegalExposureMemory["entities"][number]>;
+    evidencesByCaseId: Map<string, ExposureEvidenceRecord[]>;
+    movementsByCaseId: Map<string, ExposureMovementRecord[]>;
+  }
+): ExposureCaseListItem {
+  const entity = memory.entityById.get(row.entityId);
+  const evidences = memory.evidencesByCaseId.get(row.id) ?? [];
+  const movements = memory.movementsByCaseId.get(row.id) ?? [];
+  const processClass = displayProcessClass(row, evidences);
+  const cnpj = entity?.cnpj ?? "";
+  return {
+    id: row.id,
+    entityId: row.entityId,
+    processNumber: formatProcessNumber(row.processNumberNormalized),
+    entity: {
+      id: entity?.id ?? row.entityId,
+      legalName: entity?.legalName ?? "",
+      tradeName: entity?.tradeName ?? null,
+      cnpj,
+      displayCnpj: formatCnpj(cnpj),
+    },
+    tribunal: row.tribunal,
+    jurisdiction: row.jurisdiction,
+    degree: row.degree,
+    courtUnit: row.courtUnit,
+    classCode: processClass.classCode,
+    className: processClass.className,
+    filedAt: row.filedAt,
+    entityPole: row.entityPole,
+    currentStatus: row.currentStatus,
+    primarySource: row.primarySource,
+    firstSeenAt: row.firstSeenAt,
+    lastSeenAt: row.lastSeenAt,
+    sourceUpdatedAt: row.sourceUpdatedAt,
+    evidenceSources: evidenceSourcesOf(evidences),
+    verificationStatus: verificationStatusOf(evidences),
+    enrichmentStatus: enrichmentStatusOf(evidences),
+    latestMovement: latestMovementOf(movements),
+    latestPublication: latestPublicationOf(evidences),
+  };
+}
+
+function indexCases(memory: LegalExposureMemory) {
+  const entityById = new Map(memory.entities.map((entity) => [entity.id, entity]));
+  const evidencesByCaseId = new Map<string, ExposureEvidenceRecord[]>();
+  for (const row of memory.evidences) {
+    const list = evidencesByCaseId.get(row.caseId);
+    if (list) list.push(row);
+    else evidencesByCaseId.set(row.caseId, [row]);
+  }
+  const movementsByCaseId = new Map<string, ExposureMovementRecord[]>();
+  for (const row of memory.movements) {
+    const list = movementsByCaseId.get(row.caseId);
+    if (list) list.push(row);
+    else movementsByCaseId.set(row.caseId, [row]);
+  }
+  return { entityById, evidencesByCaseId, movementsByCaseId };
+}
+
+export function listCases(memory: LegalExposureMemory, query: ExposureListQuery): Page<ExposureCaseListItem> {
   const { page, pageSize } = clampPage(query.page, query.pageSize);
   const q = query.q?.replace(/\D/g, "") ?? "";
+  const indexes = indexCases(memory);
   const rows = memory.cases
     .filter((row) => !query.entityId || row.entityId === query.entityId)
     .filter((row) => !query.tribunal || row.tribunal === query.tribunal)
     .filter((row) => !query.pole || row.entityPole === query.pole)
-    .filter((row) => !query.source || row.primarySource === query.source)
     .filter((row) => !query.status || row.currentStatus === query.status)
     .filter((row) => !q || row.processNumberNormalized.includes(q))
     .filter((row) => inRange(row.lastSeenAt, query.from, query.to))
-    .sort((a, b) => Date.parse(b.lastSeenAt) - Date.parse(a.lastSeenAt))
-    .map((row) => ({
-      id: row.id,
-      entityId: row.entityId,
-      processNumber: formatProcessNumber(row.processNumberNormalized),
-      tribunal: row.tribunal,
-      entityPole: row.entityPole,
-      currentStatus: row.currentStatus,
-      primarySource: row.primarySource,
-      firstSeenAt: row.firstSeenAt,
-      lastSeenAt: row.lastSeenAt,
-    }));
+    .filter((row) => {
+      if (!query.source) return true;
+      const evidences = indexes.evidencesByCaseId.get(row.id) ?? [];
+      const sources = evidenceSourcesOf(evidences);
+      return sources.includes(query.source as LegalExposureSource) || row.primarySource === query.source;
+    })
+    .map((row) => toListItem(row, indexes))
+    .filter((row) => !query.verification || row.verificationStatus === query.verification)
+    .filter((row) => !query.enrichment || row.enrichmentStatus === query.enrichment)
+    .sort((a, b) => Date.parse(b.lastSeenAt) - Date.parse(a.lastSeenAt));
   return slicePage(rows, page, pageSize);
 }
 

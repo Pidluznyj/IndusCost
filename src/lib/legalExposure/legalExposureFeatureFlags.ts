@@ -17,6 +17,7 @@ export const LEGAL_EXPOSURE_ENV = {
   datajudCnpjDiscovery: "DATAJUD_CNPJ_DISCOVERY_ENABLED",
   datajudBaseUrl: "DATAJUD_BASE_URL",
   datajudApiKey: "DATAJUD_API_KEY",
+  datajudMinRequestIntervalMs: "DATAJUD_MIN_REQUEST_INTERVAL_MS",
   djen: "DJEN_ENABLED",
   djenBaseUrl: "DJEN_BASE_URL",
   djenMaxPages: "DJEN_MAX_PAGES",

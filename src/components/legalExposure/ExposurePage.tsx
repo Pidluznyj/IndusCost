@@ -7,12 +7,15 @@ import React, { useCallback, useEffect, useState } from "react";
 import {
   ABSENCE_IS_NOT_CLEARANCE_COPY,
   CNDT_DOES_NOT_MEAN_NO_CASES_COPY,
+  LEGAL_EXPOSURE_PAGE_SIZE_DEFAULT,
   LIKELY_REVIEW_COPY,
   NO_CASES_IDENTIFIED_COPY,
   OFFICIAL_COMMUNICATIONS_PORTAL_URL,
   SOURCE_STATUS_LABELS,
+  type ExposureCaseListItem,
   type LegalAliasType,
   type LegalSourceConnectionStatus,
+  type Page,
 } from "@/src/lib/legalExposure/legalExposureContracts";
 import {
   ALIAS_TYPE_OPTIONS,
@@ -45,6 +48,11 @@ import { LEGAL_EXPOSURE_RESOURCES } from "@/src/lib/legalExposure/legalExposureP
 import { formatCnpj } from "@/src/lib/companyCnpjFormat";
 import { fetchJsonOk } from "@/src/lib/http";
 import { usePermissions } from "@/src/hooks/usePermissions";
+import {
+  EMPTY_CASE_LIST_FILTERS,
+  ExposureCaseList,
+  type ExposureCaseListFilters,
+} from "./ExposureCaseList";
 
 type TabId =
   | "overview"
@@ -114,7 +122,8 @@ export function ExposurePage() {
   const [tab, setTab] = useState<TabId>("overview");
   const [dashboard, setDashboard] = useState<Dashboard | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [cases, setCases] = useState<{ items: { id: string; processNumber: string; tribunal: string | null; entityPole: string }[]; total: number } | null>(null);
+  const [cases, setCases] = useState<Page<ExposureCaseListItem> | null>(null);
+  const [caseFilters, setCaseFilters] = useState<ExposureCaseListFilters>(EMPTY_CASE_LIST_FILTERS);
   const [communications, setCommunications] = useState<{ items: { id: string; communicationType: string; processNumber: string | null; tribunal: string | null; sourceStatus: string; source: string; detectedAt: string; caseId: string | null }[] } | null>(null);
   const [alerts, setAlerts] = useState<{ items: { id: string; title: string; summary: string; severity: string; requiresAction: boolean }[] } | null>(null);
   const [selectedCase, setSelectedCase] = useState<string | null>(null);
@@ -180,12 +189,28 @@ export function ExposurePage() {
     if (!visibleTabs.some((item) => item.id === tab) && visibleTabs[0]) setTab(visibleTabs[0].id);
   }, [tab, visibleTabs]);
 
-  async function openCases() {
+  function caseListPath(filters: ExposureCaseListFilters): string {
+    const params = new URLSearchParams();
+    params.set("page", String(filters.page || 1));
+    params.set("pageSize", String(LEGAL_EXPOSURE_PAGE_SIZE_DEFAULT));
+    if (filters.q.trim()) params.set("q", filters.q.trim());
+    if (filters.entityId) params.set("entityId", filters.entityId);
+    if (filters.tribunal.trim()) params.set("tribunal", filters.tribunal.trim());
+    if (filters.source) params.set("source", filters.source);
+    if (filters.verification) params.set("verification", filters.verification);
+    if (filters.enrichment) params.set("enrichment", filters.enrichment);
+    if (filters.pole) params.set("pole", filters.pole);
+    return `/api/legal-exposure/cases?${params.toString()}`;
+  }
+
+  async function loadCases(filters: ExposureCaseListFilters) {
     setTab("cases");
-    const data = await fetchJsonOk<{ items: { id: string; processNumber: string; tribunal: string | null; entityPole: string }[]; total: number }>(
-      "/api/legal-exposure/cases?page=1&pageSize=20"
-    );
+    const data = await fetchJsonOk<Page<ExposureCaseListItem>>(caseListPath(filters));
     setCases(data);
+  }
+
+  async function openCases() {
+    await loadCases(caseFilters);
   }
 
   async function openCommunications() {
@@ -462,21 +487,26 @@ export function ExposurePage() {
       )}
 
       {tab === "cases" && (
-        <div className="space-y-2">
-          <p className="text-sm text-muted-foreground">{ABSENCE_IS_NOT_CLEARANCE_COPY}</p>
-          {(cases?.items ?? []).length === 0 ? <p className="text-sm">{NO_CASES_IDENTIFIED_COPY}</p> : null}
-          {(cases?.items ?? []).map((item) => (
-            <div key={item.id} className="flex items-center justify-between rounded-xl border border-border bg-card px-4 py-3">
-              <div>
-                <p className="font-medium">{item.processNumber}</p>
-                <p className="text-xs text-muted-foreground">{item.tribunal ?? "Tribunal não informado"} · polo {item.entityPole}</p>
-              </div>
-              <button type="button" className="text-sm font-semibold underline" onClick={() => void openTimeline(item.id)}>
-                Ver processo
-              </button>
-            </div>
-          ))}
-        </div>
+        <ExposureCaseList
+          cases={cases}
+          entities={entities.map((entity) => ({ id: entity.id, legalName: entity.legalName }))}
+          filters={caseFilters}
+          onFilterChange={(patch) => {
+            const next = { ...caseFilters, ...patch };
+            setCaseFilters(next);
+            void loadCases(next);
+          }}
+          onClearFilters={() => {
+            setCaseFilters(EMPTY_CASE_LIST_FILTERS);
+            void loadCases(EMPTY_CASE_LIST_FILTERS);
+          }}
+          onPageChange={(page) => {
+            const next = { ...caseFilters, page };
+            setCaseFilters(next);
+            void loadCases(next);
+          }}
+          onOpenCase={(caseId) => void openTimeline(caseId)}
+        />
       )}
 
       {tab === "communications" && (

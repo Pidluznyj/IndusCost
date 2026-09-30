@@ -43,6 +43,38 @@ export type ApplyBatchInput = {
 
 const SUCCESSFUL_OUTCOMES = new Set(["SUCCESS", "PARTIAL", "NO_RESULTS"]);
 
+const DJEN_PUBLICATION_FIELDS = new Set(["classCode", "className", "filedAt", "jurisdiction", "degree"]);
+
+function nonemptyText(value: string | null | undefined): string | null {
+  const text = String(value ?? "").trim();
+  return text ? text : null;
+}
+
+/** DataJud enriquece metadados processuais; DJEN posterior não apaga nem degrada. Null nunca limpa. */
+export function mergeExistingCaseMetadata(
+  legalCase: ExposureCaseRecord,
+  observation: NormalizedCaseObservation,
+  source: LegalExposureSource
+): void {
+  const fields = [
+    "tribunal",
+    "jurisdiction",
+    "degree",
+    "courtUnit",
+    "classCode",
+    "className",
+    "filedAt",
+  ] as const;
+  for (const field of fields) {
+    const incoming = nonemptyText(observation[field]);
+    if (!incoming) continue;
+    if (source === "DJEN" && DJEN_PUBLICATION_FIELDS.has(field)) continue;
+    if (source === "DATAJUD" || !legalCase[field]) {
+      legalCase[field] = incoming;
+    }
+  }
+}
+
 function monitoringEnabled(memory: LegalExposureMemory, entityId: string, source: LegalExposureSource): boolean {
   const entity = memory.entities.find((row) => row.id === entityId);
   if (!entity || !entity.active) return false;
@@ -256,6 +288,13 @@ function ensureCase(
       createdAt: input.now,
       updatedAt: input.now,
     };
+    if (input.batch.source === "DJEN") {
+      legalCase.jurisdiction = null;
+      legalCase.degree = null;
+      legalCase.classCode = null;
+      legalCase.className = null;
+      legalCase.filedAt = null;
+    }
     memory.cases.push(legalCase);
     const event = pushEvent(memory, input, {
       eventKey: `NEW_CASE:${input.entityId}:${processNumberNormalized}`,
@@ -274,6 +313,7 @@ function ensureCase(
     legalCase.lastSeenAt = input.now;
     legalCase.updatedAt = input.now;
     legalCase.sourceUpdatedAt = observation.sourceUpdatedAt ?? legalCase.sourceUpdatedAt;
+    mergeExistingCaseMetadata(legalCase, observation, input.batch.source);
     if (observation.currentStatus && observation.currentStatus !== previousStatus) {
       legalCase.currentStatus = observation.currentStatus;
       pushEvent(memory, input, {

@@ -7,6 +7,7 @@ import { movementFingerprint } from "../../legalExposureNormalization.js";
 import { searchDatajudByProcessNumber } from "./datajudClient.server.js";
 import { DATAJUD_HTTP_TIMEOUT_MS, buildDatajudProcessQuery } from "./datajudContracts.js";
 import { mapDatajudSearch, normalizeDatajudDateTime } from "./datajudMapper.js";
+import { createDatajudThrottle } from "./datajudThrottle.js";
 
 const PROCESS = "00002860620215090021";
 const COURT = "02ª VARA DO TRABALHO DE MARINGÁ";
@@ -314,6 +315,7 @@ describe("datajud known-process client timeout", () => {
         },
         tribunalAlias: "trt9",
         processNumber: PROCESS,
+        throttle: createDatajudThrottle({ intervalMs: 1500, sleep: async () => {} }),
       })
     );
     assert.equal(calls, 1);

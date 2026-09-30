@@ -10,10 +10,12 @@ import { normalizeProcessNumber, sanitizeErrorMessage } from "../../legalExposur
 import {
   assertDatajudCnpjDiscoveryBlocked,
   buildDatajudProcessQuery,
+  clampDatajudMinRequestIntervalMs,
   DATAJUD_CNPJ_DISCOVERY_BLOCK_REASON,
   DATAJUD_HTTP_TIMEOUT_MS,
 } from "./datajudContracts.js";
 import { mapDatajudSearch } from "./datajudMapper.js";
+import { getSharedDatajudThrottle, type DatajudThrottle } from "./datajudThrottle.js";
 
 function blockedDiscovery(): NormalizedSourceBatch {
   return {
@@ -34,6 +36,7 @@ export async function searchDatajudByProcessNumber(input: {
   fetchImpl: typeof fetch;
   tribunalAlias: string;
   processNumber: string;
+  throttle?: DatajudThrottle;
 }): Promise<NormalizedSourceBatch> {
   const normalized = normalizeProcessNumber(input.processNumber);
   const base = input.env[LEGAL_EXPOSURE_ENV.datajudBaseUrl]?.trim().replace(/\/$/, "") ?? "";
@@ -52,20 +55,31 @@ export async function searchDatajudByProcessNumber(input: {
     };
   }
   const path = `/api_publica_${input.tribunalAlias.trim().toLowerCase()}/_search`;
-  const result = await legalExposureFetch({
+  const intervalMs = clampDatajudMinRequestIntervalMs(
+    input.env[LEGAL_EXPOSURE_ENV.datajudMinRequestIntervalMs]
+  );
+  const throttle = input.throttle ?? getSharedDatajudThrottle(intervalMs);
+  const request = {
     fetchImpl: input.fetchImpl,
     url: `${base}${path}`,
     path,
     timeoutMs: DATAJUD_HTTP_TIMEOUT_MS,
     init: {
-      method: "POST",
+      method: "POST" as const,
       headers: {
         "content-type": "application/json",
         Authorization: `APIKey ${apiKey}`,
       },
       body: JSON.stringify(buildDatajudProcessQuery(normalized)),
     },
-  });
+  };
+  await throttle.waitBeforeRequest();
+  let result = await legalExposureFetch(request);
+  if (result.outcome === "RATE_LIMITED") {
+    await throttle.waitAfterRateLimit(result.retryAfterSeconds);
+    result = await legalExposureFetch(request);
+    throttle.noteRequest();
+  }
   if (result.outcome !== "SUCCESS") {
     return {
       source: "DATAJUD",

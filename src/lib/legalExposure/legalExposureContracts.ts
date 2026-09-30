@@ -168,6 +168,75 @@ export const SOURCE_STATUS_LABELS: Record<LegalSourceConnectionStatus, string> =
   NOT_CONFIGURED: "não configurada",
 };
 
+export const CASE_VERIFICATION_STATUSES = ["CONFIRMED_OFFICIAL", "REVIEW_REQUIRED"] as const;
+export type CaseVerificationStatus = (typeof CASE_VERIFICATION_STATUSES)[number];
+
+export const CASE_ENRICHMENT_STATUSES = ["DATAJUD_ENRICHED", "DJEN_ONLY", "PARTIAL"] as const;
+export type CaseEnrichmentStatus = (typeof CASE_ENRICHMENT_STATUSES)[number];
+
+export const CASE_VERIFIED_OFFICIAL_COPY = "Confirmado em fonte oficial";
+export const CASE_REVIEW_REQUIRED_COPY = "Sem confirmação oficial";
+export const CASE_AWAITING_DATAJUD_COPY = "Aguardando enriquecimento DataJud";
+export const CASE_DATAJUD_AVAILABLE_COPY = "Dados DataJud disponíveis";
+export const CASE_POLE_PASSIVE_COPY = "Ré / polo passivo";
+export const CASE_POLE_ACTIVE_COPY = "Autora / polo ativo";
+export const CASE_POLE_THIRD_PARTY_COPY = "Terceira interessada";
+export const CASE_POLE_OTHER_COPY = "Outro polo";
+export const CASE_POLE_UNKNOWN_COPY = "Polo ainda não identificado";
+export const CASE_STATUS_UNKNOWN_COPY = "Situação processual não informada";
+export const CASE_FILED_AT_UNKNOWN_COPY = "Ajuizamento não informado pela fonte";
+export const CASE_MOVEMENT_UNKNOWN_COPY = "Movimentação ainda não disponível";
+export const CASE_CLASS_UNKNOWN_COPY = "Classe processual não informada pela fonte";
+export const CASE_DETECTED_LABEL = "Detectado pelo IndusCost";
+export const CASE_SOURCE_UPDATED_LABEL = "Atualização da fonte";
+export const CASE_FILED_AT_LABEL = "Ajuizamento";
+
+export type ExposureCaseListEntity = {
+  id: string;
+  legalName: string;
+  tradeName: string | null;
+  cnpj: string;
+  displayCnpj: string;
+};
+
+export type ExposureCaseLatestMovement = {
+  name: string;
+  occurredAt: string | null;
+  source: LegalExposureSource;
+  courtUnit: string | null;
+};
+
+export type ExposureCaseLatestPublication = {
+  type: string | null;
+  availableAt: string | null;
+  courtUnit: string | null;
+};
+
+export type ExposureCaseListItem = {
+  id: string;
+  entityId: string;
+  processNumber: string;
+  entity: ExposureCaseListEntity;
+  tribunal: string | null;
+  jurisdiction: string | null;
+  degree: string | null;
+  courtUnit: string | null;
+  classCode: string | null;
+  className: string | null;
+  filedAt: string | null;
+  entityPole: LegalCasePole;
+  currentStatus: string | null;
+  primarySource: LegalExposureSource;
+  firstSeenAt: string;
+  lastSeenAt: string;
+  sourceUpdatedAt: string | null;
+  evidenceSources: LegalExposureSource[];
+  verificationStatus: CaseVerificationStatus;
+  enrichmentStatus: CaseEnrichmentStatus;
+  latestMovement: ExposureCaseLatestMovement | null;
+  latestPublication: ExposureCaseLatestPublication | null;
+};
+
 export type CommunicationKind =
   | "CITATION"
   | "INTIMATION"

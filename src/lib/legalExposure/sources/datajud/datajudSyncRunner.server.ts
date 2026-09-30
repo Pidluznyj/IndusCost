@@ -6,6 +6,7 @@ import {
   type LegalExposureEnv,
 } from "../../legalExposureFeatureFlags.js";
 import { discoverDatajudByCnpj, searchDatajudByProcessNumber } from "./datajudClient.server.js";
+import type { DatajudThrottle } from "./datajudThrottle.js";
 
 function disabled(): NormalizedSourceBatch {
   return {
@@ -27,6 +28,7 @@ export async function runDatajudSync(input: {
   mode: "known-process" | "cnpj-discovery";
   tribunalAlias?: string;
   processNumber?: string;
+  throttle?: DatajudThrottle;
 }): Promise<NormalizedSourceBatch> {
   const env = input.env ?? process.env;
   if (input.mode === "cnpj-discovery") {
@@ -41,5 +43,6 @@ export async function runDatajudSync(input: {
     fetchImpl: input.fetchImpl ?? fetch,
     tribunalAlias: input.tribunalAlias ?? "",
     processNumber: input.processNumber ?? "",
+    throttle: input.throttle,
   });
 }
