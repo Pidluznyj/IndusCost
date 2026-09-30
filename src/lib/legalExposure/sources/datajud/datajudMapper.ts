@@ -137,6 +137,7 @@ export function mapDatajudSearch(body: unknown): NormalizedSourceBatch {
     if (!source) continue;
     const processNumber = text(source.numeroProcesso);
     if (!processNumber) continue;
+    const datajudId = text(source.id) ?? processNumber;
     const tribunal = text(source.tribunal) ?? text(source.siglaTribunal);
     cases.push({
       processNumber,
@@ -149,11 +150,11 @@ export function mapDatajudSearch(body: unknown): NormalizedSourceBatch {
       filedAt: normalizeDatajudDateTime(source.dataAjuizamento),
       currentStatus: null,
       entityPole: "UNKNOWN",
-      sourceIdentifier: processNumber,
+      sourceIdentifier: datajudId,
       sourceUpdatedAt: normalizeDatajudDateTime(source.dataHoraUltimaAtualizacao),
       explicitCnpj: null,
       candidateName: null,
-      officialIdentifier: processNumber,
+      officialIdentifier: datajudId,
       parties: [],
       movements: movementsFrom(source),
       rawMetadata: sanitizePayload(source),

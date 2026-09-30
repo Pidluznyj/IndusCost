@@ -105,6 +105,8 @@ describe("datajud mapper against real TRT9 payload", () => {
     const row = mapped.cases[0];
     assert.ok(row);
     assert.equal(row.processNumber, PROCESS);
+    assert.equal(row.sourceIdentifier, "TRT9_G1_00002860620215090021");
+    assert.equal(row.officialIdentifier, "TRT9_G1_00002860620215090021");
     assert.equal(row.tribunal, "TRT9");
     assert.equal(row.degree, "G1");
     assert.equal(row.courtUnit, COURT);
@@ -189,6 +191,80 @@ describe("datajud mapper against real TRT9 payload", () => {
     assert.equal(mapped.cases[0]?.courtUnit, COURT);
     assert.equal(mapped.cases[0]?.movements[0]?.courtUnit, COURT);
     assert.deepEqual(mapped.cases[0]?.movements[0]?.complements, [COMPLEMENT]);
+  });
+
+  it("G1 e G2 do mesmo CNJ viram duas observações com IDs DataJud distintos", () => {
+    const mapped = mapDatajudSearch({
+      hits: {
+        hits: [
+          {
+            _source: {
+              id: "TRT9_G1_00002860620215090021",
+              tribunal: "TRT9",
+              grau: "G1",
+              numeroProcesso: PROCESS,
+              dataAjuizamento: "20210330114043",
+              orgaoJulgador: {
+                codigo: 20364,
+                nome: COURT,
+              },
+              classe: {
+                codigo: 985,
+                nome: "Ação Trabalhista - Rito Ordinário",
+              },
+              movimentos: [],
+            },
+          },
+          {
+            _source: {
+              id: "TRT9_G2_00002860620215090021",
+              tribunal: "TRT9",
+              grau: "G2",
+              numeroProcesso: PROCESS,
+              dataAjuizamento: "20230215150349",
+              orgaoJulgador: {
+                nome: "GAB. DES. MARLENE TERESINHA FUVERKI SUGUIMATSU",
+              },
+              classe: {
+                codigo: 1004,
+                nome: "Agravo de Petição",
+              },
+              movimentos: [],
+            },
+          },
+        ],
+      },
+    });
+    assert.equal(mapped.outcome, "SUCCESS");
+    assert.equal(mapped.cases.length, 2);
+    assert.equal(mapped.cases[0]?.processNumber, PROCESS);
+    assert.equal(mapped.cases[1]?.processNumber, PROCESS);
+    assert.equal(mapped.cases[0]?.sourceIdentifier, "TRT9_G1_00002860620215090021");
+    assert.equal(mapped.cases[1]?.sourceIdentifier, "TRT9_G2_00002860620215090021");
+    assert.equal(mapped.cases[0]?.officialIdentifier, "TRT9_G1_00002860620215090021");
+    assert.equal(mapped.cases[1]?.officialIdentifier, "TRT9_G2_00002860620215090021");
+    assert.notEqual(mapped.cases[0]?.sourceIdentifier, mapped.cases[1]?.sourceIdentifier);
+    assert.equal(mapped.cases[0]?.entityPole, "UNKNOWN");
+    assert.deepEqual(mapped.cases[0]?.parties, []);
+    assert.equal(mapped.cases[0]?.explicitCnpj, null);
+    assert.equal(mapped.cases[0]?.candidateName, null);
+  });
+
+  it("sem id DataJud o identificador cai no número do processo", () => {
+    const mapped = mapDatajudSearch({
+      hits: {
+        hits: [
+          {
+            _source: {
+              numeroProcesso: PROCESS,
+              tribunal: "TRT9",
+            },
+          },
+        ],
+      },
+    });
+    assert.equal(mapped.cases[0]?.sourceIdentifier, PROCESS);
+    assert.equal(mapped.cases[0]?.officialIdentifier, PROCESS);
   });
 
   it("sem movimentos não falha", () => {

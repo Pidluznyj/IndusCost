@@ -372,6 +372,88 @@ describe("exposure apply", () => {
     assert.equal(memory.cases.length, 0);
     assert.equal(memory.alerts.some((row) => row.requiresAction && row.title.includes("revisão")), true);
   });
+
+  it("G1 e G2 do mesmo CNJ geram um processo e duas evidências DataJud idempotentes", () => {
+    const memory = entityMemory();
+    const createId = ids();
+    const datajudProcess = "00002860620215090021";
+    const g1Id = "TRT9_G1_00002860620215090021";
+    const g2Id = "TRT9_G2_00002860620215090021";
+    const observation = {
+      processNumber: datajudProcess,
+      tribunal: "TRT9",
+      jurisdiction: null,
+      degree: "G1" as const,
+      courtUnit: "02ª VARA DO TRABALHO DE MARINGÁ",
+      classCode: "985",
+      className: "Ação Trabalhista - Rito Ordinário",
+      filedAt: "2021-03-30T11:40:43.000Z",
+      currentStatus: null,
+      entityPole: "UNKNOWN" as const,
+      sourceUpdatedAt: null,
+      explicitCnpj: null,
+      candidateName: null,
+      parties: [],
+      movements: [],
+    };
+    const datajudBatch = batch({
+      source: "DATAJUD",
+      cases: [
+        {
+          ...observation,
+          degree: "G1",
+          sourceIdentifier: g1Id,
+          officialIdentifier: g1Id,
+          rawMetadata: { id: g1Id, grau: "G1" },
+        },
+        {
+          ...observation,
+          degree: "G2",
+          courtUnit: "GAB. DES. MARLENE TERESINHA FUVERKI SUGUIMATSU",
+          classCode: "1004",
+          className: "Agravo de Petição",
+          sourceIdentifier: g2Id,
+          officialIdentifier: g2Id,
+          rawMetadata: { id: g2Id, grau: "G2" },
+        },
+      ],
+    });
+    applyBatchToMemory(memory, {
+      entityId: "ent-1",
+      now: "2026-09-30T12:00:00.000Z",
+      createId,
+      batch: datajudBatch,
+    });
+    assert.equal(memory.cases.length, 1);
+    assert.equal(memory.evidences.length, 2);
+    assert.equal(new Set(memory.evidences.map((row) => row.sourceIdentifier)).size, 2);
+    assert.deepEqual(
+      new Set(memory.evidences.map((row) => row.sourceIdentifier)),
+      new Set([g1Id, g2Id])
+    );
+    assert.equal(
+      memory.evidences.every((row) => row.caseId === memory.cases[0]?.id),
+      true
+    );
+    const g1 = memory.evidences.find((row) => row.sourceIdentifier === g1Id);
+    const g2 = memory.evidences.find((row) => row.sourceIdentifier === g2Id);
+    assert.equal((g1?.rawMetadata as { id?: string } | undefined)?.id, g1Id);
+    assert.equal((g2?.rawMetadata as { id?: string } | undefined)?.id, g2Id);
+
+    applyBatchToMemory(memory, {
+      entityId: "ent-1",
+      now: "2026-09-30T12:05:00.000Z",
+      createId,
+      batch: datajudBatch,
+    });
+    assert.equal(memory.cases.length, 1);
+    assert.equal(memory.evidences.length, 2);
+    assert.equal(new Set(memory.evidences.map((row) => row.sourceIdentifier)).size, 2);
+    assert.deepEqual(
+      new Set(memory.evidences.map((row) => row.sourceIdentifier)),
+      new Set([g1Id, g2Id])
+    );
+  });
 });
 
 describe("exposure freshness", () => {
