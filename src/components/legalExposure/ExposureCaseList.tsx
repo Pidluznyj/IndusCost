@@ -5,12 +5,17 @@
 import React from "react";
 import {
   ABSENCE_IS_NOT_CLEARANCE_COPY,
+  CASE_CLAIM_VALUE_UNKNOWN_COPY,
+  CASE_CLAIMANT_UNKNOWN_COPY,
   CASE_CLASS_UNKNOWN_COPY,
-  CASE_DETECTED_LABEL,
   CASE_FILED_AT_LABEL,
-  CASE_SOURCE_UPDATED_LABEL,
+  CASE_HEARING_UNKNOWN_COPY,
+  CASE_POLE_UNCONFIRMED_COPY,
+  CASE_STAGE_UNKNOWN_COPY,
   LEGAL_EXPOSURE_PAGE_SIZE_DEFAULT,
+  MULTIPLE_GROUP_NOTE,
   NO_CASES_IDENTIFIED_COPY,
+  SOURCE_KIND_LABELS,
   SOURCE_LABELS,
   type ExposureCaseListItem,
   type Page,
@@ -20,7 +25,6 @@ import {
   caseFiledAtLabel,
   caseMovementLabel,
   casePoleLabel,
-  caseStatusLabel,
   caseVerificationLabel,
   formatExposureDateTime,
 } from "@/src/lib/legalExposure/legalExposureCaseListUi";
@@ -33,6 +37,10 @@ export type ExposureCaseListFilters = {
   verification: string;
   enrichment: string;
   pole: string;
+  stage: string;
+  hasHearing: string;
+  hasRequiredAction: string;
+  multipleGroup: string;
   page: number;
 };
 
@@ -44,6 +52,10 @@ export const EMPTY_CASE_LIST_FILTERS: ExposureCaseListFilters = {
   verification: "",
   enrichment: "",
   pole: "",
+  stage: "",
+  hasHearing: "",
+  hasRequiredAction: "",
+  multipleGroup: "",
   page: 1,
 };
 
@@ -85,8 +97,7 @@ function FilterSelect(props: {
 function CaseCard(props: { item: ExposureCaseListItem; onOpenCase: (caseId: string) => void }) {
   const { item, onOpenCase } = props;
   const verified = item.verificationStatus === "CONFIRMED_OFFICIAL";
-  const jurisdictionLine = [item.tribunal, item.courtUnit].filter(Boolean).join(" · ");
-  const classLine = item.className ?? CASE_CLASS_UNKNOWN_COPY;
+  const claimant = item.claimants[0];
   return (
     <article className="rounded-xl border border-border bg-card p-4">
       <div className="flex flex-wrap items-start justify-between gap-2">
@@ -101,57 +112,44 @@ function CaseCard(props: { item: ExposureCaseListItem; onOpenCase: (caseId: stri
           {caseVerificationLabel(item.verificationStatus)}
         </span>
       </div>
-      {item.involvedEntities.length > 1 ? (
-        <div className="mt-2 rounded-lg border border-border bg-muted/30 p-2" data-testid="case-involved-entities">
-          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            {item.involvedEntities.length} empresas do grupo neste processo
-          </p>
-          <ul className="mt-1 space-y-1">
-            {item.involvedEntities.map((involved) => (
-              <li key={involved.caseId} className="flex flex-wrap items-center gap-2 text-sm">
-                <span className="font-medium">{involved.entity.legalName || "Empresa não identificada"}</span>
-                <span className="text-xs text-muted-foreground">CNPJ {involved.entity.displayCnpj}</span>
-                <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs text-slate-700">{casePoleLabel(involved.entityPole)}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : (
-        <>
-          <p className="mt-1 font-medium">{item.entity.legalName || "Empresa não identificada"}</p>
-          <p className="text-xs text-muted-foreground">CNPJ {item.entity.displayCnpj}</p>
-        </>
-      )}
+      {item.groupEntities.length > 1 ? (
+        <p className="mt-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          {item.groupEntities.length} empresas do grupo neste processo
+        </p>
+      ) : null}
+      <p className="mt-1 text-sm">
+        {[item.jurisdiction, item.tribunal].filter(Boolean).join(" · ") || "Tribunal não informado"}
+      </p>
+      <p className="text-sm text-muted-foreground">{item.courtUnit || "Vara não informada"}</p>
 
-      <div className="mt-3 grid gap-3 md:grid-cols-3">
-        <div className="space-y-1 text-sm">
-          <p>{jurisdictionLine || "Tribunal/vara não informados"}</p>
-          <p className="text-muted-foreground">{classLine}</p>
+      <div className="mt-3 space-y-1 text-sm">
+        <p className="text-xs font-semibold uppercase text-muted-foreground">Empresas do grupo</p>
+        <div className="flex flex-wrap gap-2">
+          {item.groupEntities.map((entity) => (
+            <span key={entity.id} className="rounded-full border border-border px-2 py-0.5 text-xs">
+              {entity.legalName} · {entity.pole === "UNKNOWN" ? CASE_POLE_UNCONFIRMED_COPY : casePoleLabel(entity.pole)}
+              {entity.displayCnpj ? ` · ${entity.displayCnpj}` : ""}
+            </span>
+          ))}
         </div>
-        <div className="space-y-1 text-sm">
-          <p>
-            {CASE_FILED_AT_LABEL}: {caseFiledAtLabel(item.filedAt)}
-          </p>
-          <p>
-            {CASE_DETECTED_LABEL}: {formatExposureDateTime(item.firstSeenAt) ?? item.firstSeenAt}
-          </p>
-          <p>
-            {CASE_SOURCE_UPDATED_LABEL}:{" "}
-            {formatExposureDateTime(item.sourceUpdatedAt) ?? "não informada pela fonte"}
-          </p>
-        </div>
-        <div className="space-y-1 text-sm">
-          <p>Polo: {casePoleLabel(item.entityPole)}</p>
-          <p>Situação: {caseStatusLabel(item.currentStatus)}</p>
-          <p>
-            Última movimentação:
-            <br />
-            {caseMovementLabel(item.latestMovement)}
-          </p>
-          {item.latestPublication?.type ? (
-            <p className="text-muted-foreground">Última publicação: {item.latestPublication.type}</p>
-          ) : null}
-        </div>
+        <p className="text-xs font-semibold uppercase text-muted-foreground">Reclamante</p>
+        <p>{claimant ? `${claimant.name}${claimant.partyType ? ` · ${claimant.partyType}` : ""}` : CASE_CLAIMANT_UNKNOWN_COPY}</p>
+        <p>Classe: {item.className ?? CASE_CLASS_UNKNOWN_COPY}</p>
+        <p>Valor da causa: {item.claimValueFormatted ?? CASE_CLAIM_VALUE_UNKNOWN_COPY}</p>
+        <p>
+          {CASE_FILED_AT_LABEL}: {caseFiledAtLabel(item.filedAt)}
+        </p>
+        <p>Fase: {item.stage === "UNKNOWN" ? CASE_STAGE_UNKNOWN_COPY : item.stageLabel}</p>
+        <p>Última movimentação: {caseMovementLabel(item.latestMovement)}</p>
+        <p>
+          Próximo evento:{" "}
+          {item.nextHearing
+            ? `${formatExposureDateTime(item.nextHearing.scheduledAt) ?? item.nextHearing.scheduledAt} · ${item.nextHearing.type ?? "Audiência"}`
+            : CASE_HEARING_UNKNOWN_COPY}
+        </p>
+        <p>
+          {item.movementCount} movimentações · {item.publicationCount} publicações · {item.openAlertCount} ação requerida
+        </p>
       </div>
 
       <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
@@ -161,7 +159,7 @@ function CaseCard(props: { item: ExposureCaseListItem; onOpenCase: (caseId: stri
               key={source}
               className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs font-medium text-slate-700"
             >
-              {SOURCE_LABELS[source]}
+              {SOURCE_KIND_LABELS[source] ?? SOURCE_LABELS[source]}
             </span>
           ))}
           <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs font-medium text-slate-700">
@@ -176,6 +174,11 @@ function CaseCard(props: { item: ExposureCaseListItem; onOpenCase: (caseId: stri
           Ver processo
         </button>
       </div>
+      {item.attentionLabels.map((label) => (
+        <p key={label} className="mt-2 text-sm">
+          ⚠ {label}
+        </p>
+      ))}
     </article>
   );
 }
@@ -197,6 +200,7 @@ export function ExposureCaseList({
   return (
     <div className="space-y-3">
       <p className="text-sm text-muted-foreground">{ABSENCE_IS_NOT_CLEARANCE_COPY}</p>
+      <p className="text-xs text-muted-foreground">{MULTIPLE_GROUP_NOTE}</p>
       <div className="rounded-xl border border-border bg-card p-3">
         <div className="flex flex-wrap gap-3">
           <label className="flex min-w-[12rem] flex-1 flex-col gap-1 text-xs text-muted-foreground">
@@ -237,6 +241,7 @@ export function ExposureCaseList({
             <option value="">Todas</option>
             <option value="DJEN">DJEN</option>
             <option value="DATAJUD">DataJud</option>
+            <option value="ESCAVADOR">Escavador</option>
             <option value="DOMICILIO">Domicílio</option>
           </FilterSelect>
           <FilterSelect
@@ -269,6 +274,45 @@ export function ExposureCaseList({
             <option value="THIRD_PARTY">Terceira interessada</option>
             <option value="OTHER">Outro polo</option>
             <option value="UNKNOWN">Polo ainda não identificado</option>
+          </FilterSelect>
+          <FilterSelect
+            label="Fase"
+            value={filters.stage}
+            onChange={(value) => onFilterChange({ stage: value, page: 1 })}
+          >
+            <option value="">Todas</option>
+            <option value="INITIAL">Fase inicial</option>
+            <option value="INSTRUCTION">Instrução</option>
+            <option value="DECISION">Julgamento/decisão</option>
+            <option value="APPEAL">Recurso</option>
+            <option value="LIQUIDATION">Liquidação</option>
+            <option value="ENFORCEMENT">Execução</option>
+            <option value="ARCHIVED">Arquivado</option>
+            <option value="UNKNOWN">Não determinada</option>
+          </FilterSelect>
+          <FilterSelect
+            label="Audiência futura"
+            value={filters.hasHearing}
+            onChange={(value) => onFilterChange({ hasHearing: value, page: 1 })}
+          >
+            <option value="">Todas</option>
+            <option value="true">Com audiência futura</option>
+          </FilterSelect>
+          <FilterSelect
+            label="Ação requerida"
+            value={filters.hasRequiredAction}
+            onChange={(value) => onFilterChange({ hasRequiredAction: value, page: 1 })}
+          >
+            <option value="">Todas</option>
+            <option value="true">Com ação requerida</option>
+          </FilterSelect>
+          <FilterSelect
+            label="Múltiplas empresas"
+            value={filters.multipleGroup}
+            onChange={(value) => onFilterChange({ multipleGroup: value, page: 1 })}
+          >
+            <option value="">Todas</option>
+            <option value="true">Mais de uma empresa do grupo</option>
           </FilterSelect>
         </div>
         <div className="mt-3 flex flex-wrap items-center justify-between gap-2">

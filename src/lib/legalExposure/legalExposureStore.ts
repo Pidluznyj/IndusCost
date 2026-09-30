@@ -88,12 +88,72 @@ export type ExposureCaseRecord = {
   filedAt: string | null;
   currentStatus: string | null;
   entityPole: LegalCasePole;
+  systemName: string | null;
+  area: string | null;
+  claimValue: string | null;
+  claimCurrency: string | null;
+  archivedAt: string | null;
+  secrecy: boolean | null;
+  priority: string | null;
   firstSeenAt: string;
   lastSeenAt: string;
   primarySource: LegalExposureSource;
   sourceUpdatedAt: string | null;
   createdAt: string;
   updatedAt: string;
+};
+
+export type ExposureEntityLinkRecord = {
+  id: string;
+  caseId: string;
+  entityId: string;
+  pole: LegalCasePole;
+  confidence: LegalEvidenceConfidence;
+  firstSource: LegalExposureSource;
+  lastSource: LegalExposureSource;
+  firstSeenAt: string;
+  lastSeenAt: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ExposureSubjectRecord = {
+  id: string;
+  caseId: string;
+  code: string | null;
+  name: string;
+  fullPath: string | null;
+  isMain: boolean;
+  source: LegalExposureSource;
+  firstSeenAt: string;
+  lastSeenAt: string;
+};
+
+export type ExposureHearingRecord = {
+  id: string;
+  caseId: string;
+  source: LegalExposureSource;
+  type: string | null;
+  scheduledAt: string | null;
+  status: string | null;
+  courtUnit: string | null;
+  fingerprint: string;
+  firstSeenAt: string;
+};
+
+export type ExposureAttorneyRecord = {
+  id: string;
+  caseId: string;
+  source: LegalExposureSource;
+  name: string;
+  document: string | null;
+  oabNumber: string | null;
+  oabState: string | null;
+  representedPartyName: string | null;
+  representedPartyDocument: string | null;
+  fingerprint: string;
+  firstSeenAt: string;
+  lastSeenAt: string;
 };
 
 export type ExposureEvidenceRecord = {
@@ -119,6 +179,7 @@ export type ExposurePartyRecord = {
   document: string | null;
   documentNormalized: string | null;
   partyType: string | null;
+  personType: string | null;
   pole: LegalCasePole;
   source: LegalExposureSource;
   firstSeenAt: string;
@@ -234,6 +295,7 @@ export type LegalExposureMemory = {
   connections: ExposureConnectionRecord[];
   jurisdictions: ExposureJurisdictionRecord[];
   cases: ExposureCaseRecord[];
+  entityLinks: ExposureEntityLinkRecord[];
   evidences: ExposureEvidenceRecord[];
   parties: ExposurePartyRecord[];
   movements: ExposureMovementRecord[];
@@ -242,6 +304,9 @@ export type LegalExposureMemory = {
   alerts: ExposureAlertRecord[];
   certificates: ExposureCertificateRecord[];
   audits: ExposureAuditRecord[];
+  subjects: ExposureSubjectRecord[];
+  hearings: ExposureHearingRecord[];
+  attorneys: ExposureAttorneyRecord[];
 };
 
 export function createEmptyExposureMemory(): LegalExposureMemory {
@@ -251,6 +316,7 @@ export function createEmptyExposureMemory(): LegalExposureMemory {
     connections: [],
     jurisdictions: [],
     cases: [],
+    entityLinks: [],
     evidences: [],
     parties: [],
     movements: [],
@@ -259,5 +325,8 @@ export function createEmptyExposureMemory(): LegalExposureMemory {
     alerts: [],
     certificates: [],
     audits: [],
+    subjects: [],
+    hearings: [],
+    attorneys: [],
   };
 }

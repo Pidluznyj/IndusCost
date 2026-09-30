@@ -10,6 +10,7 @@ export const LEGAL_EXPOSURE_SOURCES = [
   "DJEN",
   "TRT_CERTIFICATE",
   "CNDT",
+  "ESCAVADOR",
 ] as const;
 export type LegalExposureSource = (typeof LEGAL_EXPOSURE_SOURCES)[number];
 
@@ -153,6 +154,7 @@ export const SOURCE_LABELS: Record<LegalExposureSource, string> = {
   DJEN: "DJEN",
   TRT_CERTIFICATE: "Certidão TRT",
   CNDT: "CNDT",
+  ESCAVADOR: "Escavador",
 };
 
 export const SOURCE_STATUS_LABELS: Record<LegalSourceConnectionStatus, string> = {
@@ -190,6 +192,22 @@ export const CASE_CLASS_UNKNOWN_COPY = "Classe processual não informada pela fo
 export const CASE_DETECTED_LABEL = "Detectado pelo IndusCost";
 export const CASE_SOURCE_UPDATED_LABEL = "Atualização da fonte";
 export const CASE_FILED_AT_LABEL = "Ajuizamento";
+export const CASE_CLAIMANT_UNKNOWN_COPY = "Reclamante não identificado nas fontes disponíveis";
+export const CASE_CLAIM_VALUE_UNKNOWN_COPY = "Valor da causa não informado";
+export const CASE_STAGE_UNKNOWN_COPY = "Fase processual não determinada";
+export const CASE_HEARING_UNKNOWN_COPY = "Audiência futura não identificada";
+export const CASE_POLE_UNCONFIRMED_COPY = "Polo ainda não confirmado";
+export const MULTIPLE_GROUP_NOTE = "Um mesmo processo pode envolver mais de uma empresa do grupo.";
+export const PDF_DISCLAIMER =
+  "Relatório gerencial baseado nas fontes indicadas. Ausência de informação não implica ausência de exposição.";
+export const SOURCE_KIND_LABELS: Record<LegalExposureSource, string> = {
+  DATAJUD: "DataJud · oficial",
+  DJEN: "DJEN · oficial",
+  ESCAVADOR: "Escavador · complementar",
+  DOMICILIO: "Domicílio · oficial",
+  TRT_CERTIFICATE: "Certidão TRT",
+  CNDT: "CNDT",
+};
 
 export type ExposureCaseListEntity = {
   id: string;
@@ -212,11 +230,57 @@ export type ExposureCaseLatestPublication = {
   courtUnit: string | null;
 };
 
+export type ExposureGroupEntity = ExposureCaseListEntity & {
+  pole: LegalCasePole;
+  confidence: LegalEvidenceConfidence;
+  firstSeenAt: string;
+  sources: LegalExposureSource[];
+};
+
+export type ExposureExecutiveParty = {
+  name: string;
+  partyType: string | null;
+  pole: LegalCasePole;
+  personType: string | null;
+  documentMasked: string | null;
+  isGroupEntity: boolean;
+  entityId: string | null;
+  sources: LegalExposureSource[];
+};
+
+export type ExposureExecutiveAttorney = {
+  name: string;
+  oabNumber: string | null;
+  oabState: string | null;
+  representedPartyName: string | null;
+  documentMasked: string | null;
+  sources: LegalExposureSource[];
+};
+
+export type ExposureExecutiveSubject = {
+  code: string | null;
+  name: string;
+  fullPath: string | null;
+  isMain: boolean;
+  source: LegalExposureSource;
+};
+
+export type ExposureExecutiveHearing = {
+  type: string | null;
+  scheduledAt: string | null;
+  status: string | null;
+  courtUnit: string | null;
+  source: LegalExposureSource;
+};
+
 export type ExposureCaseListItem = {
   id: string;
   entityId: string;
+  canonicalCaseId: string;
+  caseIds: string[];
   processNumber: string;
   entity: ExposureCaseListEntity;
+  groupEntities: ExposureGroupEntity[];
   tribunal: string | null;
   jurisdiction: string | null;
   degree: string | null;
@@ -240,6 +304,27 @@ export type ExposureCaseListItem = {
    * (inclui a principal). Um processo é listado uma vez, não uma por empresa.
    */
   involvedEntities: ExposureCaseInvolvedEntity[];
+  claimants: ExposureExecutiveParty[];
+  otherDefendants: ExposureExecutiveParty[];
+  attorneys: ExposureExecutiveAttorney[];
+  subjects: ExposureExecutiveSubject[];
+  stage: string;
+  stageLabel: string;
+  stageConfidence: string;
+  claimValue: string | null;
+  claimCurrency: string | null;
+  claimValueFormatted: string | null;
+  systemName: string | null;
+  area: string | null;
+  nextHearing: ExposureExecutiveHearing | null;
+  movementCount: number;
+  publicationCount: number;
+  communicationCount: number;
+  openAlertCount: number;
+  attentionFlags: string[];
+  attentionLabels: string[];
+  multipleGroupEntities: boolean;
+  secrecy: boolean | null;
 };
 
 export type ExposureCaseInvolvedEntity = {
@@ -247,6 +332,20 @@ export type ExposureCaseInvolvedEntity = {
   entity: ExposureCaseListEntity;
   entityPole: LegalCasePole;
   verificationStatus: CaseVerificationStatus;
+};
+
+export type ExposureTimelineItem = {
+  kind: "movement" | "communication" | "event" | "hearing" | "publication";
+  at: string;
+  title: string;
+  description: string | null;
+  source: LegalExposureSource;
+  sourceCode: string | null;
+  courtUnit: string | null;
+  complements: unknown;
+  communicationType: string | null;
+  subject: string | null;
+  status: string | null;
 };
 
 export type CommunicationKind =
@@ -344,7 +443,31 @@ export type NormalizedParty = {
   name: string;
   document: string | null;
   partyType: string | null;
+  personType?: "PERSON" | "COMPANY" | "UNKNOWN" | null;
   pole: LegalCasePole;
+};
+
+export type NormalizedSubject = {
+  code: string | null;
+  name: string;
+  fullPath: string | null;
+  isMain: boolean;
+};
+
+export type NormalizedAttorney = {
+  name: string;
+  document: string | null;
+  oabNumber: string | null;
+  oabState: string | null;
+  representedPartyName: string | null;
+  representedPartyDocument: string | null;
+};
+
+export type NormalizedHearing = {
+  type: string | null;
+  scheduledAt: string | null;
+  status: string | null;
+  courtUnit: string | null;
 };
 
 export type NormalizedCaseObservation = {
@@ -365,6 +488,16 @@ export type NormalizedCaseObservation = {
   officialIdentifier: string | null;
   parties: NormalizedParty[];
   movements: NormalizedMovement[];
+  subjects?: NormalizedSubject[];
+  attorneys?: NormalizedAttorney[];
+  hearings?: NormalizedHearing[];
+  systemName?: string | null;
+  area?: string | null;
+  claimValue?: string | null;
+  claimCurrency?: string | null;
+  archivedAt?: string | null;
+  secrecy?: boolean | null;
+  priority?: string | null;
   rawMetadata: unknown;
   /** GENERIC: ABBREVIATION/OTHER sem autoassociação só pelo CNJ. */
   discoveryConfirmation?: "TRUSTED" | "GENERIC";

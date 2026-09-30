@@ -381,7 +381,7 @@ describe("mesmo processo em mais de uma empresa do grupo", () => {
       shared.involvedEntities.map((row) => [row.entity.legalName, row.entityPole]),
       [["Comercio Outra LTDA", "PASSIVE"], ["Industria Exemplo LTDA", "UNKNOWN"]]
     );
-    assert.equal(shared.entityId, "ent-b", "o registro mais recente é a base do cartão");
+    assert.equal(shared.entityId, "ent-a", "o registro mais antigo é o caso canônico");
     assert.equal(shared.className, "Ação Trabalhista - Rito Ordinário");
     assert.deepEqual([...shared.evidenceSources].sort(), ["DATAJUD", "DJEN"]);
     assert.equal(shared.verificationStatus, "CONFIRMED_OFFICIAL");

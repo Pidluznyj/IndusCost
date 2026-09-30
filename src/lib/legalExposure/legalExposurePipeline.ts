@@ -63,8 +63,11 @@ export function collectKnownCaseDatajudTargets(
   const seen = new Set<string>();
   const targets: DatajudTarget[] = [];
   const skippedWithoutTribunal: ExposureCaseRecord[] = [];
+  const linkedCaseIds = new Set(
+    memory.entityLinks.filter((row) => row.entityId === entityId).map((row) => row.caseId)
+  );
   for (const row of memory.cases) {
-    if (row.entityId !== entityId) continue;
+    if (row.entityId !== entityId && !linkedCaseIds.has(row.id)) continue;
     const processNumber = normalizeProcessNumber(row.processNumberNormalized || row.processNumber);
     if (!processNumber) continue;
     const tribunalAlias = datajudTribunalAlias(row.tribunal);

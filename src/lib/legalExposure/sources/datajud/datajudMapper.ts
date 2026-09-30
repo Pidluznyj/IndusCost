@@ -1,16 +1,16 @@
 /**
- * Mapper defensivo. Campos de parte/polo não são assumidos:
- * a descoberta por CNPJ espera o probe real.
- *
- * Datas compactas DataJud (AAAAMMDDHHMMSS) não carregam offset.
- * Os componentes civis são serializados de forma determinística como UTC
- * (`YYYY-MM-DDTHH:mm:ss.000Z`). Isso não afirma o fuso do tribunal.
+ * Mapper defensivo do DataJud público.
+ * Campos ausentes no payload real permanecem null / [].
+ * Datas compactas (AAAAMMDDHHMMSS) são serializadas como UTC determinístico.
  */
 
 import type {
+  LegalCasePole,
   NormalizedCaseObservation,
   NormalizedMovement,
+  NormalizedParty,
   NormalizedSourceBatch,
+  NormalizedSubject,
 } from "../../legalExposureContracts.js";
 import { sanitizePayload } from "../../legalExposureNormalization.js";
 
@@ -72,7 +72,7 @@ export function normalizeDatajudDateTime(value: unknown): string | null {
 
 function courtUnitFrom(value: unknown): string | null {
   const rec = asRecord(value);
-  if (rec) return text(rec.nome);
+  if (rec) return text(rec.nome) ?? text(rec.nomeOrgao);
   return text(value);
 }
 
@@ -98,6 +98,143 @@ function movementsFrom(source: Record<string, unknown>): NormalizedMovement[] {
     });
   }
   return out;
+}
+
+function subjectIsMain(row: Record<string, unknown>): boolean {
+  return row.principal === true || row.principal === "S" || row.principal === "s";
+}
+
+function subjectsFrom(source: Record<string, unknown>): NormalizedSubject[] {
+  const raw = source.assuntos;
+  if (!Array.isArray(raw)) return [];
+  const out: NormalizedSubject[] = [];
+  for (const item of raw) {
+    const row = asRecord(item);
+    const name = row ? text(row.nome) ?? text(row.descricao) : text(item);
+    if (!name) continue;
+    const parent = row ? asRecord(row.assuntoPai) ?? asRecord(row.pai) : null;
+    const parentName = parent ? text(parent.nome) : null;
+    out.push({
+      code: row ? text(row.codigo) : null,
+      name,
+      fullPath:
+        (row ? text(row.hierarquia) ?? text(row.caminhoCompleto) : null) ??
+        (parentName ? `${parentName} > ${name}` : null),
+      isMain: row ? subjectIsMain(row) : false,
+    });
+  }
+  return out;
+}
+
+function poleFrom(value: unknown): LegalCasePole {
+  const folded = String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase();
+  if (folded.includes("ATIVO") || folded === "AT" || folded === "A" || folded.includes("AUTHOR") || folded.includes("POLO ATIVO")) {
+    return "ACTIVE";
+  }
+  if (folded.includes("PASSIVO") || folded === "PA" || folded === "P" || folded.includes("REU") || folded.includes("POLO PASSIVO")) {
+    return "PASSIVE";
+  }
+  if (folded.includes("TERCEIR")) return "THIRD_PARTY";
+  return "UNKNOWN";
+}
+
+function personTypeFrom(document: string | null, hinted: string | null): NormalizedParty["personType"] {
+  const digits = document?.replace(/\D/g, "") ?? "";
+  if (digits.length === 14) return "COMPANY";
+  if (digits.length === 11) return "PERSON";
+  const folded = String(hinted ?? "").toUpperCase();
+  if (folded.includes("JURIDIC") || folded === "PJ") return "COMPANY";
+  if (folded.includes("FISIC") || folded === "PF") return "PERSON";
+  return "UNKNOWN";
+}
+
+function pushParty(out: NormalizedParty[], row: Record<string, unknown>, inheritedPole: unknown): void {
+  const name = text(row.nome) ?? text(row.nomePessoa) ?? text(row.razaoSocial);
+  if (!name) return;
+  const document =
+    text(row.numeroDocumentoPrincipal) ?? text(row.documento) ?? text(row.cnpj) ?? text(row.cpf);
+  const hintedType = text(row.tipoPessoa) ?? text(row.natureza);
+  out.push({
+    name,
+    document,
+    partyType: text(row.tipo) ?? text(row.tipoParte) ?? text(row.papel),
+    personType: personTypeFrom(document, hintedType),
+    pole: poleFrom(row.polo ?? row.poloProcessual ?? row.tipoPolo ?? inheritedPole),
+  });
+}
+
+function partiesFrom(source: Record<string, unknown>): NormalizedParty[] {
+  const buckets = [source.polos, source.partes, source.pessoas];
+  const out: NormalizedParty[] = [];
+  for (const bucket of buckets) {
+    if (!Array.isArray(bucket)) continue;
+    for (const item of bucket) {
+      const row = asRecord(item);
+      if (!row) continue;
+      const nested = row.partes;
+      if (Array.isArray(nested)) {
+        for (const party of nested) {
+          const nestedRow = asRecord(party);
+          if (nestedRow) pushParty(out, nestedRow, row.polo ?? row.tipoPolo);
+        }
+        continue;
+      }
+      pushParty(out, row, null);
+    }
+  }
+  return out;
+}
+
+function systemNameFrom(source: Record<string, unknown>): string | null {
+  const sistema = asRecord(source.sistema);
+  return text(sistema?.nome) ?? text(source.sistema) ?? text(source.nomeSistema);
+}
+
+function currentStatusFrom(source: Record<string, unknown>): string | null {
+  const situacao = asRecord(source.situacao);
+  return text(situacao?.nome) ?? text(source.situacao) ?? text(source.descricaoSituacao);
+}
+
+function secrecyFrom(source: Record<string, unknown>): boolean | null {
+  if (typeof source.nivelSigilo === "number" && Number.isFinite(source.nivelSigilo)) {
+    return source.nivelSigilo > 0;
+  }
+  if (typeof source.sigilo === "boolean") return source.sigilo;
+  const nivel = asRecord(source.nivelSigilo) ?? asRecord(source.sigilo);
+  const nome = text(nivel?.nome) ?? text(source.nivelSigilo);
+  if (!nome) return null;
+  const folded = nome.toUpperCase();
+  if (folded.includes("PUBLIC")) return false;
+  if (folded.includes("SIGIL") || folded.includes("SEGREDO")) return true;
+  const asNumber = Number(nome);
+  if (Number.isFinite(asNumber)) return asNumber > 0;
+  return null;
+}
+
+function archivedAtFrom(source: Record<string, unknown>): string | null {
+  return (
+    normalizeDatajudDateTime(source.dataBaixa) ??
+    normalizeDatajudDateTime(source.dataArquivamento) ??
+    normalizeDatajudDateTime(asRecord(source.baixa)?.data) ??
+    normalizeDatajudDateTime(asRecord(source.arquivamento)?.data)
+  );
+}
+
+function claimValueFrom(source: Record<string, unknown>): { value: string; currency: string } | null {
+  const dados = asRecord(source.dadosBasicos);
+  const raw = source.valorCausa ?? source.valorCausaProcesso ?? dados?.valorCausa;
+  if (typeof raw === "number" && Number.isFinite(raw)) return { value: raw.toFixed(2), currency: "BRL" };
+  if (typeof raw === "string" && raw.trim()) {
+    const normalized = raw.trim().replace(/\s/g, "").replace(",", ".");
+    if (!/^-?\d+(\.\d+)?$/.test(normalized)) return null;
+    const amount = Number(normalized);
+    if (!Number.isFinite(amount)) return null;
+    return { value: amount.toFixed(2), currency: "BRL" };
+  }
+  return null;
 }
 
 export function mapDatajudSearch(body: unknown): NormalizedSourceBatch {
@@ -139,6 +276,9 @@ export function mapDatajudSearch(body: unknown): NormalizedSourceBatch {
     if (!processNumber) continue;
     const datajudId = text(source.id) ?? processNumber;
     const tribunal = text(source.tribunal) ?? text(source.siglaTribunal);
+    const movements = movementsFrom(source);
+    const parties = partiesFrom(source);
+    const claim = claimValueFrom(source);
     cases.push({
       processNumber,
       tribunal,
@@ -148,15 +288,23 @@ export function mapDatajudSearch(body: unknown): NormalizedSourceBatch {
       classCode: text(asRecord(source.classe)?.codigo),
       className: text(asRecord(source.classe)?.nome),
       filedAt: normalizeDatajudDateTime(source.dataAjuizamento),
-      currentStatus: null,
+      currentStatus: currentStatusFrom(source),
       entityPole: "UNKNOWN",
       sourceIdentifier: datajudId,
       sourceUpdatedAt: normalizeDatajudDateTime(source.dataHoraUltimaAtualizacao),
       explicitCnpj: null,
       candidateName: null,
       officialIdentifier: datajudId,
-      parties: [],
-      movements: movementsFrom(source),
+      parties,
+      movements,
+      subjects: subjectsFrom(source),
+      systemName: systemNameFrom(source),
+      area: null,
+      claimValue: claim?.value ?? null,
+      claimCurrency: claim?.currency ?? null,
+      archivedAt: archivedAtFrom(source),
+      secrecy: secrecyFrom(source),
+      priority: text(asRecord(source.prioridade)?.nome) ?? (typeof source.prioridade === "string" ? text(source.prioridade) : null),
       rawMetadata: sanitizePayload(source),
     });
   }

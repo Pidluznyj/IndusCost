@@ -11602,6 +11602,7 @@ enum LegalExposureSource {
   DJEN
   TRT_CERTIFICATE
   CNDT
+  ESCAVADOR
 }
 
 enum LegalSourceConnectionStatus {
@@ -11721,6 +11722,7 @@ model LegalExposureEntity {
   connections    LegalSourceConnection[]
   jurisdictions  LegalExposureJurisdiction[]
   cases          LegalCase[]
+  caseLinks      LegalCaseEntityLink[]
   communications LegalCommunication[]
   events         LegalExposureEvent[]
   alerts         LegalExposureAlert[]
@@ -11797,6 +11799,13 @@ model LegalCase {
   filedAt                 DateTime?      @db.Timestamptz(6)
   currentStatus           String?
   entityPole              LegalCasePole  @default(UNKNOWN)
+  systemName              String?
+  area                    String?
+  claimValue              Decimal?       @db.Decimal(20, 2)
+  claimCurrency           String?        @db.VarChar(8)
+  archivedAt              DateTime?      @db.Timestamptz(6)
+  secrecy                 Boolean?
+  priority                String?
   firstSeenAt             DateTime       @db.Timestamptz(6)
   lastSeenAt              DateTime       @db.Timestamptz(6)
   primarySource           LegalExposureSource
@@ -11805,18 +11814,94 @@ model LegalCase {
   updatedAt               DateTime       @default(now()) @updatedAt @db.Timestamptz(6)
 
   entity         LegalExposureEntity       @relation(fields: [entityId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  entityLinks    LegalCaseEntityLink[]
   evidences      LegalCaseSourceEvidence[]
   parties        LegalCaseParty[]
   movements      LegalCaseMovement[]
   communications LegalCommunication[]
   events         LegalExposureEvent[]
   auditLogs      LegalExposureAuditLog[]
+  subjects       LegalCaseSubject[]
+  hearings       LegalCaseHearing[]
+  attorneys      LegalCaseAttorney[]
 
   @@unique([entityId, processNumberNormalized])
   @@index([entityId, lastSeenAt])
   @@index([tribunal])
   @@index([entityPole])
   @@index([processNumberNormalized])
+}
+
+model LegalCaseEntityLink {
+  id          String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  caseId      String              @db.Uuid
+  entityId    String              @db.Uuid
+  pole        LegalCasePole       @default(UNKNOWN)
+  confidence  LegalEvidenceConfidence @default(CONFIRMED)
+  firstSource LegalExposureSource
+  lastSource  LegalExposureSource
+  firstSeenAt DateTime            @db.Timestamptz(6)
+  lastSeenAt  DateTime            @db.Timestamptz(6)
+  createdAt   DateTime            @default(now()) @db.Timestamptz(6)
+  updatedAt   DateTime            @default(now()) @updatedAt @db.Timestamptz(6)
+
+  legalCase LegalCase            @relation(fields: [caseId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  entity    LegalExposureEntity  @relation(fields: [entityId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@unique([caseId, entityId])
+  @@index([entityId, pole])
+}
+
+model LegalCaseSubject {
+  id          String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  caseId      String              @db.Uuid
+  code        String?
+  name        String
+  fullPath    String?
+  isMain      Boolean             @default(false)
+  source      LegalExposureSource
+  firstSeenAt DateTime            @db.Timestamptz(6)
+  lastSeenAt  DateTime            @db.Timestamptz(6)
+
+  legalCase LegalCase @relation(fields: [caseId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@unique([caseId, source, name])
+  @@index([caseId, isMain])
+}
+
+model LegalCaseHearing {
+  id          String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  caseId      String              @db.Uuid
+  source      LegalExposureSource
+  type        String?
+  scheduledAt DateTime?           @db.Timestamptz(6)
+  status      String?
+  courtUnit   String?
+  fingerprint String              @unique
+  firstSeenAt DateTime            @db.Timestamptz(6)
+
+  legalCase LegalCase @relation(fields: [caseId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@index([caseId, scheduledAt])
+}
+
+model LegalCaseAttorney {
+  id                      String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  caseId                  String              @db.Uuid
+  source                  LegalExposureSource
+  name                    String
+  document                String?
+  oabNumber               String?
+  oabState                String?
+  representedPartyName    String?
+  representedPartyDocument String?
+  fingerprint             String              @unique
+  firstSeenAt             DateTime            @db.Timestamptz(6)
+  lastSeenAt              DateTime            @db.Timestamptz(6)
+
+  legalCase LegalCase @relation(fields: [caseId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@index([caseId])
 }
 
 model LegalCaseSourceEvidence {
@@ -11847,6 +11932,7 @@ model LegalCaseParty {
   document           String?
   documentNormalized String              @default("")
   partyType          String?
+  personType         String?
   pole               LegalCasePole       @default(UNKNOWN)
   source             LegalExposureSource
   firstSeenAt        DateTime            @db.Timestamptz(6)

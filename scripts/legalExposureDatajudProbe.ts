@@ -1,29 +1,35 @@
 /**
- * Probe DataJud — imprime só caminhos de chaves.
- * Sem --confirm-probe=DATAJUD_PROBE não há rede.
+ * Probe DataJud read-only por número CNJ explícito.
+ * Sem persistência, sem descoberta por CNPJ.
+ *
+ * npm run legal-exposure:datajud-probe -- --process=0001234-56.2024.5.09.0001 --tribunal=trt9 --confirm-probe=DATAJUD_PROBE
  */
 
-import { isDatajudEnabled, datajudConfigured, LEGAL_EXPOSURE_ENV } from "../src/lib/legalExposure/legalExposureFeatureFlags.js";
+import { datajudConfigured, isDatajudEnabled, LEGAL_EXPOSURE_ENV } from "../src/lib/legalExposure/legalExposureFeatureFlags.js";
 import { legalExposureFetch } from "../src/lib/legalExposure/legalExposureHttp.js";
-import { datajudProbePlan, datajudSchemaPaths } from "../src/lib/legalExposure/sources/datajud/datajudSchemaProbe.js";
+import { normalizeProcessNumber, sanitizeErrorMessage } from "../src/lib/legalExposure/legalExposureNormalization.js";
+import { buildDatajudProcessQuery, DATAJUD_HTTP_TIMEOUT_MS } from "../src/lib/legalExposure/sources/datajud/datajudContracts.js";
+import { datajudFieldInventory, datajudProbePlan, datajudSchemaPaths } from "../src/lib/legalExposure/sources/datajud/datajudSchemaProbe.js";
 
-const plan = datajudProbePlan(process.argv.slice(2));
+const args = process.argv.slice(2);
+const plan = datajudProbePlan(args);
+const processArg = args.find((arg) => arg.startsWith("--process="))?.slice("--process=".length) ?? "";
+const tribunal = args.find((arg) => arg.startsWith("--tribunal="))?.slice("--tribunal=".length) ?? "";
+const normalized = normalizeProcessNumber(processArg);
+
 if (!plan.execute) {
   console.log(JSON.stringify({ executed: false, reason: plan.reason }, null, 2));
   process.exit(2);
 }
 
-const tribunal = process.argv.find((arg) => arg.startsWith("--tribunal="))?.slice("--tribunal=".length) ?? "";
+if (!normalized) {
+  console.log(JSON.stringify({ executed: false, reason: "Informe --process= com número CNJ de 20 dígitos." }, null, 2));
+  process.exit(2);
+}
+
 if (!isDatajudEnabled() || !datajudConfigured() || !tribunal) {
   console.log(
-    JSON.stringify(
-      {
-        executed: false,
-        reason: "DATAJUD desligado, sem chave ou sem --tribunal.",
-      },
-      null,
-      2
-    )
+    JSON.stringify({ executed: false, reason: "DATAJUD desligado, sem chave ou sem --tribunal." }, null, 2)
   );
   process.exit(2);
 }
@@ -35,13 +41,14 @@ const result = await legalExposureFetch({
   fetchImpl: fetch,
   url: `${base}${path}`,
   path,
+  timeoutMs: DATAJUD_HTTP_TIMEOUT_MS,
   init: {
     method: "POST",
     headers: {
       "content-type": "application/json",
       Authorization: `APIKey ${apiKey}`,
     },
-    body: JSON.stringify({ size: 1, query: { match_all: {} } }),
+    body: JSON.stringify(buildDatajudProcessQuery(normalized)),
   },
 });
 
@@ -50,8 +57,12 @@ console.log(
     {
       executed: result.outcome === "SUCCESS",
       outcome: result.outcome,
+      process: normalized,
+      tribunal: tribunal.toLowerCase(),
+      cnpjDiscovery: process.env[LEGAL_EXPOSURE_ENV.datajudCnpjDiscovery] ?? "0",
+      inventory: result.outcome === "SUCCESS" ? datajudFieldInventory(result.body) : null,
       paths: result.outcome === "SUCCESS" ? datajudSchemaPaths(result.body).slice(0, 200) : [],
-      sanitizedError: result.errorMessageSanitized,
+      sanitizedError: sanitizeErrorMessage(result.errorMessageSanitized),
     },
     null,
     2

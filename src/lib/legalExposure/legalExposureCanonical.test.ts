@@ -1,0 +1,551 @@
+import assert from "node:assert/strict";
+import { describe, it } from "node:test";
+import { applyBatchToMemory, mergeExistingCaseMetadata } from "./legalExposureApply.js";
+import {
+  applyCanonicalEntityLinks,
+  missingLegacyEntityLinks,
+  pickCanonicalCase,
+  previewCanonicalGroups,
+  resolveCanonicalCaseGroup,
+} from "./legalExposureCanonical.js";
+import { classifyCaseStage } from "./legalExposureCaseStage.js";
+import type { NormalizedCaseObservation, NormalizedSourceBatch } from "./legalExposureContracts.js";
+import { buildExposureDashboard, listCases } from "./legalExposureReadModel.js";
+import {
+  buildExposureGroupReport,
+  buildExposureProcessDossier,
+  buildExecutiveNarrative,
+} from "./legalExposureExecutive.js";
+import { dossierPdfLines } from "./legalExposurePdf.js";
+import { normalizeProcessNumber } from "./legalExposureNormalization.js";
+import { maskCpf } from "./legalExposurePrivacy.js";
+import { createEmptyExposureMemory, type ExposureCaseRecord } from "./legalExposureStore.js";
+import { FINANCE_INTERNAL_GROUP_COMPANIES } from "@/src/lib/financeInternalGroupExclusions.js";
+import { mapDjenPublications } from "./sources/djen/djenMapper.js";
+
+const CNPJ_A = "11222333000181";
+const CNPJ_B = "99888777000166";
+const PROCESS = "0001234-56.2024.5.09.0001";
+const PROCESS_DIGITS = normalizeProcessNumber(PROCESS)!;
+
+function ids() {
+  let n = 0;
+  return () => `id-${++n}`;
+}
+
+function entity(id: string, cnpj: string, legalName: string) {
+  return {
+    id,
+    cnpj,
+    legalName,
+    tradeName: null,
+    active: true,
+    state: "PR",
+    city: "Curitiba",
+    monitorDomicilio: true,
+    monitorDatajud: true,
+    monitorDjen: true,
+    monitorCertificates: true,
+    domicilioTenantId: null,
+    lastSuccessfulSyncAt: null,
+    createdAt: "2026-09-29T18:00:00.000Z",
+    updatedAt: "2026-09-29T18:00:00.000Z",
+  } as const;
+}
+
+function observation(partial: Partial<NormalizedCaseObservation> = {}): NormalizedCaseObservation {
+  return {
+    processNumber: PROCESS,
+    tribunal: "TRT9",
+    jurisdiction: "G1",
+    degree: "G1",
+    courtUnit: "09ª VARA",
+    classCode: "985",
+    className: "Ação Trabalhista",
+    filedAt: "2026-09-23T00:00:00.000Z",
+    currentStatus: null,
+    entityPole: "PASSIVE",
+    sourceIdentifier: PROCESS_DIGITS,
+    sourceUpdatedAt: "2026-09-30T12:00:00.000Z",
+    explicitCnpj: CNPJ_A,
+    candidateName: null,
+    officialIdentifier: PROCESS_DIGITS,
+    parties: [],
+    movements: [],
+    rawMetadata: {},
+    ...partial,
+  };
+}
+
+function batch(source: NormalizedSourceBatch["source"], cases: NormalizedCaseObservation[]): NormalizedSourceBatch {
+  return {
+    source,
+    outcome: "SUCCESS",
+    errorCode: null,
+    errorMessageSanitized: null,
+    retryAfterSeconds: null,
+    externalCall: true,
+    cases,
+    communications: [],
+    candidates: [],
+  };
+}
+
+function twoEntities() {
+  const memory = createEmptyExposureMemory();
+  memory.entities.push(entity("ent-a", CNPJ_A, "Lazarios Exemplo LTDA"));
+  memory.entities.push(entity("ent-b", CNPJ_B, "Koppetel Exemplo LTDA"));
+  return memory;
+}
+
+function physicalCase(id: string, entityId: string, createdAt: string): ExposureCaseRecord {
+  return {
+    id,
+    entityId,
+    processNumber: PROCESS,
+    processNumberNormalized: PROCESS_DIGITS,
+    tribunal: "TRT9",
+    jurisdiction: "G1",
+    degree: "G1",
+    courtUnit: "09ª VARA",
+    classCode: "985",
+    className: "Ação Trabalhista",
+    filedAt: "2026-09-23T00:00:00.000Z",
+    currentStatus: null,
+    entityPole: "PASSIVE",
+    systemName: null,
+    area: null,
+    claimValue: "168127.48",
+    claimCurrency: "BRL",
+    archivedAt: null,
+    secrecy: null,
+    priority: null,
+    firstSeenAt: createdAt,
+    lastSeenAt: createdAt,
+    primarySource: "DJEN",
+    sourceUpdatedAt: createdAt,
+    createdAt,
+    updatedAt: createdAt,
+  };
+}
+
+describe("canonical CNJ grouping", () => {
+  it("duas rows físicas do mesmo CNJ viram um processo com duas empresas", () => {
+    const memory = twoEntities();
+    memory.cases.push(physicalCase("case-a", "ent-a", "2026-09-01T10:00:00.000Z"));
+    memory.cases.push(physicalCase("case-b", "ent-b", "2026-09-02T10:00:00.000Z"));
+    const page = listCases(memory, {});
+    assert.equal(page.total, 1);
+    assert.equal(page.items[0]?.groupEntities.length, 2);
+    assert.equal(page.items[0]?.processNumber.replace(/\D/g, ""), PROCESS_DIGITS);
+    const canonical = pickCanonicalCase(memory.cases);
+    assert.equal(canonical?.id, "case-a");
+    const dash = buildExposureDashboard(memory);
+    assert.equal(dash.cards.monitoredCases, 1);
+    assert.equal(dash.entities.find((row) => row.id === "ent-a")?.monitoredCases, 1);
+    assert.equal(dash.entities.find((row) => row.id === "ent-b")?.monitoredCases, 1);
+  });
+
+  it("nova ingestão da segunda empresa não cria outro LegalCase", () => {
+    const memory = twoEntities();
+    const createId = ids();
+    applyBatchToMemory(memory, {
+      entityId: "ent-a",
+      now: "2026-09-30T12:00:00.000Z",
+      createId,
+      batch: batch("DJEN", [observation({ explicitCnpj: CNPJ_A, className: null })]),
+    });
+    applyBatchToMemory(memory, {
+      entityId: "ent-b",
+      now: "2026-09-30T13:00:00.000Z",
+      createId,
+      batch: batch("DJEN", [observation({ explicitCnpj: CNPJ_B, entityPole: "PASSIVE", className: null })]),
+    });
+    assert.equal(memory.cases.length, 1);
+    const group = resolveCanonicalCaseGroup(memory, PROCESS_DIGITS);
+    assert.equal(group.entityLinks.length, 2);
+  });
+
+  it("polo UNKNOWN não aparece como ré", () => {
+    const memory = twoEntities();
+    memory.entities.push(entity("ent-c", "11111111000191", "SM Exemplo LTDA"));
+    memory.cases.push(physicalCase("case-a", "ent-a", "2026-09-01T10:00:00.000Z"));
+    memory.entityLinks.push({
+      id: "link-c",
+      caseId: "case-a",
+      entityId: "ent-c",
+      pole: "UNKNOWN",
+      confidence: "CONFIRMED",
+      firstSource: "DJEN",
+      lastSource: "DJEN",
+      firstSeenAt: "2026-09-01T10:00:00.000Z",
+      lastSeenAt: "2026-09-01T10:00:00.000Z",
+      createdAt: "2026-09-01T10:00:00.000Z",
+      updatedAt: "2026-09-01T10:00:00.000Z",
+    });
+    const item = listCases(memory, {}).items[0];
+    const unknown = item?.groupEntities.find((row) => row.id === "ent-c");
+    assert.equal(unknown?.pole, "UNKNOWN");
+    assert.equal(item?.groupEntities.filter((row) => row.pole === "PASSIVE").length >= 1, true);
+  });
+
+  it("claimant ACTIVE entra em claimants", () => {
+    const memory = twoEntities();
+    const createId = ids();
+    applyBatchToMemory(memory, {
+      entityId: "ent-a",
+      now: "2026-09-30T12:00:00.000Z",
+      createId,
+      batch: batch("DATAJUD", [
+        observation({
+          explicitCnpj: CNPJ_A,
+          parties: [{ name: "Maria Exemplo", document: "12345678909", partyType: "RECLAMANTE", pole: "ACTIVE" }],
+        }),
+      ]),
+    });
+    const item = listCases(memory, {}).items[0];
+    assert.equal(item?.claimants[0]?.name, "Maria Exemplo");
+    assert.equal(item?.claimants[0]?.partyType, "RECLAMANTE");
+  });
+
+  it("deduplica party pelo documento entre fontes", () => {
+    const memory = twoEntities();
+    const createId = ids();
+    applyBatchToMemory(memory, {
+      entityId: "ent-a",
+      now: "2026-09-30T12:00:00.000Z",
+      createId,
+      batch: batch("DATAJUD", [
+        observation({
+          explicitCnpj: CNPJ_A,
+          parties: [{ name: "Maria Exemplo", document: "12345678909", partyType: "RECLAMANTE", pole: "ACTIVE" }],
+        }),
+      ]),
+    });
+    applyBatchToMemory(memory, {
+      entityId: "ent-a",
+      now: "2026-09-30T13:00:00.000Z",
+      createId,
+      batch: batch("ESCAVADOR", [
+        observation({
+          explicitCnpj: CNPJ_A,
+          className: "Reclamação Trabalhista",
+          parties: [{ name: "Maria Exemplo", document: "12345678909", partyType: "RECLAMANTE", pole: "ACTIVE" }],
+        }),
+      ]),
+    });
+    const item = listCases(memory, {}).items[0];
+    assert.equal(item?.claimants.length, 1);
+    assert.deepEqual(item?.claimants[0]?.sources, ["DATAJUD", "ESCAVADOR"]);
+    assert.equal(item?.className, "Ação Trabalhista");
+  });
+
+  it("null posterior não apaga dado oficial", () => {
+    const legalCase = physicalCase("case-a", "ent-a", "2026-09-01T10:00:00.000Z");
+    mergeExistingCaseMetadata(legalCase, observation({ className: null, tribunal: null }), "ESCAVADOR");
+    assert.equal(legalCase.className, "Ação Trabalhista");
+    assert.equal(legalCase.tribunal, "TRT9");
+  });
+
+  it("fase conservadora e narrativa só com fatos", () => {
+    const stage = classifyCaseStage({
+      currentStatus: null,
+      className: "Ação Trabalhista",
+      archivedAt: null,
+      movements: [{ name: "Conclusos para decisão", sourceCode: "123" }],
+    });
+    assert.equal(stage.stage, "DECISION");
+    const memory = twoEntities();
+    memory.cases.push(physicalCase("case-a", "ent-a", "2026-09-01T10:00:00.000Z"));
+    const dossier = buildExposureProcessDossier(memory, "case-a");
+    assert.ok(dossier);
+    const narrative = buildExecutiveNarrative(dossier);
+    assert.match(narrative, /polo passivo/);
+    assert.equal(narrative.includes("chance de condenação"), false);
+    const lines = dossierPdfLines(dossier);
+    assert.ok(lines.some((line) => line.includes(dossier.processNumber)));
+    assert.ok(lines.some((line) => line.includes("Lazarios")));
+    const report = buildExposureGroupReport(memory);
+    assert.equal(report.totals.uniqueProcesses, 1);
+  });
+
+  it("união de fatos de irmãos físicos não perde movimento nem evidência", () => {
+    const memory = twoEntities();
+    const at = "2026-09-01T10:00:00.000Z";
+    memory.cases.push(physicalCase("case-a", "ent-a", at));
+    memory.cases.push(physicalCase("case-b", "ent-b", "2026-09-02T10:00:00.000Z"));
+    const movement = (
+      id: string,
+      caseId: string,
+      fingerprint: string,
+      name: string
+    ) => {
+      memory.movements.push({
+        id,
+        caseId,
+        source: "DATAJUD",
+        sourceCode: id,
+        name,
+        occurredAt: at,
+        courtUnit: "09ª VARA",
+        complements: null,
+        fingerprint,
+        firstSeenAt: at,
+        rawMetadata: null,
+        createdAt: at,
+      });
+    };
+    movement("m1", "case-a", "fp-1", "Distribuído");
+    movement("m2", "case-a", "fp-2", "Citação");
+    movement("m3", "case-a", "fp-shared", "Conclusos");
+    movement("m4", "case-b", "fp-shared", "Conclusos");
+    movement("m5", "case-b", "fp-4", "Audiência");
+    movement("m6", "case-b", "fp-5", "Juntada");
+    movement("m7", "case-b", "fp-6", "Despacho");
+    movement("m8", "case-b", "fp-7", "Sentença");
+    const evidence = (id: string, caseId: string, source: "DJEN" | "DATAJUD" | "ESCAVADOR", identifier: string) => {
+      memory.evidences.push({
+        id,
+        caseId,
+        source,
+        sourceIdentifier: identifier,
+        confidence: "CONFIRMED",
+        firstSeenAt: at,
+        lastSeenAt: at,
+        sourceUpdatedAt: at,
+        rawMetadata: { keep: true },
+        rawHash: id,
+        createdAt: at,
+        updatedAt: at,
+      });
+    };
+    evidence("e1", "case-a", "DJEN", "pub-1");
+    evidence("e2", "case-a", "DATAJUD", "hit-1");
+    evidence("e3", "case-b", "ESCAVADOR", "esc-1");
+    const page = listCases(memory, {});
+    assert.equal(page.total, 1);
+    assert.equal(page.items[0]?.movementCount, 7);
+    const caseIds = new Set(page.items[0]?.caseIds);
+    const uniqueEvidences = new Set(
+      memory.evidences.filter((row) => caseIds.has(row.caseId)).map((row) => `${row.source}:${row.sourceIdentifier}`)
+    );
+    assert.equal(uniqueEvidences.size, 3);
+    const dashboard = buildExposureDashboard(memory);
+    assert.equal(dashboard.cards.monitoredCases, 1);
+    assert.equal(dashboard.entities.find((row) => row.id === "ent-a")?.monitoredCases, 1);
+    assert.equal(dashboard.entities.find((row) => row.id === "ent-b")?.monitoredCases, 1);
+  });
+
+  it("backfill de links é idempotente e não apaga cases", () => {
+    const memory = twoEntities();
+    memory.cases.push(physicalCase("case-a", "ent-a", "2026-09-01T10:00:00.000Z"));
+    memory.cases.push(physicalCase("case-b", "ent-b", "2026-09-02T10:00:00.000Z"));
+    let n = 0;
+    const createId = () => `link-${++n}`;
+    const first = applyCanonicalEntityLinks(memory, createId, "2026-09-30T12:00:00.000Z");
+    assert.equal(first.created, 2);
+    assert.equal(missingLegacyEntityLinks(memory).length, 0);
+    const second = applyCanonicalEntityLinks(memory, createId, "2026-09-30T12:01:00.000Z");
+    assert.equal(second.created, 0);
+    assert.equal(memory.cases.length, 2);
+    assert.equal(memory.entityLinks.length, 2);
+    const preview = previewCanonicalGroups(memory);
+    assert.equal(preview.entityLinksToCreate, 0);
+    assert.equal(preview.physicalCases, 2);
+    assert.equal(preview.uniqueCnj, 1);
+  });
+});
+
+describe("privacy and cards", () => {
+  it("mascara CPF", () => {
+    assert.equal(maskCpf("12345678909"), "***.***.***-09");
+  });
+
+  it("card e dossiê não expõem CPF completo", () => {
+    const memory = twoEntities();
+    memory.cases.push(physicalCase("case-a", "ent-a", "2026-09-01T10:00:00.000Z"));
+    memory.parties.push({
+      id: "p1",
+      caseId: "case-a",
+      name: "Maria Exemplo",
+      normalizedName: "MARIA EXEMPLO",
+      document: "12345678909",
+      documentNormalized: "12345678909",
+      partyType: "RECLAMANTE",
+      personType: "PERSON",
+      pole: "ACTIVE",
+      source: "DATAJUD",
+      firstSeenAt: "2026-09-01T10:00:00.000Z",
+      lastSeenAt: "2026-09-01T10:00:00.000Z",
+    });
+    const page = listCases(memory, {});
+    const serialized = JSON.stringify(page.items);
+    assert.equal(serialized.includes("12345678909"), false);
+    assert.ok(page.items[0]?.claimants[0]?.documentMasked?.includes("***"));
+    const dossier = buildExposureProcessDossier(memory, "case-a")!;
+    assert.equal(JSON.stringify(dossier).includes("12345678909"), false);
+    assert.ok(dossier.claimants[0]?.documentMasked);
+    assert.ok(dossier.narrative != null);
+  });
+});
+
+describe("datajud enrichment and cross-entity", () => {
+  const lazarios = FINANCE_INTERNAL_GROUP_COMPANIES[0]!;
+  const koppetel = FINANCE_INTERNAL_GROUP_COMPANIES[1]!;
+
+  function groupMemory() {
+    const memory = createEmptyExposureMemory();
+    memory.entities.push(entity("ent-lazarios", lazarios.cnpj, lazarios.name));
+    memory.entities.push(entity("ent-koppetel", koppetel.cnpj, koppetel.name));
+    return memory;
+  }
+
+  it("código TPU 51 é conclusão e não vira instrução; 11385 vira execução; 22 vira arquivo", () => {
+    assert.equal(
+      classifyCaseStage({
+        currentStatus: null,
+        className: "Ação Trabalhista",
+        archivedAt: null,
+        movements: [{ name: "Conclusão", sourceCode: "51" }],
+      }).stage,
+      "UNKNOWN"
+    );
+    assert.equal(
+      classifyCaseStage({
+        currentStatus: null,
+        className: "Ação Trabalhista",
+        archivedAt: null,
+        movements: [
+          { name: "Distribuição", sourceCode: "26" },
+          { name: "Execução/Cumprimento de Sentença Iniciada (o)", sourceCode: "11385" },
+        ],
+      }).stage,
+      "ENFORCEMENT"
+    );
+    assert.equal(
+      classifyCaseStage({
+        currentStatus: null,
+        className: "Agravo de Petição",
+        archivedAt: null,
+        movements: [{ name: "Baixa Definitiva", sourceCode: "22" }],
+      }).stage,
+      "ARCHIVED"
+    );
+  });
+
+  it("party DataJud com CNPJ do grupo cria segundo vínculo sem novo processo", () => {
+    const memory = groupMemory();
+    const createId = ids();
+    applyBatchToMemory(memory, {
+      entityId: "ent-lazarios",
+      now: "2026-09-30T12:00:00.000Z",
+      createId,
+      batch: batch("DJEN", [observation({ explicitCnpj: lazarios.cnpj, className: null, entityPole: "UNKNOWN" })]),
+    });
+    applyBatchToMemory(memory, {
+      entityId: "ent-lazarios",
+      now: "2026-09-30T13:00:00.000Z",
+      createId,
+      batch: batch("DATAJUD", [
+        observation({
+          explicitCnpj: null,
+          entityPole: "UNKNOWN",
+          parties: [
+            {
+              name: lazarios.name,
+              document: lazarios.cnpj,
+              partyType: "RECLAMADA",
+              personType: "COMPANY",
+              pole: "PASSIVE",
+            },
+            {
+              name: koppetel.name,
+              document: koppetel.cnpj,
+              partyType: "RECLAMADA",
+              personType: "COMPANY",
+              pole: "PASSIVE",
+            },
+          ],
+        }),
+      ]),
+    });
+    assert.equal(memory.cases.length, 1);
+    const group = resolveCanonicalCaseGroup(memory, PROCESS_DIGITS);
+    assert.equal(group.entityLinks.length, 2);
+    assert.equal(group.entityLinks.find((row) => row.entityId === "ent-koppetel")?.pole, "PASSIVE");
+    assert.equal(group.entityLinks.find((row) => row.entityId === "ent-lazarios")?.pole, "PASSIVE");
+  });
+
+  it("ausência de Koppetel no DataJud não remove vínculo anterior", () => {
+    const memory = groupMemory();
+    const createId = ids();
+    applyBatchToMemory(memory, {
+      entityId: "ent-lazarios",
+      now: "2026-09-30T12:00:00.000Z",
+      createId,
+      batch: batch("DJEN", [observation({ explicitCnpj: lazarios.cnpj, className: null })]),
+    });
+    applyBatchToMemory(memory, {
+      entityId: "ent-koppetel",
+      now: "2026-09-30T12:30:00.000Z",
+      createId,
+      batch: batch("DJEN", [observation({ explicitCnpj: koppetel.cnpj, entityPole: "PASSIVE", className: null })]),
+    });
+    applyBatchToMemory(memory, {
+      entityId: "ent-lazarios",
+      now: "2026-09-30T13:00:00.000Z",
+      createId,
+      batch: batch("DATAJUD", [
+        observation({
+          parties: [
+            {
+              name: lazarios.name,
+              document: lazarios.cnpj,
+              partyType: "RECLAMADA",
+              personType: "COMPANY",
+              pole: "PASSIVE",
+            },
+          ],
+        }),
+      ]),
+    });
+    assert.equal(memory.cases.length, 1);
+    assert.equal(resolveCanonicalCaseGroup(memory, PROCESS_DIGITS).entityLinks.length, 2);
+  });
+
+  it("DJEN publica duas vezes o mesmo CNJ e a mais recente prevalece", () => {
+    const memory = groupMemory();
+    const mapped = mapDjenPublications({
+      items: [
+        {
+          id: "pub-1",
+          numeroProcesso: PROCESS,
+          siglaTribunal: "TRT9",
+          nomeOrgao: "09ª VARA",
+          tipoComunicacao: "Intimação",
+          dataDisponibilizacao: "2026-09-01T12:00:00.000Z",
+        },
+        {
+          id: "pub-2",
+          numeroProcesso: PROCESS,
+          siglaTribunal: "TRT9",
+          nomeOrgao: "09ª VARA",
+          tipoComunicacao: "Citação",
+          dataDisponibilizacao: "2026-09-30T12:00:00.000Z",
+        },
+      ],
+    });
+    applyBatchToMemory(memory, {
+      entityId: "ent-lazarios",
+      now: "2026-09-30T14:00:00.000Z",
+      createId: ids(),
+      batch: mapped,
+    });
+    const item = listCases(memory, {}).items[0];
+    assert.equal(memory.cases.length, 1);
+    assert.equal(item?.publicationCount, 2);
+    assert.equal(item?.latestPublication?.type, "Citação");
+    const dossier = buildExposureProcessDossier(memory, memory.cases[0]!.id);
+    assert.equal(dossier?.timeline.filter((row) => row.kind === "publication").length, 2);
+  });
+});

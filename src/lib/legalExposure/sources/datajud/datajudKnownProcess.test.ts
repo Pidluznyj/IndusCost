@@ -7,6 +7,7 @@ import { movementFingerprint } from "../../legalExposureNormalization.js";
 import { searchDatajudByProcessNumber } from "./datajudClient.server.js";
 import { DATAJUD_HTTP_TIMEOUT_MS, buildDatajudProcessQuery } from "./datajudContracts.js";
 import { mapDatajudSearch, normalizeDatajudDateTime } from "./datajudMapper.js";
+import { datajudFieldInventory } from "./datajudSchemaProbe.js";
 import { createDatajudThrottle } from "./datajudThrottle.js";
 
 const PROCESS = "00002860620215090021";
@@ -281,6 +282,92 @@ describe("datajud mapper against real TRT9 payload", () => {
   it("hits vazio continua NO_RESULTS e payload sem hits continua INVALID_RESPONSE", () => {
     assert.equal(mapDatajudSearch({ hits: { hits: [] } }).outcome, "NO_RESULTS");
     assert.equal(mapDatajudSearch({}).outcome, "INVALID_RESPONSE");
+  });
+});
+
+describe("datajud public payload sanitizado", () => {
+  const fixture = JSON.parse(
+    readFileSync(join(process.cwd(), "src/lib/legalExposure/sources/datajud/fixtures/datajud-trt9-public.json"), "utf8")
+  ) as unknown;
+
+  it("mapeia sistema, assuntos, sigilo, movimentos e não inventa partes nem valor", () => {
+    const mapped = mapDatajudSearch(fixture);
+    assert.equal(mapped.outcome, "SUCCESS");
+    assert.equal(mapped.cases.length, 2);
+    const g1 = mapped.cases[0];
+    assert.ok(g1);
+    assert.equal(g1.systemName, "PJe");
+    assert.equal(g1.area, null);
+    assert.equal(g1.secrecy, false);
+    assert.equal(g1.claimValue, null);
+    assert.deepEqual(g1.parties, []);
+    assert.equal(g1.currentStatus, null);
+    assert.equal(g1.archivedAt, null);
+    assert.equal(g1.subjects?.length, 1);
+    assert.equal(g1.subjects?.[0]?.code, "13994");
+    assert.equal(g1.subjects?.[0]?.name, "Aviso Prévio");
+    assert.equal(g1.subjects?.[0]?.isMain, false);
+    assert.equal(g1.movements.length, 5);
+    const complements = g1.movements[0]?.complements as Array<{ nome?: string }> | null;
+    assert.equal(complements?.[0]?.nome, "sorteio");
+    const g2 = mapped.cases[1];
+    assert.equal(g2?.degree, "G2");
+    assert.equal(g2?.className, "Agravo de Petição");
+  });
+
+  it("inventário do fixture lista as chaves reais e omite partes/valorCausa", () => {
+    const inventory = datajudFieldInventory(fixture);
+    assert.equal(inventory.hitCount, 2);
+    assert.equal(inventory.present.partes, false);
+    assert.equal(inventory.present.valorCausa, false);
+    assert.equal(inventory.present.sistema, true);
+    assert.equal(inventory.present.assuntos, true);
+    assert.equal(inventory.present.nivelSigilo, true);
+    assert.deepEqual(inventory.assuntoKeys, ["codigo", "nome"]);
+  });
+
+  it("campos opcionais de polo só mapeiam quando a fonte entrega", () => {
+    const mapped = mapDatajudSearch({
+      hits: {
+        hits: [
+          {
+            _source: {
+              numeroProcesso: PROCESS,
+              tribunal: "TRT9",
+              polos: [
+                {
+                  polo: "ATIVO",
+                  partes: [{ nome: "Maria Exemplo", cpf: "12345678909", tipo: "RECLAMANTE" }],
+                },
+                {
+                  polo: "PASSIVO",
+                  partes: [
+                    { nome: "Empresa Alfa LTDA", cnpj: "11222333000181", tipo: "RECLAMADA" },
+                    { nome: "Empresa Beta LTDA", cnpj: "99888777000166", tipo: "RECLAMADA" },
+                  ],
+                },
+              ],
+              valorCausa: 168127.48,
+              nivelSigilo: 1,
+              assuntos: [
+                { codigo: 1, nome: "Principal fonte", principal: true },
+                { codigo: 2, nome: "Secundário" },
+              ],
+            },
+          },
+        ],
+      },
+    });
+    const row = mapped.cases[0];
+    assert.equal(row?.claimValue, "168127.48");
+    assert.equal(row?.secrecy, true);
+    assert.equal(row?.subjects?.[0]?.isMain, true);
+    assert.equal(row?.subjects?.[1]?.isMain, false);
+    assert.equal(row?.parties.length, 3);
+    assert.equal(row?.parties[0]?.pole, "ACTIVE");
+    assert.equal(row?.parties[0]?.personType, "PERSON");
+    assert.equal(row?.parties[1]?.pole, "PASSIVE");
+    assert.equal(row?.parties[1]?.personType, "COMPANY");
   });
 });
 

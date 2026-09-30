@@ -101,3 +101,34 @@ export function movementFingerprint(input: {
     complements: sanitizePayload(input.complements),
   });
 }
+
+export function hearingFingerprint(input: {
+  processNumberNormalized: string;
+  type: string | null;
+  scheduledAt: string | null;
+  courtUnit: string | null;
+}): string {
+  return stableHash({
+    processNumberNormalized: input.processNumberNormalized,
+    type: normalizeLegalName(input.type),
+    scheduledAt: input.scheduledAt,
+    courtUnit: input.courtUnit?.trim() || null,
+  });
+}
+
+export function attorneyFingerprint(input: {
+  processNumberNormalized: string;
+  name: string;
+  oabNumber: string | null;
+  oabState: string | null;
+  document: string | null;
+}): string {
+  const oab = `${input.oabNumber ?? ""}:${input.oabState ?? ""}`.trim();
+  const document = input.document?.replace(/\D/g, "") || "";
+  return stableHash({
+    processNumberNormalized: input.processNumberNormalized,
+    oab: oab === ":" ? "" : oab.toUpperCase(),
+    document,
+    name: oab === ":" && !document ? normalizeLegalName(input.name) : "",
+  });
+}

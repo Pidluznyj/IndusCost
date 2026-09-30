@@ -349,8 +349,10 @@ src/lib/legalExposure/legalExposureDiscovery.test.ts
 src/lib/legalExposure/legalExposureMonitoring.test.ts
 src/lib/legalExposure/legalExposureReadModel.test.ts
 src/lib/legalExposure/legalExposureFeed.test.ts
+src/lib/legalExposure/legalExposureCanonical.test.ts
 src/lib/inventory/collector/collectorGatewayInfra.test.ts
 src/lib/legalExposure/sources/djen/djenThrottle.test.ts
 src/lib/legalExposure/sources/datajud/datajudKnownProcess.test.ts
 src/lib/legalExposure/sources/datajud/datajudThrottle.test.ts
+src/lib/legalExposure/sources/escavador/escavadorClient.test.ts
 src/components/legalExposure/ExposureCaseList.test.tsx
