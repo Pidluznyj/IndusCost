@@ -36,6 +36,9 @@ export interface Customer {
   /** Nome de exibição do Responsável Comercial persistido. Null = sem atribuição ativa. */
   commercialOwnerName?: string | null;
   commercialOwnerExternalId?: number | null;
+  /** Última compra válida (mesma data da rotina de 90 dias). Null = nunca faturou ou NF sem data utilizável. */
+  lastPurchaseAt?: string | null;
+  lastPurchaseStatus?: import("../lib/commercial/customerLastPurchase").CustomerLastPurchaseStatus | null;
   salesBlock?: import("../lib/commercial/customerSalesBlockView").CustomerSalesBlockPublic | null;
 }
 

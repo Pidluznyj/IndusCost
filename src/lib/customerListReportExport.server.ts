@@ -10,6 +10,7 @@ import {
   prepareCommercialOwnerCustomerListFilter,
 } from "./crmCustomerCommercialOwner.js";
 import { attachCustomerSalesBlocks } from "./commercial/customerSalesBlock.server.js";
+import { attachCustomerLastPurchase } from "./commercial/customerLastPurchase.server.js";
 import { buildCustomerListWhere, parseCustomerListQuery } from "./customerListQuery.js";
 import {
   CUSTOMER_LIST_EXPORT_MAX,
@@ -60,7 +61,8 @@ export async function loadCustomerListReportExportPayload(
 
   const withRisk = await attachCustomerCnpjRisk(prisma, items);
   const withOwners = await attachCustomerCommercialOwnerListFields(withRisk);
-  const withBlocks = await attachCustomerSalesBlocks(prisma, withOwners, {
+  const withLastPurchase = await attachCustomerLastPurchase(prisma, withOwners);
+  const withBlocks = await attachCustomerSalesBlocks(prisma, withLastPurchase, {
     includeFinancialDetails: options.includeFinancialDetails,
   });
 
@@ -74,6 +76,8 @@ export async function loadCustomerListReportExportPayload(
       segment: customer.segment,
       status: customer.status,
       commercialOwnerName: customer.commercialOwnerName,
+      lastPurchaseAt: customer.lastPurchaseAt,
+      lastPurchaseStatus: customer.lastPurchaseStatus,
       cnpjRisk: customer.cnpjRisk,
       salesBlock: customer.salesBlock,
     })

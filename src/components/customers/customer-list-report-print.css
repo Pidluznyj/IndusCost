@@ -271,13 +271,17 @@
     width: 13%;
   }
   #customers-print-root .col-owner {
-    width: 12%;
+    width: 11%;
+  }
+  #customers-print-root .col-purchase {
+    width: 7%;
+    white-space: nowrap;
   }
   #customers-print-root .col-city {
-    width: 10%;
+    width: 9%;
   }
   #customers-print-root .col-seg {
-    width: 10%;
+    width: 8%;
   }
   #customers-print-root .col-status {
     width: 6%;

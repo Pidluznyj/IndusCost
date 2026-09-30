@@ -59,6 +59,7 @@ src/lib/customerListReportExportAccess.test.ts
 src/lib/crmCustomerCommercialOwnerFilter.test.ts
 src/lib/commercial/customerCommercialOwnerInactivity.test.ts
 src/lib/commercial/customerCommercialOwnerInactivity.server.test.ts
+src/lib/commercial/customerLastPurchase.test.ts
 src/lib/commercial/crmCommercialOwnerAutoAssign.test.ts
 src/lib/commercial/customerSalesBlock.test.ts
 src/lib/commercial/customerSalesBlock.server.test.ts

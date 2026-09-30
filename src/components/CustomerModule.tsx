@@ -56,6 +56,7 @@ import { GuidedTour } from "@/src/components/tour/GuidedTour";
 import { TourHelpButton } from "@/src/components/tour/TourHelpButton";
 import { CUSTOMER_TOUR_STEPS } from "@/src/tours/customerTourSteps";
 import { formatCustomerListRange } from "@/src/lib/customerListQuery";
+import { formatCustomerLastPurchaseDay, formatCustomerLastPurchaseMonth } from "@/src/lib/commercial/customerLastPurchase";
 import { canAssignCustomerCommercialOwnerAccess } from "@/src/lib/customerCommercialOwnerAssignAccess";
 import { canExportCustomerListReport } from "@/src/lib/customerListReportExportAccess";
 import {
@@ -514,6 +515,7 @@ export const CustomerModule = () => {
               <col />
               <col className="w-[190px]" />
               <col className="w-[20%]" />
+              <col className="w-[92px]" />
               <col className="w-[15%]" />
               <col className="w-[84px]" />
               <col className="w-[150px]" />
@@ -523,6 +525,7 @@ export const CustomerModule = () => {
                 <th className="px-3 py-2 font-semibold text-xs whitespace-nowrap">Cliente</th>
                 <th className="px-3 py-2 font-semibold text-xs whitespace-nowrap">Score CNPJ</th>
                 <th className="px-3 py-2 font-semibold text-xs whitespace-nowrap">Responsável Comercial</th>
+                <th className="px-3 py-2 font-semibold text-xs whitespace-nowrap">Última compra</th>
                 <th className="px-3 py-2 font-semibold text-xs whitespace-nowrap">Localização</th>
                 <th className="px-3 py-2 font-semibold text-xs whitespace-nowrap">Status</th>
                 <th className={cn("px-3 py-2 font-semibold text-xs text-right whitespace-nowrap", STICKY_ACTIONS_HEAD)}>
@@ -533,14 +536,14 @@ export const CustomerModule = () => {
             <tbody className="divide-y divide-border">
               {loading ? (
                 <tr>
-                  <td colSpan={6} className="px-3 py-6 text-center">
+                  <td colSpan={7} className="px-3 py-6 text-center">
                     <Loader2 className="h-6 w-6 animate-spin mx-auto text-primary" />
                     <p className="mt-2 text-xs text-muted-foreground">Carregando clientes...</p>
                   </td>
                 </tr>
               ) : listRows.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-3 py-6 text-center text-sm text-muted-foreground">
+                  <td colSpan={7} className="px-3 py-6 text-center text-sm text-muted-foreground">
                     Nenhum cliente encontrado.
                   </td>
                 </tr>
@@ -591,6 +594,25 @@ export const CustomerModule = () => {
                           </button>
                         ) : null}
                       </div>
+                    </td>
+                    <td className="px-3 py-1.5 whitespace-nowrap" data-testid="customer-last-purchase">
+                      {/* Mesma data que a rotina de 90 dias usa como último faturamento válido; só a competência é exibida. */}
+                      {(() => {
+                        const status = c.lastPurchaseStatus ?? (c.lastPurchaseAt ? "VALID" : "NEVER_INVOICED");
+                        const label = formatCustomerLastPurchaseMonth({ lastPurchaseAt: c.lastPurchaseAt ?? null, lastPurchaseStatus: status });
+                        const day = formatCustomerLastPurchaseDay(c.lastPurchaseAt ?? null);
+                        const title =
+                          status === "VALID" && day
+                            ? `Último faturamento válido: ${day}`
+                            : status === "DATA_ANOMALY"
+                              ? "Faturamento válido sem data utilizável"
+                              : "Sem faturamento válido";
+                        return (
+                          <span className={cn("text-xs tabular-nums", status === "VALID" ? "text-foreground" : "text-muted-foreground")} title={title}>
+                            {label}
+                          </span>
+                        );
+                      })()}
                     </td>
                     <td className="px-3 py-1.5">
                       <p className="text-[11px] font-medium truncate" title={`${c.city ?? ""} - ${c.state ?? ""}`}>

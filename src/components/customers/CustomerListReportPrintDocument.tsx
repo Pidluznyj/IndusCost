@@ -151,6 +151,7 @@ export function CustomerListReportPrintDocument({
                   <th className="col-cnpj">CNPJ</th>
                   <th className="col-score">Score CNPJ</th>
                   <th className="col-owner">Responsável</th>
+                  <th className="col-purchase">Última compra</th>
                   <th className="col-city">Localização</th>
                   <th className="col-seg">Segmento</th>
                   <th className="col-status">Status</th>
@@ -165,6 +166,7 @@ export function CustomerListReportPrintDocument({
                     <td className="col-cnpj">{row.taxId}</td>
                     <td className="col-score">{row.cnpjScore}</td>
                     <td className="col-owner">{row.commercialOwnerName}</td>
+                    <td className="col-purchase">{row.lastPurchase}</td>
                     <td className="col-city">
                       {row.city} - {row.state}
                     </td>

@@ -106,10 +106,16 @@ describe("customerListReportExport", () => {
       segment: "Informática",
       status: "ACTIVE",
       commercialOwnerName: "  ",
+      lastPurchaseAt: "2026-08-25T15:00:00.000Z",
+      lastPurchaseStatus: "VALID",
       cnpjRisk: null,
       salesBlock: { blocked: true, reason: "FINANCIAL_IDENTITY_UNRESOLVED" },
     });
     assert.equal(row.companyName, "ACME");
+    // Última compra: competência já resolvida pelo motor da rotina de 90 dias; "Nunca" sem faturamento válido.
+    assert.equal(row.lastPurchase, "08/2026");
+    assert.equal(mapCustomerListReportExportRow({ companyName: "X", lastPurchaseAt: null, lastPurchaseStatus: "NEVER_INVOICED" }).lastPurchase, "Nunca");
+    assert.equal(mapCustomerListReportExportRow({ companyName: "X" }).lastPurchase, "Nunca");
     assert.equal(row.cnpjScore, "Sem consulta");
     assert.equal(row.commercialOwnerName, "Sem responsável");
     assert.equal(row.segment, "Informática");
@@ -158,6 +164,8 @@ describe("customerListReportExport", () => {
     assert.equal(clientes[0]?.["Razão social"], "1 LINHA AGENCIA DE SERVICOS LTDA");
     assert.equal(clientes[0]?.["Score CNPJ"], "90 · VENDA LIBERADA");
     assert.equal(clientes[1]?.["Responsável comercial"], "Sem responsável");
+    assert.equal(clientes[0]?.["Última compra"], "Nunca");
+    assert.equal(Object.keys(clientes[0] ?? {}).indexOf("Última compra"), 5);
     assert.equal(clientes[1]?.["Bloqueio de venda"], "Venda bloqueada");
     assert.match(String(clientes[1]?.["Score CNPJ"]), /consulta vencida/);
     const filtros = XLSX.utils.sheet_to_json<Record<string, unknown>>(parsed.Sheets.Filtros);

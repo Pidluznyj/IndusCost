@@ -586,6 +586,7 @@ import {
   assertCustomerSalesAllowed,
   canExposeCustomerSalesBlockFinancialDetails,
 } from "./src/lib/commercial/customerSalesBlock.server.js";
+import { attachCustomerLastPurchase } from "./src/lib/commercial/customerLastPurchase.server.js";
 import { CustomerSalesBlockedError } from "./src/lib/commercial/customerSalesBlock.js";
 import {
   ALL_PERMISSION_KEYS,
@@ -14101,9 +14102,11 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
       const meta = customerListMeta(total, list.page, list.limit);
       const withRisk = await attachCustomerCnpjRisk(prisma, items);
       const withOwners = await attachCustomerCommercialOwnerListFields(withRisk);
+      // Última compra = mesmo motor da rotina de 90 dias (loadLastValidInvoices), em lote para a página.
+      const withLastPurchase = await attachCustomerLastPurchase(prisma, withOwners);
       res.json({
         ...buildCustomerListResponse(
-          await attachCustomerSalesBlocks(prisma, withOwners, { includeFinancialDetails }),
+          await attachCustomerSalesBlocks(prisma, withLastPurchase, { includeFinancialDetails }),
           meta
         ),
         commercialOwnerOptions,

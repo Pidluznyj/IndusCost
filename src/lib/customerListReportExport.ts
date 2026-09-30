@@ -3,6 +3,7 @@
  */
 import * as XLSX from "xlsx";
 import { buildMinimalPdfDocument } from "./minimalPdfWriter.js";
+import { formatCustomerLastPurchaseMonth, type CustomerLastPurchaseStatus } from "./commercial/customerLastPurchase.js";
 import {
   CUSTOMER_CNPJ_RISK_NO_LOOKUP_LABEL,
   formatCustomerCnpjRiskTagLabel,
@@ -34,6 +35,8 @@ export type CustomerListReportExportRow = {
   taxId: string;
   cnpjScore: string;
   commercialOwnerName: string;
+  /** Competência "MM/AAAA" da última compra válida, "Nunca" ou "—" (NF sem data utilizável). */
+  lastPurchase: string;
   city: string;
   state: string;
   segment: string;
@@ -123,6 +126,8 @@ export function mapCustomerListReportExportRow(input: {
   segment?: string | null;
   status?: string | null;
   commercialOwnerName?: string | null;
+  lastPurchaseAt?: string | null;
+  lastPurchaseStatus?: CustomerLastPurchaseStatus | null;
   cnpjRisk?: CustomerCnpjRiskSummary | null;
   salesBlock?: Pick<CustomerSalesBlockPublic, "blocked" | "reason"> | null;
 }): CustomerListReportExportRow {
@@ -132,6 +137,11 @@ export function mapCustomerListReportExportRow(input: {
     taxId: input.taxId?.trim() || "—",
     cnpjScore: formatCustomerListExportCnpjScore(input.cnpjRisk),
     commercialOwnerName: formatCustomerListExportOwner(input.commercialOwnerName),
+    // Sem regra fiscal aqui: a data já vem resolvida pelo motor da rotina de 90 dias.
+    lastPurchase: formatCustomerLastPurchaseMonth({
+      lastPurchaseAt: input.lastPurchaseAt ?? null,
+      lastPurchaseStatus: input.lastPurchaseStatus ?? (input.lastPurchaseAt ? "VALID" : "NEVER_INVOICED"),
+    }),
     city: input.city?.trim() || "—",
     state: input.state?.trim() || "—",
     segment: formatCustomerListExportSegment(input.segment),
@@ -160,6 +170,7 @@ function mapSheetRow(row: CustomerListReportExportRow): Record<string, string> {
     CNPJ: row.taxId,
     "Score CNPJ": row.cnpjScore,
     "Responsável comercial": row.commercialOwnerName,
+    "Última compra": row.lastPurchase,
     Cidade: row.city,
     UF: row.state,
     Segmento: row.segment,
@@ -175,6 +186,7 @@ function applyClientesSheetFormatting(ws: XLSX.WorkSheet, rowCount: number) {
     { wch: 20 },
     { wch: 28 },
     { wch: 24 },
+    { wch: 14 },
     { wch: 18 },
     { wch: 6 },
     { wch: 22 },
@@ -189,7 +201,7 @@ function applyClientesSheetFormatting(ws: XLSX.WorkSheet, rowCount: number) {
     state: "frozen",
   };
   if (rowCount > 1) {
-    ws["!autofilter"] = { ref: `A1:J${rowCount}` };
+    ws["!autofilter"] = { ref: `A1:K${rowCount}` };
   }
 }
 
@@ -314,6 +326,7 @@ export function buildCustomerListReportExportPdf(payload: CustomerListReportExpo
       "CNPJ",
       "Score CNPJ",
       "Responsavel",
+      "Ultima compra",
       "Cidade",
       "UF",
       "Status",
@@ -329,6 +342,7 @@ export function buildCustomerListReportExportPdf(payload: CustomerListReportExpo
         row.taxId,
         row.cnpjScore,
         row.commercialOwnerName,
+        row.lastPurchase,
         row.city,
         row.state,
         row.status,
