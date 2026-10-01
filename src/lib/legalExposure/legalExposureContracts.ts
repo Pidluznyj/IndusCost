@@ -688,6 +688,9 @@ export type NormalizedCommunicationObservation = {
   sourceScienceAt: string | null;
   tribunal: string | null;
   courtUnit: string | null;
+  officialText?: string | null;
+  officialHash?: string | null;
+  officialLink?: string | null;
   rawMetadata: unknown;
 };
 
@@ -700,6 +703,13 @@ export type NormalizedCandidateObservation = {
   rawMetadata: unknown;
 };
 
+export type DjenPaginationMeta = {
+  totalReported: number | null;
+  pagesFetched: number;
+  itemsFetched: number;
+  truncated: boolean;
+};
+
 export type NormalizedSourceBatch = {
   source: LegalExposureSource;
   outcome: LegalQueryOutcome;
@@ -710,6 +720,7 @@ export type NormalizedSourceBatch = {
   cases: NormalizedCaseObservation[];
   communications: NormalizedCommunicationObservation[];
   candidates: NormalizedCandidateObservation[];
+  pagination?: DjenPaginationMeta;
 };
 
 export type SourcePublicStatus = {

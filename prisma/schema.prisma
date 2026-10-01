@@ -11986,6 +11986,9 @@ model LegalCommunication {
   officialContentOpenedByUserId String?                             @db.Uuid
   tribunal                      String?
   courtUnit                     String?
+  officialText                  String?
+  officialHash                  String?
+  officialLink                  String?
   rawMetadata                   Json?
   rawHash                       String?
   firstSeenAt                   DateTime                            @db.Timestamptz(6)
