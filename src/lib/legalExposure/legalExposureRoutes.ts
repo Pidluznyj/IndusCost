@@ -121,9 +121,9 @@ export function registerLegalExposureRoutes(
     return user?.id ?? "";
   }
 
-  app.get("/api/legal-exposure/dashboard", auth, view, async (_req, res) => {
+  app.get("/api/legal-exposure/dashboard", auth, view, async (req, res) => {
     try {
-      res.json(await service.dashboard());
+      res.json(await service.dashboard(await userId(req)));
     } catch (error) {
       sendError(res, error);
     }
@@ -187,7 +187,7 @@ export function registerLegalExposureRoutes(
 
   app.get("/api/legal-exposure/cases", auth, view, async (req, res) => {
     try {
-      res.json(await service.listCases(queryOf(req)));
+      res.json(await service.listCases(queryOf(req), await userId(req)));
     } catch (error) {
       sendError(res, error);
     }
@@ -201,9 +201,9 @@ export function registerLegalExposureRoutes(
     }
   });
 
-  app.get("/api/legal-exposure/cases/:id/timeline", auth, view, async (req, res) => {
+  app.post("/api/legal-exposure/cases/:id/movements/read", auth, view, async (req, res) => {
     try {
-      res.json(await service.timeline(String(req.params.id), queryOf(req), await userId(req)));
+      res.json(await service.markCaseMovementsRead(String(req.params.id), await userId(req)));
     } catch (error) {
       sendError(res, error);
     }

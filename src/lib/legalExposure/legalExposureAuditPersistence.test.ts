@@ -43,6 +43,8 @@ function instrumentRepository(inner: ReturnType<typeof createMemoryExposureRepos
       calls.appended.push(record);
       await inner.appendAudit(record);
     },
+    listCaseReadStates: (userId) => inner.listCaseReadStates(userId),
+    upsertCaseReadState: (input) => inner.upsertCaseReadState(input),
     calls,
   };
   return repository;

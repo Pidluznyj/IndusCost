@@ -172,9 +172,23 @@ function CaseCard(props: { item: ExposureCaseListItem; onOpenCase: (caseId: stri
           {item.stage === "UNKNOWN" ? CASE_STAGE_UNKNOWN_COPY : item.stageLabel}
         </p>
         <p>
-          <span className="text-muted-foreground">Último: </span>
+          <span className="text-muted-foreground">Última movimentação: </span>
           {caseMovementLabel(item.latestMovement)}
         </p>
+        {(item.newMovementCount ?? 0) > 0 || item.highestNewActionLevel ? (
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {(item.newMovementCount ?? 0) > 0 ? (
+              <span className="rounded-full border border-sky-300 bg-sky-50 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-sky-900">
+                {item.newMovementCount} novas
+              </span>
+            ) : null}
+            {item.highestNewActionLevel && item.highestNewActionLevel !== "NONE" ? (
+              <span className="rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-amber-950">
+                Revisar
+              </span>
+            ) : null}
+          </div>
+        ) : null}
         {item.nextHearing ? (
           <p>
             <span className="text-muted-foreground">Próxima audiência: </span>

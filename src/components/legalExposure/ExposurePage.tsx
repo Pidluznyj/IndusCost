@@ -134,6 +134,7 @@ export function ExposurePage() {
   const [dossier, setDossier] = useState<React.ComponentProps<typeof ExposureCaseDossier>["dossier"] | null>(null);
   const [refreshingCase, setRefreshingCase] = useState(false);
   const [completingCase, setCompletingCase] = useState(false);
+  const [markingMovementsRead, setMarkingMovementsRead] = useState(false);
   const [completeSteps, setCompleteSteps] = useState<LegalProcessEnrichmentStep[]>([]);
   const [certificates, setCertificates] = useState<ExposureCertificateItem[] | null>(null);
   const [sourceTestBusy, setSourceTestBusy] = useState<string | null>(null);
@@ -1067,6 +1068,21 @@ export function ExposurePage() {
           onPdf={() => {
             if (!selectedCase) return;
             window.open(EXPOSURE_CASE_PRINT_PATH(selectedCase), "_blank");
+          }}
+          markingMovementsRead={markingMovementsRead}
+          onMarkMovementsRead={async () => {
+            if (!selectedCase || markingMovementsRead) return;
+            setMarkingMovementsRead(true);
+            try {
+              const data = await fetchJsonOk<NonNullable<typeof dossier>>(
+                `/api/legal-exposure/cases/${selectedCase}/movements/read`,
+                { method: "POST" }
+              );
+              setDossier(data);
+              await Promise.all([loadCases(caseFilters), reloadOverview()]);
+            } finally {
+              setMarkingMovementsRead(false);
+            }
           }}
         />
       ) : null}

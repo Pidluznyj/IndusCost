@@ -33,6 +33,14 @@ import {
 import { maskPartyDocument } from "./legalExposurePrivacy.js";
 import { eventDetail, eventTypeLabel, movementComplementsText } from "./legalExposureFeedUi.js";
 import {
+  enrichTimelineItems,
+  executiveToTimeline,
+  LEGAL_EXPOSURE_MOVEMENT_NOVELTY_BASELINE,
+  readStateMap,
+  sortMovementsForUi,
+  summarizeExecutiveMovements,
+} from "./legalExposureMovementExecutive.js";
+import {
   displayProcessClass,
   enrichmentStatusOf,
   evidenceSourcesOf,
@@ -567,8 +575,11 @@ export function buildGroupedCaseTimeline(
   const siblings = indexes.casesByProcess.get(processKeyOf(seed)) ?? [seed];
   const caseIds = siblings.map((row) => row.id);
   const movements = collectForCases(indexes.movementsByCase, caseIds).map((row) => ({
+    id: row.id,
     kind: "movement" as const,
     at: row.occurredAt ?? row.firstSeenAt,
+    occurredAt: row.occurredAt ?? row.firstSeenAt,
+    detectedAt: row.firstSeenAt,
     title: row.name,
     description: movementComplementsText(row.complements),
     source: row.source,
@@ -578,14 +589,18 @@ export function buildGroupedCaseTimeline(
     communicationType: null,
     subject: null,
     status: null,
+    officialLink: null,
   }));
   const communications = collectForCases(indexes.communicationsByCase, caseIds);
   const djenCommunications = communications.filter((row) => row.source === "DJEN");
   const otherCommunications = communications
     .filter((row) => row.source !== "DJEN")
     .map((row) => ({
+      id: row.id,
       kind: "communication" as const,
       at: row.availableAt ?? row.detectedAt,
+      occurredAt: row.availableAt ?? row.detectedAt,
+      detectedAt: row.firstSeenAt || row.detectedAt,
       title: row.subject || row.communicationType,
       description: row.communicationType,
       source: row.source,
@@ -595,23 +610,31 @@ export function buildGroupedCaseTimeline(
       communicationType: row.communicationType,
       subject: row.subject,
       status: row.normalizedStatus,
+      officialLink: row.officialLink ?? null,
     }));
   const events = collectForCases(indexes.eventsByCase, caseIds).map((row) => ({
+    id: row.id,
     kind: "event" as const,
     at: row.detectedAt,
+    occurredAt: row.detectedAt,
+    detectedAt: row.detectedAt,
     title: eventTypeLabel(row.eventType),
     description: eventDetail(row.eventType, row.payload),
-    source: row.source,
+    source: (row.source ?? "DATAJUD") as LegalExposureSource,
     sourceCode: null,
     courtUnit: null,
     complements: null,
     communicationType: null,
     subject: null,
     status: null,
+    officialLink: null,
   }));
   const hearings = collectForCases(indexes.hearingsByCase, caseIds).map((row) => ({
+    id: row.id,
     kind: "hearing" as const,
     at: row.scheduledAt ?? row.firstSeenAt,
+    occurredAt: row.scheduledAt ?? row.firstSeenAt,
+    detectedAt: row.firstSeenAt,
     title: row.type || "Audiência",
     description: row.status,
     source: row.source,
@@ -621,6 +644,7 @@ export function buildGroupedCaseTimeline(
     communicationType: null,
     subject: null,
     status: row.status,
+    officialLink: null,
   }));
   const publications = (
     djenCommunications.length > 0
@@ -630,8 +654,11 @@ export function buildGroupedCaseTimeline(
             row.communicationType ||
             (typeof raw?.tipoComunicacao === "string" ? raw.tipoComunicacao : null);
           return {
+            id: row.id,
             kind: "publication" as const,
             at: row.availableAt ?? row.detectedAt,
+            occurredAt: row.availableAt ?? row.detectedAt,
+            detectedAt: row.firstSeenAt || row.detectedAt,
             title: tipo || "Publicação DJEN",
             description: row.subject,
             source: row.source,
@@ -641,6 +668,7 @@ export function buildGroupedCaseTimeline(
             communicationType: row.communicationType,
             subject: row.subject,
             status: row.normalizedStatus,
+            officialLink: row.officialLink ?? null,
           };
         })
       : collectForCases(indexes.evidencesByCase, caseIds)
@@ -652,8 +680,11 @@ export function buildGroupedCaseTimeline(
             const tipo = typeof raw?.tipoComunicacao === "string" ? raw.tipoComunicacao : "Publicação DJEN";
             const orgao = typeof raw?.nomeOrgao === "string" ? raw.nomeOrgao : null;
             return {
+              id: row.id,
               kind: "publication" as const,
               at: available,
+              occurredAt: available,
+              detectedAt: row.firstSeenAt,
               title: tipo,
               description: null,
               source: row.source,
@@ -663,13 +694,20 @@ export function buildGroupedCaseTimeline(
               communicationType: tipo,
               subject: null,
               status: null,
+              officialLink: null,
             };
           })
   );
   const kind = query.timelineKind;
   let merged: ExposureTimelineItem[] = [...movements, ...otherCommunications, ...events, ...hearings, ...publications];
-  if (kind && kind !== "all") merged = merged.filter((row) => row.kind === kind);
-  merged.sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
+  if (kind && kind !== "all") merged = merged.filter((row) => row.kind === kind || (kind === "decision" && /decis|senten/i.test(row.title)));
+  merged.sort((a, b) => {
+    const at = Date.parse(b.at) - Date.parse(a.at);
+    if (at !== 0) return at;
+    const detected = Date.parse(b.detectedAt ?? b.at) - Date.parse(a.detectedAt ?? a.at);
+    if (detected !== 0) return detected;
+    return String(b.id ?? "").localeCompare(String(a.id ?? ""));
+  });
   const page = Number(query.page ?? 1) || 1;
   const pageSize = Number(query.pageSize ?? 20) || 20;
   const start = (page - 1) * pageSize;
@@ -724,7 +762,7 @@ export function buildExposureProcessDossier(
   if (!seed) return null;
   const item = buildExposureProcessSummary(memory, processKeyOf(seed), now, indexes);
   if (!item) return null;
-  const timeline = buildGroupedCaseTimeline(memory, caseId, { page: 1, pageSize: 50 });
+  const timeline = buildGroupedCaseTimeline(memory, caseId, { page: 1, pageSize: 2000 });
   const communications = memory.communications.filter((row) => item.caseIds.includes(row.caseId ?? ""));
   return {
     ...item,
@@ -811,5 +849,59 @@ export function buildExposureGroupReport(memory: LegalExposureMemory, entityId?:
     },
     entities: perEntity,
     processes: items,
+  };
+}
+
+export function attachCaseListReadState(
+  items: ExposureCaseListItem[],
+  memory: LegalExposureMemory,
+  readStates: Array<{ processNumberNormalized: string; lastMovementsReadAt: string | null }>,
+  options: { baseline?: string } = {}
+): ExposureCaseListItem[] {
+  const byProcess = readStateMap(readStates);
+  const baseline = options.baseline ?? LEGAL_EXPOSURE_MOVEMENT_NOVELTY_BASELINE;
+  return items.map((item) => {
+    const key = canonicalProcessKey(item.processNumber, item.id).key;
+    const timeline = buildGroupedCaseTimeline(memory, item.id, { page: 1, pageSize: 2000 }).items;
+    const movements = enrichTimelineItems(timeline, {
+      lastMovementsReadAt: byProcess.get(key) ?? null,
+      baseline,
+    });
+    const summary = summarizeExecutiveMovements(movements, baseline);
+    return {
+      ...item,
+      newMovementCount: summary.newMovementCount,
+      lastMovementsReadAt: byProcess.get(key) ?? null,
+      highestNewActionLevel: summary.highestNewActionLevel,
+    };
+  });
+}
+
+export function attachDossierReadState<T extends ExposureCaseListItem & { timeline?: ExposureTimelineItem[]; narrative?: string }>(
+  dossier: T,
+  lastMovementsReadAt: string | null,
+  options: { baseline?: string; nowIso: string }
+): T & {
+  movementsExecutive: ReturnType<typeof enrichTimelineItems>;
+  newMovementCount: number;
+  lastMovementsReadAt: string | null;
+  highestNewActionLevel: ReturnType<typeof summarizeExecutiveMovements>["highestNewActionLevel"];
+  attentionNowMovements: ReturnType<typeof summarizeExecutiveMovements>["attentionNowMovements"];
+  nextKnownEvents: ReturnType<typeof summarizeExecutiveMovements>["nextKnownEvents"];
+} {
+  const baseline = options.baseline ?? LEGAL_EXPOSURE_MOVEMENT_NOVELTY_BASELINE;
+  const movements = sortMovementsForUi(
+    enrichTimelineItems(dossier.timeline ?? [], { lastMovementsReadAt, baseline })
+  );
+  const summary = summarizeExecutiveMovements(movements, options.nowIso);
+  return {
+    ...dossier,
+    timeline: movements.map(executiveToTimeline),
+    movementsExecutive: movements,
+    newMovementCount: summary.newMovementCount,
+    lastMovementsReadAt,
+    highestNewActionLevel: summary.highestNewActionLevel,
+    attentionNowMovements: summary.attentionNowMovements,
+    nextKnownEvents: summary.nextKnownEvents,
   };
 }

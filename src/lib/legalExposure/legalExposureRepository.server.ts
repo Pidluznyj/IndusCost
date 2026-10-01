@@ -6,16 +6,34 @@ import { Prisma, type PrismaClient } from "@prisma/client";
 import type { ExposureAuditRecord, LegalExposureMemory } from "./legalExposureStore.js";
 import { createEmptyExposureMemory } from "./legalExposureStore.js";
 
+export type ExposureCaseReadStateRecord = {
+  id: string;
+  userId: string;
+  processNumberNormalized: string;
+  lastMovementsReadAt: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type LegalExposureRepository = {
   load(): Promise<LegalExposureMemory>;
   persist(next: LegalExposureMemory): Promise<void>;
   appendAudit(record: ExposureAuditRecord): Promise<void>;
+  listCaseReadStates(userId: string): Promise<ExposureCaseReadStateRecord[]>;
+  upsertCaseReadState(input: {
+    userId: string;
+    processNumberNormalized: string;
+    lastMovementsReadAt: string;
+    now: string;
+    createId: () => string;
+  }): Promise<ExposureCaseReadStateRecord>;
 };
 
 export function createMemoryExposureRepository(
   initial: LegalExposureMemory = createEmptyExposureMemory()
 ): LegalExposureRepository & { snapshot(): LegalExposureMemory } {
   let current = initial;
+  const readStates = new Map<string, ExposureCaseReadStateRecord>();
   return {
     snapshot: () => current,
     async load() {
@@ -26,6 +44,29 @@ export function createMemoryExposureRepository(
     },
     async appendAudit(record) {
       current.audits.push(record);
+    },
+    async listCaseReadStates(userId) {
+      return Array.from(readStates.values()).filter((row) => row.userId === userId);
+    },
+    async upsertCaseReadState(input) {
+      const key = `${input.userId}:${input.processNumberNormalized}`;
+      const previous = readStates.get(key);
+      const next: ExposureCaseReadStateRecord = previous
+        ? {
+            ...previous,
+            lastMovementsReadAt: input.lastMovementsReadAt,
+            updatedAt: input.now,
+          }
+        : {
+            id: input.createId(),
+            userId: input.userId,
+            processNumberNormalized: input.processNumberNormalized,
+            lastMovementsReadAt: input.lastMovementsReadAt,
+            createdAt: input.now,
+            updatedAt: input.now,
+          };
+      readStates.set(key, next);
+      return next;
     },
   };
 }
@@ -541,6 +582,47 @@ export function createPrismaExposureRepository(prisma: PrismaClient): LegalExpos
           createdAt: new Date(record.createdAt),
         },
       });
+    },
+    async listCaseReadStates(userId) {
+      const rows = await prisma.legalExposureCaseReadState.findMany({ where: { userId } });
+      return rows.map((row) => ({
+        id: row.id,
+        userId: row.userId,
+        processNumberNormalized: row.processNumberNormalized,
+        lastMovementsReadAt: row.lastMovementsReadAt.toISOString(),
+        createdAt: row.createdAt.toISOString(),
+        updatedAt: row.updatedAt.toISOString(),
+      }));
+    },
+    async upsertCaseReadState(input) {
+      const row = await prisma.legalExposureCaseReadState.upsert({
+        where: {
+          userId_processNumberNormalized: {
+            userId: input.userId,
+            processNumberNormalized: input.processNumberNormalized,
+          },
+        },
+        create: {
+          id: input.createId(),
+          userId: input.userId,
+          processNumberNormalized: input.processNumberNormalized,
+          lastMovementsReadAt: new Date(input.lastMovementsReadAt),
+          createdAt: new Date(input.now),
+          updatedAt: new Date(input.now),
+        },
+        update: {
+          lastMovementsReadAt: new Date(input.lastMovementsReadAt),
+          updatedAt: new Date(input.now),
+        },
+      });
+      return {
+        id: row.id,
+        userId: row.userId,
+        processNumberNormalized: row.processNumberNormalized,
+        lastMovementsReadAt: row.lastMovementsReadAt.toISOString(),
+        createdAt: row.createdAt.toISOString(),
+        updatedAt: row.updatedAt.toISOString(),
+      };
     },
   };
 }

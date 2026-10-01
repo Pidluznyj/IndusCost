@@ -498,6 +498,9 @@ export type ExposureCaseListItem = {
   multipleGroupEntities: boolean;
   secrecy: boolean | null;
   coverage?: CaseDataCoverage;
+  newMovementCount?: number;
+  lastMovementsReadAt?: string | null;
+  highestNewActionLevel?: string | null;
 };
 
 export type ExposureCaseInvolvedEntity = {
@@ -519,6 +522,16 @@ export type ExposureTimelineItem = {
   communicationType: string | null;
   subject: string | null;
   status: string | null;
+  id?: string;
+  detectedAt?: string | null;
+  occurredAt?: string | null;
+  officialLink?: string | null;
+  isNew?: boolean;
+  actionLevel?: string | null;
+  actionLabel?: string | null;
+  deadlineText?: string | null;
+  deadlineAt?: string | null;
+  displayKind?: string | null;
 };
 
 export type CommunicationKind =

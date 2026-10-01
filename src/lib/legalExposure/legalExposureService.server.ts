@@ -47,9 +47,14 @@ import {
   type ExposureListQuery,
 } from "./legalExposureReadModel.js";
 import {
+  attachCaseListReadState,
+  attachDossierReadState,
   buildExposureGroupReport,
   buildExposureProcessDossier,
+  listCanonicalCases,
 } from "./legalExposureExecutive.js";
+import { groupNoveltyFromCases } from "./legalExposureMovementExecutive.js";
+import { buildProcessStoryNarrative } from "./legalExposureNarrative.js";
 import type { LegalExposureRepository } from "./legalExposureRepository.server.js";
 import type {
   ExposureAuditRecord,
@@ -237,9 +242,21 @@ export function createLegalExposureService(deps: ExposureServiceDeps) {
   }
 
   return {
-    async dashboard() {
+    async dashboard(userId?: string) {
       const memory = await deps.repository.load();
-      return buildExposureDashboard(memory, now());
+      const dashboard = buildExposureDashboard(memory, now());
+      if (!userId) return dashboard;
+      const readStates = await deps.repository.listCaseReadStates(userId);
+      const attached = attachCaseListReadState(listCanonicalCases(memory, {}, now()), memory, readStates);
+      const novelty = groupNoveltyFromCases(attached);
+      return {
+        ...dashboard,
+        cards: {
+          ...dashboard.cards,
+          newMovements: novelty.newMovements,
+          processesWithNewMovements: novelty.processesWithNewMovements,
+        },
+      };
     },
     async listEntities() {
       const memory = await deps.repository.load();
@@ -451,17 +468,46 @@ export function createLegalExposureService(deps: ExposureServiceDeps) {
       await deps.repository.persist(memory);
       return publicAlias(alias);
     },
-    async listCases(query: ExposureListQuery) {
-      return listCases(await deps.repository.load(), query);
+    async listCases(query: ExposureListQuery, userId?: string) {
+      const memory = await deps.repository.load();
+      const page = listCases(memory, query);
+      if (!userId) return page;
+      const readStates = await deps.repository.listCaseReadStates(userId);
+      return { ...page, items: attachCaseListReadState(page.items, memory, readStates) };
     },
     async getCase(id: string, userId: string) {
       const memory = await deps.repository.load();
-      const dossier = buildExposureProcessDossier(memory, id);
+      const dossier = buildExposureProcessDossier(memory, id, now());
       if (!dossier) throw new ExposureServiceError("Processo não encontrado.", "NOT_FOUND");
       await deps.repository.appendAudit(
         buildAuditRecord(userId, "VIEW_CASE", { entityId: dossier.entityId, caseId: dossier.id }, {})
       );
-      return dossier;
+      const key = canonicalProcessKey(dossier.processNumber, dossier.id).key;
+      const readStates = await deps.repository.listCaseReadStates(userId);
+      const lastRead = readStates.find((row) => row.processNumberNormalized === key)?.lastMovementsReadAt ?? null;
+      const attached = attachDossierReadState(dossier, lastRead, { nowIso: now().toISOString() });
+      return {
+        ...attached,
+        narrative: buildProcessStoryNarrative({ dossier: attached, movements: attached.movementsExecutive }),
+      };
+    },
+    async markCaseMovementsRead(id: string, userId: string) {
+      const memory = await deps.repository.load();
+      const row = memory.cases.find((item) => item.id === id);
+      if (!row) throw new ExposureServiceError("Processo não encontrado.", "NOT_FOUND");
+      const processNumberNormalized = canonicalProcessKey(row.processNumberNormalized || row.processNumber, row.id).key;
+      const timestamp = now().toISOString();
+      await deps.repository.upsertCaseReadState({
+        userId,
+        processNumberNormalized,
+        lastMovementsReadAt: timestamp,
+        now: timestamp,
+        createId,
+      });
+      await deps.repository.appendAudit(
+        buildAuditRecord(userId, "VIEW_CASE", { entityId: row.entityId, caseId: id }, { movementsRead: true, processNumberNormalized })
+      );
+      return this.getCase(id, userId);
     },
     async timeline(id: string, query: ExposureListQuery, userId: string) {
       const memory = await deps.repository.load();
@@ -1165,13 +1211,20 @@ export function createLegalExposureService(deps: ExposureServiceDeps) {
           { kind: "COMPLETE_DATA", processNumber: row.processNumberNormalized, steps: result.steps }
         );
         await deps.repository.persist(memory);
-        const dossier = buildExposureProcessDossier(memory, id);
+        const dossier = buildExposureProcessDossier(memory, id, now());
         if (!dossier) throw new ExposureServiceError("Processo não encontrado.", "NOT_FOUND");
+        const key = canonicalProcessKey(dossier.processNumber, dossier.id).key;
+        const readStates = await deps.repository.listCaseReadStates(userId);
+        const lastRead = readStates.find((item) => item.processNumberNormalized === key)?.lastMovementsReadAt ?? null;
+        const attached = attachDossierReadState(dossier, lastRead, { nowIso: now().toISOString() });
         return {
           steps: result.steps,
           coverageBefore: result.coverageBefore,
-          coverageAfter: result.coverageAfter ?? dossier.coverage ?? null,
-          dossier,
+          coverageAfter: result.coverageAfter ?? attached.coverage ?? null,
+          dossier: {
+            ...attached,
+            narrative: buildProcessStoryNarrative({ dossier: attached, movements: attached.movementsExecutive }),
+          },
         };
       } finally {
         refreshingCases.delete(id);
@@ -1182,7 +1235,18 @@ export function createLegalExposureService(deps: ExposureServiceDeps) {
       await deps.repository.appendAudit(
         buildAuditRecord(userId, "VIEW_CASE", { entityId }, { report: "GROUP" })
       );
-      return buildExposureGroupReport(memory, entityId);
+      const report = buildExposureGroupReport(memory, entityId, now());
+      const readStates = await deps.repository.listCaseReadStates(userId);
+      const processes = attachCaseListReadState(report.processes, memory, readStates);
+      return {
+        ...report,
+        processes,
+        entities: report.entities.map((entity) => ({
+          ...entity,
+          processes: attachCaseListReadState(entity.processes, memory, readStates),
+        })),
+        novelty: groupNoveltyFromCases(processes),
+      };
     },
   };
 }

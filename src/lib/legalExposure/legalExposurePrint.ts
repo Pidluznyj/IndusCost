@@ -58,6 +58,11 @@ export type ExposureGroupPrintReport = {
     processes: ExposureCaseListItem[];
   }>;
   processes: ExposureCaseListItem[];
+  novelty?: {
+    newMovements: number;
+    processesWithNewMovements: number;
+    processesNeedingReview: number;
+  };
 };
 
 export type ExposurePrintDashboardSource = {
@@ -76,8 +81,13 @@ const HIGHLIGHT_TIMELINE = [
   ["arquiv", "Arquivamento"],
   ["baixa", "Arquivamento"],
   ["intim", "Intimação"],
+  ["citac", "Citação"],
   ["public", "Publicação"],
   ["decis", "Decisão"],
+  ["pericia", "Perícia"],
+  ["penhor", "Penhora"],
+  ["bloqueio", "Bloqueio"],
+  ["execuc", "Execução"],
 ] as const;
 
 export function classifyExposurePrintTimeline(row: Pick<ExposureTimelineItem, "kind" | "title">): string {
@@ -103,15 +113,21 @@ export function selectExecutiveTimeline(items: ExposureTimelineItem[]): {
   executive: ExposureTimelineItem[];
   annex: ExposureTimelineItem[];
 } {
-  const ordered = items.slice().sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
+  const ordered = items.slice().sort((a, b) => {
+    const at = Date.parse(a.at) - Date.parse(b.at);
+    if (at !== 0) return at;
+    const detected = Date.parse(a.detectedAt ?? a.at) - Date.parse(b.detectedAt ?? b.at);
+    if (detected !== 0) return detected;
+    return String(a.id ?? "").localeCompare(String(b.id ?? ""));
+  });
   if (ordered.length <= EXPOSURE_EXECUTIVE_TIMELINE_LIMIT) {
     return { executive: ordered, annex: [] };
   }
-  const highlighted = ordered.filter(isHighlightedPrintTimeline);
+  const highlighted = ordered.filter((row) => isHighlightedPrintTimeline(row) || (row.actionLevel && row.actionLevel !== "NONE"));
   const first = ordered[0];
   const last = ordered[ordered.length - 1];
   const picked = new Map<string, ExposureTimelineItem>();
-  const keyOf = (row: ExposureTimelineItem) => `${row.at}|${row.kind}|${row.title}`;
+  const keyOf = (row: ExposureTimelineItem) => row.id || `${row.at}|${row.kind}|${row.title}`;
   if (first) picked.set(keyOf(first), first);
   for (const row of highlighted) picked.set(keyOf(row), row);
   if (last) picked.set(keyOf(last), last);

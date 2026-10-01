@@ -345,7 +345,7 @@ describe("ExposureCaseDossier", () => {
     );
     assert.ok(html.includes("Resumo"));
     assert.ok(html.includes("Partes e representantes"));
-    assert.ok(html.includes("Linha do tempo"));
+    assert.ok(html.includes("Movimentações"));
     assert.ok(html.includes("Comunicações"));
     assert.ok(html.includes("Fontes e evidências"));
     assert.ok(html.includes("Relatório PDF"));
