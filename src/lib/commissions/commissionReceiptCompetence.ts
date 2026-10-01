@@ -265,6 +265,69 @@ export function detectSettledWithoutReceipt(
   return out.sort((a, b) => a.receivableExternalId - b.receivableExternalId);
 }
 
+/** Título baixado no período, com o vínculo determinístico à NF-e de origem. */
+export type SettledReceivableForAudit = {
+  receivableExternalId: number;
+  /** `NomusAccountsReceivable.sourceInvoiceId` → `NomusNfe.externalId`. Null = sem NF vinculada. */
+  sourceInvoiceId: number | null;
+};
+
+/**
+ * Partição dos títulos baixados no período, para auditoria. As três listas são
+ * disjuntas e, juntas, cobrem todos os baixados (sem duplicar título).
+ */
+export type SettledReceivablesAuditPartition = {
+  /** Possui receipt em algum momento do histórico: movimentação financeira real. */
+  financialReceiptIds: number[];
+  /**
+   * Sem receipt e com a NF-e de origem CANCELADA: baixa administrativa do
+   * cancelamento. Não houve caixa e não há receipt faltando — não é
+   * inconsistência, não gera competência e não vira recebimento.
+   */
+  cancelledInvoiceSettlementIds: number[];
+  /** Sem receipt e sem NF cancelada (inclui título sem NF vinculada): precisa de investigação. */
+  settledWithoutReceipt: CommissionCompetenceInconsistency[];
+};
+
+/**
+ * Classifica os baixados do período. Ordem das regras:
+ *   1. qualquer receipt no histórico → recebimento real (vence sempre);
+ *   2. sem receipt e `sourceInvoiceId` em `cancelledInvoiceIds` → baixa de NF cancelada;
+ *   3. demais → `SETTLED_WITHOUT_RECEIPT`.
+ *
+ * `cancelledInvoiceIds` são `NomusNfe.externalId` com status cancelado
+ * (`NOMUS_NFE_STATUS_CANCELLED`). O vínculo é só `sourceInvoiceId`: nada de
+ * número, cliente, valor ou data.
+ */
+export function partitionSettledReceivablesForAudit(
+  settled: Iterable<SettledReceivableForAudit>,
+  receivableIdsWithAnyReceipt: ReadonlySet<number>,
+  cancelledInvoiceIds: ReadonlySet<number>
+): SettledReceivablesAuditPartition {
+  const financialReceiptIds: number[] = [];
+  const cancelledInvoiceSettlementIds: number[] = [];
+  const withoutReceiptIds: number[] = [];
+  const seen = new Set<number>();
+  for (const row of settled) {
+    if (seen.has(row.receivableExternalId)) continue;
+    seen.add(row.receivableExternalId);
+    if (receivableIdsWithAnyReceipt.has(row.receivableExternalId)) {
+      financialReceiptIds.push(row.receivableExternalId);
+    } else if (row.sourceInvoiceId != null && cancelledInvoiceIds.has(row.sourceInvoiceId)) {
+      cancelledInvoiceSettlementIds.push(row.receivableExternalId);
+    } else {
+      withoutReceiptIds.push(row.receivableExternalId);
+    }
+  }
+  const ascending = (a: number, b: number) => a - b;
+  return {
+    financialReceiptIds: financialReceiptIds.sort(ascending),
+    cancelledInvoiceSettlementIds: cancelledInvoiceSettlementIds.sort(ascending),
+    // Mesma regra e mesmo formato de sempre para o que continua sendo inconsistência.
+    settledWithoutReceipt: detectSettledWithoutReceipt(withoutReceiptIds, receivableIdsWithAnyReceipt),
+  };
+}
+
 /** Recebimentos cujo `idContaReceber` não tem CR local (vínculo determinístico ausente). */
 export function detectReceiptsWithoutLocalReceivable(
   competenceByReceivable: Map<number, CommissionReceiptCompetence>,
