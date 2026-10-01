@@ -335,6 +335,33 @@ describe("exposure entity-scoped sync", () => {
     assert.equal(snapshot.movements.length, first.movements);
     assert.equal(new Set(snapshot.evidences.map((row) => `${row.source}:${row.sourceIdentifier}`)).size, snapshot.evidences.length);
   });
+
+  it("manual run usa lock e recusa segunda execução da mesma fonte", async () => {
+    const memory = createEmptyExposureMemory();
+    seedGroupEntities(memory);
+    let release!: (batch: NormalizedSourceBatch) => void;
+    const hang = new Promise<NormalizedSourceBatch>((resolve) => {
+      release = resolve;
+    });
+    const service = createLegalExposureService({
+      repository: createMemoryExposureRepository(memory),
+      createId: sequentialIds(),
+      now: () => new Date("2026-09-30T13:00:00.000Z"),
+      runners: {
+        domicilio: async () => emptyBatch("DOMICILIO"),
+        datajud: async () => emptyBatch("DATAJUD"),
+        djen: async () => hang,
+      },
+    });
+    const first = service.sync({ mode: "apply", source: "DJEN", entityId: "entity-0" }, USER);
+    await Promise.resolve();
+    await assert.rejects(
+      () => service.sync({ mode: "apply", source: "DJEN", entityId: "entity-0" }, USER),
+      (error: unknown) => error instanceof Error && error.message.includes("Execução já em andamento")
+    );
+    release(emptyBatch("DJEN"));
+    await first;
+  });
 });
 
 describe("djen empty query is fail-closed", () => {

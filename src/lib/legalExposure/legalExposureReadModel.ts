@@ -27,8 +27,15 @@ import {
 } from "./legalExposureExecutive.js";
 import { publicSourceConfiguration } from "./legalExposureFeatureFlags.js";
 import { isCriticalMonitoringSource, resolveSourceHealth } from "./legalExposureHealth.js";
-import { formatProcessNumber } from "./legalExposureNormalization.js";
+import { canonicalProcessKey, formatProcessNumber } from "./legalExposureNormalization.js";
 import { eventDetail, eventTypeLabel, movementComplementsText, TIMELINE_DUPLICATE_EVENT_TYPES } from "./legalExposureFeedUi.js";
+import { alertChannelOf } from "./legalExposureInbox.js";
+import {
+  semanticAlertKey,
+  semanticCommunicationKey,
+  semanticEventKey,
+  uniqueByKey,
+} from "./legalExposureFeedDedupe.js";
 import type { LegalExposureMemory } from "./legalExposureStore.js";
 
 export {
@@ -91,14 +98,11 @@ function inRange(value: string | null, from?: string | null, to?: string | null)
 
 export function sourceStatuses(memory: LegalExposureMemory, now: Date): SourcePublicStatus[] {
   const config = new Map(publicSourceConfiguration().map((row) => [row.source, row]));
-  return (["DOMICILIO", "DATAJUD", "DJEN", "ESCAVADOR", "TRT_CERTIFICATE", "CNDT"] as LegalExposureSource[]).map(
+  return (["DOMICILIO", "DATAJUD", "DJEN", "ESCAVADOR", "JUSBRASIL", "TRIBUNAL_PUBLIC", "WEB_DISCOVERY", "TRT_CERTIFICATE", "CNDT"] as LegalExposureSource[]).map(
     (source) => {
       const rows = memory.connections.filter((row) => row.source === source);
-      const configured =
-        config.get(source as "DOMICILIO" | "DATAJUD" | "DJEN" | "ESCAVADOR")?.configured ?? rows.length > 0;
-      const enabled =
-        rows.some((row) => row.enabled) ||
-        Boolean(config.get(source as "DOMICILIO" | "DATAJUD" | "DJEN" | "ESCAVADOR")?.enabled);
+      const configured = config.get(source)?.configured ?? rows.length > 0;
+      const enabled = rows.some((row) => row.enabled) || Boolean(config.get(source)?.enabled);
       if (rows.length === 0) {
         const status = configured ? (enabled ? "NOT_CONFIGURED" : "DISABLED") : "NOT_CONFIGURED";
         return {
@@ -162,9 +166,66 @@ export function buildExposureDashboard(memory: LegalExposureMemory, now = new Da
   start.setHours(0, 0, 0, 0);
   const canonical = listCanonicalCases(memory, {}, now);
   const monitoredCases = uniqueProcessCount(memory);
-  const pendingCommunications = memory.communications.filter((row) => row.normalizedStatus === "PENDING").length;
-  const actionRequired = memory.alerts.filter((row) => row.status === "OPEN" && row.requiresAction).length;
-  const newsToday = memory.events.filter((row) => Date.parse(row.detectedAt) >= start.getTime()).length;
+  const pendingCommunications = uniqueByKey(
+    memory.communications.filter((row) => row.normalizedStatus === "PENDING"),
+    semanticCommunicationKey
+  ).length;
+  const actionRequired = uniqueByKey(
+    memory.alerts.filter((row) => row.status === "OPEN" && row.requiresAction),
+    (row) => semanticAlertKey(memory, row)
+  ).length;
+  const newsToday = uniqueByKey(
+    memory.events.filter((row) => Date.parse(row.detectedAt) >= start.getTime()),
+    (row) => semanticEventKey(memory, row)
+  ).length;
+  const news7Days = uniqueByKey(
+    memory.events.filter((row) => Date.parse(row.detectedAt) >= now.getTime() - 7 * 24 * 60 * 60 * 1000),
+    (row) => semanticEventKey(memory, row)
+  ).length;
+  const datajudEnriched = canonical.filter((row) => row.evidenceSources.includes("DATAJUD")).length;
+  const claimantIdentified = canonical.filter((row) => row.coverage?.fields.claimant === "FOUND").length;
+  const groupPolesIdentified = canonical.filter((row) => row.coverage?.fields.groupPoles === "FOUND").length;
+  const claimValueKnown = canonical.filter((row) => row.coverage?.fields.claimValue === "FOUND").length;
+  const pct = (part: number) => (monitoredCases === 0 ? 0 : Math.round((part / monitoredCases) * 100));
+  const lastUpdatedAt =
+    memory.entities
+      .map((row) => row.lastSuccessfulSyncAt)
+      .filter((value): value is string => Boolean(value))
+      .sort()
+      .at(-1) ?? null;
+  const openAlerts = memory.alerts.filter((row) => row.status === "OPEN" && row.requiresAction);
+  const attentionNow = openAlerts
+    .slice()
+    .sort((left, right) => {
+      const rank = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3, INFO: 4 };
+      const bySeverity = (rank[left.severity] ?? 9) - (rank[right.severity] ?? 9);
+      if (bySeverity !== 0) return bySeverity;
+      return Date.parse(right.createdAt) - Date.parse(left.createdAt);
+    })
+    .slice(0, 5)
+    .map((row) => {
+      const event = memory.events.find((item) => item.id === row.eventId) ?? null;
+      const communication = event?.communicationId
+        ? memory.communications.find((item) => item.id === event.communicationId) ?? null
+        : null;
+      const reference = feedReference(memory, {
+        entityId: row.entityId,
+        caseId: event?.caseId ?? communication?.caseId ?? null,
+        processNumber: communication?.processNumber ?? null,
+        tribunal: communication?.tribunal ?? null,
+        courtUnit: communication?.courtUnit ?? null,
+      });
+      return {
+        id: row.id,
+        type: eventTypeLabel(event?.eventType ?? row.title),
+        company: reference.entity?.legalName ?? "Empresa do grupo",
+        processNumber: reference.processNumber,
+        description: row.summary,
+        at: row.createdAt,
+        caseId: reference.caseId,
+        channel: alertChannelOf(event?.eventType ?? null),
+      };
+    });
   const passiveCases = canonical.filter((row) => row.groupEntities.some((entity) => entity.pole === "PASSIVE")).length;
   const futureHearings = canonical.filter((row) => row.nextHearing).length;
   const knownClaimTotal = canonical.reduce((sum, row) => sum + (row.claimValue ? Number(row.claimValue) || 0 : 0), 0);
@@ -187,13 +248,21 @@ export function buildExposureDashboard(memory: LegalExposureMemory, now = new Da
     poleActive: canonical.filter((row) =>
       row.groupEntities.some((item) => item.id === entity.id && item.pole === "ACTIVE")
     ).length,
-    pendingCommunications: memory.communications.filter(
-      (row) => row.entityId === entity.id && row.normalizedStatus === "PENDING"
+    pendingCommunications: uniqueByKey(
+      memory.communications.filter((row) => row.entityId === entity.id && row.normalizedStatus === "PENDING"),
+      semanticCommunicationKey
     ).length,
-    actionRequired: memory.alerts.filter(
-      (row) => row.entityId === entity.id && row.status === "OPEN" && row.requiresAction
+    actionRequired: uniqueByKey(
+      memory.alerts.filter((row) => row.entityId === entity.id && row.status === "OPEN" && row.requiresAction),
+      (row) => semanticAlertKey(memory, row)
     ).length,
     lastSuccessfulSyncAt: entity.lastSuccessfulSyncAt,
+    knownClaimTotalFormatted: (() => {
+      const total = canonical
+        .filter((row) => row.groupEntities.some((item) => item.id === entity.id))
+        .reduce((sum, row) => sum + (row.claimValue ? Number(row.claimValue) || 0 : 0), 0);
+      return total > 0 ? formatCurrencyBrl(total) : null;
+    })(),
     freshness: sources
       .filter((source) => isCriticalMonitoringSource(source.source))
       .map((source) => ({ source: source.source, status: source.status, healthy: source.healthy })),
@@ -209,11 +278,20 @@ export function buildExposureDashboard(memory: LegalExposureMemory, now = new Da
       monitoredCases,
       pendingCommunications,
       newsToday,
+      news7Days,
       passiveCases,
       futureHearings,
       knownClaimCount,
       knownClaimTotalFormatted: knownClaimCount > 0 ? formatCurrencyBrl(knownClaimTotal) : null,
     },
+    lastUpdatedAt,
+    dataQuality: {
+      claimantIdentifiedPct: pct(claimantIdentified),
+      groupPolesIdentifiedPct: pct(groupPolesIdentified),
+      claimValuePct: pct(claimValueKnown),
+      datajudEnrichedPct: pct(datajudEnriched),
+    },
+    attentionNow,
     monitoredCasesLabel: "Processos únicos",
     multipleGroupNote: MULTIPLE_GROUP_NOTE,
     emptyState: monitoredCases === 0 ? NO_CASES_IDENTIFIED_COPY : null,
@@ -244,10 +322,17 @@ function latestCertificate(memory: LegalExposureMemory, type: "TRT_LABOR_CASES" 
   };
 }
 
-export function listCases(memory: LegalExposureMemory, query: ExposureListQuery): Page<ExposureCaseListItem> {
+export function listCases(memory: LegalExposureMemory, query: ExposureListQuery): Page<ExposureCaseListItem> & {
+  physicalCaseCount: number;
+  uniqueProcessCount: number;
+} {
   const { page, pageSize } = clampPage(query.page, query.pageSize);
   const rows = listCanonicalCases(memory, query);
-  return slicePage(rows, page, pageSize);
+  return {
+    ...slicePage(rows, page, pageSize),
+    physicalCaseCount: memory.cases.length,
+    uniqueProcessCount: uniqueProcessCount(memory),
+  };
 }
 
 /** Referência curta do processo e da empresa, para qualquer linha do feed dizer do que se trata. */
@@ -284,56 +369,62 @@ export function listCommunications(memory: LegalExposureMemory, query: ExposureL
   const { page, pageSize } = clampPage(query.page, query.pageSize);
   const qDigits = digitsOf(query.q);
   const qFolded = foldText(query.q ?? "");
-  const rows = memory.communications
-    .filter((row) => !query.entityId || row.entityId === query.entityId)
-    .filter((row) => !query.status || row.normalizedStatus === query.status)
-    .filter((row) => !query.source || row.source === query.source)
-    .filter((row) => !query.tribunal || foldText(row.tribunal ?? "").includes(foldText(query.tribunal ?? "")))
-    .filter((row) => {
-      if (!query.communicationType) return true;
-      return (
-        classifyCommunicationKind(row.communicationType) === query.communicationType ||
-        foldText(row.communicationType) === foldText(query.communicationType)
-      );
-    })
-    .filter((row) => {
-      if (!query.q?.trim()) return true;
-      if (qDigits) return digitsOf(row.processNumber).includes(qDigits);
-      const haystack = foldText(`${row.subject ?? ""} ${row.communicationType} ${row.tribunal ?? ""}`);
-      return haystack.includes(qFolded);
-    })
-    .filter((row) => inRange(row.detectedAt, query.from, query.to))
-    .sort((a, b) => Date.parse(b.detectedAt) - Date.parse(a.detectedAt))
-    .map((row) => ({
-      id: row.id,
-      entityId: row.entityId,
-      caseId: row.caseId,
-      source: row.source,
-      processNumber: row.processNumber ? formatProcessNumber(row.processNumber) : null,
-      communicationType: row.communicationType,
-      subject: row.subject,
-      sourceStatus: row.sourceStatus,
-      normalizedStatus: row.normalizedStatus,
-      availableAt: row.availableAt,
-      detectedAt: row.detectedAt,
-      tribunal: row.tribunal,
-      courtUnit: row.courtUnit,
-      scienceDeadlineAt: row.scienceDeadlineAt,
-      sourceScienceAt: row.sourceScienceAt,
-      reference: feedReference(memory, { entityId: row.entityId, caseId: row.caseId, processNumber: row.processNumber, tribunal: row.tribunal, courtUnit: row.courtUnit }),
-    }));
+  const filtered = uniqueByKey(
+    memory.communications
+      .filter((row) => !query.entityId || row.entityId === query.entityId)
+      .filter((row) => !query.status || row.normalizedStatus === query.status)
+      .filter((row) => !query.source || row.source === query.source)
+      .filter((row) => !query.tribunal || foldText(row.tribunal ?? "").includes(foldText(query.tribunal ?? "")))
+      .filter((row) => {
+        if (!query.communicationType) return true;
+        return (
+          classifyCommunicationKind(row.communicationType) === query.communicationType ||
+          foldText(row.communicationType) === foldText(query.communicationType)
+        );
+      })
+      .filter((row) => {
+        if (!query.q?.trim()) return true;
+        if (qDigits) return digitsOf(row.processNumber).includes(qDigits);
+        const haystack = foldText(`${row.subject ?? ""} ${row.communicationType} ${row.tribunal ?? ""}`);
+        return haystack.includes(qFolded);
+      })
+      .filter((row) => inRange(row.detectedAt, query.from, query.to))
+      .sort((a, b) => Date.parse(b.detectedAt) - Date.parse(a.detectedAt)),
+    semanticCommunicationKey
+  );
+  const rows = filtered.map((row) => ({
+    id: row.id,
+    entityId: row.entityId,
+    caseId: row.caseId,
+    source: row.source,
+    processNumber: row.processNumber ? formatProcessNumber(row.processNumber) : null,
+    communicationType: row.communicationType,
+    subject: row.subject,
+    sourceStatus: row.sourceStatus,
+    normalizedStatus: row.normalizedStatus,
+    availableAt: row.availableAt,
+    detectedAt: row.detectedAt,
+    tribunal: row.tribunal,
+    courtUnit: row.courtUnit,
+    scienceDeadlineAt: row.scienceDeadlineAt,
+    sourceScienceAt: row.sourceScienceAt,
+    reference: feedReference(memory, { entityId: row.entityId, caseId: row.caseId, processNumber: row.processNumber, tribunal: row.tribunal, courtUnit: row.courtUnit }),
+  }));
   return slicePage(rows, page, pageSize);
 }
 
 export function listEvents(memory: LegalExposureMemory, query: ExposureListQuery) {
   const { page, pageSize } = clampPage(query.page, query.pageSize);
-  const rows = memory.events
-    .filter((row) => !query.entityId || row.entityId === query.entityId)
-    .filter((row) => !query.source || row.source === query.source)
-    .filter((row) => !query.severity || row.severity === query.severity)
-    .filter((row) => inRange(row.detectedAt, query.from, query.to))
-    .sort((a, b) => Date.parse(b.detectedAt) - Date.parse(a.detectedAt))
-    .map((row) => ({
+  const filtered = uniqueByKey(
+    memory.events
+      .filter((row) => !query.entityId || row.entityId === query.entityId)
+      .filter((row) => !query.source || row.source === query.source)
+      .filter((row) => !query.severity || row.severity === query.severity)
+      .filter((row) => inRange(row.detectedAt, query.from, query.to))
+      .sort((a, b) => Date.parse(b.detectedAt) - Date.parse(a.detectedAt)),
+    (row) => semanticEventKey(memory, row)
+  );
+  const rows = filtered.map((row) => ({
       id: row.id,
       entityId: row.entityId,
       caseId: row.caseId,
@@ -356,12 +447,15 @@ export function listEvents(memory: LegalExposureMemory, query: ExposureListQuery
 
 export function listAlerts(memory: LegalExposureMemory, query: ExposureListQuery) {
   const { page, pageSize } = clampPage(query.page, query.pageSize);
-  const rows = memory.alerts
-    .filter((row) => !query.entityId || row.entityId === query.entityId)
-    .filter((row) => !query.status || row.status === query.status)
-    .filter((row) => !query.severity || row.severity === query.severity)
-    .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
-    .map((row) => {
+  const filtered = uniqueByKey(
+    memory.alerts
+      .filter((row) => !query.entityId || row.entityId === query.entityId)
+      .filter((row) => !query.status || row.status === query.status)
+      .filter((row) => !query.severity || row.severity === query.severity)
+      .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt)),
+    (row) => semanticAlertKey(memory, row)
+  );
+  const rows = filtered.map((row) => {
       // O alerta nasce de um evento: é dele que vêm o processo, a comunicação e o detalhe.
       const event = memory.events.find((item) => item.id === row.eventId) ?? null;
       const communication = event?.communicationId ? memory.communications.find((item) => item.id === event.communicationId) ?? null : null;
@@ -399,7 +493,11 @@ export function caseTimeline(memory: LegalExposureMemory, caseId: string, query:
   const caseIds = new Set(
     legalCase
       ? memory.cases
-          .filter((row) => row.processNumberNormalized === legalCase.processNumberNormalized)
+          .filter(
+            (row) =>
+              canonicalProcessKey(row.processNumberNormalized || row.processNumber, row.id).key ===
+              canonicalProcessKey(legalCase.processNumberNormalized || legalCase.processNumber, legalCase.id).key
+          )
           .map((row) => row.id)
       : [caseId]
   );

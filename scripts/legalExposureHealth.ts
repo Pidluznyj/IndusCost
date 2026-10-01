@@ -3,13 +3,15 @@
  */
 
 import { publicSourceConfiguration } from "../src/lib/legalExposure/legalExposureFeatureFlags.js";
-import { RECOMMENDED_SYNC_SCHEDULE } from "../src/lib/legalExposure/legalExposureHealth.js";
+import { LEGAL_EXPOSURE_SOURCE_SCHEDULE } from "../src/lib/legalExposure/legalExposureSourceSchedule.js";
+import { LEGAL_EXPOSURE_HEALTH_INTERVAL_MINUTES } from "../src/lib/legalExposure/legalExposureSourceSchedule.js";
 
 console.log(
   JSON.stringify(
     {
       configuration: publicSourceConfiguration(),
-      scheduleMinutes: RECOMMENDED_SYNC_SCHEDULE,
+      schedule: LEGAL_EXPOSURE_SOURCE_SCHEDULE,
+      healthIntervalMinutes: LEGAL_EXPOSURE_HEALTH_INTERVAL_MINUTES,
       externalCall: false,
     },
     null,

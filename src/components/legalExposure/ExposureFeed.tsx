@@ -23,7 +23,6 @@ import {
   type LegalSourceConnectionStatus,
 } from "@/src/lib/legalExposure/legalExposureContracts";
 import {
-  ALERT_STATUS_LABELS,
   CERTIFICATE_RESULT_LABELS,
   CERTIFICATE_TYPE_LABELS,
   COMMUNICATION_STATUS_LABELS,
@@ -31,6 +30,7 @@ import {
   SOURCE_STATUS_HINTS,
   communicationTypeLabel,
 } from "@/src/lib/legalExposure/legalExposureFeedUi";
+import { alertActionLabel, alertChannelOf, inboxMatchesFilter } from "@/src/lib/legalExposure/legalExposureInbox";
 import { casePoleLabel, caseStatusLabel, formatExposureDate, formatExposureDateTime } from "@/src/lib/legalExposure/legalExposureCaseListUi";
 
 export type ExposureFeedReference = {
@@ -226,6 +226,23 @@ function EmptyState({ text }: { text: string }) {
 
 /* ---------------------------------------------------------------- Ação requerida */
 
+const INBOX_FILTERS = [
+  ["all", "Todas"],
+  ["critical", "Críticas"],
+  ["legal", "Jurídicas"],
+  ["data", "Dados incompletos"],
+  ["technical", "Integração/fontes"],
+  ["acknowledged", "Reconhecidas"],
+] as const;
+
+const SEVERITY_BAR: Record<LegalExposureSeverity, string> = {
+  CRITICAL: "bg-red-700",
+  HIGH: "bg-amber-600",
+  MEDIUM: "bg-yellow-500",
+  LOW: "bg-slate-400",
+  INFO: "bg-slate-300",
+};
+
 export function ExposureAlertsTab({
   alerts,
   canManage,
@@ -247,12 +264,32 @@ export function ExposureAlertsTab({
   onAcknowledge: (alertId: string) => void;
   onResolve: (alertId: string) => void;
 }) {
-  const items = (alerts ?? []).filter((item) => item.requiresAction);
+  const [filter, setFilter] = useState<(typeof INBOX_FILTERS)[number][0]>("all");
+  const items = (alerts ?? []).filter((item) => {
+    const channel = alertChannelOf(item.eventType);
+    if (filter === "all") return item.status !== "RESOLVED";
+    return inboxMatchesFilter(filter, { channel, severity: item.severity, status: item.status });
+  });
   return (
-    <div className="space-y-3">
-      <p className="text-sm text-muted-foreground">
-        Cada item abaixo pede uma providência humana. Dar ciência aqui não substitui a ciência no portal oficial.
-      </p>
+    <div className="space-y-4">
+      <div>
+        <h2 className="text-2xl font-semibold tracking-tight">Ação requerida</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Caixa de entrada. Dar ciência aqui não substitui a ciência no portal oficial.
+        </p>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {INBOX_FILTERS.map(([id, label]) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => setFilter(id)}
+            className={`rounded-full border px-3 py-1 text-sm ${filter === id ? "border-slate-900 bg-slate-900 text-white" : "border-border bg-card"}`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
       {error ? (
         <p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
           {error}
@@ -261,46 +298,78 @@ export function ExposureAlertsTab({
       {loading ? <p className="text-sm text-muted-foreground">{EXPOSURE_LOADING_COPY}</p> : null}
       {!loading && alerts && items.length === 0 ? <EmptyState text={NO_ACTION_REQUIRED_COPY} /> : null}
       {!loading
-        ? items.map((item) => (
-            <article key={item.id} className="rounded-xl border border-border bg-card p-4" data-testid="exposure-alert">
-              <div className="flex flex-wrap items-start justify-between gap-2">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Chip className={SEVERITY_CLASS[item.severity]}>{SEVERITY_LABELS[item.severity]}</Chip>
-                  <Chip>{ALERT_STATUS_LABELS[item.status]}</Chip>
-                  {item.source ? <Chip>{sourceLabel(item.source)}</Chip> : null}
+        ? items.map((item) => {
+            const channel = alertChannelOf(item.eventType);
+            return (
+              <article
+                key={item.id}
+                className="overflow-hidden rounded-2xl border border-border bg-card"
+                data-testid="exposure-alert"
+                data-alert-channel={channel}
+              >
+                <div className="flex">
+                  <span className={`w-1.5 shrink-0 ${SEVERITY_BAR[item.severity]}`} aria-hidden="true" />
+                  <div className="flex-1 p-4">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                      {channel === "TECHNICAL" ? "Integração / fonte" : channel === "DATA" ? "Dados incompletos" : "Ação jurídica"}
+                      {" · "}
+                      {SEVERITY_LABELS[item.severity]}
+                    </p>
+                    <p className="mt-1 text-base font-semibold">{alertActionLabel({ eventType: item.eventType, title: item.title })}</p>
+                    <dl className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
+                      <div>
+                        <dt className="text-muted-foreground">Processo</dt>
+                        <dd className="font-medium">{item.reference.processNumber ?? "Não vinculado"}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-muted-foreground">Empresa</dt>
+                        <dd className="font-medium">{item.reference.entity?.legalName ?? "Empresa do grupo"}</dd>
+                      </div>
+                      <div className="sm:col-span-2">
+                        <dt className="text-muted-foreground">Por que</dt>
+                        <dd>{item.summary}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-muted-foreground">Quando</dt>
+                        <dd>{formatExposureDateTime(item.createdAt) ?? "—"}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-muted-foreground">Fonte</dt>
+                        <dd>{sourceLabel(item.source)}</dd>
+                      </div>
+                    </dl>
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      {item.reference.caseId ? (
+                        <button type="button" className="rounded-lg border border-border px-3 py-1.5 text-sm font-semibold" onClick={() => onOpenCase(item.reference.caseId!)}>
+                          Ver processo
+                        </button>
+                      ) : null}
+                      {canManage && item.status === "OPEN" ? (
+                        <button
+                          type="button"
+                          disabled={busy}
+                          className="rounded-lg border border-border px-3 py-1.5 text-sm font-semibold disabled:opacity-60"
+                          onClick={() => onAcknowledge(item.id)}
+                        >
+                          {busyId === item.id && busy ? "Reconhecendo..." : "Reconhecer"}
+                        </button>
+                      ) : null}
+                      {canManage && item.status !== "RESOLVED" ? (
+                        <button
+                          type="button"
+                          disabled={busy}
+                          className="rounded-lg bg-slate-900 px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-60"
+                          onClick={() => onResolve(item.id)}
+                        >
+                          {busyId === item.id && busy ? "Resolvendo..." : "Resolver"}
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
                 </div>
-                <p className="text-xs text-muted-foreground">Detectado em {formatExposureDateTime(item.createdAt) ?? "—"}</p>
-              </div>
-              <h3 className="mt-2 text-base font-semibold">{item.title}</h3>
-              <p className="text-sm text-muted-foreground">{item.summary}</p>
-              {item.detail ? <p className="mt-1 text-sm">{item.detail}</p> : null}
-              <div className="mt-3 border-t border-border pt-3">
-                <ReferenceLine reference={item.reference} onOpenCase={onOpenCase} />
-              </div>
-              {canManage ? (
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {item.status === "OPEN" ? (
-                    <button
-                      type="button"
-                      disabled={busy}
-                      className="rounded-lg border border-border px-3 py-1.5 text-sm font-semibold disabled:opacity-60"
-                      onClick={() => onAcknowledge(item.id)}
-                    >
-                      {busyId === item.id && busy ? "Reconhecendo..." : "Reconhecer"}
-                    </button>
-                  ) : null}
-                  <button
-                    type="button"
-                    disabled={busy}
-                    className="rounded-lg bg-slate-900 px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-60"
-                    onClick={() => onResolve(item.id)}
-                  >
-                    {busyId === item.id && busy ? "Resolvendo..." : "Resolver"}
-                  </button>
-                </div>
-              ) : null}
-            </article>
-          ))
+              </article>
+            );
+          })
         : null}
     </div>
   );
@@ -775,31 +844,119 @@ export function ExposureCertificatesTab({
 
 /* ---------------------------------------------------------------- Fontes */
 
+export type ExposureSourceOperationItem = {
+  source: string;
+  label: string;
+  description: string;
+  readiness: string;
+  configured: boolean;
+  enabled: boolean;
+  missingEnvVars: string[];
+  hint: string;
+  running: boolean;
+  interrupted: boolean;
+  lastRun: {
+    startedAt: string | null;
+    finishedAt: string | null;
+    durationMs: number | null;
+    outcome: string | null;
+    processesFound: number | null;
+    processesRequested: number | null;
+    sanitizedError: string | null;
+    trigger: string | null;
+  } | null;
+  nextScheduledAt: string | null;
+  frequencyLabel: string;
+  times: string[];
+  coverage: {
+    claimantPct: number | null;
+    polePct: number | null;
+    claimValuePct: number | null;
+    movementsPct: number | null;
+    processCount: number;
+  } | null;
+};
+
+function formatDuration(ms: number | null | undefined): string {
+  if (ms == null || !Number.isFinite(ms) || ms < 0) return "—";
+  const total = Math.round(ms / 1000);
+  const minutes = Math.floor(total / 60);
+  const seconds = total % 60;
+  if (minutes <= 0) return `${seconds} s`;
+  return `${minutes} min ${seconds} s`;
+}
+
+function readinessLabel(value: string): string {
+  if (value === "READY") return "Pronta";
+  if (value === "NEEDS_CREDENTIAL") return "Requer credencial";
+  if (value === "DISABLED_BY_POLICY") return "Desligada por política";
+  if (value === "NOT_IMPLEMENTED") return "Não implementada";
+  return "Erro de configuração";
+}
+
 export function ExposureSourcesTab({
   sources,
+  operations,
   loading,
   error,
-  onTest,
-  testBusy,
-  testResult,
+  onRun,
+  onHistory,
+  runBusy,
+  runResult,
+  historySource,
+  historyRows,
 }: {
   sources: ExposureSourceItem[];
+  operations?: ExposureSourceOperationItem[];
   loading?: boolean;
   error?: string | null;
-  onTest: (source: string) => void;
-  testBusy?: string | null;
-  testResult?: { source: string; message: string } | null;
+  onRun: (source: string) => void;
+  onHistory?: (source: string) => void;
+  runBusy?: string | null;
+  runResult?: { source: string; message: string } | null;
+  historySource?: string | null;
+  historyRows?: Array<{
+    startedAt: string | null;
+    finishedAt: string | null;
+    durationMs: number | null;
+    outcome: string | null;
+    trigger: string | null;
+    processesFound: number | null;
+    sanitizedError: string | null;
+  }>;
 }) {
-  const tone = (status: LegalSourceConnectionStatus) =>
-    status === "HEALTHY"
-      ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-      : status === "NOT_CONFIGURED" || status === "DISABLED"
-        ? "border-slate-200 bg-slate-50 text-slate-600"
-        : "border-amber-200 bg-amber-50 text-amber-900";
+  const cards = operations && operations.length > 0
+    ? operations
+    : sources.map((source) => ({
+        source: source.source,
+        label: source.label,
+        description: "",
+        readiness: source.enabled === false ? "DISABLED_BY_POLICY" : source.configured === false ? "NEEDS_CREDENTIAL" : "READY",
+        configured: source.enabled !== false,
+        enabled: source.enabled !== false,
+        missingEnvVars: [],
+        hint: SOURCE_STATUS_HINTS[source.status],
+        running: false,
+        interrupted: false,
+        lastRun: {
+          startedAt: source.lastAttemptAt ?? null,
+          finishedAt: source.lastSuccessfulAt,
+          durationMs: null,
+          outcome: source.status,
+          processesFound: null,
+          processesRequested: null,
+          sanitizedError: source.lastErrorCode,
+          trigger: null,
+        },
+        nextScheduledAt: null,
+        frequencyLabel: "—",
+        times: [],
+        coverage: null,
+      }));
   return (
     <div className="space-y-3">
       <p className="text-sm text-muted-foreground">
-        Situação de cada fonte consultada. Uma fonte parada ou desatualizada não sustenta ausência de exposição.
+        Central de integrações. Saúde lida das últimas execuções e da agenda — sem consultar as fontes só para mostrar status.
       </p>
       {error ? (
         <p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
@@ -807,33 +964,101 @@ export function ExposureSourcesTab({
         </p>
       ) : null}
       {loading ? <p className="text-sm text-muted-foreground">{EXPOSURE_LOADING_COPY}</p> : null}
-      <div className="grid gap-3 md:grid-cols-2">
-        {sources.map((source) => (
-          <article key={source.source} className="rounded-xl border border-border bg-card p-4" data-testid="exposure-source">
-            <div className="flex flex-wrap items-start justify-between gap-2">
-              <h3 className="text-base font-semibold">{source.label}</h3>
-              <Chip className={tone(source.status)}>{source.statusLabel}</Chip>
-            </div>
-            <p className="mt-1 text-sm text-muted-foreground">{SOURCE_STATUS_HINTS[source.status]}</p>
-            <div className="mt-3 space-y-1">
-              <Fact label="Configuração" value={source.enabled === false ? "Desligado" : "Habilitada na empresa/fonte"} />
-              <Fact label="Última consulta com sucesso" value={formatExposureDateTime(source.lastSuccessfulAt) ?? "nunca"} />
-              <Fact label="Última tentativa" value={formatExposureDateTime(source.lastAttemptAt ?? null) ?? "nunca"} />
-              {source.status !== "DISABLED" && source.status !== "NOT_CONFIGURED" && source.lastErrorCode ? (
-                <Fact label="Erro atual" value={source.lastErrorCode} />
+      <div className="grid gap-3 lg:grid-cols-2">
+        {cards.map((source) => {
+          const running = source.running;
+          const statusText = running
+            ? "Em execução"
+            : source.interrupted
+              ? "Execução interrompida ou sem finalização"
+              : readinessLabel(source.readiness);
+          const tone = running
+            ? "border-sky-200 bg-sky-50 text-sky-900"
+            : source.readiness === "READY" && source.enabled
+              ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+              : "border-slate-200 bg-slate-50 text-slate-700";
+          return (
+            <article key={source.source} className="rounded-xl border border-border bg-card p-4" data-testid="exposure-source">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div>
+                  <h3 className="text-base font-semibold">{source.label}</h3>
+                  {source.description ? <p className="mt-1 text-sm text-muted-foreground">{source.description}</p> : null}
+                </div>
+                <Chip className={tone}>{running ? "● Em execução" : statusText}</Chip>
+              </div>
+              <div className="mt-3 space-y-1 text-sm">
+                <Fact label="Configuração" value={source.enabled ? "Ativa" : source.readiness === "DISABLED_BY_POLICY" ? "Desligada por política" : source.configured ? "Configurada, desligada" : source.hint} />
+                <Fact label="Última execução" value={formatExposureDateTime(source.lastRun?.startedAt ?? source.lastRun?.finishedAt ?? null) ?? "nunca"} />
+                <Fact label="Duração" value={formatDuration(source.lastRun?.durationMs)} />
+                <Fact
+                  label="Resultado"
+                  value={
+                    source.lastRun?.processesFound != null
+                      ? `${source.lastRun.processesFound} processos`
+                      : source.lastRun?.outcome ?? "—"
+                  }
+                />
+                <Fact label="Próxima execução" value={formatExposureDateTime(source.nextScheduledAt) ?? (source.times.length ? "calculando" : "Manual")} />
+                <Fact label="Frequência" value={source.frequencyLabel} />
+                {source.lastRun?.sanitizedError ? <Fact label="Último erro" value={source.lastRun.sanitizedError} /> : null}
+                {source.missingEnvVars.length > 0 ? (
+                  <Fact label="Falta" value={source.missingEnvVars.join(", ")} />
+                ) : null}
+                {source.coverage ? (
+                  <p className="pt-1 text-xs text-muted-foreground">
+                    Cobertura nos processos — reclamantes {source.coverage.claimantPct ?? "—"}% · polo {source.coverage.polePct ?? "—"}% · valor {source.coverage.claimValuePct ?? "—"}% · movimentações {source.coverage.movementsPct ?? "—"}%
+                  </p>
+                ) : null}
+              </div>
+              <div className="mt-3 flex flex-wrap gap-3">
+                <button
+                  type="button"
+                  className="text-sm font-semibold underline"
+                  disabled={runBusy === source.source || running || source.readiness === "DISABLED_BY_POLICY"}
+                  onClick={() => onRun(source.source)}
+                >
+                  {runBusy === source.source || running ? "Execução já em andamento" : "Executar agora"}
+                </button>
+                {onHistory ? (
+                  <button type="button" className="text-sm font-semibold underline" onClick={() => onHistory(source.source)}>
+                    Histórico
+                  </button>
+                ) : null}
+              </div>
+              {runResult?.source === source.source ? <p className="mt-1 text-xs text-muted-foreground">{runResult.message}</p> : null}
+              {historySource === source.source && historyRows ? (
+                <div className="mt-3 overflow-x-auto rounded-lg border border-border">
+                  <table className="min-w-full text-xs">
+                    <thead>
+                      <tr className="bg-muted/40 text-left">
+                        <th className="px-2 py-1">Início</th>
+                        <th className="px-2 py-1">Fim</th>
+                        <th className="px-2 py-1">Duração</th>
+                        <th className="px-2 py-1">Resultado</th>
+                        <th className="px-2 py-1">Trigger</th>
+                        <th className="px-2 py-1">Processos</th>
+                        <th className="px-2 py-1">Erro</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {historyRows.map((row, index) => (
+                        <tr key={`${row.startedAt ?? "run"}-${index}`}>
+                          <td className="px-2 py-1">{formatExposureDateTime(row.startedAt) ?? "—"}</td>
+                          <td className="px-2 py-1">{formatExposureDateTime(row.finishedAt) ?? "—"}</td>
+                          <td className="px-2 py-1">{formatDuration(row.durationMs)}</td>
+                          <td className="px-2 py-1">{row.outcome ?? "—"}</td>
+                          <td className="px-2 py-1">{row.trigger ?? "—"}</td>
+                          <td className="px-2 py-1">{row.processesFound ?? "—"}</td>
+                          <td className="px-2 py-1">{row.sanitizedError ?? "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               ) : null}
-            </div>
-            <button
-              type="button"
-              className="mt-3 text-sm font-semibold underline"
-              disabled={testBusy === source.source}
-              onClick={() => onTest(source.source)}
-            >
-              {testBusy === source.source ? "Testando..." : "Testar conexão"}
-            </button>
-            {testResult?.source === source.source ? <p className="mt-1 text-xs text-muted-foreground">{testResult.message}</p> : null}
-          </article>
-        ))}
+            </article>
+          );
+        })}
       </div>
     </div>
   );

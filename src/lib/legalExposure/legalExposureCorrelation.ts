@@ -5,7 +5,7 @@
  */
 
 import type { LegalEvidenceConfidence } from "./legalExposureContracts.js";
-import { normalizeLegalName } from "./legalExposureNormalization.js";
+import { canonicalProcessKey, normalizeLegalName } from "./legalExposureNormalization.js";
 
 export type CorrelationMethod =
   | "PROCESS_NUMBER"
@@ -50,9 +50,10 @@ function jaccard(left: string, right: string): number {
 
 export function correlateObservation(input: CorrelationInput): CorrelationDecision {
   if (input.processNumberNormalized) {
-    const existing = input.existingCases.find(
-      (row) => row.processNumberNormalized === input.processNumberNormalized
-    );
+    const existing = input.existingCases.find((row) => {
+      const canon = canonicalProcessKey(row.processNumberNormalized, row.id);
+      return canon.ok && canon.key === input.processNumberNormalized;
+    });
     return {
       confidence: "CONFIRMED",
       method: "PROCESS_NUMBER",

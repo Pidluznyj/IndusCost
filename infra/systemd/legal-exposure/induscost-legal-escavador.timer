@@ -1,0 +1,11 @@
+[Unit]
+Description=IndusCost Exposure — Escavador timer
+
+[Timer]
+OnCalendar=*-*-* 03:20:00 America/Sao_Paulo
+Persistent=true
+AccuracySec=1min
+Unit=induscost-legal-escavador.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,14 @@
+[Unit]
+Description=IndusCost Exposure — DataJud timer
+
+[Timer]
+OnCalendar=*-*-* 06:40:00 America/Sao_Paulo
+OnCalendar=*-*-* 12:40:00 America/Sao_Paulo
+OnCalendar=*-*-* 18:40:00 America/Sao_Paulo
+OnCalendar=*-*-* 23:40:00 America/Sao_Paulo
+Persistent=true
+AccuracySec=1min
+Unit=induscost-legal-datajud.service
+
+[Install]
+WantedBy=timers.target

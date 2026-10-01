@@ -1,0 +1,19 @@
+# Exposure — timers systemd (preparados, NÃO ativar em produção neste ciclo)
+#
+# Homologação: copiar para /etc/systemd/system, ajustar WorkingDirectory/User,
+# `systemctl daemon-reload`. Não executar enable em produção neste prompt.
+#
+# Cada job usa flock próprio. Persistent=true para janelas perdidas após reboot.
+# Agenda deve coincidir com src/lib/legalExposure/legalExposureSourceSchedule.ts
+# Timezone: America/Sao_Paulo.
+
+[Unit]
+Description=IndusCost Exposure — DJEN discovery
+Documentation=file:README.md
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/induscost
+EnvironmentFile=-/opt/induscost/.env
+ExecStart=/usr/bin/flock -n /run/induscost-legal-djen.lock /usr/bin/npm run legal:exposure:djen:apply --prefix /opt/induscost
+Nice=10

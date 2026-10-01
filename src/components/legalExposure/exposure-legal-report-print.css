@@ -1,0 +1,419 @@
+/* Impressão A4 portrait — Exposure jurídico executivo.
+ * Rota isolada: body.exposure-legal-report-printing
+ * Restaura visibility porque reports-print.css oculta body *.
+ */
+
+@page exposure-legal {
+  size: A4 portrait;
+  margin: 12mm 14mm 16mm 14mm;
+}
+
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 12mm 14mm 16mm 14mm;
+  }
+
+  html,
+  body {
+    background: #fff !important;
+    overflow: visible !important;
+    height: auto !important;
+  }
+
+  body.exposure-legal-report-printing,
+  body.exposure-legal-report-printing * {
+    visibility: visible !important;
+  }
+
+  body.exposure-legal-report-printing .exposure-legal-report-no-print,
+  body.exposure-legal-report-printing .no-print,
+  body.exposure-legal-report-printing button {
+    display: none !important;
+    visibility: hidden !important;
+  }
+
+  body.exposure-legal-report-printing #root {
+    overflow: visible !important;
+  }
+  body.exposure-legal-report-printing main > header,
+  body.exposure-legal-report-printing nav {
+    display: none !important;
+  }
+
+  .exposure-legal-report-document {
+    page: exposure-legal;
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+    background: #fff !important;
+    overflow: visible !important;
+  }
+
+  .exposure-legal-print-page {
+    break-after: page;
+    page-break-after: always;
+    break-inside: avoid;
+    page-break-inside: avoid;
+    min-height: 0;
+    max-height: 269mm;
+    overflow: hidden;
+    box-sizing: border-box;
+    padding-bottom: 12mm;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .exposure-legal-print-page--flow {
+    break-inside: auto;
+    page-break-inside: auto;
+    max-height: none;
+    overflow: visible;
+  }
+
+  .exposure-legal-print-page:last-child {
+    break-after: auto;
+    page-break-after: auto;
+  }
+
+  .exposure-legal-print-page-header,
+  .exposure-legal-print-page-footer {
+    flex-shrink: 0;
+  }
+
+  .exposure-legal-print-page-body {
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+
+  .exposure-legal-report-table thead {
+    display: table-header-group;
+  }
+
+  .exposure-legal-report-table tbody tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+}
+
+.exposure-legal-report-preview {
+  min-height: 100vh;
+  background: #e2e8f0;
+  padding: 16px;
+}
+
+.exposure-legal-report-document {
+  width: 210mm;
+  margin: 0 auto;
+  background: #fff;
+  color: #0f172a;
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.18);
+}
+
+.exposure-legal-print-page {
+  box-sizing: border-box;
+  padding: 10mm 12mm 14mm;
+  min-height: 277mm;
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+}
+
+.exposure-legal-print-page--cover {
+  padding: 0;
+  min-height: 277mm;
+}
+
+.exposure-legal-print-cover {
+  min-height: 277mm;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  background: linear-gradient(160deg, #0f172a 0%, #1e3a5f 58%, #334155 100%);
+  color: #f8fafc;
+  padding: 22mm 16mm;
+  position: relative;
+}
+
+.exposure-legal-print-cover-mark {
+  position: absolute;
+  right: 16mm;
+  bottom: 22mm;
+  opacity: 0.18;
+  color: #e2e8f0;
+}
+
+.exposure-legal-print-cover-logo {
+  max-height: 22mm;
+  max-width: 72mm;
+  object-fit: contain;
+  margin-bottom: 8mm;
+  filter: brightness(0) invert(1);
+}
+
+.exposure-legal-print-cover-logo[data-light="true"] {
+  filter: none;
+}
+
+.exposure-legal-print-cover-kicker {
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  font-size: 9pt;
+  color: #94a3b8;
+  margin: 0 0 4mm;
+}
+
+.exposure-legal-print-cover-title {
+  font-size: 22pt;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  margin: 0 0 5mm;
+  max-width: 160mm;
+}
+
+.exposure-legal-print-cover-subtitle {
+  font-size: 12pt;
+  color: #cbd5e1;
+  margin: 0 0 2mm;
+}
+
+.exposure-legal-print-cover-cnj {
+  font-size: 16pt;
+  font-weight: 700;
+  margin: 0 0 8mm;
+}
+
+.exposure-legal-print-cover-meta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6mm 10mm;
+  text-align: left;
+  max-width: 150mm;
+  width: 100%;
+}
+
+.exposure-legal-print-cover-label {
+  font-size: 8pt;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #94a3b8;
+  margin: 0 0 1mm;
+}
+
+.exposure-legal-print-cover-value {
+  font-size: 11pt;
+  margin: 0;
+}
+
+.exposure-legal-print-page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4mm;
+  border-bottom: 0.35mm solid #cbd5e1;
+  padding-bottom: 3mm;
+  margin-bottom: 5mm;
+}
+
+.exposure-legal-print-page-logo {
+  max-height: 9mm;
+  max-width: 34mm;
+  object-fit: contain;
+}
+
+.exposure-legal-print-page-header-doc {
+  margin: 0;
+  font-size: 9pt;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.exposure-legal-print-page-header-meta {
+  margin: 1mm 0 0;
+  font-size: 8pt;
+  color: #64748b;
+}
+
+.exposure-legal-print-page-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 4mm;
+  margin-top: auto;
+  padding-top: 3mm;
+  border-top: 0.3mm solid #e2e8f0;
+  font-size: 7.5pt;
+  color: #64748b;
+}
+
+.exposure-legal-print-page-footer-logo {
+  max-height: 6mm;
+  max-width: 22mm;
+  object-fit: contain;
+}
+
+.exposure-legal-print-page-footer-page {
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.exposure-legal-report-kicker {
+  margin: 0 0 2mm;
+  font-size: 8pt;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: #64748b;
+  font-weight: 700;
+}
+
+.exposure-legal-report-h1 {
+  margin: 0 0 5mm;
+  font-size: 16pt;
+  font-weight: 800;
+}
+
+.exposure-legal-report-facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 3mm 6mm;
+  margin-bottom: 6mm;
+}
+
+.exposure-legal-report-facts dt {
+  font-size: 7.5pt;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #64748b;
+  margin: 0;
+}
+
+.exposure-legal-report-facts dd {
+  margin: 0.5mm 0 0;
+  font-size: 10.5pt;
+  font-weight: 600;
+}
+
+.exposure-legal-report-vs {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  gap: 6mm;
+  align-items: start;
+  padding: 5mm;
+  border: 0.3mm solid #e2e8f0;
+  margin-bottom: 6mm;
+}
+
+.exposure-legal-report-vs-label {
+  margin: 0 0 2mm;
+  font-size: 8pt;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #64748b;
+  font-weight: 700;
+}
+
+.exposure-legal-report-vs-name {
+  margin: 0;
+  font-size: 12pt;
+  font-weight: 700;
+}
+
+.exposure-legal-report-vs-mark {
+  align-self: center;
+  font-size: 9pt;
+  letter-spacing: 0.2em;
+  font-weight: 800;
+  color: #94a3b8;
+}
+
+.exposure-legal-report-narrative {
+  font-size: 10.5pt;
+  line-height: 1.55;
+  margin: 0 0 6mm;
+  max-width: 170mm;
+}
+
+.exposure-legal-report-attention {
+  border: 0.3mm solid #e2e8f0;
+  padding: 4mm 5mm;
+}
+
+.exposure-legal-report-attention li {
+  font-size: 10pt;
+  margin: 0 0 1.5mm;
+}
+
+.exposure-legal-report-kpis {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4mm;
+  margin-bottom: 8mm;
+}
+
+.exposure-legal-report-kpi {
+  border: 0.3mm solid #e2e8f0;
+  padding: 4mm;
+}
+
+.exposure-legal-report-kpi dt {
+  margin: 0;
+  font-size: 7.5pt;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #64748b;
+}
+
+.exposure-legal-report-kpi dd {
+  margin: 2mm 0 0;
+  font-size: 16pt;
+  font-weight: 800;
+}
+
+.exposure-legal-report-company-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4mm;
+}
+
+.exposure-legal-report-company {
+  border: 0.3mm solid #e2e8f0;
+  padding: 4mm;
+}
+
+.exposure-legal-report-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 8.5pt;
+}
+
+.exposure-legal-report-table th,
+.exposure-legal-report-table td {
+  border-bottom: 0.2mm solid #e2e8f0;
+  padding: 2.2mm 1.6mm;
+  text-align: left;
+  vertical-align: top;
+  word-wrap: break-word;
+}
+
+.exposure-legal-report-table th {
+  font-size: 7.5pt;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #64748b;
+  font-weight: 700;
+}
+
+.exposure-legal-report-note {
+  margin-top: 6mm;
+  font-size: 8.5pt;
+  color: #475569;
+  line-height: 1.45;
+}

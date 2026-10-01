@@ -1,0 +1,14 @@
+[Unit]
+Description=IndusCost Exposure — DJEN discovery timer
+
+[Timer]
+OnCalendar=*-*-* 06:10:00 America/Sao_Paulo
+OnCalendar=*-*-* 12:10:00 America/Sao_Paulo
+OnCalendar=*-*-* 18:10:00 America/Sao_Paulo
+OnCalendar=*-*-* 23:10:00 America/Sao_Paulo
+Persistent=true
+AccuracySec=1min
+Unit=induscost-legal-djen.service
+
+[Install]
+WantedBy=timers.target

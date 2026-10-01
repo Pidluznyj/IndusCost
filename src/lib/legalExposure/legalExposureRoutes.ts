@@ -13,6 +13,12 @@ import {
   ExposureServiceError,
   type ExposureServiceDeps,
 } from "./legalExposureService.server.js";
+import {
+  finishExposureIntegrationRun,
+  findRunningExposureJob,
+  listExposureIntegrationRuns,
+  startExposureIntegrationRun,
+} from "./legalExposureIntegrationRun.server.js";
 
 type ExposureService = ReturnType<typeof createLegalExposureService>;
 
@@ -75,6 +81,10 @@ export function registerLegalExposureRoutes(
       recordIntegrationRun:
         guards.recordIntegrationRun ??
         (async (input) => {
+          const startedAt = input.startedAt ?? new Date();
+          const finishedAt = input.finishedAt ?? new Date();
+          const durationMs =
+            input.durationMs ?? Math.max(0, finishedAt.getTime() - startedAt.getTime());
           await prisma.integrationRun.create({
             data: {
               sourceSystem: "CNJ",
@@ -83,11 +93,17 @@ export function registerLegalExposureRoutes(
               status: input.status,
               success: input.status === "SUCCESS" || input.status === "NO_RESULTS" || input.status === "PARTIAL",
               summaryJson: input.summary as object,
-              startedAt: new Date(),
-              finishedAt: new Date(),
+              command: input.command ?? null,
+              startedAt,
+              finishedAt,
+              durationMs,
             },
           });
         }),
+      listIntegrationRuns: (input) => listExposureIntegrationRuns(prisma, input),
+      findRunningJob: (target) => findRunningExposureJob(prisma, target),
+      beginIntegrationRun: (input) => startExposureIntegrationRun(prisma, input),
+      finishIntegrationRun: (input) => finishExposureIntegrationRun(prisma, input),
     });
 
   const auth = guards.requireAppAuth;
@@ -201,27 +217,35 @@ export function registerLegalExposureRoutes(
     }
   });
 
-  app.get("/api/legal-exposure/cases/:id/pdf", auth, view, async (req, res) => {
+  app.post("/api/legal-exposure/cases/:id/complete-data", auth, sync, async (req, res) => {
     try {
-      const pdf = await service.processPdf(String(req.params.id), await userId(req));
-      res.setHeader("content-type", "application/pdf");
-      res.setHeader("content-disposition", `attachment; filename="${pdf.filename}"`);
-      res.send(pdf.buffer);
+      res.json(await service.completeCaseData(String(req.params.id), await userId(req)));
     } catch (error) {
       sendError(res, error);
     }
   });
 
-  app.get("/api/legal-exposure/reports/group.pdf", auth, view, async (req, res) => {
+  app.get("/api/legal-exposure/reports/group", auth, view, async (req, res) => {
     try {
       const entityId = typeof req.query.entityId === "string" ? req.query.entityId : null;
-      const pdf = await service.groupPdf(entityId, await userId(req));
-      res.setHeader("content-type", "application/pdf");
-      res.setHeader("content-disposition", `attachment; filename="${pdf.filename}"`);
-      res.send(pdf.buffer);
+      res.json(await service.groupReport(entityId, await userId(req)));
     } catch (error) {
       sendError(res, error);
     }
+  });
+
+  app.get("/api/legal-exposure/cases/:id/pdf", auth, view, async (req, res) => {
+    res.status(410).json({
+      error: "O dossiê PDF passou a ser gerado pela rota de impressão do navegador.",
+      printPath: `/exposure/cases/${String(req.params.id)}/print`,
+    });
+  });
+
+  app.get("/api/legal-exposure/reports/group.pdf", auth, view, async (_req, res) => {
+    res.status(410).json({
+      error: "O relatório PDF passou a ser gerado pela rota de impressão do navegador.",
+      printPath: "/exposure/reports/group/print",
+    });
   });
 
   app.get("/api/legal-exposure/communications", auth, communications, async (req, res) => {
@@ -286,6 +310,26 @@ export function registerLegalExposureRoutes(
   app.get("/api/legal-exposure/sources/status", auth, sourcesView, async (_req, res) => {
     try {
       res.json(await service.sourceStatus());
+    } catch (error) {
+      sendError(res, error);
+    }
+  });
+
+  app.get("/api/legal-exposure/sources/operations", auth, sourcesView, async (_req, res) => {
+    try {
+      const status = await service.sourceStatus();
+      res.json({
+        operations: status.operations,
+        healthCheckExternalCall: false,
+      });
+    } catch (error) {
+      sendError(res, error);
+    }
+  });
+
+  app.get("/api/legal-exposure/sources/:source/runs", auth, sourcesView, async (req, res) => {
+    try {
+      res.json({ items: await service.sourceRuns(String(req.params.source)) });
     } catch (error) {
       sendError(res, error);
     }

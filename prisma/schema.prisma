@@ -11603,6 +11603,9 @@ enum LegalExposureSource {
   TRT_CERTIFICATE
   CNDT
   ESCAVADOR
+  JUSBRASIL
+  TRIBUNAL_PUBLIC
+  WEB_DISCOVERY
 }
 
 enum LegalSourceConnectionStatus {

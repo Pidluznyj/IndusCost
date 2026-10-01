@@ -38,6 +38,7 @@ export const PRINT_GLOBAL_CSS_FILES = [
   "src/cnpj-intelligence-print.css",
   "src/project-executive-report-print.css",
   "src/components/finance/executive-report/finance-executive-report-print.css",
+  "src/components/legalExposure/exposure-legal-report-print.css",
   "src/components/commercial/sold-products-print.css",
   "src/components/finance/finance-ar-overdue-print.css",
   "src/components/crm/customer-intelligence/customer-intelligence.css",
@@ -72,6 +73,32 @@ export const PRINT_PDF_AUDIT_ENTRIES: PrintPdfAuditEntry[] = [
       "Exportação alternativa: ZIP com um PNG a 300 DPI por página (html2canvas). " +
         "Reaproveita o mesmo CSS de impressão (extraído em runtime via import ?raw) " +
         "para reproduzir o layout paginado fora de um contexto real de impressão.",
+    ],
+  },
+  {
+    id: "legal-exposure-report",
+    module: "Administração",
+    feature: "Exposure — Dossiê e relatório jurídico",
+    route: "/exposure/reports/group/print",
+    files: [
+      "src/components/legalExposure/ExposureLegalReportPrintView.tsx",
+      "src/components/legalExposure/ExposureLegalReportDocument.tsx",
+      "src/components/legalExposure/ExposureCaseLegalReportDocument.tsx",
+      "src/components/legalExposure/ExposureGroupLegalReportDocument.tsx",
+      "src/components/legalExposure/exposure-legal-report-print.css",
+      "src/lib/legalExposure/legalExposurePrint.ts",
+      "src/lib/printBranding.ts",
+    ],
+    printMode: "pdf-layout",
+    hasPrintCss: true,
+    hasNoPrintShell: true,
+    hasSafePageBreaks: true,
+    hasFooterSafeArea: true,
+    hasChartPrintRules: false,
+    risk: "ok",
+    notes: [
+      "A4 portrait via rota isolada; branding de Identidade Visual.",
+      "Sem builder %PDF/Helvetica. Imprimir / Salvar PDF no navegador.",
     ],
   },
   {
@@ -575,6 +602,7 @@ const CRITICAL_PRINT_IDS = new Set([
   "sales-order-print",
   "proposal-print",
   "material-demand-print",
+  "legal-exposure-report",
 ]);
 
 export function isVisualPrintEntry(entry: PrintPdfAuditEntry): boolean {

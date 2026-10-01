@@ -11,6 +11,9 @@ export const LEGAL_EXPOSURE_SOURCES = [
   "TRT_CERTIFICATE",
   "CNDT",
   "ESCAVADOR",
+  "JUSBRASIL",
+  "TRIBUNAL_PUBLIC",
+  "WEB_DISCOVERY",
 ] as const;
 export type LegalExposureSource = (typeof LEGAL_EXPOSURE_SOURCES)[number];
 
@@ -163,6 +166,9 @@ export const SOURCE_LABELS: Record<LegalExposureSource, string> = {
   TRT_CERTIFICATE: "Certidão TRT",
   CNDT: "CNDT",
   ESCAVADOR: "Escavador",
+  JUSBRASIL: "Jusbrasil",
+  TRIBUNAL_PUBLIC: "Portal do tribunal",
+  WEB_DISCOVERY: "Localizador web",
 };
 
 export const SOURCE_STATUS_LABELS: Record<LegalSourceConnectionStatus, string> = {
@@ -201,6 +207,8 @@ export const CASE_DETECTED_LABEL = "Detectado pelo IndusCost";
 export const CASE_SOURCE_UPDATED_LABEL = "Atualização da fonte";
 export const CASE_FILED_AT_LABEL = "Ajuizamento";
 export const CASE_CLAIMANT_UNKNOWN_COPY = "Reclamante não identificado nas fontes disponíveis";
+export const CASE_CLAIMANT_MISSING_COPY = "Autor/reclamante ainda não identificado";
+export const PARTY_ROLE_CONFLICT_COPY = "Polo divergente entre fontes — revisão necessária.";
 export const CASE_CLAIM_VALUE_UNKNOWN_COPY = "Valor da causa não informado";
 export const CASE_STAGE_UNKNOWN_COPY = "Fase processual não determinada";
 export const CASE_HEARING_UNKNOWN_COPY = "Audiência futura não identificada";
@@ -212,6 +220,9 @@ export const SOURCE_KIND_LABELS: Record<LegalExposureSource, string> = {
   DATAJUD: "DataJud · oficial",
   DJEN: "DJEN · oficial",
   ESCAVADOR: "Escavador · complementar",
+  JUSBRASIL: "Jusbrasil · complementar",
+  TRIBUNAL_PUBLIC: "Portal do tribunal · oficial",
+  WEB_DISCOVERY: "Localizador web · indício",
   DOMICILIO: "Domicílio · oficial",
   TRT_CERTIFICATE: "Certidão TRT",
   CNDT: "CNDT",
@@ -254,6 +265,159 @@ export type ExposureExecutiveParty = {
   isGroupEntity: boolean;
   entityId: string | null;
   sources: LegalExposureSource[];
+  roles: LegalCasePole[];
+  roleConflict: boolean;
+};
+
+export type CaseCoverageStatus = "FOUND" | "MISSING" | "CONFLICT" | "NOT_AVAILABLE";
+
+export const COVERAGE_GAP_CAUSES = [
+  "FOUND",
+  "CONFLICT",
+  "CAPTCHA",
+  "NOT_CONFIGURED",
+  "SOURCE_UNAVAILABLE",
+  "SEALED_PROCESS",
+  "ENDPOINT_WITHOUT_PARTIES",
+  "TECHNICAL_ERROR",
+  "RATE_LIMIT",
+  "FIELD_ABSENT",
+  "NOT_CONSULTED",
+] as const;
+export type CoverageGapCause = (typeof COVERAGE_GAP_CAUSES)[number];
+
+export const COVERAGE_GAP_CAUSE_LABELS: Record<CoverageGapCause, string> = {
+  FOUND: "Confirmado",
+  CONFLICT: PARTY_ROLE_CONFLICT_COPY,
+  CAPTCHA: "Portal do tribunal exige acesso manual (CAPTCHA/anti-bot). URL oficial registrada.",
+  NOT_CONFIGURED: "Provedor sem credencial ou desligado — nenhuma consulta paga foi disparada.",
+  SOURCE_UNAVAILABLE: "Fonte indisponível na última consulta.",
+  SEALED_PROCESS: "Processo com sigilo; a fonte oficial não divulga o campo.",
+  ENDPOINT_WITHOUT_PARTIES: "Fonte oficial consultada sem devolver partes neste endpoint.",
+  TECHNICAL_ERROR: "Erro técnico na consulta da fonte.",
+  RATE_LIMIT: "Consulta limitada por taxa da fonte.",
+  FIELD_ABSENT: "Campo realmente ausente nas fontes consultadas.",
+  NOT_CONSULTED: "Fonte ainda não consultada para este processo.",
+};
+
+export type CoverageFieldKey =
+  | "claimant"
+  | "defendants"
+  | "groupPoles"
+  | "class"
+  | "subjects"
+  | "claimValue"
+  | "movements"
+  | "attorneys"
+  | "hearings"
+  | "status";
+
+export type CoverageFieldDiagnosis = {
+  status: CaseCoverageStatus;
+  sources: LegalExposureSource[];
+  cause: CoverageGapCause;
+  causeLabel: string;
+  line: string;
+};
+
+export type CoverageSourceFact = {
+  source: LegalExposureSource;
+  claimantCount: number;
+  defendantCount: number;
+  classFound: boolean;
+  subjectCount: number;
+  claimValueFound: boolean;
+  movementCount: number;
+  attorneyCount: number;
+  hearingCount: number;
+  publicationCount: number;
+  statusFound: boolean;
+  lastSeenAt: string | null;
+  attemptOutcome: string | null;
+  attemptErrorCode: string | null;
+  attemptMessage: string | null;
+  publicUrl: string | null;
+  capabilities: string[];
+};
+
+export type CoverageSourceMatrixRow = {
+  source: LegalExposureSource;
+  label: string;
+  outcome: string;
+  authority: "oficial" | "complementar" | "localizador" | "outro";
+  claimant: "found" | "missing" | "n/a";
+  defendants: "found" | "missing" | "n/a";
+  class: "found" | "missing" | "n/a";
+  subjects: "found" | "missing" | "n/a";
+  claimValue: "found" | "missing" | "n/a";
+  movements: number;
+  attorneys: "found" | "missing" | "n/a";
+  hearings: "found" | "missing" | "n/a";
+  publication: "found" | "missing" | "n/a";
+  errorCode: string | null;
+  message: string | null;
+  publicUrl: string | null;
+};
+
+export type CoveragePublicCompare = {
+  tribunal: string | null;
+  adapterId: string | null;
+  adapterLabel: string | null;
+  publicUrl: string | null;
+  automated: false;
+  reason: string;
+  portalCapabilities: string[];
+  datajudPresent: string[];
+  additionalOnPortal: string[];
+};
+
+export type CaseDataCoverage = {
+  fields: Record<CoverageFieldKey, CaseCoverageStatus>;
+  fieldDiagnoses: Record<CoverageFieldKey, CoverageFieldDiagnosis>;
+  sourceMatrix: CoverageSourceMatrixRow[];
+  winningSources: Partial<Record<CoverageFieldKey, LegalExposureSource[]>>;
+  publicCompare: CoveragePublicCompare | null;
+  coverageScore: number;
+  consultedSources: LegalExposureSource[];
+  missingReasons: string[];
+  opposition: {
+    claimantLabel: string;
+    defendantLabel: string;
+    conflict: boolean;
+    caption: string;
+  };
+};
+
+export const COVERAGE_STATUS_LABELS: Record<CaseCoverageStatus, string> = {
+  FOUND: "Encontrado",
+  MISSING: "Ausente",
+  CONFLICT: "Conflito",
+  NOT_AVAILABLE: "Não disponível",
+};
+export const COVERAGE_FIELD_LABELS: Record<keyof CaseDataCoverage["fields"], string> = {
+  claimant: "Autor/reclamante",
+  defendants: "Réus",
+  groupPoles: "Polo das empresas do grupo",
+  class: "Classe",
+  subjects: "Assuntos",
+  claimValue: "Valor da causa",
+  movements: "Movimentações",
+  attorneys: "Advogados",
+  hearings: "Audiências",
+  status: "Situação",
+};
+
+export const SOURCE_ATTEMPT_IDENTIFIER = "SOURCE_ATTEMPT";
+
+export type LegalProcessEnrichmentStep = {
+  source: LegalExposureSource;
+  outcome: string;
+  errorCode: string | null;
+  message: string | null;
+  publicUrl?: string | null;
+  capabilities?: string[];
+  applied: boolean;
+  cached?: boolean;
 };
 
 export type ExposureExecutiveAttorney = {
@@ -333,6 +497,7 @@ export type ExposureCaseListItem = {
   attentionLabels: string[];
   multipleGroupEntities: boolean;
   secrecy: boolean | null;
+  coverage?: CaseDataCoverage;
 };
 
 export type ExposureCaseInvolvedEntity = {

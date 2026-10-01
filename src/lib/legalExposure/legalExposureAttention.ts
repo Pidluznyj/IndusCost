@@ -12,6 +12,7 @@ export const ATTENTION_FLAGS = [
   "INCOMPLETE_ENRICHMENT",
   "SOURCE_DEGRADED",
   "PROCESS_ARCHIVED",
+  "PARTY_ROLE_CONFLICT",
 ] as const;
 export type AttentionFlag = (typeof ATTENTION_FLAGS)[number];
 
@@ -25,6 +26,7 @@ export const ATTENTION_FLAG_LABELS: Record<AttentionFlag, string> = {
   INCOMPLETE_ENRICHMENT: "Dados processuais ainda incompletos",
   SOURCE_DEGRADED: "Fonte oficial degradada",
   PROCESS_ARCHIVED: "Arquivamento informado pela fonte",
+  PARTY_ROLE_CONFLICT: "Polo divergente entre fontes — revisão necessária.",
 };
 
 export function attentionLabel(flag: AttentionFlag, extra?: { count?: number }): string {
@@ -43,6 +45,7 @@ export function collectAttentionFlags(input: {
   enrichmentIncomplete: boolean;
   sourceDegraded: boolean;
   archivedAt: string | null;
+  partyRoleConflict?: boolean;
   now: Date;
 }): AttentionFlag[] {
   const flags: AttentionFlag[] = [];
@@ -58,5 +61,6 @@ export function collectAttentionFlags(input: {
   if (input.enrichmentIncomplete) flags.push("INCOMPLETE_ENRICHMENT");
   if (input.sourceDegraded) flags.push("SOURCE_DEGRADED");
   if (input.archivedAt) flags.push("PROCESS_ARCHIVED");
+  if (input.partyRoleConflict) flags.push("PARTY_ROLE_CONFLICT");
   return flags;
 }

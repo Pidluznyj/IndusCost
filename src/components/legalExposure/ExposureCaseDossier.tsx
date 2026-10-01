@@ -1,14 +1,17 @@
 /**
- * Dossiê executivo do processo. Sem rawMetadata e sem CPF completo.
+ * Modal central do dossiê do processo. Sem drawer lateral.
  */
 
 import React, { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { Bell, Calendar, FileText, Gavel, Scale, X } from "lucide-react";
 import {
   CASE_CLAIM_VALUE_UNKNOWN_COPY,
-  CASE_CLAIMANT_UNKNOWN_COPY,
+  CASE_CLAIMANT_MISSING_COPY,
   CASE_HEARING_UNKNOWN_COPY,
   CASE_POLE_UNCONFIRMED_COPY,
   CASE_STAGE_UNKNOWN_COPY,
+  COVERAGE_FIELD_LABELS,
   GROUP_ENTITY_BADGE_COPY,
   NO_TIMELINE_EVENTS_COPY,
   OFFICIAL_COMMUNICATIONS_PORTAL_URL,
@@ -17,6 +20,7 @@ import {
   type ExposureCaseListItem,
   type ExposureTimelineItem,
   type LegalExposureSource,
+  type LegalProcessEnrichmentStep,
 } from "@/src/lib/legalExposure/legalExposureContracts";
 import {
   caseFiledAtLabel,
@@ -32,8 +36,9 @@ import {
   exposureTimelineKindLabel,
   movementComplementsText,
 } from "@/src/lib/legalExposure/legalExposureFeedUi";
+import { ExposureLitigationSides } from "./ExposureLitigationSides";
 
-type Dossier = ExposureCaseListItem & {
+export type ExposureDossier = ExposureCaseListItem & {
   narrative?: string;
   groupNote?: string | null;
   parties?: {
@@ -65,24 +70,68 @@ type Dossier = ExposureCaseListItem & {
 type TabId = "resumo" | "partes" | "timeline" | "comunicacoes" | "fontes";
 
 type Props = {
-  dossier: Dossier;
+  dossier: ExposureDossier;
   refreshing?: boolean;
+  completing?: boolean;
+  completeSteps?: LegalProcessEnrichmentStep[];
   initialTab?: TabId;
   onClose: () => void;
   onRefresh: () => void;
+  onCompleteData: () => void;
   onPdf: () => void;
 };
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+const TABS: { id: TabId; label: string }[] = [
+  { id: "resumo", label: "Resumo" },
+  { id: "partes", label: "Partes e representantes" },
+  { id: "timeline", label: "Linha do tempo" },
+  { id: "comunicacoes", label: "Comunicações" },
+  { id: "fontes", label: "Fontes e evidências" },
+];
+
+function Fact({ label, value }: { label: string; value: React.ReactNode }) {
   return (
-    <section className="rounded-xl border border-border bg-card p-4">
-      <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{title}</h3>
-      <div className="mt-2 space-y-1 text-sm">{children}</div>
-    </section>
+    <div>
+      <dt className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{label}</dt>
+      <dd className="mt-1 text-sm">{value}</dd>
+    </div>
   );
 }
 
-export function ExposureCaseDossier({ dossier, refreshing, initialTab = "resumo", onClose, onRefresh, onPdf }: Props) {
+function timelineVisual(row: ExposureTimelineItem): { label: string; Icon: typeof FileText } {
+  const title = `${row.kind} ${row.title}`.toLowerCase();
+  if (row.kind === "hearing" || title.includes("audi")) return { label: "Audiência", Icon: Calendar };
+  if (row.kind === "publication" || title.includes("public")) return { label: "Publicação", Icon: Bell };
+  if (row.kind === "communication") return { label: "Comunicação", Icon: Bell };
+  if (title.includes("distrib")) return { label: "Distribuição", Icon: FileText };
+  if (title.includes("decis") || title.includes("senten") || title.includes("gavel")) return { label: "Decisão", Icon: Gavel };
+  if (row.kind === "event") return { label: "Evento IndusCost", Icon: Scale };
+  return { label: exposureTimelineKindLabel(row.kind, row.title), Icon: FileText };
+}
+
+function PartyCard(props: { name: string; meta: string; sources?: string[] }) {
+  return (
+    <article className="rounded-xl border border-border bg-card p-4">
+      <p className="font-semibold">{props.name}</p>
+      {props.meta ? <p className="mt-1 text-sm text-muted-foreground">{props.meta}</p> : null}
+      {props.sources && props.sources.length > 0 ? (
+        <p className="mt-2 text-xs text-muted-foreground">{props.sources.join(" · ")}</p>
+      ) : null}
+    </article>
+  );
+}
+
+export function ExposureCaseDossier({
+  dossier,
+  refreshing,
+  completing,
+  completeSteps = [],
+  initialTab = "resumo",
+  onClose,
+  onRefresh,
+  onCompleteData,
+  onPdf,
+}: Props) {
   const [tab, setTab] = useState<TabId>(initialTab);
   const [timelineKind, setTimelineKind] = useState("all");
   const [openComplements, setOpenComplements] = useState<string | null>(null);
@@ -90,6 +139,8 @@ export function ExposureCaseDossier({ dossier, refreshing, initialTab = "resumo"
   const timeline = (dossier.timeline ?? []).filter((row) => timelineKind === "all" || row.kind === timelineKind);
   const groupParties = dossier.parties?.group ?? dossier.groupEntities;
   const thirdParties = dossier.parties?.thirdParties ?? [];
+  const incomplete = dossier.coverage?.coverageScore != null && dossier.coverage.coverageScore < 100;
+  const mainSubject = dossier.subjects.find((row) => row.isMain)?.name ?? dossier.subjects[0]?.name ?? "não informado";
 
   useEffect(() => {
     closeRef.current?.focus();
@@ -103,193 +154,303 @@ export function ExposureCaseDossier({ dossier, refreshing, initialTab = "resumo"
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  return (
-    <div className="fixed inset-0 z-40 flex justify-end bg-black/40">
-      <aside
+  const modal = (
+    <div
+      className="fixed inset-0 z-50 grid place-items-center bg-black/45 p-4 backdrop-blur-[2px]"
+      data-testid="exposure-dossier-overlay"
+      onClick={onClose}
+    >
+      <div
         role="dialog"
         aria-modal="true"
         aria-labelledby="exposure-dossier-title"
-        className="flex h-full w-full max-w-3xl flex-col bg-background shadow-2xl"
+        data-testid="exposure-case-dossier"
+        className="flex h-[min(92vh,960px)] max-h-[92vh] w-[min(96vw,1440px)] min-h-[28rem] flex-col overflow-hidden rounded-2xl border border-border bg-background shadow-2xl"
+        onClick={(event) => event.stopPropagation()}
       >
-        <div className="sticky top-0 z-10 border-b border-border bg-background px-4 py-3">
-          <div className="flex items-start justify-between gap-3">
+        <header className="sticky top-0 z-10 border-b border-border bg-background px-6 py-4">
+          <div className="flex items-start justify-between gap-4">
             <div>
-              <p id="exposure-dossier-title" className="text-lg font-semibold tracking-tight">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Processo</p>
+              <h2 id="exposure-dossier-title" className="mt-1 text-2xl font-semibold tracking-tight">
                 {dossier.processNumber}
-              </p>
-              <p className="text-sm text-muted-foreground">
-                {dossier.className ?? "Classe não informada"}
-              </p>
+              </h2>
             </div>
-            <button ref={closeRef} type="button" className="text-sm font-semibold underline" onClick={onClose}>
-              Fechar
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                className="rounded-lg border border-border px-3 py-1.5 text-sm"
+                disabled={refreshing || completing}
+                onClick={onCompleteData}
+              >
+                {completing ? "Consultando..." : "Completar dados"}
+              </button>
+              <button
+                type="button"
+                className="rounded-lg border border-border px-3 py-1.5 text-sm"
+                disabled={refreshing || completing}
+                onClick={onRefresh}
+              >
+                {refreshing ? "Atualizando..." : "Atualizar dados"}
+              </button>
+              <button type="button" className="rounded-lg border border-border px-3 py-1.5 text-sm" onClick={onPdf}>
+                Relatório PDF
+              </button>
+              <button
+                ref={closeRef}
+                type="button"
+                aria-label="Fechar"
+                className="rounded-lg border border-border p-1.5"
+                onClick={onClose}
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
           </div>
-          <div className="mt-2 flex flex-wrap items-center gap-2">
-            <span
-              className={`rounded-full border px-2 py-0.5 text-xs font-medium ${
-                dossier.verificationStatus === "CONFIRMED_OFFICIAL"
-                  ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-                  : "border-slate-200 bg-slate-50 text-slate-700"
-              }`}
-            >
+          <p className="mt-2 text-sm text-muted-foreground">
+            {[dossier.className, dossier.tribunal, dossier.courtUnit, dossier.stage === "UNKNOWN" ? CASE_STAGE_UNKNOWN_COPY : dossier.stageLabel, dossier.claimValueFormatted ?? CASE_CLAIM_VALUE_UNKNOWN_COPY]
+              .filter(Boolean)
+              .join(" · ")}
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-800">
               {caseVerificationLabel(dossier.verificationStatus)}
-            </span>
-            <span className="rounded-full border border-border px-2 py-0.5 text-xs">
-              {dossier.stage === "UNKNOWN" ? CASE_STAGE_UNKNOWN_COPY : dossier.stageLabel}
-            </span>
-            <span className="rounded-full border border-border px-2 py-0.5 text-xs">
-              {caseStatusLabel(dossier.currentStatus)}
-            </span>
-            <span className="rounded-full border border-border px-2 py-0.5 text-xs font-semibold">
-              {dossier.claimValueFormatted ?? CASE_CLAIM_VALUE_UNKNOWN_COPY}
             </span>
             {dossier.secrecy ? (
               <span className="rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-xs">Segredo de justiça</span>
             ) : null}
+            {incomplete ? (
+              <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs">Dados incompletos</span>
+            ) : null}
           </div>
-          <div className="mt-2 flex flex-wrap gap-2">
-            {dossier.groupEntities.map((entity) => (
-              <span key={entity.id} className="rounded-full border border-border px-2 py-0.5 text-xs">
-                {entity.legalName} · {entity.pole === "UNKNOWN" ? CASE_POLE_UNCONFIRMED_COPY : casePoleLabel(entity.pole)}
-              </span>
-            ))}
+          <div className="mt-4 rounded-2xl border border-border bg-card px-5 py-4">
+            <ExposureLitigationSides item={dossier} onCompleteData={onCompleteData} />
           </div>
-          <div className="mt-3 flex flex-wrap gap-2">
-            {(["resumo", "partes", "timeline", "comunicacoes", "fontes"] as TabId[]).map((id) => (
+          <nav className="mt-4 flex gap-1 overflow-x-auto border-b border-transparent">
+            {TABS.map((item) => (
               <button
-                key={id}
+                key={item.id}
                 type="button"
-                onClick={() => setTab(id)}
-                className={`rounded-full border px-3 py-1 text-sm ${tab === id ? "border-slate-900 bg-slate-900 text-white" : "border-border"}`}
+                onClick={() => setTab(item.id)}
+                className={`whitespace-nowrap border-b-2 px-3 py-2 text-sm ${
+                  tab === item.id ? "border-slate-900 font-semibold text-foreground" : "border-transparent text-muted-foreground"
+                }`}
               >
-                {id === "resumo" ? "Resumo" : id === "partes" ? "Partes" : id === "timeline" ? "Linha do Tempo" : id === "comunicacoes" ? "Comunicações" : "Fontes"}
+                {item.label}
               </button>
             ))}
-          </div>
-          <div className="mt-3 flex flex-wrap gap-3">
-            <button type="button" className="rounded-lg border border-border px-3 py-1.5 text-sm" disabled={refreshing} onClick={onRefresh}>
-              {refreshing ? "Atualizando..." : "Atualizar processo"}
-            </button>
-            <button type="button" className="rounded-lg border border-border px-3 py-1.5 text-sm" onClick={onPdf}>
-              Gerar PDF
-            </button>
-          </div>
-        </div>
+          </nav>
+        </header>
 
-        <div className="flex-1 overflow-auto px-4 py-4">
+        <div className="flex-1 overflow-auto px-6 py-5">
           {tab === "resumo" ? (
-            <div className="grid gap-3 md:grid-cols-2">
-              <Section title="Exposição do grupo">
-                {dossier.groupEntities.map((entity) => (
-                  <p key={entity.id}>
-                    {entity.legalName} · {entity.pole === "UNKNOWN" ? CASE_POLE_UNCONFIRMED_COPY : casePoleLabel(entity.pole)}
-                    {entity.displayCnpj ? ` · ${entity.displayCnpj}` : ""}
-                  </p>
-                ))}
-                {dossier.groupNote ? <p className="text-muted-foreground">{dossier.groupNote}</p> : null}
-              </Section>
-              <Section title="Processo">
-                <p>Autor / reclamante: {dossier.claimants.map((row) => row.name).join("; ") || CASE_CLAIMANT_UNKNOWN_COPY}</p>
-                <p>Tribunal: {dossier.tribunal ?? "não informado"} · {dossier.courtUnit ?? "vara não informada"}</p>
-                <p>Classe: {dossier.className ?? "não informada"}</p>
-                <p>Ajuizamento: {caseFiledAtLabel(dossier.filedAt)}</p>
-              </Section>
-              <Section title="Valores">
-                <p className="text-base font-semibold">{dossier.claimValueFormatted ?? CASE_CLAIM_VALUE_UNKNOWN_COPY}</p>
-              </Section>
-              <Section title="Situação">
-                <p>{caseStatusLabel(dossier.currentStatus)}</p>
-                <p>Fase: {dossier.stage === "UNKNOWN" ? CASE_STAGE_UNKNOWN_COPY : dossier.stageLabel}</p>
-                {dossier.stageReason ? <p className="text-muted-foreground">{dossier.stageReason}</p> : null}
-                <p>Última movimentação: {caseMovementLabel(dossier.latestMovement)}</p>
-              </Section>
-              <Section title="Próximo evento">
-                <p>
-                  {dossier.nextHearing
-                    ? `${formatExposureDateTime(dossier.nextHearing.scheduledAt) ?? "data não informada"} · ${dossier.nextHearing.type ?? "Audiência"}`
-                    : CASE_HEARING_UNKNOWN_COPY}
+            <div className="space-y-6">
+              <section>
+                <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Situação processual</h3>
+                <dl className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  <Fact label="Classe" value={dossier.className ?? "não informada"} />
+                  <Fact label="Assunto principal" value={mainSubject} />
+                  <Fact label="Tribunal" value={dossier.tribunal ?? "não informado"} />
+                  <Fact label="Vara" value={dossier.courtUnit ?? "não informada"} />
+                  <Fact label="Grau" value={dossier.degree ?? "não informado"} />
+                  <Fact label="Sistema" value={dossier.systemName ?? "não informado"} />
+                  <Fact label="Ajuizamento" value={caseFiledAtLabel(dossier.filedAt)} />
+                  <Fact label="Status" value={caseStatusLabel(dossier.currentStatus)} />
+                  <Fact label="Fase" value={dossier.stage === "UNKNOWN" ? CASE_STAGE_UNKNOWN_COPY : dossier.stageLabel} />
+                </dl>
+              </section>
+              <section>
+                <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Exposição</h3>
+                <dl className="mt-3 grid gap-4 sm:grid-cols-2">
+                  <Fact label="Valor da causa" value={dossier.claimValueFormatted ?? CASE_CLAIM_VALUE_UNKNOWN_COPY} />
+                  <Fact label="Quantidade de réus" value={groupParties.filter((row) => row.pole === "PASSIVE").length + (dossier.parties?.passiveOthers ?? dossier.otherDefendants).length} />
+                </dl>
+                <div className="mt-3 space-y-1 text-sm">
+                  {groupParties.map((entity) => (
+                    <p key={entity.id}>
+                      {entity.legalName} · {entity.pole === "UNKNOWN" ? CASE_POLE_UNCONFIRMED_COPY : casePoleLabel(entity.pole)}
+                      {entity.displayCnpj ? ` · ${entity.displayCnpj}` : ""}
+                    </p>
+                  ))}
+                </div>
+              </section>
+              <section>
+                <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Agora</h3>
+                <dl className="mt-3 grid gap-4 sm:grid-cols-2">
+                  <Fact label="Última movimentação" value={caseMovementLabel(dossier.latestMovement)} />
+                  <Fact
+                    label="Próxima audiência"
+                    value={
+                      dossier.nextHearing
+                        ? `${formatExposureDateTime(dossier.nextHearing.scheduledAt) ?? "data não informada"} · ${dossier.nextHearing.type ?? "Audiência"}`
+                        : CASE_HEARING_UNKNOWN_COPY
+                    }
+                  />
+                  <Fact
+                    label="Última publicação"
+                    value={
+                      dossier.latestPublication
+                        ? `${dossier.latestPublication.type ?? "Publicação"} · ${formatExposureDateTime(dossier.latestPublication.availableAt) ?? "data não informada"}`
+                        : "Publicação ainda não identificada"
+                    }
+                  />
+                  <Fact label="Ações pendentes" value={`${dossier.openAlertCount} ação(ões) requerida(s)`} />
+                </dl>
+              </section>
+              <section>
+                <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Resumo executivo</h3>
+                <p className="mt-2 max-w-4xl text-sm leading-6">
+                  {dossier.narrative ?? "Resumo ainda não disponível a partir das fontes consultadas."}
                 </p>
-              </Section>
-              <Section title="Pontos de atenção">
-                {dossier.attentionLabels.length === 0 ? <p className="text-muted-foreground">Nenhum ponto de atenção registrado.</p> : null}
-                {dossier.attentionLabels.map((label) => (
-                  <p key={label}>{label}</p>
-                ))}
-                {dossier.openAlertCount > 0 ? <p>{dossier.openAlertCount} ação(ões) requerida(s)</p> : null}
-              </Section>
-              <div className="md:col-span-2">
-                <Section title="Resumo executivo">
-                  {dossier.narrative ? <p>{dossier.narrative}</p> : <p className="text-muted-foreground">Resumo ainda não disponível a partir das fontes consultadas.</p>}
-                </Section>
-              </div>
+              </section>
+              <section>
+                <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Pontos de atenção</h3>
+                {dossier.attentionLabels.length === 0 ? (
+                  <p className="mt-2 text-sm text-muted-foreground">Nenhum ponto de atenção registrado.</p>
+                ) : (
+                  <ul className="mt-2 list-disc space-y-1 pl-5 text-sm">
+                    {dossier.attentionLabels.map((label) => (
+                      <li key={label}>{label}</li>
+                    ))}
+                  </ul>
+                )}
+              </section>
+              {dossier.coverage ? (
+                <section data-testid="exposure-coverage-panel">
+                  <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Cobertura dos dados</h3>
+                  <dl className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
+                    {(Object.keys(COVERAGE_FIELD_LABELS) as Array<keyof typeof COVERAGE_FIELD_LABELS>).map((field) => (
+                      <div key={field} className="flex justify-between gap-3 border-b border-border/60 py-1">
+                        <dt className="text-muted-foreground">{COVERAGE_FIELD_LABELS[field]}</dt>
+                        <dd className="text-right font-medium">
+                          {dossier.coverage?.fieldDiagnoses?.[field]?.line ?? dossier.coverage?.fields[field]}
+                        </dd>
+                      </div>
+                    ))}
+                  </dl>
+                  <button
+                    type="button"
+                    className="mt-3 text-sm font-semibold underline"
+                    onClick={() => setTab("fontes")}
+                  >
+                    Ver diagnóstico das fontes
+                  </button>
+                </section>
+              ) : null}
+              {completeSteps.length > 0 ? (
+                <section>
+                  <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Consulta às fontes</h3>
+                  <ul className="mt-2 space-y-1 text-sm">
+                    {completeSteps.map((step) => (
+                      <li key={step.source}>
+                        {SOURCE_KIND_LABELS[step.source] ?? SOURCE_LABELS[step.source]} · {step.outcome}
+                        {step.publicUrl ? (
+                          <>
+                            {" "}
+                            ·{" "}
+                            <a className="underline" href={step.publicUrl} target="_blank" rel="noreferrer">
+                              consulta oficial
+                            </a>
+                          </>
+                        ) : null}
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              ) : null}
             </div>
           ) : null}
 
           {tab === "partes" ? (
-            <div className="space-y-4 text-sm">
-              <section className="rounded-xl border border-border p-4">
-                <h3 className="font-semibold">Autor / reclamante</h3>
-                {(dossier.parties?.active ?? dossier.claimants).map((row) => (
-                  <p key={row.name}>
-                    {row.name}
-                    {row.partyType ? ` · ${row.partyType}` : ""}
-                    {row.documentMasked ? ` · ${row.documentMasked}` : ""}
-                  </p>
-                ))}
-                {(dossier.parties?.active ?? dossier.claimants).length === 0 ? <p>{CASE_CLAIMANT_UNKNOWN_COPY}</p> : null}
+            <div className="grid gap-6 md:grid-cols-2">
+              <section>
+                <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Polo ativo</h3>
+                <div className="mt-3 space-y-3">
+                  {(dossier.parties?.active ?? dossier.claimants).map((row) => (
+                    <PartyCard
+                      key={row.name}
+                      name={row.name}
+                      meta={[row.partyType, row.documentMasked].filter(Boolean).join(" · ")}
+                      sources={row.sources.map((source) => SOURCE_KIND_LABELS[source] ?? SOURCE_LABELS[source])}
+                    />
+                  ))}
+                  {(dossier.parties?.active ?? dossier.claimants).length === 0 ? (
+                    <p className="text-sm text-muted-foreground">
+                      {dossier.coverage?.fieldDiagnoses?.claimant.line ?? CASE_CLAIMANT_MISSING_COPY}{" "}
+                      <button type="button" className="font-semibold underline" onClick={onCompleteData}>
+                        Completar dados
+                      </button>
+                    </p>
+                  ) : null}
+                </div>
               </section>
-              <section className="rounded-xl border border-border p-4">
-                <h3 className="font-semibold">Empresas do grupo</h3>
-                {groupParties.map((row) => (
-                  <p key={row.id} className="mt-1">
-                    <span className="mr-2 rounded-full border border-slate-900 bg-slate-900 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">
-                      {GROUP_ENTITY_BADGE_COPY}
-                    </span>
-                    {row.legalName} · CNPJ {row.displayCnpj} · {row.pole === "UNKNOWN" ? CASE_POLE_UNCONFIRMED_COPY : casePoleLabel(row.pole)}
-                  </p>
-                ))}
+              <section>
+                <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Polo passivo</h3>
+                <p className="mt-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Empresas do grupo</p>
+                <div className="mt-2 space-y-3">
+                  {groupParties.map((row) => (
+                    <PartyCard
+                      key={row.id}
+                      name={row.legalName}
+                      meta={`${GROUP_ENTITY_BADGE_COPY} · CNPJ ${row.displayCnpj} · ${row.pole === "UNKNOWN" ? CASE_POLE_UNCONFIRMED_COPY : casePoleLabel(row.pole)}`}
+                      sources={row.sources.map((source) => SOURCE_KIND_LABELS[source] ?? SOURCE_LABELS[source])}
+                    />
+                  ))}
+                </div>
+                <p className="mt-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Demais réus</p>
+                <div className="mt-2 space-y-3">
+                  {(dossier.parties?.passiveOthers ?? dossier.otherDefendants).length === 0 ? (
+                    <p className="text-sm text-muted-foreground">Nenhum outro réu identificado nas fontes.</p>
+                  ) : (
+                    (dossier.parties?.passiveOthers ?? dossier.otherDefendants).map((row) => (
+                      <PartyCard
+                        key={row.name}
+                        name={row.name}
+                        meta={[row.partyType, row.documentMasked].filter(Boolean).join(" · ")}
+                        sources={row.sources.map((source) => SOURCE_KIND_LABELS[source] ?? SOURCE_LABELS[source])}
+                      />
+                    ))
+                  )}
+                </div>
               </section>
-              <section className="rounded-xl border border-border p-4">
-                <h3 className="font-semibold">Outros réus</h3>
-                {(dossier.parties?.passiveOthers ?? dossier.otherDefendants).length === 0 ? (
-                  <p className="text-muted-foreground">Nenhum outro réu identificado nas fontes.</p>
+              <section className="md:col-span-2">
+                <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Advogados e representantes</h3>
+                <div className="mt-3 grid gap-3 md:grid-cols-2">
+                  {(dossier.parties?.attorneys ?? dossier.attorneys).length === 0 ? (
+                    <p className="text-sm text-muted-foreground">Nenhum advogado identificado nas fontes.</p>
+                  ) : (
+                    (dossier.parties?.attorneys ?? dossier.attorneys).map((row) => (
+                      <PartyCard
+                        key={row.name}
+                        name={row.name}
+                        meta={[
+                          row.oabNumber ? `OAB ${row.oabNumber}/${row.oabState ?? ""}` : null,
+                          row.representedPartyName ? `Representa ${row.representedPartyName}` : null,
+                          row.documentMasked,
+                        ]
+                          .filter(Boolean)
+                          .join(" · ")}
+                        sources={row.sources.map((source) => SOURCE_KIND_LABELS[source] ?? SOURCE_LABELS[source])}
+                      />
+                    ))
+                  )}
+                </div>
+                {thirdParties.length > 0 ? (
+                  <div className="mt-6">
+                    <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Terceiros</h3>
+                    <div className="mt-3 grid gap-3 md:grid-cols-2">
+                      {thirdParties.map((row) => (
+                        <PartyCard key={row.name} name={row.name} meta={row.documentMasked ?? ""} />
+                      ))}
+                    </div>
+                  </div>
                 ) : null}
-                {(dossier.parties?.passiveOthers ?? dossier.otherDefendants).map((row) => (
-                  <p key={row.name}>
-                    {row.name}
-                    {row.documentMasked ? ` · ${row.documentMasked}` : ""}
-                  </p>
-                ))}
-              </section>
-              <section className="rounded-xl border border-border p-4">
-                <h3 className="font-semibold">Terceiros</h3>
-                {thirdParties.length === 0 ? <p className="text-muted-foreground">Nenhum terceiro identificado nas fontes.</p> : null}
-                {thirdParties.map((row) => (
-                  <p key={row.name}>
-                    {row.name}
-                    {row.documentMasked ? ` · ${row.documentMasked}` : ""}
-                  </p>
-                ))}
-              </section>
-              <section className="rounded-xl border border-border p-4">
-                <h3 className="font-semibold">Advogados</h3>
-                {(dossier.parties?.attorneys ?? dossier.attorneys).length === 0 ? (
-                  <p className="text-muted-foreground">Nenhum advogado identificado nas fontes.</p>
-                ) : null}
-                {(dossier.parties?.attorneys ?? dossier.attorneys).map((row) => (
-                  <p key={row.name}>
-                    {row.name}
-                    {row.oabNumber ? ` · OAB ${row.oabNumber}/${row.oabState ?? ""}` : ""}
-                    {row.representedPartyName ? ` · ${row.representedPartyName}` : ""}
-                  </p>
-                ))}
               </section>
             </div>
           ) : null}
 
           {tab === "timeline" ? (
-            <div className="space-y-3 text-sm">
+            <div className="space-y-4">
               <div className="flex flex-wrap gap-2">
                 {[
                   ["all", "Todos"],
@@ -302,42 +463,43 @@ export function ExposureCaseDossier({ dossier, refreshing, initialTab = "resumo"
                   <button
                     key={kind}
                     type="button"
-                    className={`rounded-full border px-2 py-0.5 text-xs ${timelineKind === kind ? "border-slate-900 bg-slate-900 text-white" : "border-border"}`}
+                    className={`rounded-full border px-3 py-1 text-xs ${timelineKind === kind ? "border-slate-900 bg-slate-900 text-white" : "border-border"}`}
                     onClick={() => setTimelineKind(kind)}
                   >
                     {label}
                   </button>
                 ))}
               </div>
-              {timeline.length === 0 ? <p className="rounded-xl border border-dashed border-border p-4 text-muted-foreground">{NO_TIMELINE_EVENTS_COPY}</p> : null}
-              <ol className="space-y-4 border-l border-border pl-4">
+              {timeline.length === 0 ? <p className="text-sm text-muted-foreground">{NO_TIMELINE_EVENTS_COPY}</p> : null}
+              <ol className="space-y-5">
                 {timeline.map((row, index) => {
                   const complementText = movementComplementsText(row.complements);
                   const key = `${row.at}-${row.title}-${index}`;
+                  const visual = timelineVisual(row);
+                  const Icon = visual.Icon;
                   return (
-                    <li key={key} className="relative">
-                      <span className="absolute -left-[1.35rem] top-1.5 h-2.5 w-2.5 rounded-full border border-slate-400 bg-background" aria-hidden="true" />
-                      <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-600">
-                        {exposureTimelineKindLabel(row.kind, row.title)}
-                      </p>
-                      <p className="text-sm font-medium">{formatExposureDateTime(row.at) ?? "data não informada"}</p>
-                      <p>{row.title}</p>
-                      {row.courtUnit ? <p className="text-muted-foreground">{row.courtUnit}</p> : null}
-                      {row.description && openComplements !== key ? (
-                        <p className="text-muted-foreground">{row.description}</p>
-                      ) : null}
-                      {row.complements || row.description ? (
-                        <button
-                          type="button"
-                          className="mt-1 text-xs underline"
-                          onClick={() => setOpenComplements(openComplements === key ? null : key)}
-                        >
-                          {openComplements === key ? "Recolher detalhes" : "Ver detalhes"}
-                        </button>
-                      ) : null}
-                      {openComplements === key ? (
-                        <p className="mt-1 text-muted-foreground">{complementText ?? row.description ?? "Sem detalhe adicional informado pela fonte."}</p>
-                      ) : null}
+                    <li key={key} className="grid grid-cols-[7.5rem_1.5rem_minmax(0,1fr)] gap-3">
+                      <p className="pt-0.5 text-xs text-muted-foreground">{formatExposureDateTime(row.at) ?? "data não informada"}</p>
+                      <div className="relative flex justify-center">
+                        <span className="absolute inset-y-0 w-px bg-border" aria-hidden="true" />
+                        <span className="relative z-[1] rounded-full border border-border bg-background p-1">
+                          <Icon className="h-3.5 w-3.5" />
+                        </span>
+                      </div>
+                      <div>
+                        <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{visual.label}</p>
+                        <p className="font-medium">{row.title}</p>
+                        {row.courtUnit ? <p className="text-sm text-muted-foreground">{row.courtUnit}</p> : null}
+                        {row.description && openComplements !== key ? <p className="text-sm text-muted-foreground">{row.description}</p> : null}
+                        {row.complements || row.description ? (
+                          <button type="button" className="mt-1 text-xs underline" onClick={() => setOpenComplements(openComplements === key ? null : key)}>
+                            {openComplements === key ? "Recolher detalhes" : "Ver detalhes"}
+                          </button>
+                        ) : null}
+                        {openComplements === key ? (
+                          <p className="mt-1 text-sm text-muted-foreground">{complementText ?? row.description ?? "Sem detalhe adicional informado pela fonte."}</p>
+                        ) : null}
+                      </div>
                     </li>
                   );
                 })}
@@ -346,20 +508,19 @@ export function ExposureCaseDossier({ dossier, refreshing, initialTab = "resumo"
           ) : null}
 
           {tab === "comunicacoes" ? (
-            <div className="space-y-3 text-sm">
+            <div className="space-y-3">
               {(dossier.communications ?? []).length === 0 ? (
-                <p className="rounded-xl border border-dashed border-border p-4 text-muted-foreground">Nenhuma comunicação vinculada a este processo.</p>
+                <p className="text-sm text-muted-foreground">Nenhuma comunicação vinculada a este processo.</p>
               ) : null}
               {(dossier.communications ?? []).map((row) => (
-                <article key={row.id} className="rounded-lg border border-border p-3">
+                <article key={row.id} className="rounded-xl border border-border p-4 text-sm">
                   <p className="font-medium">{communicationTypeLabel(row.communicationType)}</p>
                   {row.subject ? <p>{row.subject}</p> : null}
                   <p className="text-muted-foreground">{[row.tribunal, row.courtUnit].filter(Boolean).join(" · ") || "Órgão não informado"}</p>
                   <p>Disponibilização {formatExposureDateTime(row.availableAt) ?? "não informada"}</p>
                   <p>
                     Status{" "}
-                    {COMMUNICATION_STATUS_LABELS[row.normalizedStatus as keyof typeof COMMUNICATION_STATUS_LABELS] ??
-                      row.normalizedStatus}
+                    {COMMUNICATION_STATUS_LABELS[row.normalizedStatus as keyof typeof COMMUNICATION_STATUS_LABELS] ?? row.normalizedStatus}
                   </p>
                   <a className="underline" href={OFFICIAL_COMMUNICATIONS_PORTAL_URL} target="_blank" rel="noreferrer">
                     Abrir portal oficial
@@ -370,16 +531,68 @@ export function ExposureCaseDossier({ dossier, refreshing, initialTab = "resumo"
           ) : null}
 
           {tab === "fontes" ? (
-            <div className="space-y-2 text-sm">
+            <div className="space-y-4 text-sm" data-testid="exposure-source-diagnosis">
               {dossier.evidenceSources.map((source) => (
                 <p key={source}>{SOURCE_KIND_LABELS[source] ?? SOURCE_LABELS[source]}</p>
               ))}
               <p>Primeira detecção: {formatExposureDateTime(dossier.firstSeenAt)}</p>
               <p>Última atualização da fonte: {formatExposureDateTime(dossier.sourceUpdatedAt) ?? "não informada"}</p>
+              {dossier.coverage ? (
+                <div className="mt-2 space-y-3">
+                  <p>Completude: {dossier.coverage.coverageScore}% (não é risco jurídico)</p>
+                  <div className="overflow-x-auto rounded-xl border border-border">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-muted/40 text-[11px] uppercase tracking-wide text-muted-foreground">
+                        <tr>
+                          <th className="px-3 py-2">Fonte</th>
+                          <th className="px-3 py-2">Resultado</th>
+                          <th className="px-3 py-2">Reclamante</th>
+                          <th className="px-3 py-2">Réus</th>
+                          <th className="px-3 py-2">Classe</th>
+                          <th className="px-3 py-2">Movimentos</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {dossier.coverage.sourceMatrix?.map((row) => (
+                          <tr key={row.source} className="border-t border-border">
+                            <td className="px-3 py-2">{row.label}</td>
+                            <td className="px-3 py-2">{row.outcome}</td>
+                            <td className="px-3 py-2">{row.claimant}</td>
+                            <td className="px-3 py-2">{row.defendants}</td>
+                            <td className="px-3 py-2">{row.class}</td>
+                            <td className="px-3 py-2">{row.movements}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  {dossier.coverage.publicCompare ? (
+                    <p className="text-muted-foreground">
+                      Portal {dossier.coverage.publicCompare.adapterLabel ?? "não mapeado"}: acesso automático
+                      indisponível ({dossier.coverage.publicCompare.reason}). Campos adicionais em relação ao DataJud:{" "}
+                      {dossier.coverage.publicCompare.additionalOnPortal.join(", ") || "nenhum mapeado"}.
+                      {dossier.coverage.publicCompare.publicUrl ? (
+                        <>
+                          {" "}
+                          <a className="underline" href={dossier.coverage.publicCompare.publicUrl} target="_blank" rel="noreferrer">
+                            Abrir consulta oficial
+                          </a>
+                        </>
+                      ) : null}
+                    </p>
+                  ) : null}
+                  {dossier.coverage.missingReasons.map((reason) => (
+                    <p key={reason}>{reason}</p>
+                  ))}
+                </div>
+              ) : null}
             </div>
           ) : null}
         </div>
-      </aside>
+      </div>
     </div>
   );
+
+  if (typeof document === "undefined") return modal;
+  return createPortal(modal, document.body);
 }

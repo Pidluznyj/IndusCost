@@ -4,7 +4,7 @@
  */
 
 import type { NormalizedSourceBatch } from "../../legalExposureContracts.js";
-import { LEGAL_EXPOSURE_ENV, type LegalExposureEnv } from "../../legalExposureFeatureFlags.js";
+import { LEGAL_EXPOSURE_ENV, datajudBaseUrl, type LegalExposureEnv } from "../../legalExposureFeatureFlags.js";
 import { legalExposureFetch } from "../../legalExposureHttp.js";
 import { normalizeProcessNumber, sanitizeErrorMessage } from "../../legalExposureNormalization.js";
 import {
@@ -39,7 +39,7 @@ export async function searchDatajudByProcessNumber(input: {
   throttle?: DatajudThrottle;
 }): Promise<NormalizedSourceBatch> {
   const normalized = normalizeProcessNumber(input.processNumber);
-  const base = input.env[LEGAL_EXPOSURE_ENV.datajudBaseUrl]?.trim().replace(/\/$/, "") ?? "";
+  const base = datajudBaseUrl(input.env);
   const apiKey = input.env[LEGAL_EXPOSURE_ENV.datajudApiKey]?.trim() ?? "";
   if (!normalized || !base || !apiKey || !input.tribunalAlias.trim()) {
     return {

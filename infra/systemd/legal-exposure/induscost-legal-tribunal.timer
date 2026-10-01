@@ -1,0 +1,12 @@
+[Unit]
+Description=IndusCost Exposure — tribunal public timer
+
+[Timer]
+OnCalendar=*-*-* 07:20:00 America/Sao_Paulo
+OnCalendar=*-*-* 19:20:00 America/Sao_Paulo
+Persistent=true
+AccuracySec=1min
+Unit=induscost-legal-tribunal.service
+
+[Install]
+WantedBy=timers.target

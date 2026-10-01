@@ -232,7 +232,8 @@ describe("exposure routes", () => {
       const sources = await fetch(`${started.base}/api/legal-exposure/sources/status`);
       const sourcesBody = (await sources.json()) as { configuration: { configured: boolean }[] };
       assert.equal(sources.status, 200);
-      assert.equal(JSON.stringify(sourcesBody).includes("CLIENT_SECRET"), false);
+      assert.equal(JSON.stringify(sourcesBody).includes("super-secret"), false);
+      assert.equal(JSON.stringify(sourcesBody).includes("CLIENT_SECRET="), false);
       const preview = await fetch(`${started.base}/api/legal-exposure/sync`, {
         method: "POST",
         headers: { "content-type": "application/json" },

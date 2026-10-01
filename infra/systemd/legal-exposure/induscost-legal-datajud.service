@@ -1,0 +1,10 @@
+[Unit]
+Description=IndusCost Exposure — DataJud enrich known CNJs
+Documentation=file:README.md
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/induscost
+EnvironmentFile=-/opt/induscost/.env
+ExecStart=/usr/bin/flock -n /run/induscost-legal-datajud.lock /usr/bin/npm run legal:exposure:datajud:apply --prefix /opt/induscost
+Nice=10

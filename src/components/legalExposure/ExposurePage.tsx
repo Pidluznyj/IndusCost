@@ -12,6 +12,7 @@ import {
   SOURCE_LABELS,
   type ExposureCaseListItem,
   type LegalAliasType,
+  type LegalProcessEnrichmentStep,
   type Page,
 } from "@/src/lib/legalExposure/legalExposureContracts";
 import {
@@ -61,9 +62,12 @@ import {
   type ExposureCommunicationFilters,
   type ExposureCommunicationItem,
   type ExposureSourceItem,
+  type ExposureSourceOperationItem,
 } from "./ExposureFeed";
 import { formatExposureDateTime } from "@/src/lib/legalExposure/legalExposureCaseListUi";
 import { ExposureCaseDossier } from "./ExposureCaseDossier";
+import { ExposureOverview, type ExposureOverviewDashboard } from "./ExposureOverview";
+import { EXPOSURE_CASE_PRINT_PATH, EXPOSURE_GROUP_PRINT_PATH } from "@/src/lib/legalExposure/legalExposurePrint";
 
 type TabId =
   | "overview"
@@ -84,21 +88,11 @@ const TABS: { id: TabId; label: string; resource: string }[] = [
   { id: "settings", label: "Configurações", resource: LEGAL_EXPOSURE_RESOURCES.settings },
 ];
 
-type Dashboard = {
-  cards: {
-    actionRequired: number;
-    monitoredCases: number;
-    pendingCommunications: number;
-    newsToday: number;
-    passiveCases?: number;
-    futureHearings?: number;
-    knownClaimCount?: number;
-    knownClaimTotalFormatted?: string | null;
-  };
+type Dashboard = ExposureOverviewDashboard & {
   emptyState: string | null;
-    absenceIsNotClearance: string;
-    multipleGroupNote?: string;
-    monitoredCasesLabel?: string;
+  absenceIsNotClearance: string;
+  multipleGroupNote?: string;
+  monitoredCasesLabel?: string;
   sources: ExposureSourceItem[];
   entities: {
     id: string;
@@ -139,9 +133,24 @@ export function ExposurePage() {
   const [selectedCase, setSelectedCase] = useState<string | null>(null);
   const [dossier, setDossier] = useState<React.ComponentProps<typeof ExposureCaseDossier>["dossier"] | null>(null);
   const [refreshingCase, setRefreshingCase] = useState(false);
+  const [completingCase, setCompletingCase] = useState(false);
+  const [completeSteps, setCompleteSteps] = useState<LegalProcessEnrichmentStep[]>([]);
   const [certificates, setCertificates] = useState<ExposureCertificateItem[] | null>(null);
   const [sourceTestBusy, setSourceTestBusy] = useState<string | null>(null);
   const [sourceTestResult, setSourceTestResult] = useState<{ source: string; message: string } | null>(null);
+  const [sourceOperations, setSourceOperations] = useState<ExposureSourceOperationItem[]>([]);
+  const [sourceHistory, setSourceHistory] = useState<{
+    source: string;
+    rows: Array<{
+      startedAt: string | null;
+      finishedAt: string | null;
+      durationMs: number | null;
+      outcome: string | null;
+      trigger: string | null;
+      processesFound: number | null;
+      sanitizedError: string | null;
+    }>;
+  } | null>(null);
   const [entities, setEntities] = useState<MonitoredEntity[]>([]);
   const [groupCompanies, setGroupCompanies] = useState<ExposureGroupCompany[]>([]);
   const [dialog, setDialog] = useState<"create" | "edit" | null>(null);
@@ -199,6 +208,15 @@ export function ExposurePage() {
       cancelled = true;
     };
   }, [reloadOverview]);
+
+  useEffect(() => {
+    if (tab !== "sources") return;
+    void loadSourceOperations().catch(() => undefined);
+    const timer = window.setInterval(() => {
+      void loadSourceOperations().catch(() => undefined);
+    }, 20_000);
+    return () => window.clearInterval(timer);
+  }, [tab]);
 
   useEffect(() => {
     if (!visibleTabs.some((item) => item.id === tab) && visibleTabs[0]) setTab(visibleTabs[0].id);
@@ -283,7 +301,7 @@ export function ExposurePage() {
     setTabError((current) => ({ ...current, action: null }));
     setAlerts(null);
     try {
-      const data = await fetchJsonOk<NonNullable<typeof alerts>>("/api/legal-exposure/alerts?status=OPEN&page=1&pageSize=20");
+      const data = await fetchJsonOk<NonNullable<typeof alerts>>("/api/legal-exposure/alerts?page=1&pageSize=50");
       setAlerts(data);
     } catch (err: unknown) {
       setTabError((current) => ({ ...current, action: exposureEntityErrorText(err) }));
@@ -472,28 +490,33 @@ export function ExposurePage() {
     setDossier(data);
   }
 
-  async function testSource(source: string) {
+  async function loadSourceOperations() {
+    const data = await fetchJsonOk<{ operations: ExposureSourceOperationItem[] }>("/api/legal-exposure/sources/operations");
+    setSourceOperations(data.operations ?? []);
+  }
+
+  async function runSource(source: string) {
     setSourceTestBusy(source);
     try {
-      const result = await fetchJsonOk<{ success?: boolean; sanitizedError?: string | null; connectivityTest?: string }>(
-        "/api/legal-exposure/sources/test",
-        {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ source }),
-        }
-      );
-      setSourceTestResult({
-        source,
-        message: result.success
-          ? `Conexão ok${result.connectivityTest ? ` (${result.connectivityTest})` : ""}.`
-          : result.sanitizedError || "Falha no teste de conexão.",
+      await fetchJsonOk("/api/legal-exposure/sync", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ source, mode: "apply", trigger: "MANUAL" }),
       });
+      setSourceTestResult({ source, message: "Execução concluída." });
+      await loadSourceOperations();
     } catch (err: unknown) {
       setSourceTestResult({ source, message: exposureEntityErrorText(err) });
     } finally {
       setSourceTestBusy(null);
     }
+  }
+
+  async function loadSourceHistory(source: string) {
+    const data = await fetchJsonOk<{ items: NonNullable<typeof sourceHistory>["rows"] }>(
+      `/api/legal-exposure/sources/${encodeURIComponent(source)}/runs`
+    );
+    setSourceHistory({ source, rows: data.items ?? [] });
   }
 
   return (
@@ -510,7 +533,7 @@ export function ExposurePage() {
               else if (item.id === "certificates") void openCertificates();
               else if (item.id === "sources") {
                 setTab("sources");
-                void reloadOverview().catch((err: unknown) => {
+                void loadSourceOperations().catch((err: unknown) => {
                   setTabError((current) => ({ ...current, sources: exposureEntityErrorText(err) }));
                 });
               } else setTab(item.id);
@@ -532,128 +555,16 @@ export function ExposurePage() {
 
       {tab === "overview" && dashboard ? (
         <div className="space-y-4">
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            <Card label="Ações requeridas" value={dashboard.cards.actionRequired} onClick={() => void openAction()} />
-            <Card label="Processos únicos" value={dashboard.cards.monitoredCases} onClick={() => void openCases()} />
-            <Card
-              label="Comunicações pendentes"
-              value={dashboard.cards.pendingCommunications}
-              onClick={() => void openCommunications({ status: "PENDING" })}
-            />
-            <Card label="Novidades hoje" value={dashboard.cards.newsToday} onClick={() => void openCommunications()} />
-            <Card
-              label="Processos no polo passivo"
-              value={dashboard.cards.passiveCases ?? 0}
-              onClick={() => void openCases({ pole: "PASSIVE" })}
-            />
-            {(dashboard.cards.futureHearings ?? 0) > 0 ? (
-              <Card
-                label="Audiências futuras"
-                value={dashboard.cards.futureHearings ?? 0}
-                onClick={() => void openCases({ hasHearing: "true" })}
-              />
-            ) : dashboard.cards.knownClaimTotalFormatted ? (
-              <Card
-                label="Valor conhecido das causas"
-                value={dashboard.cards.knownClaimTotalFormatted}
-                onClick={() => void openCases()}
-              />
-            ) : (
-              <Card
-                label="Audiências futuras"
-                value={dashboard.cards.futureHearings ?? 0}
-                onClick={() => void openCases({ hasHearing: "true" })}
-              />
-            )}
-          </div>
-          {dashboard.cards.knownClaimTotalFormatted && (dashboard.cards.futureHearings ?? 0) > 0 ? (
-            <p className="text-sm text-muted-foreground">
-              Valor conhecido das causas: <button type="button" className="font-semibold underline" onClick={() => void openCases()}>{dashboard.cards.knownClaimTotalFormatted}</button>
-            </p>
-          ) : null}
-          <p className="text-sm text-muted-foreground">{dashboard.absenceIsNotClearance}</p>
-          <p className="text-xs text-muted-foreground">{dashboard.multipleGroupNote || MULTIPLE_GROUP_NOTE}</p>
-          {entities.length > 0 && dashboard.emptyState ? <p className="text-sm font-medium">{dashboard.emptyState}</p> : null}
           {notice ? <p className="text-sm text-emerald-800">{notice}</p> : null}
-          <button
-            type="button"
-            className="rounded-lg border border-border px-3 py-1.5 text-sm"
-            onClick={() => {
-              window.open("/api/legal-exposure/reports/group.pdf", "_blank");
+          <ExposureOverview
+            dashboard={dashboard}
+            onOpenAction={() => void openAction()}
+            onOpenCases={(patch) => void openCases(patch)}
+            onOpenCase={(caseId) => void openDossier(caseId)}
+            onExecutiveReport={() => {
+              window.open(EXPOSURE_GROUP_PRINT_PATH, "_blank");
             }}
-          >
-            Gerar relatório PDF
-          </button>
-          <section className="space-y-3">
-            <div className="flex items-center justify-between gap-3">
-              <h2 className="text-base font-semibold">Empresas monitoradas</h2>
-              {companyActions.showAdd ? (
-                <button type="button" className="rounded-lg bg-slate-900 px-3 py-1.5 text-sm font-semibold text-white" onClick={openCreate}>
-                  + Adicionar empresa
-                </button>
-              ) : null}
-            </div>
-            {entities.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-border p-4 text-sm">
-                <p className="font-medium">{EMPTY_COMPANIES_COPY}</p>
-                {companyActions.showAdd ? <p className="mt-1 text-muted-foreground">{EMPTY_COMPANIES_MANAGE_HINT}</p> : null}
-                {companyActions.showAdd ? (
-                  <button type="button" className="mt-3 rounded-lg bg-slate-900 px-3 py-1.5 text-sm font-semibold text-white" onClick={openCreate}>
-                    Adicionar empresa
-                  </button>
-                ) : null}
-              </div>
-            ) : (
-              <div className="overflow-x-auto rounded-xl border border-border">
-                <table className="min-w-full text-sm">
-                  <thead className="bg-muted/40 text-left">
-                    <tr>
-                      <th className="px-3 py-2">Nome</th>
-                      <th className="px-3 py-2">CNPJ</th>
-                      <th className="px-3 py-2">Processos únicos</th>
-                      <th className="px-3 py-2">Polo passivo</th>
-                      <th className="px-3 py-2">Polo ativo</th>
-                      <th className="px-3 py-2">Ações requeridas</th>
-                      <th className="px-3 py-2">Última atualização</th>
-                      <th className="px-3 py-2">Fontes habilitadas</th>
-                      {companyActions.showEdit ? <th className="px-3 py-2">Ações</th> : null}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {entities.map((entity) => {
-                      const metrics = dashboard.entities.find((row) => row.id === entity.id);
-                      return (
-                        <tr key={entity.id} className="border-t border-border">
-                          <td className="px-3 py-2">
-                            {entity.legalName}
-                            {entity.active ? "" : " · inativa"}
-                          </td>
-                          <td className="px-3 py-2">{formatCnpj(entity.cnpj)}</td>
-                          <td className="px-3 py-2">{metrics?.monitoredCases ?? "—"}</td>
-                          <td className="px-3 py-2">{metrics?.polePassive ?? "—"}</td>
-                          <td className="px-3 py-2">{metrics?.poleActive ?? "—"}</td>
-                          <td className="px-3 py-2">{metrics?.actionRequired ?? "—"}</td>
-                          <td className="px-3 py-2">{formatExposureDateTime(metrics?.lastSuccessfulSyncAt ?? entity.lastSuccessfulSyncAt) ?? "nunca"}</td>
-                          <td className="px-3 py-2">
-                            {[entity.monitorDomicilio && "Domicílio", entity.monitorDatajud && "DataJud", entity.monitorDjen && "DJEN", entity.monitorCertificates && "Certidões"]
-                              .filter(Boolean)
-                              .join(", ") || "—"}
-                          </td>
-                          {companyActions.showEdit ? (
-                            <td className="px-3 py-2">
-                              <button type="button" className="text-sm font-semibold underline" onClick={() => openEdit(entity)}>
-                                Editar
-                              </button>
-                            </td>
-                          ) : null}
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </section>
+          />
         </div>
       ) : null}
 
@@ -734,20 +645,85 @@ export function ExposurePage() {
       {tab === "sources" && (
         <ExposureSourcesTab
           sources={dashboard?.sources ?? []}
-          loading={overviewLoading && !dashboard}
+          operations={sourceOperations}
+          loading={overviewLoading && sourceOperations.length === 0}
           error={tabError.sources ?? null}
-          onTest={(source) => void testSource(source)}
-          testBusy={sourceTestBusy}
-          testResult={sourceTestResult}
+          onRun={(source) => void runSource(source)}
+          onHistory={(source) => void loadSourceHistory(source)}
+          runBusy={sourceTestBusy}
+          runResult={sourceTestResult}
+          historySource={sourceHistory?.source ?? null}
+          historyRows={sourceHistory?.rows}
         />
       )}
 
       {tab === "settings" && dashboard ? (
         <div className="space-y-6">
           <section className="space-y-3">
-            <h2 className="text-base font-semibold">Empresas monitoradas</h2>
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="text-base font-semibold">Empresas monitoradas</h2>
+              {companyActions.showAdd ? (
+                <button type="button" className="rounded-lg bg-slate-900 px-3 py-1.5 text-sm font-semibold text-white" onClick={openCreate}>
+                  + Adicionar empresa
+                </button>
+              ) : null}
+            </div>
             <p className="text-sm text-muted-foreground">{MULTIPLE_GROUP_NOTE}</p>
-            <p className="text-sm">{entities.length} empresa(s) ativa(s) no monitoramento.</p>
+            {entities.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-border p-4 text-sm">
+                <p className="font-medium">{EMPTY_COMPANIES_COPY}</p>
+                {companyActions.showAdd ? <p className="mt-1 text-muted-foreground">{EMPTY_COMPANIES_MANAGE_HINT}</p> : null}
+              </div>
+            ) : (
+              <div className="overflow-x-auto rounded-xl border border-border">
+                <table className="min-w-full text-sm">
+                  <thead className="bg-muted/40 text-left">
+                    <tr>
+                      <th className="px-3 py-2">Nome</th>
+                      <th className="px-3 py-2">CNPJ</th>
+                      <th className="px-3 py-2">Processos únicos</th>
+                      <th className="px-3 py-2">Polo passivo</th>
+                      <th className="px-3 py-2">Polo ativo</th>
+                      <th className="px-3 py-2">Ações requeridas</th>
+                      <th className="px-3 py-2">Última atualização</th>
+                      <th className="px-3 py-2">Fontes habilitadas</th>
+                      {companyActions.showEdit ? <th className="px-3 py-2">Ações</th> : null}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {entities.map((entity) => {
+                      const metrics = dashboard.entities.find((row) => row.id === entity.id);
+                      return (
+                        <tr key={entity.id} className="border-t border-border">
+                          <td className="px-3 py-2">
+                            {entity.legalName}
+                            {entity.active ? "" : " · inativa"}
+                          </td>
+                          <td className="px-3 py-2">{formatCnpj(entity.cnpj)}</td>
+                          <td className="px-3 py-2">{metrics?.monitoredCases ?? "—"}</td>
+                          <td className="px-3 py-2">{metrics?.polePassive ?? "—"}</td>
+                          <td className="px-3 py-2">{metrics?.poleActive ?? "—"}</td>
+                          <td className="px-3 py-2">{metrics?.actionRequired ?? "—"}</td>
+                          <td className="px-3 py-2">{formatExposureDateTime(metrics?.lastSuccessfulSyncAt ?? entity.lastSuccessfulSyncAt) ?? "nunca"}</td>
+                          <td className="px-3 py-2">
+                            {[entity.monitorDomicilio && "Domicílio", entity.monitorDatajud && "DataJud", entity.monitorDjen && "DJEN", entity.monitorCertificates && "Certidões"]
+                              .filter(Boolean)
+                              .join(", ") || "—"}
+                          </td>
+                          {companyActions.showEdit ? (
+                            <td className="px-3 py-2">
+                              <button type="button" className="text-sm font-semibold underline" onClick={() => openEdit(entity)}>
+                                Editar
+                              </button>
+                            </td>
+                          ) : null}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </section>
           <section className="space-y-3">
             <h2 className="text-base font-semibold">Monitoramento por fonte</h2>
@@ -1057,12 +1033,15 @@ export function ExposurePage() {
         <ExposureCaseDossier
           dossier={dossier}
           refreshing={refreshingCase}
+          completing={completingCase}
+          completeSteps={completeSteps}
           onClose={() => {
             setDossier(null);
             setSelectedCase(null);
+            setCompleteSteps([]);
           }}
           onRefresh={async () => {
-            if (!selectedCase || refreshingCase) return;
+            if (!selectedCase || refreshingCase || completingCase) return;
             setRefreshingCase(true);
             try {
               await fetchJsonOk(`/api/legal-exposure/cases/${selectedCase}/refresh`, { method: "POST" });
@@ -1071,9 +1050,23 @@ export function ExposurePage() {
               setRefreshingCase(false);
             }
           }}
+          onCompleteData={async () => {
+            if (!selectedCase || refreshingCase || completingCase) return;
+            setCompletingCase(true);
+            try {
+              const data = await fetchJsonOk<{
+                steps: LegalProcessEnrichmentStep[];
+                dossier: NonNullable<typeof dossier>;
+              }>(`/api/legal-exposure/cases/${selectedCase}/complete-data`, { method: "POST" });
+              setCompleteSteps(data.steps ?? []);
+              setDossier(data.dossier);
+            } finally {
+              setCompletingCase(false);
+            }
+          }}
           onPdf={() => {
             if (!selectedCase) return;
-            window.open(`/api/legal-exposure/cases/${selectedCase}/pdf`, "_blank");
+            window.open(EXPOSURE_CASE_PRINT_PATH(selectedCase), "_blank");
           }}
         />
       ) : null}
@@ -1155,22 +1148,4 @@ function MonitorToggle({ label, checked, onChange }: { label: string; checked: b
       {label}
     </label>
   );
-}
-
-function Card({ label, value, onClick }: { label: string; value: number | string; onClick?: () => void }) {
-  const className = "rounded-xl border border-border bg-card p-4 text-left";
-  const body = (
-    <>
-      <p className="text-xs uppercase tracking-wide text-muted-foreground">{label}</p>
-      <p className="text-2xl font-semibold">{value}</p>
-    </>
-  );
-  if (onClick) {
-    return (
-      <button type="button" className={`${className} hover:border-slate-400`} onClick={onClick}>
-        {body}
-      </button>
-    );
-  }
-  return <div className={className}>{body}</div>;
 }

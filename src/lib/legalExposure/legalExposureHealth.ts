@@ -22,6 +22,9 @@ export const SOURCE_FRESHNESS_POLICY: Record<
   TRT_CERTIFICATE: { healthyMaxMs: 30 * DAY, staleAfterMs: 45 * DAY },
   CNDT: { healthyMaxMs: 30 * DAY, staleAfterMs: 45 * DAY },
   ESCAVADOR: { healthyMaxMs: 24 * HOUR, staleAfterMs: 48 * HOUR },
+  JUSBRASIL: { healthyMaxMs: 24 * HOUR, staleAfterMs: 48 * HOUR },
+  TRIBUNAL_PUBLIC: { healthyMaxMs: 24 * HOUR, staleAfterMs: 72 * HOUR },
+  WEB_DISCOVERY: { healthyMaxMs: 24 * HOUR, staleAfterMs: 72 * HOUR },
 };
 
 export const RECOMMENDED_SYNC_SCHEDULE = {

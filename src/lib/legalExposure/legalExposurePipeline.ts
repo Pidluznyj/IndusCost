@@ -9,7 +9,7 @@ import type {
   NormalizedSourceBatch,
 } from "./legalExposureContracts.js";
 import type { DjenDiscoveryTrust } from "./legalExposureDiscovery.js";
-import { normalizeProcessNumber } from "./legalExposureNormalization.js";
+import { canonicalProcessKey, normalizeProcessNumber } from "./legalExposureNormalization.js";
 import type { ExposureCaseRecord, LegalExposureMemory } from "./legalExposureStore.js";
 
 export type DatajudTarget = {
@@ -68,19 +68,35 @@ export function collectKnownCaseDatajudTargets(
   );
   for (const row of memory.cases) {
     if (row.entityId !== entityId && !linkedCaseIds.has(row.id)) continue;
-    const processNumber = normalizeProcessNumber(row.processNumberNormalized || row.processNumber);
-    if (!processNumber) continue;
+    const processNumber = canonicalProcessKey(row.processNumberNormalized || row.processNumber, row.id);
+    if (!processNumber.ok) continue;
     const tribunalAlias = datajudTribunalAlias(row.tribunal);
     if (!tribunalAlias) {
       skippedWithoutTribunal.push(row);
       continue;
     }
-    const key = `${processNumber}:${tribunalAlias}`;
+    const key = `${processNumber.key}:${tribunalAlias}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    targets.push({ processNumber, tribunalAlias, origin: "KNOWN_CASE" });
+    targets.push({ processNumber: processNumber.key, tribunalAlias, origin: "KNOWN_CASE" });
   }
   return { targets, skippedWithoutTribunal };
+}
+
+export function collectGlobalCanonicalDatajudTargets(memory: LegalExposureMemory): DatajudTarget[] {
+  const seen = new Set<string>();
+  const targets: DatajudTarget[] = [];
+  for (const row of memory.cases) {
+    const processNumber = canonicalProcessKey(row.processNumberNormalized || row.processNumber, row.id);
+    if (!processNumber.ok) continue;
+    const tribunalAlias = datajudTribunalAlias(row.tribunal);
+    if (!tribunalAlias) continue;
+    const key = `${processNumber.key}:${tribunalAlias}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    targets.push({ processNumber: processNumber.key, tribunalAlias, origin: "KNOWN_CASE" });
+  }
+  return targets;
 }
 
 export function unionDatajudTargets(

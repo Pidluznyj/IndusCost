@@ -6,6 +6,7 @@
 import { formatCnpj, formatCurrencyBrl } from "@/src/lib/companyCnpjFormat.js";
 import { attentionLabel, collectAttentionFlags } from "./legalExposureAttention.js";
 import { derivedEntityLinks, pickCanonicalCase } from "./legalExposureCanonical.js";
+import { uniqueByKey, semanticAlertKey } from "./legalExposureFeedDedupe.js";
 import { CASE_STAGE_LABELS, classifyCaseStage } from "./legalExposureCaseStage.js";
 import {
   LEGAL_EXPOSURE_SOURCES,
@@ -17,10 +18,18 @@ import {
   type ExposureExecutiveSubject,
   type ExposureGroupEntity,
   type ExposureTimelineItem,
+  type LegalCasePole,
   type LegalExposureSource,
   type Page,
 } from "./legalExposureContracts.js";
-import { formatProcessNumber, normalizeLegalName } from "./legalExposureNormalization.js";
+import { buildCaseDataCoverage, partyIdentityKey, polesConflict } from "./legalExposureCoverage.js";
+import { sourceFactsFromRecords } from "./legalExposureCoverageDiagnosis.js";
+import {
+  canonicalProcessKey,
+  formatProcessNumber,
+  normalizeLegalName,
+  resolveProcessIndexKey,
+} from "./legalExposureNormalization.js";
 import { maskPartyDocument } from "./legalExposurePrivacy.js";
 import { eventDetail, eventTypeLabel, movementComplementsText } from "./legalExposureFeedUi.js";
 import {
@@ -93,7 +102,9 @@ export function indexExposureMemory(memory: LegalExposureMemory): MemoryIndexes 
   const entityById = new Map(memory.entities.map((row) => [row.id, row]));
   const casesByProcess = new Map<string, ExposureCaseRecord[]>();
   const caseById = new Map(memory.cases.map((row) => [row.id, row]));
-  for (const row of memory.cases) pushIndex(casesByProcess, row.processNumberNormalized, row);
+  for (const row of memory.cases) {
+    pushIndex(casesByProcess, canonicalProcessKey(row.processNumberNormalized || row.processNumber, row.id).key, row);
+  }
   const links = derivedEntityLinks(memory);
   const linksByCase = new Map<string, typeof links>();
   const linksByEntity = new Map<string, typeof links>();
@@ -153,26 +164,41 @@ function uniqueSources(sources: LegalExposureSource[]): LegalExposureSource[] {
 }
 
 function partyKey(row: ExposurePartyRecord): string {
-  if (row.documentNormalized) return `doc:${row.documentNormalized}`;
-  return `name:${row.normalizedName}:${row.pole}:${row.partyType ?? ""}`;
+  return partyIdentityKey({
+    documentNormalized: row.documentNormalized,
+    normalizedName: row.normalizedName,
+    personType: row.personType,
+  });
 }
 
-function mergeParties(rows: ExposurePartyRecord[], entityByCnpj: Map<string, string>): ExposureExecutiveParty[] {
+function mergeParties(
+  rows: ExposurePartyRecord[],
+  entityByCnpj: Map<string, string>,
+  entityByName: Map<string, string>
+): ExposureExecutiveParty[] {
   const byKey = new Map<string, ExposurePartyRecord[]>();
   for (const row of rows) pushIndex(byKey, partyKey(row), row);
   return [...byKey.values()].map((group) => {
-    const primary = group.find((row) => row.pole !== "UNKNOWN") ?? group[0]!;
+    const roles = [...new Set(group.map((row) => row.pole))] as LegalCasePole[];
+    const conflict = polesConflict(roles);
+    const primary =
+      group.find((row) => row.source === "DATAJUD" || row.source === "TRIBUNAL_PUBLIC") ??
+      group.find((row) => row.pole !== "UNKNOWN") ??
+      group[0]!;
     const document = group.find((row) => row.documentNormalized)?.documentNormalized ?? primary.documentNormalized;
-    const entityId = document ? entityByCnpj.get(document) ?? null : null;
+    const entityId =
+      (document ? entityByCnpj.get(document) : null) ?? entityByName.get(primary.normalizedName) ?? null;
     return {
       name: primary.name,
       partyType: primary.partyType,
-      pole: primary.pole,
+      pole: conflict ? "UNKNOWN" : (group.find((row) => row.pole !== "UNKNOWN")?.pole ?? primary.pole),
       personType: primary.personType,
       documentMasked: maskPartyDocument({ document, personType: primary.personType }),
       isGroupEntity: Boolean(entityId),
       entityId,
       sources: uniqueSources(group.map((row) => row.source)),
+      roles,
+      roleConflict: conflict,
     };
   });
 }
@@ -247,17 +273,21 @@ function daysAgo(iso: string | null, now: Date): number | null {
 }
 
 export function uniqueProcessCount(memory: LegalExposureMemory): number {
-  return new Set(memory.cases.map((row) => row.processNumberNormalized)).size;
+  return indexExposureMemory(memory).casesByProcess.size;
 }
 
 export function entityUniqueProcessCount(memory: LegalExposureMemory, entityId: string): number {
   const indexes = indexExposureMemory(memory);
   const linkedCaseIds = new Set((indexes.linksByEntity.get(entityId) ?? []).map((row) => row.caseId));
-  const processes = new Set<string>();
-  for (const row of memory.cases) {
-    if (row.entityId === entityId || linkedCaseIds.has(row.id)) processes.add(row.processNumberNormalized);
+  let count = 0;
+  for (const siblings of indexes.casesByProcess.values()) {
+    if (siblings.some((row) => row.entityId === entityId || linkedCaseIds.has(row.id))) count += 1;
   }
-  return processes.size;
+  return count;
+}
+
+function processKeyOf(row: { id: string; processNumberNormalized: string; processNumber?: string }): string {
+  return canonicalProcessKey(row.processNumberNormalized || row.processNumber, row.id).key;
 }
 
 export function buildExposureProcessSummary(
@@ -266,7 +296,7 @@ export function buildExposureProcessSummary(
   now = new Date(),
   indexes = indexExposureMemory(memory)
 ): ExposureCaseListItem | null {
-  const siblings = indexes.casesByProcess.get(processNumberNormalized) ?? [];
+  const siblings = indexes.casesByProcess.get(resolveProcessIndexKey(processNumberNormalized)) ?? [];
   const canonical = pickCanonicalCase(siblings);
   if (!canonical) return null;
   const caseIds = siblings.map((row) => row.id);
@@ -279,6 +309,7 @@ export function buildExposureProcessSummary(
   const subjects = collectForCases(indexes.subjectsByCase, caseIds);
   const attorneys = collectForCases(indexes.attorneysByCase, caseIds);
   const entityByCnpj = new Map(memory.entities.map((entity) => [entity.cnpj.replace(/\D/g, ""), entity.id]));
+  const entityByName = new Map(memory.entities.map((entity) => [normalizeLegalName(entity.legalName), entity.id]));
   const linkRows = derivedEntityLinks(memory).filter((row) => caseIdSet.has(row.caseId));
   const linksByEntity = new Map<string, typeof linkRows>();
   for (const link of linkRows) {
@@ -290,7 +321,9 @@ export function buildExposureProcessSummary(
   const groupEntities: ExposureGroupEntity[] = [...linksByEntity.entries()]
     .map(([entityId, group]) => {
       const entity = indexes.entityById.get(entityId);
-      const pole = group.find((row) => row.pole !== "UNKNOWN")?.pole ?? group[0]!.pole;
+      const poles = group.map((row) => row.pole);
+      const conflict = polesConflict(poles);
+      const pole = conflict ? "UNKNOWN" : group.find((row) => row.pole !== "UNKNOWN")?.pole ?? group[0]!.pole;
       const cnpj = entity?.cnpj ?? "";
       return {
         id: entityId,
@@ -299,14 +332,21 @@ export function buildExposureProcessSummary(
         cnpj,
         displayCnpj: formatCnpj(cnpj),
         pole,
-        confidence: group[0]!.confidence,
+        confidence: conflict ? "UNCONFIRMED" : group[0]!.confidence,
         firstSeenAt: group.map((row) => row.firstSeenAt).sort()[0] ?? canonical.firstSeenAt,
         sources: uniqueSources(group.map((row) => row.lastSource)),
       };
     })
     .sort((a, b) => (poleRank[a.pole] ?? 9) - (poleRank[b.pole] ?? 9) || a.legalName.localeCompare(b.legalName));
-  const mergedParties = mergeParties(parties, entityByCnpj);
-  const claimants = mergedParties.filter((row) => row.pole === "ACTIVE");
+  const mergedParties = mergeParties(parties, entityByCnpj, entityByName);
+  for (const group of groupEntities) {
+    const conflicting = mergedParties.find((row) => row.entityId === group.id && row.roleConflict);
+    if (conflicting) {
+      group.pole = "UNKNOWN";
+      group.confidence = "UNCONFIRMED";
+    }
+  }
+  const claimants = mergedParties.filter((row) => row.pole === "ACTIVE" && !row.roleConflict && !row.isGroupEntity);
   const groupIds = new Set(groupEntities.map((row) => row.id));
   const otherDefendants = mergedParties.filter(
     (row) => row.pole === "PASSIVE" && (!row.entityId || !groupIds.has(row.entityId))
@@ -323,10 +363,13 @@ export function buildExposureProcessSummary(
     archivedAt: canonical.archivedAt,
     movements,
   });
-  const openForProcess = memory.alerts.filter((row) => {
-    const event = memory.events.find((item) => item.id === row.eventId);
-    return row.status === "OPEN" && row.requiresAction && event?.caseId && caseIdSet.has(event.caseId);
-  });
+  const openForProcess = uniqueByKey(
+    memory.alerts.filter((row) => {
+      const event = memory.events.find((item) => item.id === row.eventId);
+      return row.status === "OPEN" && row.requiresAction && event?.caseId && caseIdSet.has(event.caseId);
+    }),
+    (row) => semanticAlertKey(memory, row)
+  );
   const passiveGroupCount = groupEntities.filter((row) => row.pole === "PASSIVE").length;
   const flags = collectAttentionFlags({
     passiveGroupCount,
@@ -337,18 +380,25 @@ export function buildExposureProcessSummary(
     enrichmentIncomplete: !processClass.className || claimants.length === 0,
     sourceDegraded: false,
     archivedAt: canonical.archivedAt,
+    partyRoleConflict:
+      mergedParties.some((row) => row.roleConflict) ||
+      groupEntities.some((row) => row.pole === "UNKNOWN" && row.confidence === "UNCONFIRMED"),
     now,
   });
   const entity = indexes.entityById.get(canonical.entityId);
   const cnpj = entity?.cnpj ?? "";
   const firstSeenAt = siblings.map((row) => row.firstSeenAt).sort()[0] ?? canonical.firstSeenAt;
   const lastSeenAt = siblings.map((row) => row.lastSeenAt).sort().at(-1) ?? canonical.lastSeenAt;
-  return {
+  const base: ExposureCaseListItem = {
     id: canonical.id,
     entityId: canonical.entityId,
     canonicalCaseId: canonical.id,
     caseIds,
-    processNumber: formatProcessNumber(canonical.processNumberNormalized),
+    processNumber: formatProcessNumber(
+      canonicalProcessKey(canonical.processNumberNormalized || canonical.processNumber, canonical.id).ok
+        ? canonicalProcessKey(canonical.processNumberNormalized || canonical.processNumber, canonical.id).key
+        : canonical.processNumber
+    ),
     entity: {
       id: entity?.id ?? canonical.entityId,
       legalName: entity?.legalName ?? "",
@@ -411,6 +461,25 @@ export function buildExposureProcessSummary(
     multipleGroupEntities: groupEntities.length > 1,
     secrecy: canonical.secrecy,
   };
+  const sourceFacts = sourceFactsFromRecords({
+    className: processClass.className,
+    claimValueFormatted: formatClaim(canonical.claimValue, canonical.claimCurrency),
+    currentStatus: canonical.currentStatus,
+    groupCnpjs: groupEntities.map((row) => row.cnpj),
+    groupNames: groupEntities.map((row) => row.legalName),
+    parties,
+    movements,
+    attorneys,
+    hearings,
+    subjects,
+    evidences,
+    communications,
+  });
+  const withCoverage: ExposureCaseListItem = {
+    ...base,
+    coverage: buildCaseDataCoverage({ item: base, sourceFacts }),
+  };
+  return withCoverage;
 }
 
 function flagOn(value: unknown): boolean {
@@ -495,7 +564,7 @@ export function buildGroupedCaseTimeline(
   if (!seed) {
     return { items: [], total: 0, page: 1, pageSize: 20 };
   }
-  const siblings = indexes.casesByProcess.get(seed.processNumberNormalized) ?? [seed];
+  const siblings = indexes.casesByProcess.get(processKeyOf(seed)) ?? [seed];
   const caseIds = siblings.map((row) => row.id);
   const movements = collectForCases(indexes.movementsByCase, caseIds).map((row) => ({
     kind: "movement" as const,
@@ -653,7 +722,7 @@ export function buildExposureProcessDossier(
   const indexes = indexExposureMemory(memory);
   const seed = indexes.caseById.get(caseId);
   if (!seed) return null;
-  const item = buildExposureProcessSummary(memory, seed.processNumberNormalized, now, indexes);
+  const item = buildExposureProcessSummary(memory, processKeyOf(seed), now, indexes);
   if (!item) return null;
   const timeline = buildGroupedCaseTimeline(memory, caseId, { page: 1, pageSize: 50 });
   const communications = memory.communications.filter((row) => item.caseIds.includes(row.caseId ?? ""));

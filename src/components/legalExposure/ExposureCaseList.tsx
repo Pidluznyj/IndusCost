@@ -1,18 +1,14 @@
 /**
- * Lista executiva de processos do Exposure. Sem rawMetadata e sem "polo UNKNOWN".
+ * Lista executiva de processos do Exposure. Triagem rápida, filtros recolhíveis.
  */
 
-import React from "react";
+import React, { useState } from "react";
 import {
   ABSENCE_IS_NOT_CLEARANCE_COPY,
+  CASE_AWAITING_DATAJUD_COPY,
   CASE_CLAIM_VALUE_UNKNOWN_COPY,
-  CASE_CLAIMANT_UNKNOWN_COPY,
   CASE_CLASS_UNKNOWN_COPY,
-  CASE_FILED_AT_LABEL,
-  CASE_HEARING_UNKNOWN_COPY,
-  CASE_POLE_UNCONFIRMED_COPY,
   CASE_STAGE_UNKNOWN_COPY,
-  CASE_STATUS_UNKNOWN_COPY,
   EXPOSURE_LOADING_COPY,
   LEGAL_EXPOSURE_PAGE_SIZE_DEFAULT,
   MULTIPLE_GROUP_NOTE,
@@ -24,10 +20,8 @@ import {
   type Page,
 } from "@/src/lib/legalExposure/legalExposureContracts";
 import {
-  caseEnrichmentLabel,
   caseFiledAtLabel,
   caseMovementLabel,
-  casePoleLabel,
   caseVerificationLabel,
   formatExposureDateTime,
 } from "@/src/lib/legalExposure/legalExposureCaseListUi";
@@ -68,11 +62,12 @@ export type ExposureCaseListEntityOption = {
 };
 
 type Props = {
-  cases: Page<ExposureCaseListItem> | null;
+  cases: (Page<ExposureCaseListItem> & { physicalCaseCount?: number; uniqueProcessCount?: number }) | null;
   entities: ExposureCaseListEntityOption[];
   filters: ExposureCaseListFilters;
   loading?: boolean;
   error?: string | null;
+  defaultAdvancedFiltersOpen?: boolean;
   onFilterChange: (patch: Partial<ExposureCaseListFilters>) => void;
   onClearFilters: () => void;
   onPageChange: (page: number) => void;
@@ -101,98 +96,117 @@ function FilterSelect(props: {
 
 function CaseCard(props: { item: ExposureCaseListItem; onOpenCase: (caseId: string) => void }) {
   const { item, onOpenCase } = props;
-  const verified = item.verificationStatus === "CONFIRMED_OFFICIAL";
-  const claimant = item.claimants[0];
-  const groupNames = item.groupEntities.map((entity) => entity.legalName).join(", ");
-  const where = [item.courtUnit, item.tribunal, item.jurisdiction].filter(Boolean).join(" · ");
+  const where = [item.courtUnit, item.tribunal].filter(Boolean).join(" · ");
+  const claimant = item.claimants[0]?.name;
+  const incomplete = !claimant || !item.claimValueFormatted || item.stage === "UNKNOWN";
+  const archived = item.stage === "ARCHIVED" || Boolean(item.currentStatus?.toLowerCase().includes("arquiv"));
+  const hearingSoon = Boolean(item.nextHearing);
+  const required = item.openAlertCount > 0;
+  const secret = Boolean(item.secrecy);
+  const tone = required
+    ? "border-amber-300 hover:border-amber-400"
+    : hearingSoon
+      ? "border-sky-200 hover:border-sky-300"
+      : archived
+        ? "border-slate-200 opacity-90"
+        : incomplete
+          ? "border-slate-300"
+          : "border-border hover:border-slate-400";
+  function open() {
+    onOpenCase(item.id);
+  }
   return (
-    <article className="rounded-xl border border-border bg-card p-4">
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <p className="font-semibold tracking-tight">{item.processNumber}</p>
-        <span
-          className={`rounded-full border px-2 py-0.5 text-xs font-medium ${
-            verified
-              ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-              : "border-slate-200 bg-slate-50 text-slate-700"
-          }`}
-        >
+    <article
+      data-testid="exposure-case-card"
+      role="button"
+      tabIndex={0}
+      onClick={open}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          open();
+        }
+      }}
+      className={`cursor-pointer rounded-2xl border bg-card p-5 shadow-sm transition hover:shadow-md ${tone}`}
+    >
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="font-semibold tracking-tight text-[1.05rem]">{item.processNumber}</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {[item.className ?? CASE_CLASS_UNKNOWN_COPY, item.tribunal].filter(Boolean).join(" · ")}
+          </p>
+        </div>
+        <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] uppercase tracking-wide text-emerald-800">
           {caseVerificationLabel(item.verificationStatus)}
         </span>
       </div>
-      <p className="mt-2 text-base font-medium">
-        {claimant?.name ?? CASE_CLAIMANT_UNKNOWN_COPY}
-        {" × "}
-        {groupNames || "empresa do grupo não identificada"}
-      </p>
-      <p className="mt-1 text-lg font-semibold">{item.claimValueFormatted ?? CASE_CLAIM_VALUE_UNKNOWN_COPY}</p>
-      <p className="text-sm text-muted-foreground">
-        {caseFiledAtLabel(item.filedAt)}
-        {where ? ` · ${where}` : ""}
-      </p>
-      <p className="text-sm">
-        {item.stage === "UNKNOWN" ? CASE_STAGE_UNKNOWN_COPY : item.stageLabel}
-        {" · "}
-        {item.currentStatus?.trim() || CASE_STATUS_UNKNOWN_COPY}
-      </p>
-      {item.groupEntities.length > 1 ? (
-        <p className="mt-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          {item.groupEntities.length} empresas do grupo neste processo
-        </p>
-      ) : null}
 
-      <div className="mt-3 space-y-1 text-sm">
-        <p className="text-xs font-semibold uppercase text-muted-foreground">Empresas do grupo</p>
-        <div className="flex flex-wrap gap-2">
-          {item.groupEntities.map((entity) => (
-            <span key={entity.id} className="rounded-full border border-border px-2 py-0.5 text-xs">
-              {entity.legalName} · {entity.pole === "UNKNOWN" ? CASE_POLE_UNCONFIRMED_COPY : casePoleLabel(entity.pole)}
-              {entity.displayCnpj ? ` · ${entity.displayCnpj}` : ""}
-            </span>
-          ))}
+      <div className="mt-4 space-y-3">
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Reclamante</p>
+          <p className="mt-1 text-base font-semibold tracking-tight">{claimant ?? "Autor/reclamante ainda não identificado"}</p>
         </div>
-        <p>Classe: {item.className ?? CASE_CLASS_UNKNOWN_COPY}</p>
-        <p>
-          {CASE_FILED_AT_LABEL}: {caseFiledAtLabel(item.filedAt)}
-        </p>
-        <p>Última movimentação: {caseMovementLabel(item.latestMovement)}</p>
-        <p>
-          Próximo evento:{" "}
-          {item.nextHearing
-            ? `${formatExposureDateTime(item.nextHearing.scheduledAt) ?? "data não informada"} · ${item.nextHearing.type ?? "Audiência"}`
-            : CASE_HEARING_UNKNOWN_COPY}
-        </p>
-        <p>
-          {item.movementCount} movimentações · {item.publicationCount} publicações · {item.openAlertCount} ação requerida
-        </p>
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Contra</p>
+          <div className="mt-1 space-y-1">
+            {item.groupEntities.map((entity) => (
+              <div key={entity.id} className="flex flex-wrap items-baseline justify-between gap-2">
+                <p className="font-semibold">{entity.legalName}</p>
+                <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                  {entity.pole === "PASSIVE" ? "Ré · grupo" : entity.pole === "ACTIVE" ? "Autora · grupo" : "Grupo"}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
 
-      <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-        <div className="flex flex-wrap items-center gap-2">
+      <div className="mt-4 flex flex-wrap items-end justify-between gap-3 text-sm">
+        <p className="text-lg font-semibold">{item.claimValueFormatted ?? CASE_CLAIM_VALUE_UNKNOWN_COPY}</p>
+        <p className="text-muted-foreground">{caseFiledAtLabel(item.filedAt)}</p>
+      </div>
+
+      <div className="mt-3 space-y-1 text-sm">
+        <p>
+          <span className="text-muted-foreground">Fase: </span>
+          {item.stage === "UNKNOWN" ? CASE_STAGE_UNKNOWN_COPY : item.stageLabel}
+        </p>
+        <p>
+          <span className="text-muted-foreground">Último: </span>
+          {caseMovementLabel(item.latestMovement)}
+        </p>
+        {item.nextHearing ? (
+          <p>
+            <span className="text-muted-foreground">Próxima audiência: </span>
+            {formatExposureDateTime(item.nextHearing.scheduledAt) ?? "data não informada"}
+            {item.nextHearing.type ? ` · ${item.nextHearing.type}` : ""}
+          </p>
+        ) : null}
+        {required ? (
+          <p className="font-medium text-amber-900">
+            {item.openAlertCount} {item.openAlertCount === 1 ? "ação requerida" : "ações requeridas"}
+          </p>
+        ) : null}
+        {item.enrichmentStatus === "DJEN_ONLY" ? (
+          <p className="text-xs text-muted-foreground">{CASE_AWAITING_DATAJUD_COPY}</p>
+        ) : null}
+        {archived ? <p className="text-xs text-muted-foreground">Arquivado</p> : null}
+        {secret ? <p className="text-xs text-muted-foreground">Segredo de justiça</p> : null}
+        {where ? <p className="text-xs text-muted-foreground">{where}</p> : null}
+      </div>
+
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-3">
+        <div className="flex flex-wrap gap-2">
           {item.evidenceSources.map((source) => (
-            <span
-              key={source}
-              className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs font-medium text-slate-700"
-            >
+            <span key={source} className="rounded-full border border-border px-2 py-0.5 text-[11px]">
               {SOURCE_KIND_LABELS[source] ?? SOURCE_LABELS[source]}
             </span>
           ))}
-          <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs font-medium text-slate-700">
-            {caseEnrichmentLabel(item.enrichmentStatus)}
-          </span>
         </div>
-        <button
-          type="button"
-          className="text-sm font-semibold underline"
-          onClick={() => onOpenCase(item.id)}
-        >
+        <button type="button" className="text-sm font-semibold underline" onClick={(event) => { event.stopPropagation(); open(); }}>
           Ver processo
         </button>
       </div>
-      {item.attentionLabels.map((label) => (
-        <p key={label} className="mt-2 text-sm">
-          ⚠ {label}
-        </p>
-      ))}
     </article>
   );
 }
@@ -203,11 +217,13 @@ export function ExposureCaseList({
   filters,
   loading,
   error,
+  defaultAdvancedFiltersOpen = false,
   onFilterChange,
   onClearFilters,
   onPageChange,
   onOpenCase,
 }: Props) {
+  const [advancedOpen, setAdvancedOpen] = useState(defaultAdvancedFiltersOpen);
   const total = cases?.total ?? 0;
   const page = cases?.page ?? filters.page;
   const pageSize = cases?.pageSize ?? LEGAL_EXPOSURE_PAGE_SIZE_DEFAULT;
@@ -227,131 +243,112 @@ export function ExposureCaseList({
       filters.multipleGroup
   );
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       <p className="text-sm text-muted-foreground">{ABSENCE_IS_NOT_CLEARANCE_COPY}</p>
       <p className="text-xs text-muted-foreground">{MULTIPLE_GROUP_NOTE}</p>
-      <div className="rounded-xl border border-border bg-card p-3">
-        <div className="flex flex-wrap gap-3">
-          <label className="flex min-w-[12rem] flex-1 flex-col gap-1 text-xs text-muted-foreground">
-            Número CNJ
-            <input
-              className="rounded-lg border border-border bg-card px-2 py-1.5 text-sm text-foreground"
-              value={filters.q}
-              onChange={(event) => onFilterChange({ q: event.target.value, page: 1 })}
-              placeholder="Buscar processo"
-            />
-          </label>
-          <FilterSelect
-            label="Empresa"
-            value={filters.entityId}
-            onChange={(value) => onFilterChange({ entityId: value, page: 1 })}
-          >
-            <option value="">Todas</option>
-            {entities.map((entity) => (
-              <option key={entity.id} value={entity.id}>
-                {entity.legalName}
-              </option>
-            ))}
-          </FilterSelect>
-          <label className="flex min-w-[8rem] flex-1 flex-col gap-1 text-xs text-muted-foreground">
-            Tribunal
-            <input
-              className="rounded-lg border border-border bg-card px-2 py-1.5 text-sm text-foreground"
-              value={filters.tribunal}
-              onChange={(event) => onFilterChange({ tribunal: event.target.value, page: 1 })}
-              placeholder="Ex.: TRT9"
-            />
-          </label>
-          <FilterSelect
-            label="Fonte"
-            value={filters.source}
-            onChange={(value) => onFilterChange({ source: value, page: 1 })}
-          >
-            <option value="">Todas</option>
-            <option value="DJEN">DJEN</option>
-            <option value="DATAJUD">DataJud</option>
-            <option value="ESCAVADOR">Escavador</option>
-            <option value="DOMICILIO">Domicílio</option>
-          </FilterSelect>
-          <FilterSelect
-            label="Confirmação"
-            value={filters.verification}
-            onChange={(value) => onFilterChange({ verification: value, page: 1 })}
-          >
-            <option value="">Todas</option>
-            <option value="CONFIRMED_OFFICIAL">Confirmado em fonte oficial</option>
-            <option value="REVIEW_REQUIRED">Sem confirmação oficial</option>
-          </FilterSelect>
-          <FilterSelect
-            label="Enriquecimento"
-            value={filters.enrichment}
-            onChange={(value) => onFilterChange({ enrichment: value, page: 1 })}
-          >
-            <option value="">Todos</option>
-            <option value="DATAJUD_ENRICHED">Dados DataJud disponíveis</option>
-            <option value="DJEN_ONLY">Aguardando enriquecimento DataJud</option>
-            <option value="PARTIAL">Parcial</option>
-          </FilterSelect>
-          <FilterSelect
-            label="Polo"
-            value={filters.pole}
-            onChange={(value) => onFilterChange({ pole: value, page: 1 })}
-          >
-            <option value="">Todos</option>
-            <option value="PASSIVE">Ré / polo passivo</option>
-            <option value="ACTIVE">Autora / polo ativo</option>
-            <option value="THIRD_PARTY">Terceira interessada</option>
-            <option value="OTHER">Outro polo</option>
-            <option value="UNKNOWN">Polo ainda não identificado</option>
-          </FilterSelect>
-          <FilterSelect
-            label="Fase"
-            value={filters.stage}
-            onChange={(value) => onFilterChange({ stage: value, page: 1 })}
-          >
-            <option value="">Todas</option>
-            <option value="INITIAL">Fase inicial</option>
-            <option value="INSTRUCTION">Instrução</option>
-            <option value="DECISION">Julgamento/decisão</option>
-            <option value="APPEAL">Recurso</option>
-            <option value="LIQUIDATION">Liquidação</option>
-            <option value="ENFORCEMENT">Execução</option>
-            <option value="ARCHIVED">Arquivado</option>
-            <option value="UNKNOWN">Não determinada</option>
-          </FilterSelect>
-          <FilterSelect
-            label="Audiência futura"
-            value={filters.hasHearing}
-            onChange={(value) => onFilterChange({ hasHearing: value, page: 1 })}
-          >
-            <option value="">Todas</option>
-            <option value="true">Com audiência futura</option>
-          </FilterSelect>
-          <FilterSelect
-            label="Ação requerida"
-            value={filters.hasRequiredAction}
-            onChange={(value) => onFilterChange({ hasRequiredAction: value, page: 1 })}
-          >
-            <option value="">Todas</option>
-            <option value="true">Com ação requerida</option>
-          </FilterSelect>
-          <FilterSelect
-            label="Múltiplas empresas"
-            value={filters.multipleGroup}
-            onChange={(value) => onFilterChange({ multipleGroup: value, page: 1 })}
-          >
-            <option value="">Todas</option>
-            <option value="true">Mais de uma empresa do grupo</option>
-          </FilterSelect>
-        </div>
-        <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-          <p className="text-sm font-medium">
-            {total} {total === 1 ? "processo encontrado" : "processos encontrados"}
-          </p>
+      <div className="flex flex-wrap items-end gap-2">
+        <input
+          className="min-w-[16rem] flex-[2] rounded-xl border border-border bg-card px-4 py-2.5 text-sm"
+          value={filters.q}
+          onChange={(event) => onFilterChange({ q: event.target.value, page: 1 })}
+          placeholder="Buscar CNJ, parte, empresa ou assunto"
+        />
+        <FilterSelect label="Empresa" value={filters.entityId} onChange={(value) => onFilterChange({ entityId: value, page: 1 })}>
+          <option value="">Todas</option>
+          {entities.map((entity) => (
+            <option key={entity.id} value={entity.id}>
+              {entity.legalName}
+            </option>
+          ))}
+        </FilterSelect>
+        <FilterSelect label="Situação/Fase" value={filters.stage} onChange={(value) => onFilterChange({ stage: value, page: 1 })}>
+          <option value="">Todas</option>
+          <option value="INITIAL">Fase inicial</option>
+          <option value="INSTRUCTION">Instrução</option>
+          <option value="DECISION">Julgamento/decisão</option>
+          <option value="APPEAL">Recurso</option>
+          <option value="LIQUIDATION">Liquidação</option>
+          <option value="ENFORCEMENT">Execução</option>
+          <option value="ARCHIVED">Arquivado</option>
+          <option value="UNKNOWN">Não determinada</option>
+        </FilterSelect>
+        <FilterSelect label="Ação requerida" value={filters.hasRequiredAction} onChange={(value) => onFilterChange({ hasRequiredAction: value, page: 1 })}>
+          <option value="">Todas</option>
+          <option value="true">Com ação requerida</option>
+        </FilterSelect>
+        <button
+          type="button"
+          className="rounded-xl border border-border px-3 py-2.5 text-sm font-semibold"
+          onClick={() => setAdvancedOpen((open) => !open)}
+        >
+          Filtros avançados
+        </button>
+        {hasActiveFilter ? (
           <button type="button" className="text-sm font-semibold underline" onClick={onClearFilters}>
             Limpar filtros
           </button>
+        ) : null}
+      </div>
+      {advancedOpen ? (
+        <div className="rounded-2xl border border-border bg-card p-3">
+          <div className="flex flex-wrap gap-3">
+            <label className="flex min-w-[8rem] flex-1 flex-col gap-1 text-xs text-muted-foreground">
+              Tribunal
+              <input
+                className="rounded-lg border border-border bg-card px-2 py-1.5 text-sm text-foreground"
+                value={filters.tribunal}
+                onChange={(event) => onFilterChange({ tribunal: event.target.value, page: 1 })}
+                placeholder="Ex.: TRT9"
+              />
+            </label>
+            <FilterSelect label="Fonte" value={filters.source} onChange={(value) => onFilterChange({ source: value, page: 1 })}>
+              <option value="">Todas</option>
+              <option value="DJEN">DJEN</option>
+              <option value="DATAJUD">DataJud</option>
+              <option value="ESCAVADOR">Escavador</option>
+              <option value="DOMICILIO">Domicílio</option>
+            </FilterSelect>
+            <FilterSelect label="Confirmação" value={filters.verification} onChange={(value) => onFilterChange({ verification: value, page: 1 })}>
+              <option value="">Todas</option>
+              <option value="CONFIRMED_OFFICIAL">Confirmado em fonte oficial</option>
+              <option value="REVIEW_REQUIRED">Sem confirmação oficial</option>
+            </FilterSelect>
+            <FilterSelect label="Enriquecimento" value={filters.enrichment} onChange={(value) => onFilterChange({ enrichment: value, page: 1 })}>
+              <option value="">Todos</option>
+              <option value="DATAJUD_ENRICHED">Dados DataJud disponíveis</option>
+              <option value="DJEN_ONLY">Aguardando enriquecimento DataJud</option>
+              <option value="PARTIAL">Parcial</option>
+            </FilterSelect>
+            <FilterSelect label="Polo" value={filters.pole} onChange={(value) => onFilterChange({ pole: value, page: 1 })}>
+              <option value="">Todos</option>
+              <option value="PASSIVE">Ré / polo passivo</option>
+              <option value="ACTIVE">Autora / polo ativo</option>
+              <option value="THIRD_PARTY">Terceira interessada</option>
+              <option value="OTHER">Outro polo</option>
+              <option value="UNKNOWN">Polo ainda não identificado</option>
+            </FilterSelect>
+            <FilterSelect label="Audiência futura" value={filters.hasHearing} onChange={(value) => onFilterChange({ hasHearing: value, page: 1 })}>
+              <option value="">Todas</option>
+              <option value="true">Com audiência futura</option>
+            </FilterSelect>
+            <FilterSelect label="Múltiplas empresas" value={filters.multipleGroup} onChange={(value) => onFilterChange({ multipleGroup: value, page: 1 })}>
+              <option value="">Todas</option>
+              <option value="true">Mais de uma empresa do grupo</option>
+            </FilterSelect>
+          </div>
         </div>
+      ) : null}
+      <div>
+        <p className="text-sm font-medium">
+          {total} {total === 1 ? "processo único" : "processos únicos"}
+        </p>
+        {typeof cases?.physicalCaseCount === "number" &&
+        typeof cases?.uniqueProcessCount === "number" &&
+        cases.physicalCaseCount > cases.uniqueProcessCount ? (
+          <p className="text-xs text-muted-foreground">
+            {cases.physicalCaseCount} registros históricos consolidados em {cases.uniqueProcessCount} processos CNJ.
+          </p>
+        ) : null}
       </div>
 
       {error ? (
@@ -363,11 +360,13 @@ export function ExposureCaseList({
       {!loading && (cases?.items ?? []).length === 0 ? (
         <p className="text-sm">{hasActiveFilter ? NO_CASES_FILTER_COPY : NO_CASES_IDENTIFIED_COPY}</p>
       ) : null}
-      {!loading
-        ? (cases?.items ?? []).map((item) => (
-            <CaseCard key={item.id} item={item} onOpenCase={onOpenCase} />
-          ))
-        : null}
+      {!loading ? (
+        <div className="grid gap-4 lg:grid-cols-2" data-testid="exposure-case-grid">
+          {(cases?.items ?? []).map((item) => (
+            <CaseCard key={item.canonicalCaseId || item.id} item={item} onOpenCase={onOpenCase} />
+          ))}
+        </div>
+      ) : null}
 
       {showPagination ? (
         <div className="flex flex-wrap items-center justify-between gap-2">

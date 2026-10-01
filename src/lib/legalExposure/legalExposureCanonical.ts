@@ -3,6 +3,7 @@
  */
 
 import type { LegalCasePole, LegalEvidenceConfidence, LegalExposureSource } from "./legalExposureContracts.js";
+import { canonicalProcessKey, resolveProcessIndexKey } from "./legalExposureNormalization.js";
 import type {
   ExposureCaseRecord,
   ExposureEntityLinkRecord,
@@ -22,7 +23,10 @@ export function casesForProcess(
   memory: LegalExposureMemory,
   processNumberNormalized: string
 ): ExposureCaseRecord[] {
-  return memory.cases.filter((row) => row.processNumberNormalized === processNumberNormalized);
+  const want = resolveProcessIndexKey(processNumberNormalized);
+  return memory.cases.filter(
+    (row) => canonicalProcessKey(row.processNumberNormalized || row.processNumber, row.id).key === want
+  );
 }
 
 export function derivedEntityLinks(memory: LegalExposureMemory): ExposureEntityLinkRecord[] {
@@ -116,10 +120,19 @@ export function resolveCanonicalCaseGroup(
 
 export function previewCanonicalGroups(memory: LegalExposureMemory) {
   const byProcess = new Map<string, ExposureCaseRecord[]>();
+  const invalidProcessNumbers: Array<{ caseId: string; processNumber: string; reason: string }> = [];
   for (const row of memory.cases) {
-    const list = byProcess.get(row.processNumberNormalized) ?? [];
+    const canon = canonicalProcessKey(row.processNumberNormalized || row.processNumber, row.id);
+    if (!canon.ok) {
+      invalidProcessNumbers.push({
+        caseId: row.id,
+        processNumber: row.processNumber || row.processNumberNormalized,
+        reason: canon.reason,
+      });
+    }
+    const list = byProcess.get(canon.key) ?? [];
     list.push(row);
-    byProcess.set(row.processNumberNormalized, list);
+    byProcess.set(canon.key, list);
   }
   const entityById = new Map(memory.entities.map((row) => [row.id, row]));
   const groups = [...byProcess.entries()].map(([processNumberNormalized, siblings]) => {
@@ -158,6 +171,10 @@ export function previewCanonicalGroups(memory: LegalExposureMemory) {
     entityLinksToCreate: pending.length,
     casesWithoutEntity: memory.cases.filter((row) => !row.entityId).length,
     casesWithoutNormalizedNumber: memory.cases.filter((row) => !row.processNumberNormalized).length,
+    validCnjCases: memory.cases.filter((row) => canonicalProcessKey(row.processNumberNormalized || row.processNumber, row.id).ok).length,
+    uniqueCanonicalCnj: groups.filter((row) => !String(row.processNumberNormalized).startsWith("invalid:")).length,
+    invalidProcessNumbers: invalidProcessNumbers.length,
+    invalidProcessNumberRows: invalidProcessNumbers,
     movements: memory.movements.length,
     evidences: memory.evidences.length,
     communications: memory.communications.length,

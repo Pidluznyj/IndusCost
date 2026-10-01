@@ -59,6 +59,7 @@ describe("escavador complementary source", () => {
     );
     assert.equal(mapped.cases[0]?.className, "Reclamação Trabalhista");
     assert.equal(mapped.cases[0]?.claimValue, "168127.48");
+    assert.equal(mapped.cases[0]?.parties[0]?.name, "Maria");
     assert.equal(mapped.cases[0]?.attorneys?.length ?? 0, 0);
   });
 });
