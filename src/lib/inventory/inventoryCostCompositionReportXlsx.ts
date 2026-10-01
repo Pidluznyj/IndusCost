@@ -26,32 +26,30 @@ function text(value: string | null | undefined): string {
   return FORMULA_RE.test(raw) ? `'${raw}` : raw;
 }
 
-const FORMAT_UNIT_COST = '"R$" #,##0.000000';
+const FORMAT_UNIT_COST = '"R$" #,##0.0000';
 const FORMAT_MONEY = '"R$" #,##0.00';
-const FORMAT_QUANTITY = "#,##0.000000";
-const FORMAT_PERCENT = "0.00%";
+const FORMAT_QUANTITY = "#,##0.000";
 const FORMAT_INTEGER = "0";
 
 type Cell = string | number | null;
 
+/**
+ * Visão enxuta para a contabilidade: só o custo oficial COM HH e SEM HH
+ * (unitário e total). A decomposição MP/HH/HM continua sendo lida e
+ * reconciliada no payload — só não é exportada coluna a coluna. Itens sem
+ * custo, com custo parcial ou inconsistente aparecem na coluna Status.
+ */
 export const INVENTORY_COST_COMPOSITION_DETAIL_COLUMNS = [
   "Código",
   "Descrição",
   "Tipo",
-  "Almoxarifado",
   "Unidade",
   "Quantidade em estoque",
-  "MP unitária",
-  "HH unitária",
-  "HM unitária",
-  "CIU oficial",
-  "CIU sem HH",
-  "HH retirado unitário",
-  "Valor estoque oficial",
-  "Valor HH incorporado",
+  "Custo unitário com HH",
+  "Custo unitário sem HH",
+  "Valor estoque com HH",
   "Valor estoque sem HH",
   "Status do custo",
-  "Observação",
 ] as const;
 
 const DETAIL_FORMATS: Array<string | null> = [
@@ -59,31 +57,21 @@ const DETAIL_FORMATS: Array<string | null> = [
   null,
   null,
   null,
-  null,
   FORMAT_QUANTITY,
   FORMAT_UNIT_COST,
   FORMAT_UNIT_COST,
-  FORMAT_UNIT_COST,
-  FORMAT_UNIT_COST,
-  FORMAT_UNIT_COST,
-  FORMAT_UNIT_COST,
   FORMAT_MONEY,
   FORMAT_MONEY,
-  FORMAT_MONEY,
-  null,
   null,
 ];
 
-const DETAIL_WIDTHS = [16, 44, 16, 20, 9, 18, 16, 16, 16, 16, 16, 18, 20, 20, 20, 16, 60];
+const DETAIL_WIDTHS = [16, 48, 16, 9, 20, 22, 22, 22, 22, 16];
 
 export const INVENTORY_COST_COMPOSITION_SUMMARY_COLUMNS = [
   "Tipo",
   "Quantidade de SKUs",
-  "Quantidade total em estoque",
-  "Valor estoque oficial",
-  "Valor HH incorporado",
+  "Valor estoque com HH",
   "Valor estoque sem HH",
-  "% HH sobre valor oficial",
   "Itens sem custo",
   "Itens com custo parcial",
   "Itens inconsistentes",
@@ -92,17 +80,14 @@ export const INVENTORY_COST_COMPOSITION_SUMMARY_COLUMNS = [
 const SUMMARY_FORMATS: Array<string | null> = [
   null,
   FORMAT_INTEGER,
-  FORMAT_QUANTITY,
   FORMAT_MONEY,
   FORMAT_MONEY,
-  FORMAT_MONEY,
-  FORMAT_PERCENT,
   FORMAT_INTEGER,
   FORMAT_INTEGER,
   FORMAT_INTEGER,
 ];
 
-const SUMMARY_WIDTHS = [20, 18, 26, 22, 22, 22, 22, 16, 22, 20];
+const SUMMARY_WIDTHS = [20, 18, 22, 22, 16, 22, 20];
 
 /** Célula vazia quando não há custo: nunca zero silencioso. */
 function money(value: number | null): Cell {
@@ -114,20 +99,13 @@ function detailRow(row: InventoryCostCompositionRow): Cell[] {
     text(row.itemCode),
     text(row.description),
     row.itemTypeLabel,
-    row.warehouseLabel,
     text(row.unit),
     Number(row.physicalQuantity),
-    money(row.materialUnitCost),
-    money(row.hhUnitCost),
-    money(row.hmUnitCost),
     money(row.officialUnitCost),
     money(row.unitCostWithoutHh),
-    money(row.hhRemovedUnit),
     money(row.officialStockValue),
-    money(row.hhStockValue),
     money(row.stockValueWithoutHh),
     row.status,
-    text(row.observation),
   ];
 }
 
@@ -135,11 +113,8 @@ function summaryRow(row: InventoryCostCompositionSummaryRow): Cell[] {
   return [
     row.label,
     row.skuCount,
-    Number(row.physicalQuantity),
     row.officialStockValue,
-    row.hhStockValue,
     row.stockValueWithoutHh,
-    row.hhSharePercent == null ? "" : row.hhSharePercent,
     row.itemsWithoutCost,
     row.itemsPartialCost,
     row.itemsInconsistent,

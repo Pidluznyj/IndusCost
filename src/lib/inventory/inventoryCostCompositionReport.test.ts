@@ -483,41 +483,70 @@ describe("composição de custo — XLSX", () => {
     materials: [["mat-mp", "2.5"]],
   });
 
-  it("19. três abas com as colunas pedidas, autofilter, larguras, formatos, código como texto e vazio sem custo", () => {
+  it("19. três abas enxutas: só custo com HH e sem HH (unitário e total) + status; código como texto e vazio sem custo", () => {
     const wb = buildInventoryCostCompositionWorkbook(report);
     assert.deepEqual(wb.SheetNames, [...INVENTORY_COST_COMPOSITION_SHEETS]);
     const detail = wb.Sheets["Estoque Detalhado"]!;
     const rows = XLSX.utils.sheet_to_json<(string | number)[]>(detail, { header: 1, raw: true });
+    assert.deepEqual(rows[0], [
+      "Código",
+      "Descrição",
+      "Tipo",
+      "Unidade",
+      "Quantidade em estoque",
+      "Custo unitário com HH",
+      "Custo unitário sem HH",
+      "Valor estoque com HH",
+      "Valor estoque sem HH",
+      "Status do custo",
+    ]);
     assert.deepEqual(rows[0], [...INVENTORY_COST_COMPOSITION_DETAIL_COLUMNS]);
+    // Nada de decomposição, almoxarifado repetido ou HH em duplicidade no detalhe.
+    for (const removed of ["Almoxarifado", "MP unitária", "HH unitária", "HM unitária", "HH retirado unitário", "Valor HH incorporado", "Observação"]) {
+      assert.ok(!(rows[0] as string[]).includes(removed), removed);
+    }
     assert.equal(rows.length, 1 + 4);
     // Código com zero à esquerda continua texto; fórmula neutralizada.
     assert.equal((detail["A2"] as XLSX.CellObject).t, "s");
     assert.equal((detail["A2"] as XLSX.CellObject).v, "00123");
     assert.equal((detail["A3"] as XLSX.CellObject).v, "'=CP-1");
-    // Quantidade e custos numéricos com formato; sem custo = célula ausente/vazia (não zero).
-    assert.equal((detail["F2"] as XLSX.CellObject).t, "n");
-    assert.equal((detail["F2"] as XLSX.CellObject).z, "#,##0.000000");
-    assert.equal((detail["G2"] as XLSX.CellObject).z, '"R$" #,##0.000000');
-    assert.equal((detail["M2"] as XLSX.CellObject).z, '"R$" #,##0.00');
-    assert.equal((detail["M2"] as XLSX.CellObject).v, 10);
+    // MP (4 KG × 2,5): com HH = sem HH.
+    assert.equal((detail["E2"] as XLSX.CellObject).z, "#,##0.000");
+    assert.equal((detail["F2"] as XLSX.CellObject).z, '"R$" #,##0.0000');
+    assert.equal((detail["F2"] as XLSX.CellObject).v, 2.5);
+    assert.equal((detail["G2"] as XLSX.CellObject).v, 2.5);
+    assert.equal((detail["H2"] as XLSX.CellObject).z, '"R$" #,##0.00');
+    assert.equal((detail["H2"] as XLSX.CellObject).v, 10);
+    assert.equal((detail["I2"] as XLSX.CellObject).v, 10);
+    // Componente (2 × (1 + 1 + 0)): com HH 2/4, sem HH 1/2.
+    assert.deepEqual(rows[2]!.slice(5, 10), [2, 1, 4, 2, "OK"]);
     const semRow = rows.findIndex((r) => r[0] === "SEM") + 1;
     assert.ok(semRow > 1);
-    for (const col of ["G", "H", "I", "J", "K", "L", "M", "N", "O"]) {
+    for (const col of ["F", "G", "H", "I"]) {
       const cell = detail[`${col}${semRow}`] as XLSX.CellObject | undefined;
       assert.ok(cell == null || cell.v === "", `${col}${semRow} deve ficar vazio`);
     }
-    assert.equal(detail[`P${semRow}`]!.v, "SEM_CUSTO");
-    assert.equal(detail["!autofilter"]?.ref, "A1:Q5");
+    assert.equal(detail[`J${semRow}`]!.v, "SEM_CUSTO");
+    assert.equal(detail["!autofilter"]?.ref, "A1:J5");
     assert.equal(detail["!cols"]?.length, INVENTORY_COST_COMPOSITION_DETAIL_COLUMNS.length);
     assert.equal(detail["!merges"], undefined);
 
     const summary = wb.Sheets["Resumo"]!;
     const summaryRows = XLSX.utils.sheet_to_json<(string | number)[]>(summary, { header: 1, raw: true });
-    assert.deepEqual(summaryRows[0], [...INVENTORY_COST_COMPOSITION_SUMMARY_COLUMNS]);
+    assert.deepEqual(summaryRows[0], [
+      "Tipo",
+      "Quantidade de SKUs",
+      "Valor estoque com HH",
+      "Valor estoque sem HH",
+      "Itens sem custo",
+      "Itens com custo parcial",
+      "Itens inconsistentes",
+    ]);
     assert.deepEqual(summaryRows.map((r) => r[0]), ["Tipo", "Matéria-prima", "Componentes", "Produtos acabados", "TOTAL"]);
-    assert.equal((summary["G3"] as XLSX.CellObject).z, "0.00%");
-    assert.equal((summary["D5"] as XLSX.CellObject).v, 34); // MP 4×2,5 + CP 2×2 + PA 1×20
-    assert.equal(summary["!autofilter"]?.ref, "A1:J5");
+    // TOTAL: com HH = MP 4×2,5 + CP 2×2 + PA 1×20 = 34; sem HH = 10 + 2 + 15 = 27; 1 item sem custo.
+    assert.deepEqual(summaryRows[4], ["TOTAL", 4, 34, 27, 1, 0, 0]);
+    assert.equal((summary["C5"] as XLSX.CellObject).z, '"R$" #,##0.00');
+    assert.equal(summary["!autofilter"]?.ref, "A1:G5");
 
     const methodology = wb.Sheets["Metodologia"]!;
     const text = XLSX.utils.sheet_to_csv(methodology);
