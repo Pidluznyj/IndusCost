@@ -171,6 +171,10 @@ describe("InventoryModule estados", () => {
     assert.match(mod, /Extrair PDF/);
     assert.match(mod, /Imprimir quantidades/);
     assert.match(mod, /\/inventory\/position-report\/print\?modo=quantidade/);
+    // Relatório de Estoque – Composição de Custo: só uma ação a mais na mesma barra, sem tela nova.
+    assert.match(mod, /Exportar estoque p\/ contabilidade/);
+    assert.match(mod, /\/api\/inventory\/cost-composition-report\.xlsx/);
+    assert.match(mod, /inventory-cost-composition-report-xlsx/);
     const printCss = read("src/components/inventory/inventory-position-report-print.css");
     assert.match(printCss, /body\.inventory-position-report-route \*/);
     assert.match(printCss, /visibility: visible !important/);

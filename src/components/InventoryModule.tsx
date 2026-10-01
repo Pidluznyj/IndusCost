@@ -36,15 +36,14 @@ type Props = {
   initialTab?: InventoryTabId;
 };
 
-async function downloadInventoryPositionReport(): Promise<void> {
-  const response = await fetch("/api/inventory/position-report.xlsx", { credentials: "include" });
+async function downloadInventoryXlsx(endpoint: string, fallbackFilename: string, errorMessage: string): Promise<void> {
+  const response = await fetch(endpoint, { credentials: "include" });
   if (!response.ok) {
-    throw new Error("Não foi possível extrair a planilha da posição de estoque.");
+    throw new Error(errorMessage);
   }
   const blob = await response.blob();
   const filename =
-    /filename="([^"]+)"/.exec(response.headers.get("Content-Disposition") ?? "")?.[1] ??
-    "posicao-estoque.xlsx";
+    /filename="([^"]+)"/.exec(response.headers.get("Content-Disposition") ?? "")?.[1] ?? fallbackFilename;
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;
@@ -53,6 +52,23 @@ async function downloadInventoryPositionReport(): Promise<void> {
   anchor.click();
   anchor.remove();
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+const POSITION_REPORT_ERROR = "Não foi possível extrair a planilha da posição de estoque.";
+const COST_COMPOSITION_REPORT_ERROR =
+  "Não foi possível extrair o relatório de composição de custo do estoque.";
+
+function downloadInventoryPositionReport(): Promise<void> {
+  return downloadInventoryXlsx("/api/inventory/position-report.xlsx", "posicao-estoque.xlsx", POSITION_REPORT_ERROR);
+}
+
+/** Relatório de Estoque – Composição de Custo (MP/HH/HM) para a contabilidade. */
+function downloadInventoryCostCompositionReport(): Promise<void> {
+  return downloadInventoryXlsx(
+    "/api/inventory/cost-composition-report.xlsx",
+    "estoque-composicao-custo.xlsx",
+    COST_COMPOSITION_REPORT_ERROR
+  );
 }
 
 export function InventoryModule({ initialTab }: Props = {}) {
@@ -166,7 +182,7 @@ export function InventoryModule({ initialTab }: Props = {}) {
               type="button"
               onClick={() => {
                 void downloadInventoryPositionReport().catch((err: unknown) => {
-                  setError(err instanceof Error ? err.message : "Não foi possível extrair a planilha da posição de estoque.");
+                  setError(err instanceof Error ? err.message : POSITION_REPORT_ERROR);
                 });
               }}
               className="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-100"
@@ -174,6 +190,20 @@ export function InventoryModule({ initialTab }: Props = {}) {
             >
               <FileSpreadsheet className="h-4 w-4" />
               Extrair XLS
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                void downloadInventoryCostCompositionReport().catch((err: unknown) => {
+                  setError(err instanceof Error ? err.message : COST_COMPOSITION_REPORT_ERROR);
+                });
+              }}
+              className="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-100"
+              title="Relatório de Estoque – Composição de Custo: CIU oficial decomposto em MP, HH e HM, com visão sem HH"
+              data-testid="inventory-cost-composition-report-xlsx"
+            >
+              <FileSpreadsheet className="h-4 w-4" />
+              Exportar estoque p/ contabilidade
             </button>
             <button
               type="button"

@@ -20,10 +20,14 @@ function toDecimal(value: unknown): Prisma.Decimal {
   return new Prisma.Decimal(String(value));
 }
 
-export async function loadInventoryPositionReport(
-  db: PrismaClient,
-  referenceDate = new Date()
-): Promise<InventoryPositionReport> {
+/**
+ * Linhas de saldo (uma por item × almoxarifado/local) que alimentam a posição de
+ * estoque e o relatório de composição de custo — mesma população e mesma
+ * quantidade nos dois. Somente leitura.
+ */
+export async function loadInventoryPositionSourceLines(
+  db: Pick<PrismaClient, "inventoryBalance">
+): Promise<InventoryPositionReportSourceLine[]> {
   const balances = await db.inventoryBalance.findMany({
     select: {
       physicalQuantity: true,
@@ -41,7 +45,7 @@ export async function loadInventoryPositionReport(
     },
   });
 
-  const lines: InventoryPositionReportSourceLine[] = balances.map((row) => ({
+  return balances.map((row) => ({
     itemId: row.item.id,
     itemType: row.item.itemType,
     code: row.item.code,
@@ -51,6 +55,13 @@ export async function loadInventoryPositionReport(
     materialId: row.item.materialId,
     physicalQuantity: toDecimal(row.physicalQuantity),
   }));
+}
+
+export async function loadInventoryPositionReport(
+  db: PrismaClient,
+  referenceDate = new Date()
+): Promise<InventoryPositionReport> {
+  const lines = await loadInventoryPositionSourceLines(db);
 
   const productIds = lines
     .filter(

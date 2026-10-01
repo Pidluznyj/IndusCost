@@ -12,6 +12,11 @@ import {
   buildInventoryPositionReportXlsx,
   inventoryPositionReportFilename,
 } from "@/src/lib/inventory/inventoryPositionReportXlsx.js";
+import { loadInventoryCostCompositionReport } from "@/src/lib/inventory/inventoryCostCompositionReport.server.js";
+import {
+  buildInventoryCostCompositionXlsx,
+  inventoryCostCompositionFilename,
+} from "@/src/lib/inventory/inventoryCostCompositionReportXlsx.js";
 import {
   OPERATIONS_ACTIONS,
   OPERATIONS_RESOURCE_KEYS,
@@ -378,6 +383,20 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
     } catch (e: unknown) {
       console.error("GET /api/inventory/position-report.xlsx", e);
       res.status(500).json(inventoryApiError("Erro ao exportar a posição de estoque."));
+    }
+  });
+
+  // Relatório de Estoque – Composição de Custo (MP/HH/HM congelados; somente leitura).
+  app.get("/api/inventory/cost-composition-report.xlsx", ...view, async (_req, res) => {
+    try {
+      const report = await loadInventoryCostCompositionReport(prisma, new Date());
+      const filename = inventoryCostCompositionFilename(report.generatedAt);
+      res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+      res.send(await buildInventoryCostCompositionXlsx(report));
+    } catch (e: unknown) {
+      console.error("GET /api/inventory/cost-composition-report.xlsx", e);
+      res.status(500).json(inventoryApiError("Erro ao exportar o relatório de composição de custo do estoque."));
     }
   });
 

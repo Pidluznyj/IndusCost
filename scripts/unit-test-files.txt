@@ -337,6 +337,7 @@ src/lib/commissions/commissionPortfolioOutlookOpenBalance.test.ts
 src/lib/commissionPortfolioOutlookUi.test.tsx
 src/lib/inventory/inventoryManagerialValuation.test.ts
 src/lib/inventory/inventoryPositionReport.test.ts
+src/lib/inventory/inventoryCostCompositionReport.test.ts
 src/lib/salesOrderResultPerformance.test.ts
 src/lib/legalExposure/legalExposureCore.test.ts
 src/lib/legalExposure/legalExposureSecurity.test.ts
