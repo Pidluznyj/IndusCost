@@ -92,6 +92,21 @@ export function notifyPolicyAcceptanceRequired(): void {
   }
 }
 
+function isHtmlErrorBody(contentType: string | null, text: string): boolean {
+  return Boolean(contentType?.includes("text/html")) || /^<(!doctype|html|head|body)\b/i.test(text);
+}
+
+/** Mensagem para erro vindo do proxy (sem JSON da aplicação): 502/503/504 e 52x do Cloudflare. */
+export function gatewayErrorMessage(status: number): string {
+  if (status === 504 || status === 522 || status === 524) {
+    return `O servidor demorou demais para responder (HTTP ${status}). A operação pode ainda estar em andamento; aguarde um instante e tente novamente.`;
+  }
+  if (status === 502 || status === 503 || (status >= 520 && status <= 523)) {
+    return `O servidor está indisponível no momento (HTTP ${status}). Tente novamente em instantes.`;
+  }
+  return `Erro HTTP ${status}`;
+}
+
 export async function parseApiErrorPayload(res: Response): Promise<{
   message: string;
   code?: string;
@@ -127,8 +142,10 @@ export async function parseApiErrorPayload(res: Response): Promise<{
       }
       return { message: fallback };
     }
-    const text = await res.text();
-    return { message: text?.trim().slice(0, 300) || fallback };
+    const text = (await res.text())?.trim() ?? "";
+    // Página de erro do proxy/servidor (HTML): nunca despejar a marcação na tela.
+    if (isHtmlErrorBody(ct, text)) return { message: gatewayErrorMessage(res.status) };
+    return { message: text.slice(0, 300) || fallback };
   } catch {
     return { message: fallback };
   }

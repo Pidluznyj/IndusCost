@@ -357,3 +357,4 @@ src/lib/legalExposure/sources/datajud/datajudKnownProcess.test.ts
 src/lib/legalExposure/sources/datajud/datajudThrottle.test.ts
 src/lib/legalExposure/sources/escavador/escavadorClient.test.ts
 src/components/legalExposure/ExposureCaseList.test.tsx
+src/lib/commissions/commissionReprocessJobs.test.ts

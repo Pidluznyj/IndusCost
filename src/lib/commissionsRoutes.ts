@@ -83,6 +83,13 @@ import {
   previewCommissionReprocess,
   CommissionReprocessError,
 } from "@/src/lib/commissions/commissionReprocess.server.js";
+import {
+  commissionReprocessJobRunningView,
+  getCommissionReprocessJob,
+  startCommissionReprocessJob,
+  waitForCommissionReprocessJob,
+  type CommissionReprocessJob,
+} from "@/src/lib/commissions/commissionReprocessJobs.server.js";
 import { requireCommissionDataScope } from "@/src/lib/commissions/commissionAccessScope.js";
 import {
   exportCommissionVisualAuditCsv,
@@ -216,6 +223,23 @@ function handleQueryError(res: express.Response, error: unknown) {
     return res.status(400).json({ error: error.message });
   }
   throw error;
+}
+
+/**
+ * Prazo que a rota espera a rodada de reprocessamento antes de devolver 202.
+ * Bem abaixo dos 100 s do proxy (HTTP 524); rodadas pequenas respondem direto.
+ */
+const COMMISSION_REPROCESS_SYNC_WAIT_MS = 20_000;
+
+/** 200 com o resultado, erro com o status original, ou 202 enquanto roda em segundo plano. */
+function respondCommissionReprocessJob(res: express.Response, job: CommissionReprocessJob) {
+  if (job.status === "done") return res.status(200).json(job.result);
+  if (job.status === "error" && job.error) {
+    return res
+      .status(job.error.status)
+      .json(job.error.code ? { error: job.error.message, code: job.error.code } : { error: job.error.message });
+  }
+  return res.status(202).json(commissionReprocessJobRunningView(job));
 }
 
 function handleValidationError(res: express.Response, error: CommissionValidationError) {
@@ -1720,13 +1744,17 @@ export function registerCommissionsRoutes(app: express.Express, auth: AuthGuards
       const user = await getCurrentAppUser(req);
       if (!user) return res.status(401).json({ error: "Não autenticado." });
       const body = parseCommissionReprocessBody(req.body);
-      const payload = await previewCommissionReprocess(prisma, {
-        filters: body,
-        userId: user.id,
-        userRole: user.role,
-        permissions: user.permissions,
-      });
-      return res.status(200).json(payload);
+      const job = startCommissionReprocessJob("preview", user.id, (onProgress) =>
+        previewCommissionReprocess(prisma, {
+          filters: body,
+          userId: user.id,
+          userRole: user.role,
+          permissions: user.permissions,
+          onProgress,
+        })
+      );
+      await waitForCommissionReprocessJob(job, COMMISSION_REPROCESS_SYNC_WAIT_MS);
+      return respondCommissionReprocessJob(res, job);
     } catch (error) {
       if (error instanceof CommissionReprocessError) {
         return res.status(error.status).json({ error: error.message, code: error.code });
@@ -1742,15 +1770,19 @@ export function registerCommissionsRoutes(app: express.Express, auth: AuthGuards
       const user = await getCurrentAppUser(req);
       if (!user) return res.status(401).json({ error: "Não autenticado." });
       const body = parseCommissionReprocessBody(req.body);
-      const payload = await applyCommissionReprocess(prisma, {
-        filters: body,
-        userId: user.id,
-        userRole: user.role,
-        permissions: user.permissions,
-        reason: body.reason ?? "",
-        runToken: body.runToken,
-      });
-      return res.status(200).json(payload);
+      const job = startCommissionReprocessJob("apply", user.id, (onProgress) =>
+        applyCommissionReprocess(prisma, {
+          filters: body,
+          userId: user.id,
+          userRole: user.role,
+          permissions: user.permissions,
+          reason: body.reason ?? "",
+          runToken: body.runToken,
+          onProgress,
+        })
+      );
+      await waitForCommissionReprocessJob(job, COMMISSION_REPROCESS_SYNC_WAIT_MS);
+      return respondCommissionReprocessJob(res, job);
     } catch (error) {
       if (error instanceof CommissionReprocessError) {
         return res.status(error.status).json({ error: error.message, code: error.code });
@@ -1758,6 +1790,25 @@ export function registerCommissionsRoutes(app: express.Express, auth: AuthGuards
       if (error instanceof CommissionValidationError) return handleValidationError(res, error);
       console.error("POST /api/commissions/reprocess/apply", error);
       return res.status(500).json({ error: "Erro ao aplicar reprocessamento de comissões." });
+    }
+  });
+
+  // Acompanhamento da rodada em segundo plano: 202 enquanto roda, depois o mesmo corpo do POST.
+  app.get("/api/commissions/reprocess/jobs/:jobId", ...reprocessGuard, async (req, res) => {
+    try {
+      const user = await getCurrentAppUser(req);
+      if (!user) return res.status(401).json({ error: "Não autenticado." });
+      const job = getCommissionReprocessJob(String(req.params.jobId), user.id);
+      if (!job) {
+        return res.status(404).json({
+          error: "Rodada de reprocessamento não encontrada ou expirada. Gere a prévia novamente.",
+          code: "REPROCESS_JOB_NOT_FOUND",
+        });
+      }
+      return respondCommissionReprocessJob(res, job);
+    } catch (error) {
+      console.error("GET /api/commissions/reprocess/jobs/:jobId", error);
+      return res.status(500).json({ error: "Erro ao consultar o reprocessamento de comissões." });
     }
   });
 
