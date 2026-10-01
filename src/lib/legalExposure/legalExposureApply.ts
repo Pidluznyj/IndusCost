@@ -71,7 +71,15 @@ function nonemptyText(value: string | null | undefined): string | null {
   return text ? text : null;
 }
 
-/** DataJud oficial; DJEN não grava classe/ajuizamento; Escavador só preenche lacuna. Null nunca limpa. */
+function looksLikeDjenCommunicationClass(value: string | null | undefined): boolean {
+  const folded = String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase();
+  return /INTIMAC|CITAC|NOTIFICAC|COMUNICAC/.test(folded);
+}
+
+/** DataJud oficial; DJEN preenche classe/ajuizamento só se vazio e se não for tipo de publicação. Null nunca limpa. */
 export function mergeExistingCaseMetadata(
   legalCase: ExposureCaseRecord,
   observation: NormalizedCaseObservation,
@@ -81,7 +89,8 @@ export function mergeExistingCaseMetadata(
     const incoming = nonemptyText(observation[field] as string | null | undefined);
     if (!incoming) continue;
     if (isLocatorSource(source)) continue;
-    if (source === "DJEN" && DJEN_PUBLICATION_FIELDS.has(field)) continue;
+    if (source === "DJEN" && DJEN_PUBLICATION_FIELDS.has(field) && nonemptyText(legalCase[field] as string | null)) continue;
+    if (source === "DJEN" && field === "className" && looksLikeDjenCommunicationClass(incoming)) continue;
     if (isOfficialProcessSource(source) || !legalCase[field]) {
       (legalCase as Record<string, unknown>)[field] = incoming;
     }
@@ -350,9 +359,6 @@ function ensureCase(
     if (input.batch.source === "DJEN") {
       legalCase.jurisdiction = null;
       legalCase.degree = null;
-      legalCase.classCode = null;
-      legalCase.className = null;
-      legalCase.filedAt = null;
       legalCase.systemName = null;
       legalCase.area = null;
       legalCase.claimValue = null;
@@ -360,6 +366,10 @@ function ensureCase(
       legalCase.archivedAt = null;
       legalCase.secrecy = null;
       legalCase.priority = null;
+      if (looksLikeDjenCommunicationClass(legalCase.className)) {
+        legalCase.className = null;
+        legalCase.classCode = null;
+      }
     }
     memory.cases.push(legalCase);
     const event = pushEvent(memory, input, {
@@ -546,6 +556,9 @@ function ensureCase(
     } else {
       found.lastSeenAt = input.now;
       if (found.pole === "UNKNOWN" && pole !== "UNKNOWN") found.pole = pole;
+      if (found.pole !== "UNKNOWN" && pole !== "UNKNOWN" && found.pole !== pole) {
+        found.partyType = "POLO_DIVERGENTE";
+      }
       if (!found.personType && party.personType) found.personType = party.personType;
     }
   }
@@ -750,6 +763,9 @@ function applyCommunication(
       officialContentOpenedByUserId: null,
       tribunal: observation.tribunal,
       courtUnit: observation.courtUnit,
+      officialText: observation.officialText ?? null,
+      officialHash: observation.officialHash ?? null,
+      officialLink: observation.officialLink ?? null,
       rawMetadata,
       rawHash: stableHash(rawMetadata),
       firstSeenAt: input.now,
@@ -780,6 +796,9 @@ function applyCommunication(
   existing.caseId = existing.caseId ?? linked?.id ?? null;
   existing.rawMetadata = rawMetadata;
   existing.rawHash = stableHash(rawMetadata);
+  if (observation.officialText) existing.officialText = observation.officialText;
+  if (observation.officialHash) existing.officialHash = observation.officialHash;
+  if (observation.officialLink) existing.officialLink = observation.officialLink;
   if (observation.sourceScienceAt) existing.sourceScienceAt = observation.sourceScienceAt;
   if (previous !== normalizedStatus) emitCommunicationAlerts(memory, input, existing, previous);
 }

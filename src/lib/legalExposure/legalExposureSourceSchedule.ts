@@ -42,7 +42,7 @@ export const LEGAL_EXPOSURE_SOURCE_SCHEDULE: LegalExposureScheduledJob[] = [
     times: ["06:10", "12:10", "18:10", "23:10"],
     timezone: LEGAL_EXPOSURE_TIMEZONE,
     enabled: true,
-    description: "Descoberta oficial de publicações",
+    description: "Descoberta por nome da parte + atualização por CNJ",
   },
   {
     source: "DATAJUD",

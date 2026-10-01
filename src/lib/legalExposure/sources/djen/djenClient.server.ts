@@ -44,6 +44,15 @@ function mergeDjenPages(pages: NormalizedSourceBatch[]): NormalizedSourceBatch {
   const cases = pages.flatMap((page) => page.cases);
   const candidates = pages.flatMap((page) => page.candidates);
   const communications = pages.flatMap((page) => page.communications);
+  const pagination = {
+    totalReported:
+      pages.reduce((max, page) => Math.max(max, page.pagination?.totalReported ?? 0), 0) ||
+      pages[0]?.pagination?.totalReported ||
+      null,
+    pagesFetched: pages.reduce((sum, page) => sum + (page.pagination?.pagesFetched ?? 1), 0),
+    itemsFetched: pages.reduce((sum, page) => sum + (page.pagination?.itemsFetched ?? page.communications.length + page.cases.length), 0),
+    truncated: pages.some((page) => page.pagination?.truncated),
+  };
   const hadResults = cases.length + candidates.length + communications.length > 0;
   const hardFailure = pages.find(
     (page) =>
@@ -62,9 +71,10 @@ function mergeDjenPages(pages: NormalizedSourceBatch[]): NormalizedSourceBatch {
       cases,
       communications,
       candidates,
+      pagination,
     };
   }
-  if (hardFailure && !hadResults) return hardFailure;
+  if (hardFailure && !hadResults) return { ...hardFailure, pagination };
   if (hardFailure && hadResults) {
     return {
       source: "DJEN",
@@ -76,6 +86,7 @@ function mergeDjenPages(pages: NormalizedSourceBatch[]): NormalizedSourceBatch {
       cases,
       communications,
       candidates,
+      pagination,
     };
   }
   return {
@@ -88,6 +99,7 @@ function mergeDjenPages(pages: NormalizedSourceBatch[]): NormalizedSourceBatch {
     cases,
     communications,
     candidates,
+    pagination,
   };
 }
 
@@ -121,6 +133,9 @@ export async function searchDjen(input: {
   const startPage = input.query.pagina ?? 1;
   const pages: NormalizedSourceBatch[] = [];
   const path = "/api/v1/comunicacao";
+  let lastTotal: number | null = null;
+  let itemsFetched = 0;
+  let truncated = false;
 
   async function fetchPage(pagina: number) {
     const params = new URLSearchParams();
@@ -167,20 +182,33 @@ export async function searchDjen(input: {
       break;
     }
     const mapped = mapDjenPublicationPage(result.body);
+    lastTotal = mapped.totalCount;
+    itemsFetched += mapped.itemCount;
+    mapped.batch.pagination = {
+      totalReported: mapped.totalCount,
+      pagesFetched: 1,
+      itemsFetched: mapped.itemCount,
+      truncated: false,
+    };
     pages.push(mapped.batch);
-    if (
-      !djenHasNextPage({
-        pagina,
-        itensPorPagina,
-        itemCount: mapped.itemCount,
-        totalCount: mapped.totalCount,
-      })
-    ) {
-      break;
-    }
+    const hasNext = djenHasNextPage({
+      pagina,
+      itensPorPagina,
+      itemCount: mapped.itemCount,
+      totalCount: mapped.totalCount,
+    });
+    if (!hasNext) break;
+    if (offset === maxPages - 1) truncated = true;
   }
 
-  return mergeDjenPages(pages);
+  const merged = mergeDjenPages(pages);
+  merged.pagination = {
+    totalReported: lastTotal,
+    pagesFetched: pages.length,
+    itemsFetched,
+    truncated,
+  };
+  return merged;
 }
 
 export { mapDjenPublications };

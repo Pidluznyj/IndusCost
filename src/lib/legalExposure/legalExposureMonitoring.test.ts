@@ -176,8 +176,9 @@ describe("djen pagination", () => {
 
   it("clamp de páginas é defensivo", () => {
     assert.equal(clampDjenMaxPages("0"), 1);
-    assert.equal(clampDjenMaxPages("99"), 20);
-    assert.equal(clampDjenMaxPages(undefined), 5);
+    assert.equal(clampDjenMaxPages("99"), 99);
+    assert.equal(clampDjenMaxPages("200"), 100);
+    assert.equal(clampDjenMaxPages(undefined), 50);
     assert.equal(djenHasNextPage({ pagina: 1, itensPorPagina: 20, itemCount: 20, totalCount: 40 }), true);
     assert.equal(djenHasNextPage({ pagina: 2, itensPorPagina: 20, itemCount: 20, totalCount: 40 }), false);
   });
@@ -206,7 +207,7 @@ describe("exposure monitoring pipeline", () => {
       runners: {
         domicilio: async () => emptyBatch("DOMICILIO"),
         djen: async (input) => {
-          djenCalls.push(input?.nomeParte ?? "");
+          djenCalls.push(input?.nomeParte ?? input?.numeroProcesso ?? "");
           return emptyBatch("DJEN", {
             outcome: "SUCCESS",
             externalCall: true,
@@ -220,7 +221,8 @@ describe("exposure monitoring pipeline", () => {
       },
     });
     await service.sync({ mode: "apply", source: "ALL", entityId: "entity-0" }, USER);
-    assert.equal(djenCalls.length, 3);
+    assert.equal(djenCalls.filter((row) => row && !/^\d{20}$/.test(row)).length, 3);
+    assert.equal(djenCalls.filter((row) => row === PROCESS).length, 1);
     assert.equal(datajudCalls.length, 1);
     assert.equal(datajudCalls[0]?.processNumber, PROCESS);
   });

@@ -7,8 +7,8 @@ export type DjenSearchQuery = {
 
 export const DJEN_EMPTY_QUERY_MESSAGE = "DJEN exige nomeParte ou numeroProcesso.";
 export const DJEN_DEFAULT_PAGE_SIZE = 20;
-export const DJEN_DEFAULT_MAX_PAGES = 5;
-export const DJEN_MAX_PAGES_CEILING = 20;
+export const DJEN_DEFAULT_MAX_PAGES = 50;
+export const DJEN_MAX_PAGES_CEILING = 100;
 export const DJEN_DEFAULT_MIN_REQUEST_INTERVAL_MS = 1500;
 export const DJEN_MIN_REQUEST_INTERVAL_FLOOR_MS = 500;
 export const DJEN_MIN_REQUEST_INTERVAL_CEILING_MS = 10_000;

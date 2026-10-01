@@ -62,6 +62,9 @@ export type ExposureDossier = ExposureCaseListItem & {
     sourceStatus: string;
     source: LegalExposureSource;
     caseId: string | null;
+    officialText?: string | null;
+    officialHash?: string | null;
+    officialLink?: string | null;
   }>;
   discovery?: { firstSeenAt: string; primarySource: LegalExposureSource; evidenceSources: LegalExposureSource[] };
   stageReason?: string;
@@ -522,9 +525,21 @@ export function ExposureCaseDossier({
                     Status{" "}
                     {COMMUNICATION_STATUS_LABELS[row.normalizedStatus as keyof typeof COMMUNICATION_STATUS_LABELS] ?? row.normalizedStatus}
                   </p>
-                  <a className="underline" href={OFFICIAL_COMMUNICATIONS_PORTAL_URL} target="_blank" rel="noreferrer">
-                    Abrir portal oficial
-                  </a>
+                  {row.officialText ? (
+                    <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap rounded-lg bg-muted/40 p-3 text-xs">
+                      {row.officialText}
+                    </pre>
+                  ) : null}
+                  <div className="mt-2 flex flex-wrap gap-3">
+                    {row.officialLink ? (
+                      <a className="underline" href={row.officialLink} target="_blank" rel="noreferrer">
+                        Ver comunicação oficial
+                      </a>
+                    ) : null}
+                    <a className="underline" href={OFFICIAL_COMMUNICATIONS_PORTAL_URL} target="_blank" rel="noreferrer">
+                      Abrir portal oficial
+                    </a>
+                  </div>
                 </article>
               ))}
             </div>

@@ -25,12 +25,14 @@ import {
   collectDatajudTargetsFromBatch,
   collectKnownCaseDatajudTargets,
   countSourceOutcomes,
+  datajudTargetNeedsRefresh,
   emptyEntitySyncCounters,
   mergeDjenBatches,
   missingTribunalBatch,
   tagDiscoveryConfirmation,
   unionDatajudTargets,
   uniqueDiscoveredProcessCount,
+  uniqueProcessNumbersFromBatch,
   type EntitySyncCounters,
 } from "./legalExposurePipeline.js";
 import { exposureAuditUserId } from "./legalExposureUuid.js";
@@ -685,6 +687,14 @@ export function createLegalExposureService(deps: ExposureServiceDeps) {
 
         if (wantsDjen) {
           const djenPages: NormalizedSourceBatch[] = [];
+          const before = {
+            cases: memory.cases.length,
+            links: memory.entityLinks.length,
+            communications: memory.communications.length,
+            parties: memory.parties.length,
+            attorneys: memory.attorneys.length,
+            hearings: memory.hearings.length,
+          };
           if (scopedProcessNumber) {
             djenPages.push(await runners.djen({ numeroProcesso: scopedProcessNumber }));
             counters.discoveryTermsConsulted = [];
@@ -706,18 +716,37 @@ export function createLegalExposureService(deps: ExposureServiceDeps) {
                 djenPages.push(page);
               }
             }
+            const discovered = uniqueProcessNumbersFromBatch(mergeDjenBatches(djenPages));
+            for (const cnj of discovered) {
+              djenPages.push(await runners.djen({ numeroProcesso: cnj }));
+            }
           }
           counters.djenQueries = djenPages.length;
           mergedDjen = mergeDjenBatches(djenPages);
           counters.uniqueProcessesDiscovered = uniqueDiscoveredProcessCount(mergedDjen);
+          counters.pagesFetched = mergedDjen.pagination?.pagesFetched ?? djenPages.length;
+          counters.itemsFetched = mergedDjen.pagination?.itemsFetched ?? mergedDjen.communications.length;
+          counters.truncated = Boolean(mergedDjen.pagination?.truncated);
           owned.push(mergedDjen);
           applyOwned(entity.id, mergedDjen);
+          counters.newProcesses = Math.max(0, memory.cases.length - before.cases);
+          counters.existingProcesses = Math.max(0, counters.uniqueProcessesDiscovered - counters.newProcesses);
+          counters.newEntityLinks = Math.max(0, memory.entityLinks.length - before.links);
+          counters.newCommunications = Math.max(0, memory.communications.length - before.communications);
+          counters.newParties = Math.max(0, memory.parties.length - before.parties);
+          counters.newAttorneys = Math.max(0, memory.attorneys.length - before.attorneys);
+          counters.newHearings = Math.max(0, memory.hearings.length - before.hearings);
         }
 
         if (wantsDatajud) {
           const discovered = pipelineAll || wantsDjen ? collectDatajudTargetsFromBatch(mergedDjen) : [];
           const known = collectKnownCaseDatajudTargets(memory, entity.id);
           let targets = unionDatajudTargets(discovered, known.targets);
+          if (!pipelineAll && !scopedProcessNumber) {
+            targets = targets.filter((target) =>
+              datajudTargetNeedsRefresh(memory, target.processNumber, now().getTime())
+            );
+          }
           if (scopedProcessNumber) {
             const knownProcess = normalizeProcessNumber(scopedProcessNumber);
             targets = knownProcess

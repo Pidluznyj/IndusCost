@@ -180,7 +180,7 @@ function mergeParties(
   for (const row of rows) pushIndex(byKey, partyKey(row), row);
   return [...byKey.values()].map((group) => {
     const roles = [...new Set(group.map((row) => row.pole))] as LegalCasePole[];
-    const conflict = polesConflict(roles);
+    const conflict = polesConflict(roles) || group.some((row) => row.partyType === "POLO_DIVERGENTE");
     const primary =
       group.find((row) => row.source === "DATAJUD" || row.source === "TRIBUNAL_PUBLIC") ??
       group.find((row) => row.pole !== "UNKNOWN") ??
@@ -763,6 +763,9 @@ export function buildExposureProcessDossier(
       sourceStatus: row.sourceStatus,
       source: row.source,
       caseId: row.caseId,
+      officialText: row.officialText ?? null,
+      officialHash: row.officialHash ?? null,
+      officialLink: row.officialLink ?? null,
     })),
     discovery: {
       firstSeenAt: item.firstSeenAt,
