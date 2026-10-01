@@ -115,8 +115,9 @@ describe("exposure entity-scoped sync", () => {
     assert.equal(snapshot.evidences[0]?.caseId, snapshot.cases[0]?.id);
     assert.equal(snapshot.cases.filter((row) => row.entityId === "entity-1").length, 0);
     assert.equal(snapshot.cases.filter((row) => row.entityId === "entity-2").length, 0);
-    assert.equal(djenCalls.length, 1);
+    assert.equal(djenCalls.length, 2);
     assert.equal(djenCalls[0]?.nomeParte, companyA.name);
+    assert.equal(djenCalls[1]?.numeroProcesso, PROCESS);
   });
 
   it("sync global não compartilha batch entre empresas", async () => {
@@ -132,8 +133,13 @@ describe("exposure entity-scoped sync", () => {
         domicilio: async () => emptyBatch("DOMICILIO"),
         datajud: async () => emptyBatch("DATAJUD"),
         djen: async (input) => {
-          const processNumber =
-            input?.nomeParte === names[0] ? PROCESS : input?.nomeParte === names[1] ? PROCESS_B : PROCESS_C;
+          const processNumber = input?.numeroProcesso
+            ? String(input.numeroProcesso).replace(/\D/g, "")
+            : input?.nomeParte === names[0]
+              ? PROCESS
+              : input?.nomeParte === names[1]
+                ? PROCESS_B
+                : PROCESS_C;
           return emptyBatch("DJEN", {
             outcome: "SUCCESS",
             externalCall: true,
@@ -285,7 +291,7 @@ describe("exposure entity-scoped sync", () => {
       },
     });
     await service.sync({ mode: "preview", source: "ALL", entityId: "entity-0" }, USER);
-    assert.equal(djenCalls, 1);
+    assert.equal(djenCalls, 2);
     const snapshot = inner.snapshot();
     assert.equal(snapshot.cases.length, 0);
     assert.equal(snapshot.evidences.length, 0);

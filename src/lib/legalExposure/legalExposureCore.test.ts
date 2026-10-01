@@ -665,7 +665,7 @@ describe("exposure mappers", () => {
     assert.equal(mapped.communications[0]?.communicationType, "Intimação");
   });
 
-  it("DJEN não persiste texto integral e mapeia destinatários oficiais", () => {
+  it("DJEN persiste teor sanitizado fora do rawMetadata e mapeia destinatários oficiais", () => {
     const mapped = mapDjenPublications({
       items: [
         {
@@ -687,6 +687,7 @@ describe("exposure mappers", () => {
     });
     assert.equal(mapped.cases[0]?.className, null);
     assert.equal(JSON.stringify(mapped.cases[0]?.rawMetadata ?? {}).includes("conteudo pessoal"), false);
+    assert.equal(mapped.communications[0]?.officialText, "conteudo pessoal desnecessario");
     assert.equal(mapped.cases[0]?.parties[0]?.pole, "PASSIVE");
     assert.equal(mapped.cases[0]?.parties[0]?.personType, "COMPANY");
     assert.equal(mapped.communications[0]?.availableAt, "2026-09-30T12:00:00.000Z");

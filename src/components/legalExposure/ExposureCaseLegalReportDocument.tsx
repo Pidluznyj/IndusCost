@@ -11,12 +11,11 @@ import {
   GROUP_ENTITY_BADGE_COPY,
   PDF_DISCLAIMER,
   SOURCE_KIND_LABELS,
-  type ExposureCaseListItem,
   type ExposureTimelineItem,
   type LegalExposureSource,
 } from "@/src/lib/legalExposure/legalExposureContracts";
 import { confirmedClaimants, confirmedGroupDefendants } from "@/src/lib/legalExposure/legalExposureCoverage";
-import { caseFiledAtLabel, casePoleLabel, caseStatusLabel, formatExposureDateTime } from "@/src/lib/legalExposure/legalExposureCaseListUi";
+import { caseFiledAtLabel, casePoleLabel, caseStatusLabel } from "@/src/lib/legalExposure/legalExposureCaseListUi";
 import {
   EXPOSURE_CASE_REPORT_TITLE,
   EXPOSURE_PRINT_SOURCE_NOTE,
@@ -26,6 +25,8 @@ import {
   selectExecutiveTimeline,
   type ExposurePrintDashboardSource,
 } from "@/src/lib/legalExposure/legalExposurePrint";
+import { enrichTimelineItems, sortMovementsForPdf } from "@/src/lib/legalExposure/legalExposureMovementExecutive";
+import { buildAttentionSectionCopy, buildProcessStoryNarrative, originFacts } from "@/src/lib/legalExposure/legalExposureNarrative";
 import { ExposureLegalReportPage, ExposureLegalReportPrintCover } from "./ExposureLegalReportDocument";
 import type { ExposureDossier } from "./ExposureCaseDossier";
 
@@ -54,12 +55,24 @@ export function ExposureCaseLegalReportDocument({
   generatedAt: string;
 }) {
   const timeline = (dossier.timeline ?? []) as ExposureTimelineItem[];
-  const { executive, annex } = selectExecutiveTimeline(timeline);
+  const movements = dossier.movementsExecutive?.length
+    ? sortMovementsForPdf(dossier.movementsExecutive)
+    : sortMovementsForPdf(enrichTimelineItems(timeline, { lastMovementsReadAt: dossier.lastMovementsReadAt ?? null }));
+  const { executive, annex } = selectExecutiveTimeline(movements.map((row) => ({
+    ...row,
+    description: row.summary,
+  })));
+  const news = movements.filter((row) => row.isNew);
+  const attention = buildAttentionSectionCopy(movements);
+  const nextEvents = dossier.nextKnownEvents?.length
+    ? dossier.nextKnownEvents
+    : movements.filter((row) => row.displayKind === "hearing" || row.deadlineAt);
   const totalPages = annex.length > 0 ? 7 : 6;
   const claimants = confirmedClaimants(dossier.claimants);
   const groupDefendants = confirmedGroupDefendants(dossier.groupEntities);
   const companies = dossier.groupEntities.map((row) => row.legalName).join(", ") || "Empresas do grupo";
   const sourceRows = buildPrintSourceRows({ evidenceSources: dossier.evidenceSources, dashboardSources: sources });
+  const story = buildProcessStoryNarrative({ dossier, movements });
   const parties: Array<{
     pole: string;
     name: string;
@@ -109,6 +122,7 @@ export function ExposureCaseLegalReportDocument({
   const asOf = generatedAt;
   const header = { branding, documentTitle: EXPOSURE_CASE_REPORT_TITLE, asOf, totalPages };
   const subjects = dossier.subjects.map((row) => row.name).join("; ") || "não informado";
+  const latest = movements.at(-1);
 
   return (
     <div className="exposure-legal-report-document" data-testid="exposure-case-legal-report">
@@ -125,20 +139,22 @@ export function ExposureCaseLegalReportDocument({
       </ExposureLegalReportPage>
 
       <ExposureLegalReportPage pageId="summary" pageNumber={2} {...header}>
-        <p className="exposure-legal-report-kicker">Processo</p>
-        <h2 className="exposure-legal-report-h1">{dossier.processNumber}</h2>
-        <FactGrid
-          items={[
-            ["Classe", dossier.className ?? "não informada"],
-            ["Tribunal", dossier.tribunal ?? "não informado"],
-            ["Vara", dossier.courtUnit ?? "não informada"],
-            ["Ajuizamento", caseFiledAtLabel(dossier.filedAt)],
-            ["Fase", dossier.stage === "UNKNOWN" ? CASE_STAGE_UNKNOWN_COPY : dossier.stageLabel],
-            ["Status", caseStatusLabel(dossier.currentStatus)],
-            ["Valor da causa", dossier.claimValueFormatted ?? CASE_CLAIM_VALUE_UNKNOWN_COPY],
-          ]}
-        />
-        <p className="exposure-legal-report-kicker">Partes principais</p>
+        <p className="exposure-legal-report-kicker">Resumo executivo</p>
+        <h2 className="exposure-legal-report-h1">O que este processo é</h2>
+        <p className="exposure-legal-report-asof">Dados consultados até: {formatPrintWhen(asOf)}</p>
+        <p className="exposure-legal-report-story">{story || dossier.narrative}</p>
+        {news.length > 0 ? (
+          <div className="exposure-legal-report-attention">
+            <h3>Novidades desde a última revisão</h3>
+            <ul>
+              {news.slice(0, 8).map((row) => (
+                <li key={row.id}>
+                  {formatPrintWhen(row.at)} · {row.title}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
         <div className="exposure-legal-report-vs">
           <div>
             <p className="exposure-legal-report-vs-label">Autor / reclamante</p>
@@ -149,7 +165,7 @@ export function ExposureCaseLegalReportDocument({
                 </p>
               ))
             ) : (
-              <p className="exposure-legal-report-vs-name">{CASE_CLAIMANT_MISSING_COPY}</p>
+              <p>{CASE_CLAIMANT_MISSING_COPY}</p>
             )}
           </div>
           <p className="exposure-legal-report-vs-mark">VS</p>
@@ -162,41 +178,29 @@ export function ExposureCaseLegalReportDocument({
             ))}
           </div>
         </div>
-        <p className="exposure-legal-report-kicker">Resumo da situação</p>
-        <p className="exposure-legal-report-narrative">{dossier.narrative ?? "Resumo ainda não disponível a partir das fontes consultadas."}</p>
-        <div className="exposure-legal-report-attention">
-          <p className="exposure-legal-report-kicker">Pontos de atenção</p>
-          {dossier.attentionLabels.length === 0 ? (
-            <p>Nenhum ponto objetivo adicional registrado.</p>
-          ) : (
-            <ul>
-              {dossier.attentionLabels.map((label) => (
-                <li key={label}>{label}</li>
-              ))}
-            </ul>
-          )}
-        </div>
       </ExposureLegalReportPage>
 
-      <ExposureLegalReportPage pageId="parties" pageNumber={3} {...header}>
-        <p className="exposure-legal-report-kicker">Partes</p>
-        <h2 className="exposure-legal-report-h1">Partes e representantes</h2>
+      <ExposureLegalReportPage pageId="origin" pageNumber={3} {...header}>
+        <p className="exposure-legal-report-kicker">Origem</p>
+        <h2 className="exposure-legal-report-h1">Como o processo começou</h2>
+        <FactGrid items={originFacts(dossier)} />
+        <p className="exposure-legal-report-kicker">Partes envolvidas</p>
         <table className="exposure-legal-report-table">
           <thead>
             <tr>
               <th>Polo</th>
-              <th>Parte</th>
+              <th>Nome</th>
               <th>Tipo</th>
               <th>Documento</th>
-              <th>Empresa do grupo</th>
-              <th>Representante</th>
+              <th>Grupo</th>
+              <th>Advogado</th>
               <th>Fonte</th>
             </tr>
           </thead>
           <tbody>
             {parties.length === 0 ? (
               <tr>
-                <td colSpan={7}>Partes ainda não identificadas nas fontes consultadas.</td>
+                <td colSpan={7}>Partes ainda não identificadas nas fontes.</td>
               </tr>
             ) : (
               parties.map((row) => (
@@ -215,28 +219,9 @@ export function ExposureCaseLegalReportDocument({
         </table>
       </ExposureLegalReportPage>
 
-      <ExposureLegalReportPage pageId="process" pageNumber={4} {...header}>
-        <p className="exposure-legal-report-kicker">Processo</p>
-        <h2 className="exposure-legal-report-h1">Dados processuais</h2>
-        <FactGrid
-          items={[
-            ["Classe", dossier.className ?? "não informada"],
-            ["Assuntos", subjects],
-            ["Sistema", dossier.systemName ?? "não informado"],
-            ["Grau", dossier.degree ?? "não informado"],
-            ["Órgão julgador", dossier.courtUnit ?? "não informado"],
-            ["Valor", dossier.claimValueFormatted ?? CASE_CLAIM_VALUE_UNKNOWN_COPY],
-            ["Status", caseStatusLabel(dossier.currentStatus)],
-            ["Fase", dossier.stage === "UNKNOWN" ? CASE_STAGE_UNKNOWN_COPY : dossier.stageLabel],
-            ["Prioridade", "não informada pelas fontes"],
-            ["Sigilo", dossier.secrecy ? "Segredo de justiça" : "Não identificado"],
-          ]}
-        />
-      </ExposureLegalReportPage>
-
-      <ExposureLegalReportPage pageId="timeline" pageNumber={5} {...header}>
-        <p className="exposure-legal-report-kicker">Linha do tempo</p>
-        <h2 className="exposure-legal-report-h1">Eventos relevantes</h2>
+      <ExposureLegalReportPage pageId="timeline" pageNumber={4} {...header}>
+        <p className="exposure-legal-report-kicker">Histórico processual</p>
+        <h2 className="exposure-legal-report-h1">Evolução relevante</h2>
         <table className="exposure-legal-report-table">
           <thead>
             <tr>
@@ -253,7 +238,7 @@ export function ExposureCaseLegalReportDocument({
               </tr>
             ) : (
               executive.map((row) => (
-                <tr key={`${row.at}-${row.title}`}>
+                <tr key={row.id ?? `${row.at}-${row.title}`}>
                   <td>{formatPrintWhen(row.at)}</td>
                   <td>{classifyExposurePrintTimeline(row)}</td>
                   <td>{row.title}</td>
@@ -265,9 +250,63 @@ export function ExposureCaseLegalReportDocument({
         </table>
       </ExposureLegalReportPage>
 
+      <ExposureLegalReportPage pageId="current" pageNumber={5} {...header}>
+        <p className="exposure-legal-report-kicker">Situação atual</p>
+        <h2 className="exposure-legal-report-h1">Onde o processo está agora</h2>
+        <FactGrid
+          items={[
+            ["Fase", dossier.stage === "UNKNOWN" ? CASE_STAGE_UNKNOWN_COPY : dossier.stageLabel],
+            ["Status", caseStatusLabel(dossier.currentStatus)],
+            ["Última movimentação", latest ? `${formatPrintWhen(latest.at)} · ${latest.title}` : "não identificada"],
+            [
+              "Última publicação",
+              dossier.latestPublication
+                ? `${dossier.latestPublication.type ?? "Publicação"} · ${formatPrintWhen(dossier.latestPublication.availableAt)}`
+                : "não identificada",
+            ],
+            ["Próxima audiência", dossier.nextHearing ? formatPrintWhen(dossier.nextHearing.scheduledAt) : "não identificada"],
+            ["Movimentações conhecidas", String(dossier.movementCount)],
+            ["Assuntos", subjects],
+            ["Ajuizamento", caseFiledAtLabel(dossier.filedAt)],
+          ]}
+        />
+        <div className="exposure-legal-report-attention">
+          <h3>{attention.title}</h3>
+          <p>{attention.body}</p>
+        </div>
+        <p className="exposure-legal-report-kicker">Próximos eventos conhecidos</p>
+        <table className="exposure-legal-report-table">
+          <thead>
+            <tr>
+              <th>Data</th>
+              <th>Evento</th>
+              <th>Fonte</th>
+              <th>Observação</th>
+            </tr>
+          </thead>
+          <tbody>
+            {nextEvents.length === 0 ? (
+              <tr>
+                <td colSpan={4}>Nenhum evento futuro estruturado identificado nas fontes até a data-base.</td>
+              </tr>
+            ) : (
+              nextEvents.map((row) => (
+                <tr key={row.id}>
+                  <td>{formatPrintWhen(row.deadlineAt ?? row.at)}</td>
+                  <td>{row.title}</td>
+                  <td>{row.sourceLabel}</td>
+                  <td>{row.actionLabel}</td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </ExposureLegalReportPage>
+
       <ExposureLegalReportPage pageId="sources" pageNumber={6} {...header}>
-        <p className="exposure-legal-report-kicker">Fontes</p>
+        <p className="exposure-legal-report-kicker">Fontes consultadas</p>
         <h2 className="exposure-legal-report-h1">Origem das informações</h2>
+        <p className="exposure-legal-report-asof">Dados consultados até: {formatPrintWhen(asOf)}</p>
         <table className="exposure-legal-report-table">
           <thead>
             <tr>
@@ -312,7 +351,7 @@ export function ExposureCaseLegalReportDocument({
             </thead>
             <tbody>
               {annex.map((row) => (
-                <tr key={`${row.at}-${row.title}-annex`}>
+                <tr key={row.id ?? `${row.at}-${row.title}-annex`}>
                   <td>{formatPrintWhen(row.at)}</td>
                   <td>{classifyExposurePrintTimeline(row)}</td>
                   <td>{row.title}</td>
@@ -327,8 +366,6 @@ export function ExposureCaseLegalReportDocument({
   );
 }
 
-export function casePrintCompanies(item: Pick<ExposureCaseListItem, "groupEntities">): string {
-  return item.groupEntities.map((row) => row.legalName).join(", ");
+export function expectedCasePrintPages(timelineCount: number): number {
+  return timelineCount > 12 ? 7 : 6;
 }
-
-export { formatExposureDateTime };

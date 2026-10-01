@@ -221,6 +221,9 @@ export type ExposureCommunicationRecord = {
   officialContentOpenedByUserId: string | null;
   tribunal: string | null;
   courtUnit: string | null;
+  officialText?: string | null;
+  officialHash?: string | null;
+  officialLink?: string | null;
   rawMetadata: unknown;
   rawHash: string | null;
   firstSeenAt: string;

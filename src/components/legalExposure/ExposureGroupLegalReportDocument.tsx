@@ -59,7 +59,8 @@ export function ExposureGroupLegalReportDocument({
 
       <ExposureLegalReportPage pageId="summary" pageNumber={2} {...header}>
         <p className="exposure-legal-report-kicker">Resumo</p>
-        <h2 className="exposure-legal-report-h1">Exposição consolidada</h2>
+        <h2 className="exposure-legal-report-h1">Panorama executivo</h2>
+        <p className="exposure-legal-report-asof">Dados consultados até: {formatPrintWhen(asOf)}</p>
         <dl className="exposure-legal-report-kpis">
           {[
             ["Processos únicos", String(report.totals.uniqueProcesses)],
@@ -76,6 +77,20 @@ export function ExposureGroupLegalReportDocument({
           ))}
         </dl>
         <p className="exposure-legal-report-note">{report.groupNote}</p>
+        {report.novelty ? (
+          <div className="exposure-legal-report-attention">
+            <h3>O que mudou desde a última revisão</h3>
+            <p>
+              {report.novelty.newMovements} nova{report.novelty.newMovements === 1 ? "" : "s"} movimentação
+              {report.novelty.newMovements === 1 ? "" : "ões"} · {report.novelty.processesWithNewMovements} processo(s)
+              com novidade · {report.novelty.processesNeedingReview} processo(s) para revisão.
+            </p>
+          </div>
+        ) : (
+          <p className="exposure-legal-report-note">
+            Comparação com revisão anterior não disponível para este relatório.
+          </p>
+        )}
       </ExposureLegalReportPage>
 
       <ExposureLegalReportPage pageId="companies" pageNumber={3} {...header}>

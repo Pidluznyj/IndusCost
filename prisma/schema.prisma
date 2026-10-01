@@ -2899,6 +2899,7 @@ model AppUser {
   commercialPolicyAcceptances            CommercialPolicyAcceptance[]
   commercialPolicyInvalidations          CommercialPolicyAcceptanceInvalidation[] @relation("CommercialPolicyInvalidatedBy")
   commercialPolicyControlledCopies       CommercialPolicyControlledCopy[]
+  legalExposureCaseReadStates            LegalExposureCaseReadState[]
 
   @@index([role])
   @@index([isActive])
@@ -11966,6 +11967,23 @@ model LegalCaseMovement {
   @@index([caseId, occurredAt])
 }
 
+/// Estado de leitura das movimentações por usuário e CNJ canônico.
+/// Não usa LegalCase.id porque um processo pode ter vários registros físicos.
+model LegalExposureCaseReadState {
+  id                      String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId                  String   @db.Uuid
+  processNumberNormalized String
+  lastMovementsReadAt     DateTime @db.Timestamptz(6)
+  createdAt               DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt               DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  user AppUser @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@unique([userId, processNumberNormalized])
+  @@index([userId])
+  @@index([processNumberNormalized])
+}
+
 model LegalCommunication {
   id                            String                              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   entityId                      String                              @db.Uuid
@@ -11986,6 +12004,9 @@ model LegalCommunication {
   officialContentOpenedByUserId String?                             @db.Uuid
   tribunal                      String?
   courtUnit                     String?
+  officialText                  String?
+  officialHash                  String?
+  officialLink                  String?
   rawMetadata                   Json?
   rawHash                       String?
   firstSeenAt                   DateTime                            @db.Timestamptz(6)

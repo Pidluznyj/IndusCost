@@ -132,29 +132,30 @@
   height: 100%;
   display: flex;
   flex-direction: column;
-  justify-content: center;
-  align-items: center;
-  text-align: center;
-  background: linear-gradient(160deg, #0f172a 0%, #1e3a5f 58%, #334155 100%);
-  color: #f8fafc;
-  padding: 22mm 16mm;
+  justify-content: flex-start;
+  align-items: stretch;
+  text-align: left;
+  background: #fff;
+  color: #0f172a;
+  padding: 18mm 16mm 16mm;
   position: relative;
+  border-top: 5px solid #1e3a5f;
 }
 
 .exposure-legal-print-cover-mark {
   position: absolute;
   right: 16mm;
   bottom: 22mm;
-  opacity: 0.18;
-  color: #e2e8f0;
+  opacity: 0.08;
+  color: #1e3a5f;
 }
 
 .exposure-legal-print-cover-logo {
-  max-height: 22mm;
-  max-width: 72mm;
+  max-height: 18mm;
+  max-width: 68mm;
   object-fit: contain;
-  margin-bottom: 8mm;
-  filter: brightness(0) invert(1);
+  margin-bottom: 10mm;
+  filter: none;
 }
 
 .exposure-legal-print-cover-logo[data-light="true"] {
@@ -165,7 +166,7 @@
   letter-spacing: 0.28em;
   text-transform: uppercase;
   font-size: 9pt;
-  color: #94a3b8;
+  color: #64748b;
   margin: 0 0 4mm;
 }
 
@@ -175,18 +176,20 @@
   letter-spacing: 0.04em;
   margin: 0 0 5mm;
   max-width: 160mm;
+  color: #0f172a;
 }
 
 .exposure-legal-print-cover-subtitle {
   font-size: 12pt;
-  color: #cbd5e1;
-  margin: 0 0 2mm;
+  color: #475569;
+  margin: 0 0 8mm;
 }
 
 .exposure-legal-print-cover-cnj {
   font-size: 16pt;
   font-weight: 700;
   margin: 0 0 8mm;
+  color: #0f172a;
 }
 
 .exposure-legal-print-cover-meta {
@@ -196,19 +199,21 @@
   text-align: left;
   max-width: 150mm;
   width: 100%;
+  margin-top: auto;
 }
 
 .exposure-legal-print-cover-label {
   font-size: 8pt;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: #94a3b8;
+  color: #64748b;
   margin: 0 0 1mm;
 }
 
 .exposure-legal-print-cover-value {
   font-size: 11pt;
   margin: 0;
+  color: #0f172a;
 }
 
 .exposure-legal-print-page-header {
@@ -416,4 +421,27 @@
   font-size: 8.5pt;
   color: #475569;
   line-height: 1.45;
+}
+
+.exposure-legal-report-story {
+  font-size: 11pt;
+  line-height: 1.55;
+  margin: 0 0 6mm;
+}
+
+.exposure-legal-report-attention {
+  border: 0.35mm solid #1e3a5f;
+  padding: 4mm 5mm;
+  margin: 0 0 6mm;
+}
+
+.exposure-legal-report-attention h3 {
+  margin: 0 0 2mm;
+  font-size: 11pt;
+}
+
+.exposure-legal-report-asof {
+  font-size: 9pt;
+  color: #475569;
+  margin: 0 0 4mm;
 }

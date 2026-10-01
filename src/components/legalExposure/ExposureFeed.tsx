@@ -862,6 +862,8 @@ export type ExposureSourceOperationItem = {
     outcome: string | null;
     processesFound: number | null;
     processesRequested: number | null;
+    communicationsReceived?: number | null;
+    entitiesProcessed?: number | null;
     sanitizedError: string | null;
     trigger: string | null;
   } | null;
@@ -945,6 +947,8 @@ export function ExposureSourcesTab({
           outcome: source.status,
           processesFound: null,
           processesRequested: null,
+          communicationsReceived: null,
+          entitiesProcessed: null,
           sanitizedError: source.lastErrorCode,
           trigger: null,
         },
@@ -990,6 +994,20 @@ export function ExposureSourcesTab({
                 <Fact label="Configuração" value={source.enabled ? "Ativa" : source.readiness === "DISABLED_BY_POLICY" ? "Desligada por política" : source.configured ? "Configurada, desligada" : source.hint} />
                 <Fact label="Última execução" value={formatExposureDateTime(source.lastRun?.startedAt ?? source.lastRun?.finishedAt ?? null) ?? "nunca"} />
                 <Fact label="Duração" value={formatDuration(source.lastRun?.durationMs)} />
+                {source.source === "DJEN" ? (
+                  <>
+                    <Fact label="Modo" value="Descoberta por nome da parte + atualização por CNJ" />
+                    <Fact label="Empresas pesquisadas" value={source.lastRun?.entitiesProcessed != null ? String(source.lastRun.entitiesProcessed) : "—"} />
+                    <Fact
+                      label="Comunicações"
+                      value={source.lastRun?.communicationsReceived != null ? String(source.lastRun.communicationsReceived) : "—"}
+                    />
+                    <Fact
+                      label="CNJs únicos"
+                      value={source.lastRun?.processesFound != null ? String(source.lastRun.processesFound) : "—"}
+                    />
+                  </>
+                ) : null}
                 <Fact
                   label="Resultado"
                   value={

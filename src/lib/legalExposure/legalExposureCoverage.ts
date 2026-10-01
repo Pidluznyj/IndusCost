@@ -16,6 +16,7 @@ import type {
 } from "./legalExposureContracts.js";
 import {
   CASE_CLAIMANT_MISSING_COPY,
+  CASE_POLE_UNCONFIRMED_COPY,
   PARTY_ROLE_CONFLICT_COPY,
 } from "./legalExposureContracts.js";
 import {
@@ -72,6 +73,7 @@ export function buildOppositionCaption(input: {
   const groupById = new Map(input.groupEntities.map((row) => [row.id, row]));
   const activeGroup = input.groupEntities.filter((row) => row.pole === "ACTIVE");
   const passiveGroup = confirmedGroupDefendants(input.groupEntities);
+  const unknownGroup = input.groupEntities.filter((row) => row.pole === "UNKNOWN");
   const external = confirmedClaimants(input.claimants);
 
   const sameEntityBothSides = activeGroup.some((row) => passiveGroup.some((other) => other.id === row.id));
@@ -94,6 +96,17 @@ export function buildOppositionCaption(input: {
     (activeGroup.length && passiveGroup.length
       ? activeGroup.map((row) => row.legalName).join("; ")
       : CASE_CLAIMANT_MISSING_COPY);
+  if (!external.length && !passiveGroup.length && unknownGroup.length) {
+    const unconfirmed = unknownGroup
+      .map((row) => `${row.legalName} · ${CASE_POLE_UNCONFIRMED_COPY}`)
+      .join("; ");
+    return {
+      claimantLabel: CASE_CLAIMANT_MISSING_COPY,
+      defendantLabel: unconfirmed,
+      conflict: false,
+      caption: unconfirmed,
+    };
+  }
   const defendantLabel =
     passiveGroup.map((row) => row.legalName).join(", ") ||
     input.groupEntities.map((row) => row.legalName).join(", ") ||

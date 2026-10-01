@@ -36,6 +36,14 @@ import {
   exposureTimelineKindLabel,
   movementComplementsText,
 } from "@/src/lib/legalExposure/legalExposureFeedUi";
+import { ACTION_CLASSIFIER_DISCLAIMER } from "@/src/lib/legalExposure/legalExposureActionClassifier";
+import {
+  ACTION_TRIAGE_TOOLTIP,
+  detectedLaterThanOccurred,
+  enrichTimelineItems,
+  filterMovementsByKind,
+  type ExposureMovementExecutiveItem,
+} from "@/src/lib/legalExposure/legalExposureMovementExecutive";
 import { ExposureLitigationSides } from "./ExposureLitigationSides";
 
 export type ExposureDossier = ExposureCaseListItem & {
@@ -50,6 +58,18 @@ export type ExposureDossier = ExposureCaseListItem & {
     attorneys: ExposureCaseListItem["attorneys"];
   };
   timeline?: ExposureTimelineItem[];
+  movementsExecutive?: ExposureMovementExecutiveItem[];
+  newMovementCount?: number;
+  lastMovementsReadAt?: string | null;
+  highestNewActionLevel?: string | null;
+  attentionNowMovements?: {
+    newCount: number;
+    reviewCount: number;
+    intimations: number;
+    hearings: number;
+    urgentCount: number;
+  };
+  nextKnownEvents?: ExposureMovementExecutiveItem[];
   communications?: Array<{
     id: string;
     communicationType: string;
@@ -62,6 +82,9 @@ export type ExposureDossier = ExposureCaseListItem & {
     sourceStatus: string;
     source: LegalExposureSource;
     caseId: string | null;
+    officialText?: string | null;
+    officialHash?: string | null;
+    officialLink?: string | null;
   }>;
   discovery?: { firstSeenAt: string; primarySource: LegalExposureSource; evidenceSources: LegalExposureSource[] };
   stageReason?: string;
@@ -79,12 +102,14 @@ type Props = {
   onRefresh: () => void;
   onCompleteData: () => void;
   onPdf: () => void;
+  onMarkMovementsRead?: () => void;
+  markingMovementsRead?: boolean;
 };
 
 const TABS: { id: TabId; label: string }[] = [
   { id: "resumo", label: "Resumo" },
   { id: "partes", label: "Partes e representantes" },
-  { id: "timeline", label: "Linha do tempo" },
+  { id: "timeline", label: "Movimentações" },
   { id: "comunicacoes", label: "Comunicações" },
   { id: "fontes", label: "Fontes e evidências" },
 ];
@@ -98,7 +123,7 @@ function Fact({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
-function timelineVisual(row: ExposureTimelineItem): { label: string; Icon: typeof FileText } {
+function timelineVisual(row: Pick<ExposureTimelineItem, "kind" | "title">): { label: string; Icon: typeof FileText } {
   const title = `${row.kind} ${row.title}`.toLowerCase();
   if (row.kind === "hearing" || title.includes("audi")) return { label: "Audiência", Icon: Calendar };
   if (row.kind === "publication" || title.includes("public")) return { label: "Publicação", Icon: Bell };
@@ -107,6 +132,67 @@ function timelineVisual(row: ExposureTimelineItem): { label: string; Icon: typeo
   if (title.includes("decis") || title.includes("senten") || title.includes("gavel")) return { label: "Decisão", Icon: Gavel };
   if (row.kind === "event") return { label: "Evento IndusCost", Icon: Scale };
   return { label: exposureTimelineKindLabel(row.kind, row.title), Icon: FileText };
+}
+
+function MovementCard(props: {
+  row: ExposureMovementExecutiveItem;
+  open: boolean;
+  onToggle: () => void;
+}) {
+  const { row, open, onToggle } = props;
+  const visual = timelineVisual(row);
+  const Icon = visual.Icon;
+  const showDetected = row.isNew && detectedLaterThanOccurred(row);
+  return (
+    <article className="rounded-xl border border-border bg-card p-4" data-testid="exposure-movement-card" data-movement-id={row.id}>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2">
+          {row.isNew ? (
+            <span className="rounded-full border border-sky-300 bg-sky-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-sky-900">
+              Nova
+            </span>
+          ) : null}
+          <span className="inline-flex items-center gap-1 rounded-full border border-border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+            <Icon className="h-3 w-3" />
+            {visual.label}
+          </span>
+        </div>
+        <p className="text-xs text-muted-foreground">{formatExposureDateTime(row.at) ?? "data não informada"}</p>
+      </div>
+      <p className="mt-3 font-medium">{row.title}</p>
+      {row.courtUnit ? <p className="mt-1 text-sm text-muted-foreground">{row.courtUnit}</p> : null}
+      <p className="mt-3 text-sm" title={ACTION_TRIAGE_TOOLTIP}>
+        <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+          {row.actionLevel === "NONE" ? "" : "Atenção · "}
+        </span>
+        {row.actionLabel}
+      </p>
+      {row.deadlineText ? <p className="mt-1 text-sm">Prazo mencionado: {row.deadlineText}.</p> : null}
+      {showDetected ? (
+        <p className="mt-2 text-xs text-muted-foreground">
+          Movimentação: {formatExposureDateTime(row.occurredAt) ?? "não informada"}
+          <br />
+          Identificada pelo IndusCost: {formatExposureDateTime(row.detectedAt) ?? "não informada"}
+        </p>
+      ) : null}
+      <p className="mt-2 text-xs text-muted-foreground">Fonte: {row.sourceLabel}</p>
+      {row.complements || row.details || row.officialLink ? (
+        <button type="button" className="mt-2 text-xs underline" onClick={onToggle}>
+          {open ? "Recolher detalhes" : "Ver detalhes"}
+        </button>
+      ) : null}
+      {open ? (
+        <div className="mt-2 space-y-1 text-sm text-muted-foreground">
+          <p>{movementComplementsText(row.complements) ?? row.details ?? "Sem detalhe adicional informado pela fonte."}</p>
+          {row.officialLink ? (
+            <a className="underline" href={row.officialLink} target="_blank" rel="noreferrer">
+              Abrir fonte oficial
+            </a>
+          ) : null}
+        </div>
+      ) : null}
+    </article>
+  );
 }
 
 function PartyCard(props: { name: string; meta: string; sources?: string[] }) {
@@ -131,12 +217,26 @@ export function ExposureCaseDossier({
   onRefresh,
   onCompleteData,
   onPdf,
+  onMarkMovementsRead,
+  markingMovementsRead,
 }: Props) {
   const [tab, setTab] = useState<TabId>(initialTab);
   const [timelineKind, setTimelineKind] = useState("all");
   const [openComplements, setOpenComplements] = useState<string | null>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
-  const timeline = (dossier.timeline ?? []).filter((row) => timelineKind === "all" || row.kind === timelineKind);
+  const movements = dossier.movementsExecutive?.length
+    ? dossier.movementsExecutive
+    : enrichTimelineItems(dossier.timeline ?? [], { lastMovementsReadAt: dossier.lastMovementsReadAt ?? null });
+  const timeline = filterMovementsByKind(movements, timelineKind);
+  const latestFive = movements.slice(0, 5);
+  const newCount = dossier.newMovementCount ?? movements.filter((row) => row.isNew).length;
+  const attention = dossier.attentionNowMovements ?? {
+    newCount,
+    reviewCount: movements.filter((row) => row.isNew && row.actionLevel && row.actionLevel !== "NONE").length,
+    intimations: 0,
+    hearings: 0,
+    urgentCount: 0,
+  };
   const groupParties = dossier.parties?.group ?? dossier.groupEntities;
   const thirdParties = dossier.parties?.thirdParties ?? [];
   const incomplete = dossier.coverage?.coverageScore != null && dossier.coverage.coverageScore < 100;
@@ -236,7 +336,7 @@ export function ExposureCaseDossier({
                   tab === item.id ? "border-slate-900 font-semibold text-foreground" : "border-transparent text-muted-foreground"
                 }`}
               >
-                {item.label}
+                {item.id === "timeline" && newCount > 0 ? `${item.label} (${newCount})` : item.label}
               </button>
             ))}
           </nav>
@@ -245,6 +345,19 @@ export function ExposureCaseDossier({
         <div className="flex-1 overflow-auto px-6 py-5">
           {tab === "resumo" ? (
             <div className="space-y-6">
+              {attention.newCount > 0 && attention.reviewCount > 0 ? (
+                <section className="rounded-2xl border border-amber-300 bg-amber-50 p-4" data-testid="exposure-attention-now">
+                  <h3 className="text-sm font-semibold uppercase tracking-wide text-amber-950">Atenção agora</h3>
+                  <p className="mt-2 text-sm text-amber-950">
+                    {attention.newCount} nova{attention.newCount === 1 ? "" : "s"} movimentação{attention.newCount === 1 ? "" : "ões"}
+                    {attention.intimations > 0 ? ` · ${attention.intimations} intimação${attention.intimations === 1 ? "" : "ões"} para revisar` : ""}
+                    {attention.hearings > 0 ? ` · ${attention.hearings} audiência${attention.hearings === 1 ? "" : "s"} futura${attention.hearings === 1 ? "" : "s"}` : ""}
+                  </p>
+                  <button type="button" className="mt-3 text-sm font-semibold underline" onClick={() => setTab("timeline")}>
+                    Revisar movimentações
+                  </button>
+                </section>
+              ) : null}
               <section>
                 <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Situação processual</h3>
                 <dl className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -302,6 +415,26 @@ export function ExposureCaseDossier({
                 <p className="mt-2 max-w-4xl text-sm leading-6">
                   {dossier.narrative ?? "Resumo ainda não disponível a partir das fontes consultadas."}
                 </p>
+              </section>
+              <section>
+                <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Últimas movimentações</h3>
+                {latestFive.length === 0 ? (
+                  <p className="mt-2 text-sm text-muted-foreground">{NO_TIMELINE_EVENTS_COPY}</p>
+                ) : (
+                  <div className="mt-3 space-y-3">
+                    {latestFive.map((row) => (
+                      <MovementCard
+                        key={row.id}
+                        row={row}
+                        open={openComplements === row.id}
+                        onToggle={() => setOpenComplements(openComplements === row.id ? null : row.id)}
+                      />
+                    ))}
+                  </div>
+                )}
+                <button type="button" className="mt-3 text-sm font-semibold underline" onClick={() => setTab("timeline")}>
+                  Ver todas as movimentações
+                </button>
               </section>
               <section>
                 <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Pontos de atenção</h3>
@@ -451,14 +584,15 @@ export function ExposureCaseDossier({
 
           {tab === "timeline" ? (
             <div className="space-y-4">
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex flex-wrap gap-2">
                 {[
-                  ["all", "Todos"],
-                  ["movement", "Movimentação"],
-                  ["publication", "Publicação"],
-                  ["hearing", "Audiência"],
-                  ["communication", "Comunicação"],
-                  ["event", "Evento IndusCost"],
+                  ["all", "Todas"],
+                  ["movement", "Movimentações"],
+                  ["publication", "Publicações"],
+                  ["decision", "Decisões"],
+                  ["hearing", "Audiências"],
+                  ["communication", "Comunicações"],
                 ].map(([kind, label]) => (
                   <button
                     key={kind}
@@ -469,41 +603,32 @@ export function ExposureCaseDossier({
                     {label}
                   </button>
                 ))}
+                </div>
+                {newCount > 0 && onMarkMovementsRead ? (
+                  <button
+                    type="button"
+                    className="rounded-lg border border-border px-3 py-1.5 text-sm font-semibold"
+                    disabled={markingMovementsRead}
+                    onClick={onMarkMovementsRead}
+                  >
+                    {markingMovementsRead ? "Salvando..." : "Marcar novas como vistas"}
+                  </button>
+                ) : null}
               </div>
+              <p className="text-xs text-muted-foreground" title={ACTION_TRIAGE_TOOLTIP}>
+                {ACTION_CLASSIFIER_DISCLAIMER}
+              </p>
               {timeline.length === 0 ? <p className="text-sm text-muted-foreground">{NO_TIMELINE_EVENTS_COPY}</p> : null}
-              <ol className="space-y-5">
-                {timeline.map((row, index) => {
-                  const complementText = movementComplementsText(row.complements);
-                  const key = `${row.at}-${row.title}-${index}`;
-                  const visual = timelineVisual(row);
-                  const Icon = visual.Icon;
-                  return (
-                    <li key={key} className="grid grid-cols-[7.5rem_1.5rem_minmax(0,1fr)] gap-3">
-                      <p className="pt-0.5 text-xs text-muted-foreground">{formatExposureDateTime(row.at) ?? "data não informada"}</p>
-                      <div className="relative flex justify-center">
-                        <span className="absolute inset-y-0 w-px bg-border" aria-hidden="true" />
-                        <span className="relative z-[1] rounded-full border border-border bg-background p-1">
-                          <Icon className="h-3.5 w-3.5" />
-                        </span>
-                      </div>
-                      <div>
-                        <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{visual.label}</p>
-                        <p className="font-medium">{row.title}</p>
-                        {row.courtUnit ? <p className="text-sm text-muted-foreground">{row.courtUnit}</p> : null}
-                        {row.description && openComplements !== key ? <p className="text-sm text-muted-foreground">{row.description}</p> : null}
-                        {row.complements || row.description ? (
-                          <button type="button" className="mt-1 text-xs underline" onClick={() => setOpenComplements(openComplements === key ? null : key)}>
-                            {openComplements === key ? "Recolher detalhes" : "Ver detalhes"}
-                          </button>
-                        ) : null}
-                        {openComplements === key ? (
-                          <p className="mt-1 text-sm text-muted-foreground">{complementText ?? row.description ?? "Sem detalhe adicional informado pela fonte."}</p>
-                        ) : null}
-                      </div>
-                    </li>
-                  );
-                })}
-              </ol>
+              <div className="space-y-3">
+                {timeline.map((row) => (
+                  <MovementCard
+                    key={row.id}
+                    row={row}
+                    open={openComplements === row.id}
+                    onToggle={() => setOpenComplements(openComplements === row.id ? null : row.id)}
+                  />
+                ))}
+              </div>
             </div>
           ) : null}
 
@@ -522,9 +647,21 @@ export function ExposureCaseDossier({
                     Status{" "}
                     {COMMUNICATION_STATUS_LABELS[row.normalizedStatus as keyof typeof COMMUNICATION_STATUS_LABELS] ?? row.normalizedStatus}
                   </p>
-                  <a className="underline" href={OFFICIAL_COMMUNICATIONS_PORTAL_URL} target="_blank" rel="noreferrer">
-                    Abrir portal oficial
-                  </a>
+                  {row.officialText ? (
+                    <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap rounded-lg bg-muted/40 p-3 text-xs">
+                      {row.officialText}
+                    </pre>
+                  ) : null}
+                  <div className="mt-2 flex flex-wrap gap-3">
+                    {row.officialLink ? (
+                      <a className="underline" href={row.officialLink} target="_blank" rel="noreferrer">
+                        Ver comunicação oficial
+                      </a>
+                    ) : null}
+                    <a className="underline" href={OFFICIAL_COMMUNICATIONS_PORTAL_URL} target="_blank" rel="noreferrer">
+                      Abrir portal oficial
+                    </a>
+                  </div>
                 </article>
               ))}
             </div>

@@ -105,15 +105,48 @@ export function justiceSegmentFromCnj(processNumber: string): { justice: string;
   return { justice: digits.slice(13, 14), tribunal: digits.slice(14, 16) };
 }
 
+const CNJ_STATE_TJ: Record<string, string> = {
+  "01": "TJAC",
+  "02": "TJAL",
+  "03": "TJAP",
+  "04": "TJAM",
+  "05": "TJBA",
+  "06": "TJCE",
+  "07": "TJDF",
+  "08": "TJES",
+  "09": "TJGO",
+  "10": "TJMA",
+  "11": "TJMT",
+  "12": "TJMS",
+  "13": "TJMG",
+  "14": "TJPA",
+  "15": "TJPB",
+  "16": "TJPR",
+  "17": "TJPE",
+  "18": "TJPI",
+  "19": "TJRJ",
+  "20": "TJRN",
+  "21": "TJRS",
+  "22": "TJRO",
+  "23": "TJRR",
+  "24": "TJSC",
+  "25": "TJSE",
+  "26": "TJSP",
+  "27": "TJTO",
+};
+
 export function inferTribunalAlias(processNumber: string, hinted?: string | null): string | null {
   const hint = hinted?.trim().toUpperCase() ?? "";
-  if (hint.includes("TRT9") || hint === "TRT-9") return "TRT9";
-  if (hint.includes("TJPR") || hint.includes("PR")) return "TJPR";
+  const compact = hint.replace(/[\s-]/g, "");
+  if (/^(TRT|TRF|TRE|TJ)[A-Z0-9]{0,4}$/.test(compact)) return compact;
+  if (compact.includes("TRT9") || compact === "TRT9") return "TRT9";
+  if (compact.includes("TJPR") || compact === "PR") return "TJPR";
   const seg = justiceSegmentFromCnj(processNumber);
-  if (!seg) return hint || null;
-  if (seg.justice === "5" && seg.tribunal === "09") return "TRT9";
-  if (seg.justice === "8" && seg.tribunal === "16") return "TJPR";
-  return hint || null;
+  if (!seg) return compact || null;
+  if (seg.justice === "5") return `TRT${Number(seg.tribunal)}`;
+  if (seg.justice === "4") return `TRF${Number(seg.tribunal)}`;
+  if (seg.justice === "8") return CNJ_STATE_TJ[seg.tribunal] ?? (compact || null);
+  return compact || null;
 }
 
 export function resolveTribunalPublicAdapter(input: {

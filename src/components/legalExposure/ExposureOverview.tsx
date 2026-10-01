@@ -37,6 +37,8 @@ export type ExposureOverviewDashboard = {
     pendingCommunications: number;
     newsToday: number;
     news7Days?: number;
+    newMovements?: number;
+    processesWithNewMovements?: number;
     passiveCases?: number;
     futureHearings?: number;
     knownClaimCount?: number;
@@ -119,10 +121,10 @@ export function ExposureOverview({ dashboard, onOpenAction, onOpenCases, onOpenC
           onClick={() => onOpenCases({ hasHearing: "true" })}
         />
         <Kpi
-          label="Novidades 7 dias"
-          value={cards.news7Days ?? cards.newsToday}
-          hint="Eventos detectados na última semana"
-          onClick={onOpenAction}
+          label="Novas movimentações"
+          value={cards.newMovements ?? 0}
+          hint={cards.processesWithNewMovements ? `${cards.processesWithNewMovements} processo(s) com novidade` : "Desde a última revisão deste usuário"}
+          onClick={() => onOpenCases()}
         />
       </div>
 

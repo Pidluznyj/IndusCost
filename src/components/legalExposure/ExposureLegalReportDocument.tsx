@@ -6,7 +6,6 @@ import React from "react";
 import { Scale } from "lucide-react";
 import type { BrandingSettingsDTO } from "@/src/types/branding";
 import {
-  isPrintCoverLogoLightOnDark,
   resolvePrintCoverLogoSrc,
   resolvePrintLogoSrc,
 } from "@/src/lib/printBranding";
@@ -94,8 +93,8 @@ export function ExposureLegalReportPrintCover({
   companies: string;
   asOf: string;
 }) {
-  const logoSrc = resolvePrintCoverLogoSrc(branding);
-  const lightLogo = isPrintCoverLogoLightOnDark(branding, logoSrc);
+  const logoSrc = resolvePrintLogoSrc(branding) ?? resolvePrintCoverLogoSrc(branding);
+  const lightLogo = false;
   return (
     <div className="exposure-legal-print-cover" data-testid="exposure-legal-report-cover">
       {logoSrc ? (
@@ -111,18 +110,23 @@ export function ExposureLegalReportPrintCover({
       <p className="exposure-legal-print-cover-kicker">{kicker}</p>
       <h1 className="exposure-legal-print-cover-title">{title}</h1>
       <p className="exposure-legal-print-cover-subtitle">{subtitle}</p>
-      {processNumber ? <p className="exposure-legal-print-cover-cnj">{processNumber}</p> : null}
+      {processNumber ? (
+        <div>
+          <p className="exposure-legal-print-cover-label">Processo</p>
+          <p className="exposure-legal-print-cover-cnj">{processNumber}</p>
+        </div>
+      ) : null}
       <div className="exposure-legal-print-cover-meta">
         <div>
           <p className="exposure-legal-print-cover-label">Empresas do grupo</p>
           <p className="exposure-legal-print-cover-value">{companies}</p>
         </div>
         <div>
-          <p className="exposure-legal-print-cover-label">Data-base</p>
+          <p className="exposure-legal-print-cover-label">Dados consultados até</p>
           <p className="exposure-legal-print-cover-value">{formatPrintWhen(asOf)}</p>
         </div>
       </div>
-      <Scale className="exposure-legal-print-cover-mark" size={88} strokeWidth={1.1} aria-hidden="true" />
+      <Scale className="exposure-legal-print-cover-mark" size={72} strokeWidth={1.1} aria-hidden="true" />
     </div>
   );
 }

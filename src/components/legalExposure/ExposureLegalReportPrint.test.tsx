@@ -127,6 +127,10 @@ describe("Exposure legal report print", () => {
       />
     );
     assert.ok(html.includes("Dossiê jurídico executivo"));
+    assert.ok(html.includes("Resumo executivo"));
+    assert.ok(html.includes("Como o processo começou"));
+    assert.ok(html.includes("Onde o processo está agora"));
+    assert.ok(html.includes("Dados consultados até"));
     assert.ok(html.includes("0001234-56.2024.5.09.0001"));
     assert.ok(html.includes("Maria Exemplo"));
     assert.ok(html.includes("Lazarios Exemplo LTDA"));
@@ -180,6 +184,8 @@ describe("Exposure legal report print", () => {
     assert.match(css, /@media print/);
     assert.match(css, /exposure-legal-report-no-print/);
     assert.match(css, /:last-child/);
+    assert.match(css, /background:\s*#fff/);
+    assert.doesNotMatch(css, /linear-gradient\(160deg, #0f172a/);
     assert.match(cover, /resolvePrintCoverLogoSrc/);
     assert.match(cover, /resolvePrintLogoSrc/);
     assert.match(view, /waitForExposurePrintAssets/);

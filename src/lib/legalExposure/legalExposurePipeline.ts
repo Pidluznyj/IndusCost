@@ -4,12 +4,14 @@
  */
 
 import type {
+  DjenPaginationMeta,
   LegalQueryOutcome,
   NormalizedCaseObservation,
   NormalizedSourceBatch,
 } from "./legalExposureContracts.js";
 import type { DjenDiscoveryTrust } from "./legalExposureDiscovery.js";
 import { canonicalProcessKey, normalizeProcessNumber } from "./legalExposureNormalization.js";
+import { inferTribunalAlias } from "./legalTribunalPublicRegistry.js";
 import type { ExposureCaseRecord, LegalExposureMemory } from "./legalExposureStore.js";
 
 export type DatajudTarget = {
@@ -24,6 +26,16 @@ export type EntitySyncCounters = {
   uniqueProcessesDiscovered: number;
   knownProcessesRefreshed: number;
   datajudTargets: number;
+  pagesFetched: number;
+  itemsFetched: number;
+  truncated: boolean;
+  newProcesses: number;
+  existingProcesses: number;
+  newEntityLinks: number;
+  newCommunications: number;
+  newParties: number;
+  newAttorneys: number;
+  newHearings: number;
   successfulSources: number;
   noResultSources: number;
   rateLimitedSources: number;
@@ -38,6 +50,16 @@ export function datajudTribunalAlias(value: string | null | undefined): string |
   return alias || null;
 }
 
+export function resolveDatajudTribunalAlias(
+  processNumber: string,
+  hinted?: string | null
+): string | null {
+  return (
+    datajudTribunalAlias(hinted) ??
+    datajudTribunalAlias(inferTribunalAlias(processNumber, hinted))
+  );
+}
+
 export function collectDatajudTargetsFromBatch(
   batch: NormalizedSourceBatch | null | undefined
 ): DatajudTarget[] {
@@ -46,11 +68,11 @@ export function collectDatajudTargetsFromBatch(
   const out: DatajudTarget[] = [];
   for (const observation of batch.cases) {
     const processNumber = normalizeProcessNumber(observation.processNumber);
-    const tribunalAlias = datajudTribunalAlias(observation.tribunal);
-    if (!processNumber || !tribunalAlias) continue;
-    const key = `${processNumber}:${tribunalAlias}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
+    if (!processNumber) continue;
+    const tribunalAlias = resolveDatajudTribunalAlias(processNumber, observation.tribunal);
+    if (!tribunalAlias) continue;
+    if (seen.has(processNumber)) continue;
+    seen.add(processNumber);
     out.push({ processNumber, tribunalAlias, origin: "DJEN" });
   }
   return out;
@@ -70,14 +92,13 @@ export function collectKnownCaseDatajudTargets(
     if (row.entityId !== entityId && !linkedCaseIds.has(row.id)) continue;
     const processNumber = canonicalProcessKey(row.processNumberNormalized || row.processNumber, row.id);
     if (!processNumber.ok) continue;
-    const tribunalAlias = datajudTribunalAlias(row.tribunal);
+    const tribunalAlias = resolveDatajudTribunalAlias(processNumber.key, row.tribunal);
     if (!tribunalAlias) {
       skippedWithoutTribunal.push(row);
       continue;
     }
-    const key = `${processNumber.key}:${tribunalAlias}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
+    if (seen.has(processNumber.key)) continue;
+    seen.add(processNumber.key);
     targets.push({ processNumber: processNumber.key, tribunalAlias, origin: "KNOWN_CASE" });
   }
   return { targets, skippedWithoutTribunal };
@@ -89,11 +110,10 @@ export function collectGlobalCanonicalDatajudTargets(memory: LegalExposureMemory
   for (const row of memory.cases) {
     const processNumber = canonicalProcessKey(row.processNumberNormalized || row.processNumber, row.id);
     if (!processNumber.ok) continue;
-    const tribunalAlias = datajudTribunalAlias(row.tribunal);
+    const tribunalAlias = resolveDatajudTribunalAlias(processNumber.key, row.tribunal);
     if (!tribunalAlias) continue;
-    const key = `${processNumber.key}:${tribunalAlias}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
+    if (seen.has(processNumber.key)) continue;
+    seen.add(processNumber.key);
     targets.push({ processNumber: processNumber.key, tribunalAlias, origin: "KNOWN_CASE" });
   }
   return targets;
@@ -106,9 +126,8 @@ export function unionDatajudTargets(
   const seen = new Set<string>();
   const out: DatajudTarget[] = [];
   for (const target of [...discovered, ...known]) {
-    const key = `${target.processNumber}:${target.tribunalAlias}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
+    if (seen.has(target.processNumber)) continue;
+    seen.add(target.processNumber);
     out.push(target);
   }
   return out;
@@ -135,6 +154,17 @@ function strongerConfirmation(
   if (left === "TRUSTED" || right === "TRUSTED") return "TRUSTED";
   if (left === "GENERIC" || right === "GENERIC") return "GENERIC";
   return left ?? right;
+}
+
+function mergeDjenPagination(batches: NormalizedSourceBatch[]): DjenPaginationMeta | undefined {
+  const metas = batches.map((row) => row.pagination).filter((row): row is DjenPaginationMeta => Boolean(row));
+  if (metas.length === 0) return undefined;
+  return {
+    totalReported: metas.reduce((max, row) => Math.max(max, row.totalReported ?? 0), 0) || metas[0]!.totalReported || null,
+    pagesFetched: metas.reduce((sum, row) => sum + row.pagesFetched, 0),
+    itemsFetched: metas.reduce((sum, row) => sum + row.itemsFetched, 0),
+    truncated: metas.some((row) => row.truncated),
+  };
 }
 
 export function mergeDjenBatches(batches: NormalizedSourceBatch[]): NormalizedSourceBatch {
@@ -176,6 +206,7 @@ export function mergeDjenBatches(batches: NormalizedSourceBatch[]): NormalizedSo
     communications.push(...batch.communications);
   }
   const cases = [...caseByKey.values()];
+  const pagination = mergeDjenPagination(batches);
   const hadResults = cases.length + candidates.length + communications.length > 0;
   const rateLimited = batches.filter((batch) => batch.outcome === "RATE_LIMITED");
   const failed = batches.filter(
@@ -197,10 +228,11 @@ export function mergeDjenBatches(batches: NormalizedSourceBatch[]): NormalizedSo
       cases,
       communications,
       candidates,
+      pagination,
     };
   }
   if (rateLimited.length > 0 && !hadResults) {
-    return rateLimited[rateLimited.length - 1]!;
+    return { ...rateLimited[rateLimited.length - 1]!, pagination };
   }
   if (failed.length > 0 && hadResults) {
     const last = failed[failed.length - 1]!;
@@ -214,9 +246,10 @@ export function mergeDjenBatches(batches: NormalizedSourceBatch[]): NormalizedSo
       cases,
       communications,
       candidates,
+      pagination,
     };
   }
-  if (failed.length > 0 && !hadResults) return failed[failed.length - 1]!;
+  if (failed.length > 0 && !hadResults) return { ...failed[failed.length - 1]!, pagination };
   return {
     source: "DJEN",
     outcome: hadResults ? "SUCCESS" : "NO_RESULTS",
@@ -227,6 +260,7 @@ export function mergeDjenBatches(batches: NormalizedSourceBatch[]): NormalizedSo
     cases,
     communications,
     candidates,
+    pagination,
   };
 }
 
@@ -254,6 +288,16 @@ export function emptyEntitySyncCounters(): EntitySyncCounters {
     uniqueProcessesDiscovered: 0,
     knownProcessesRefreshed: 0,
     datajudTargets: 0,
+    pagesFetched: 0,
+    itemsFetched: 0,
+    truncated: false,
+    newProcesses: 0,
+    existingProcesses: 0,
+    newEntityLinks: 0,
+    newCommunications: 0,
+    newParties: 0,
+    newAttorneys: 0,
+    newHearings: 0,
     successfulSources: 0,
     noResultSources: 0,
     rateLimitedSources: 0,
@@ -261,14 +305,47 @@ export function emptyEntitySyncCounters(): EntitySyncCounters {
   };
 }
 
-export function uniqueDiscoveredProcessCount(batch: NormalizedSourceBatch | null): number {
-  if (!batch) return 0;
+export function uniqueProcessNumbersFromBatch(batch: NormalizedSourceBatch | null | undefined): string[] {
+  if (!batch) return [];
   const seen = new Set<string>();
   for (const observation of batch.cases) {
     const processNumber = normalizeProcessNumber(observation.processNumber);
     if (processNumber) seen.add(processNumber);
   }
-  return seen.size;
+  for (const observation of batch.communications) {
+    const processNumber = normalizeProcessNumber(observation.processNumber);
+    if (processNumber) seen.add(processNumber);
+  }
+  return [...seen];
+}
+
+export function uniqueDiscoveredProcessCount(batch: NormalizedSourceBatch | null): number {
+  return uniqueProcessNumbersFromBatch(batch).length;
+}
+
+export const DATAJUD_STALE_MS = 24 * 60 * 60 * 1000;
+
+export function datajudTargetNeedsRefresh(
+  memory: LegalExposureMemory,
+  processNumber: string,
+  nowMs: number,
+  staleMs = DATAJUD_STALE_MS
+): boolean {
+  const caseIds = memory.cases
+    .filter((row) => canonicalProcessKey(row.processNumberNormalized || row.processNumber, row.id).key === processNumber)
+    .map((row) => row.id);
+  if (caseIds.length === 0) return true;
+  const caseIdSet = new Set(caseIds);
+  const cases = memory.cases.filter((row) => caseIdSet.has(row.id));
+  const datajud = memory.evidences.filter((row) => caseIdSet.has(row.caseId) && row.source === "DATAJUD");
+  if (datajud.length === 0) return true;
+  if (cases.some((row) => !row.className || !row.currentStatus)) return true;
+  const lastDatajud = Math.max(...datajud.map((row) => Date.parse(row.lastSeenAt)));
+  if (!Number.isFinite(lastDatajud) || nowMs - lastDatajud > staleMs) return true;
+  const lastPub = memory.communications
+    .filter((row) => normalizeProcessNumber(row.processNumber) === processNumber)
+    .map((row) => Date.parse(row.lastSeenAt));
+  return lastPub.some((stamp) => Number.isFinite(stamp) && stamp > lastDatajud);
 }
 
 export function missingTribunalBatch(processNumber: string): NormalizedSourceBatch {

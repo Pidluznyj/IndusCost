@@ -98,6 +98,7 @@ export const PRINT_PDF_AUDIT_ENTRIES: PrintPdfAuditEntry[] = [
     risk: "ok",
     notes: [
       "A4 portrait via rota isolada; branding de Identidade Visual.",
+      "Capa clara sem fundo full-bleed; accent só em faixa/títulos.",
       "Sem builder %PDF/Helvetica. Imprimir / Salvar PDF no navegador.",
     ],
   },

@@ -498,6 +498,9 @@ export type ExposureCaseListItem = {
   multipleGroupEntities: boolean;
   secrecy: boolean | null;
   coverage?: CaseDataCoverage;
+  newMovementCount?: number;
+  lastMovementsReadAt?: string | null;
+  highestNewActionLevel?: string | null;
 };
 
 export type ExposureCaseInvolvedEntity = {
@@ -519,6 +522,16 @@ export type ExposureTimelineItem = {
   communicationType: string | null;
   subject: string | null;
   status: string | null;
+  id?: string;
+  detectedAt?: string | null;
+  occurredAt?: string | null;
+  officialLink?: string | null;
+  isNew?: boolean;
+  actionLevel?: string | null;
+  actionLabel?: string | null;
+  deadlineText?: string | null;
+  deadlineAt?: string | null;
+  displayKind?: string | null;
 };
 
 export type CommunicationKind =
@@ -688,6 +701,9 @@ export type NormalizedCommunicationObservation = {
   sourceScienceAt: string | null;
   tribunal: string | null;
   courtUnit: string | null;
+  officialText?: string | null;
+  officialHash?: string | null;
+  officialLink?: string | null;
   rawMetadata: unknown;
 };
 
@@ -700,6 +716,13 @@ export type NormalizedCandidateObservation = {
   rawMetadata: unknown;
 };
 
+export type DjenPaginationMeta = {
+  totalReported: number | null;
+  pagesFetched: number;
+  itemsFetched: number;
+  truncated: boolean;
+};
+
 export type NormalizedSourceBatch = {
   source: LegalExposureSource;
   outcome: LegalQueryOutcome;
@@ -710,6 +733,7 @@ export type NormalizedSourceBatch = {
   cases: NormalizedCaseObservation[];
   communications: NormalizedCommunicationObservation[];
   candidates: NormalizedCandidateObservation[];
+  pagination?: DjenPaginationMeta;
 };
 
 export type SourcePublicStatus = {
