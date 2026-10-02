@@ -563,8 +563,7 @@ export function createSatisfactionPublicService(deps: {
               startedAt: now(),
               lastSavedAt: now(),
               version: nextVersion,
-              respondentName: payload.respondentName,
-              respondentPhone: payload.respondentPhone,
+              ...resolveRespondent(payload, validation.answers),
             },
             select: { id: true },
           });
@@ -594,8 +593,7 @@ export function createSatisfactionPublicService(deps: {
             data: {
               lastSavedAt: now(),
               version: nextVersion,
-              respondentName: payload.respondentName,
-              respondentPhone: payload.respondentPhone,
+              ...resolveRespondent(payload, validation.answers),
             },
           });
         }
@@ -755,8 +753,7 @@ export function createSatisfactionPublicService(deps: {
             customerMatchStatus: matched.status,
             source: session.invitationId ? ("INDIVIDUAL_LINK" as const) : ("GENERAL_LINK" as const),
             status: "SUBMITTED" as const,
-            respondentName: input.respondentName,
-            respondentPhone: input.respondentPhone,
+            ...resolveRespondent(input, validation.answers),
             declaredCompanyName: input.declaredCompanyName,
             declaredTaxId: input.declaredTaxId,
             submittedAt,
@@ -894,6 +891,23 @@ async function persistAnswers(
       },
     });
   }
+}
+
+/**
+ * Respondente da resposta. O formulário público coleta nome e telefone como
+ * respostas (RESPONDENT_NAME / CONTACT_PHONE), não como campos soltos — sem
+ * este fallback as colunas ficariam nulas e as telas mostrariam "—".
+ */
+function resolveRespondent(
+  explicit: { respondentName: string | null; respondentPhone: string | null },
+  answers: ReadonlyArray<{ questionCode: string; textValue: string | null }>
+): { respondentName: string | null; respondentPhone: string | null } {
+  const textOf = (code: string) =>
+    answers.find((a) => a.questionCode === code)?.textValue ?? null;
+  return {
+    respondentName: explicit.respondentName ?? textOf("RESPONDENT_NAME"),
+    respondentPhone: explicit.respondentPhone ?? textOf("CONTACT_PHONE"),
+  };
 }
 
 /** Códigos de identificação que o cadastro responde no link individual. */

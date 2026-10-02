@@ -6,7 +6,7 @@
  * agregação SQL com filtro no banco.
  */
 
-import type { PrismaClient } from "@prisma/client";
+import { Prisma, type PrismaClient } from "@prisma/client";
 import {
   averageFromTotals,
   calculateAbandonmentRate,
@@ -116,8 +116,10 @@ export function createSatisfactionAnalyticsService(deps: { prisma: PrismaClient 
     if (filters.campaignIds?.length) where.campaignId = { in: filters.campaignIds };
     if (filters.customerId) where.customerId = filters.customerId;
     if (filters.allowedCustomerIds) {
+      // Interseção com a carteira: cliente fora do escopo resulta vazio,
+      // nunca substitui o filtro de carteira.
       where.customerId = filters.customerId
-        ? filters.customerId
+        ? { equals: filters.customerId, in: filters.allowedCustomerIds }
         : { in: filters.allowedCustomerIds };
     }
     if (filters.from || filters.to) {
@@ -214,6 +216,11 @@ export function createSatisfactionAnalyticsService(deps: { prisma: PrismaClient 
         invitationWhere.responsibleCommercialIdSnapshot = filters.responsibleExternalId;
       }
 
+      // Evolução e comparativo respeitam a carteira do vendedor.
+      const evolutionScope = filters.allowedCustomerIds
+        ? Prisma.sql`AND r."customerId" = ANY(${filters.allowedCustomerIds}::uuid[])`
+        : Prisma.empty;
+
       const [criterionRows, invitations, alertRows, evolutionRows, attentionRows] =
         await Promise.all([
           aggregateByCriterion(responseIds),
@@ -252,7 +259,7 @@ export function createSatisfactionAnalyticsService(deps: { prisma: PrismaClient 
                    COUNT(DISTINCT r."id")    AS "responses"
               FROM "SatisfactionSurveyCampaign" c
               JOIN "SatisfactionSurveyResponse" r
-                ON r."campaignId" = c."id" AND r."status" = 'SUBMITTED'
+                ON r."campaignId" = c."id" AND r."status" = 'SUBMITTED' ${evolutionScope}
               LEFT JOIN "SatisfactionSurveyAnswer" a
                 ON a."responseId" = r."id" AND a."ratingValue" IS NOT NULL
              WHERE c."deletedAt" IS NULL
@@ -312,7 +319,13 @@ export function createSatisfactionAnalyticsService(deps: { prisma: PrismaClient 
         const previousCampaign = current > 0 ? evolutionRows[current - 1] : null;
         if (previousCampaign) {
           const previousIds = await prisma.satisfactionSurveyResponse.findMany({
-            where: { campaignId: previousCampaign.campaignId, status: "SUBMITTED" },
+            where: {
+              campaignId: previousCampaign.campaignId,
+              status: "SUBMITTED",
+              ...(filters.allowedCustomerIds
+                ? { customerId: { in: filters.allowedCustomerIds } }
+                : {}),
+            },
             select: { id: true },
           });
           for (const row of await aggregateByCriterion(previousIds.map((r) => r.id))) {

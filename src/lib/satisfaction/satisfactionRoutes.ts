@@ -51,6 +51,11 @@ import {
   SATISFACTION_AUDIT_ENTITIES,
 } from "./satisfactionAudit.server.js";
 import { summarizeRatings, resolveAlertLevel } from "./satisfactionMetrics.js";
+import { parseActionPointInput } from "./satisfactionActionPoints.js";
+import {
+  createSatisfactionActionPointService,
+  type SatisfactionActionPointService,
+} from "./satisfactionActionPointService.server.js";
 import { resolveSatisfactionResponsibleNames } from "./satisfactionSellerDisplay.server.js";
 
 export const SATISFACTION_RESOURCE_KEY = "commercial.satisfaction" as const;
@@ -68,6 +73,7 @@ type AuthGuards = {
     invitations?: SatisfactionInvitationService;
     analytics?: SatisfactionAnalyticsService;
     imports?: SatisfactionImportService;
+    actionPoints?: SatisfactionActionPointService;
   };
 };
 
@@ -163,6 +169,8 @@ export function registerSatisfactionRoutes(app: express.Express, guards: AuthGua
   const analytics =
     guards.services?.analytics ?? createSatisfactionAnalyticsService({ prisma });
   const imports = guards.services?.imports ?? createSatisfactionImportService({ prisma });
+  const actionPoints =
+    guards.services?.actionPoints ?? createSatisfactionActionPointService({ prisma });
 
   const view = requireResource(SATISFACTION_RESOURCE_KEY, "view");
   const create = requireResource(SATISFACTION_RESOURCE_KEY, "create");
@@ -183,6 +191,29 @@ export function registerSatisfactionRoutes(app: express.Express, guards: AuthGua
   async function currentUserId(req: express.Request): Promise<string | null> {
     const user = await getCurrentAppUser(req);
     return user?.id ?? null;
+  }
+
+  /**
+   * Gerar/revogar link mexe no acesso do cliente: vendedor restrito só opera
+   * convites da própria carteira. Devolve false (e já respondeu) se barrado.
+   */
+  async function assertInvitationInScope(
+    req: express.Request,
+    res: express.Response,
+    invitationId: string
+  ): Promise<boolean> {
+    const allowed = await resolveScope(req);
+    if (!allowed) return true;
+    const invitation = await prisma.satisfactionSurveyInvitation.findUnique({
+      where: { id: invitationId },
+      select: { customerId: true },
+    });
+    if (invitation && allowed.includes(invitation.customerId)) return true;
+    res.status(403).json({
+      error: "FORBIDDEN",
+      message: "Cliente fora da sua carteira comercial.",
+    });
+    return false;
   }
 
   // ─── Dashboard ────────────────────────────────────────────────────────────
@@ -497,6 +528,7 @@ export function registerSatisfactionRoutes(app: express.Express, guards: AuthGua
     update,
     async (req, res) => {
       try {
+        if (!(await assertInvitationInScope(req, res, String(req.params.invitationId)))) return;
         const link = await invitations.issueInvitationLink(
           String(req.params.invitationId),
           resolvePublicBaseUrl(),
@@ -516,6 +548,7 @@ export function registerSatisfactionRoutes(app: express.Express, guards: AuthGua
     update,
     async (req, res) => {
       try {
+        if (!(await assertInvitationInScope(req, res, String(req.params.invitationId)))) return;
         await invitations.revokeInvitation(
           String(req.params.invitationId),
           await currentUserId(req)
@@ -760,6 +793,56 @@ export function registerSatisfactionRoutes(app: express.Express, guards: AuthGua
     }
   );
 
+  // ─── Action points (pesquisa encerrada) ───────────────────────────────────
+
+  app.get(
+    "/api/commercial/satisfaction/campaigns/:id/action-points",
+    requireAppAuth,
+    view,
+    async (req, res) => {
+      try {
+        res.json(await actionPoints.getBoard(String(req.params.id), await resolveScope(req)));
+      } catch (err) {
+        sendSatisfactionError(res, err);
+      }
+    }
+  );
+
+  app.get(
+    "/api/commercial/satisfaction/action-point-assignees",
+    requireAppAuth,
+    view,
+    async (_req, res) => {
+      try {
+        res.json({ users: await actionPoints.listAssignees() });
+      } catch (err) {
+        sendSatisfactionError(res, err);
+      }
+    }
+  );
+
+  // Um action point por ponto de atenção: PUT cria ou atualiza pelo answerId.
+  app.put(
+    "/api/commercial/satisfaction/action-points/:answerId",
+    requireAppAuth,
+    update,
+    async (req, res) => {
+      try {
+        const actionPoint = await actionPoints.saveActionPoint(
+          String(req.params.answerId),
+          parseActionPointInput(req.body),
+          {
+            userId: await currentUserId(req),
+            allowedCustomerIds: await resolveScope(req),
+          }
+        );
+        res.json({ actionPoint });
+      } catch (err) {
+        sendSatisfactionError(res, err);
+      }
+    }
+  );
+
   // ─── Exportação (sob demanda) ─────────────────────────────────────────────
 
   app.get(
@@ -790,6 +873,7 @@ export function registerSatisfactionRoutes(app: express.Express, guards: AuthGua
               select: {
                 ratingValue: true,
                 textValue: true,
+                dateValue: true,
                 question: { select: { code: true, sortOrder: true } },
               },
             },
@@ -808,7 +892,10 @@ export function registerSatisfactionRoutes(app: express.Express, guards: AuthGua
           rows: responses.map((response) => {
             const byCode: Record<string, unknown> = {};
             for (const answer of response.answers) {
-              byCode[answer.question.code] = answer.ratingValue ?? answer.textValue;
+              byCode[answer.question.code] =
+                answer.ratingValue ??
+                answer.textValue ??
+                (answer.dateValue ? answer.dateValue.toISOString().slice(0, 10) : null);
             }
             return {
               cliente:

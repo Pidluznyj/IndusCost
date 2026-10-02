@@ -127,10 +127,18 @@ export function resolveRateLimitKey(
   input: {
     socketAddress?: string | null;
     forwardedFor?: string | string[] | null;
+    /** IP do cliente definido pela Cloudflare — não é controlado pelo cliente. */
+    cfConnectingIp?: string | string[] | null;
   },
   options: { trustProxy: boolean }
 ): string {
   if (options.trustProxy) {
+    // A Cloudflare ACRESCENTA ao X-Forwarded-For que o cliente enviar, então a
+    // primeira entrada dele é forjável; CF-Connecting-IP é sobrescrito na borda.
+    const cf = Array.isArray(input.cfConnectingIp)
+      ? input.cfConnectingIp[0]
+      : input.cfConnectingIp;
+    if (typeof cf === "string" && cf.trim()) return cf.trim();
     const raw = Array.isArray(input.forwardedFor) ? input.forwardedFor[0] : input.forwardedFor;
     if (typeof raw === "string" && raw.trim()) {
       const first = raw.split(",")[0]?.trim();

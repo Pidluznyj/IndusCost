@@ -306,6 +306,42 @@ describe("rate limit", () => {
     assert.equal(resolveRateLimitKey(input, { trustProxy: false }), "10.0.0.1");
   });
 
+  it("CF-Connecting-IP vence o X-Forwarded-For forjável, só com proxy confiável", () => {
+    const input = {
+      socketAddress: "10.0.0.1",
+      forwardedFor: "1.2.3.4, 203.0.113.9",
+      cfConnectingIp: "203.0.113.9",
+    };
+    assert.equal(resolveRateLimitKey(input, { trustProxy: true }), "203.0.113.9");
+    assert.equal(resolveRateLimitKey(input, { trustProxy: false }), "10.0.0.1");
+  });
+
+  it("filtro de cliente no dashboard intersecta com a carteira, nunca a substitui", async () => {
+    const { createSatisfactionAnalyticsService } = await import(
+      "./satisfactionAnalytics.server.js"
+    );
+    const analytics = createSatisfactionAnalyticsService({ prisma: {} as never });
+    const base = {
+      campaignIds: null,
+      from: null,
+      to: null,
+      responsibleExternalId: null,
+    };
+    assert.deepEqual(
+      analytics.buildResponseWhere({
+        ...base,
+        customerId: "fora-da-carteira",
+        allowedCustomerIds: ["a", "b"],
+      }).customerId,
+      { equals: "fora-da-carteira", in: ["a", "b"] }
+    );
+    assert.equal(
+      analytics.buildResponseWhere({ ...base, customerId: "x", allowedCustomerIds: null })
+        .customerId,
+      "x"
+    );
+  });
+
   it("sem origem identificável a chave é estável, não vazia", () => {
     assert.equal(resolveRateLimitKey({}, { trustProxy: false }), "unknown");
   });
