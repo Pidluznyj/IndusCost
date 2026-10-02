@@ -2328,6 +2328,9 @@ model CrmCustomerCommercialOwner {
   isActive               Boolean  @default(true)
   /// Após baixa por POL-COM-001 §11, impede autoatribuição até um supervisor atribuir manualmente.
   blockAutoAssignUntilManual Boolean @default(false)
+  /// Início do ciclo do responsável ATUAL (nova atribuição, reativação ou troca real). Relógio dos 90 dias
+  /// de cliente nunca faturado (POL-COM-001 §11). Salvar o mesmo responsável ou editar notas não altera.
+  assignmentStartedAt    DateTime @default(now()) @db.Timestamp(6)
   endedAt                DateTime? @db.Timestamp(6)
   endReason              String?
   notes                  String?

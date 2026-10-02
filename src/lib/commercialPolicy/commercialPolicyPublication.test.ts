@@ -238,8 +238,8 @@ describe("POL-COM-001 v1.0 — as três decisões de 30/09/2026 (testes 8–10)"
   it("10: carteira — a Seção 11 descreve a rotina real (último faturamento válido + CRM) → alinhada", () => {
     assert.equal(DOCUMENT_INACTIVITY_DAYS, 90);
     assert.equal(SNAPSHOT.portfolio.inactivityDays, 90);
-    assert.equal(SNAPSHOT.portfolio.inactivityClock, "LAST_VALID_INVOICE");
-    assert.equal(SNAPSHOT.portfolio.neverInvoicedRemoved, false);
+    assert.equal(SNAPSHOT.portfolio.inactivityClock, "LAST_VALID_INVOICE_OR_ASSIGNMENT_START");
+    assert.equal(SNAPSHOT.portfolio.neverInvoicedRemoved, true);
     assert.equal(SNAPSHOT.portfolio.systemBehavior, "REVIEW_THEN_REMOVE_OR_PRESERVE");
     assert.equal(SNAPSHOT.portfolio.crmEvidenceCanPreserveAssignment, true);
     const source = readFileSync(new URL("../commercial/customerCommercialOwnerInactivity.ts", import.meta.url), "utf8");
@@ -251,7 +251,7 @@ describe("POL-COM-001 v1.0 — as três decisões de 30/09/2026 (testes 8–10)"
       days: 90,
       clock: "LAST_VALID_INVOICE",
       crmCanPreserve: true,
-      neverInvoicedKept: true,
+      neverInvoicedRule: "ASSIGNMENT_START",
     });
     const audit = auditPolCom001Publication(officialCommercialPolicyBody().content, SNAPSHOT);
     assert.equal(audit.findings.some((item) => item.code === "PORTFOLIO_INACTIVITY_MISMATCH"), false);
@@ -259,10 +259,20 @@ describe("POL-COM-001 v1.0 — as três decisões de 30/09/2026 (testes 8–10)"
     assert.equal(aligned?.severity, "INFORMATIONAL");
     assert.equal(aligned?.blocking, false);
     assert.match(aligned?.system ?? "", /NF \/ Documento de Saída válido/);
-    assert.match(aligned?.system ?? "", /Cliente nunca faturado não é removido/);
+    assert.match(aligned?.system ?? "", /Cliente nunca faturado: 90 dias corridos desde o início da atribuição do Responsável Comercial atual/);
+    assert.doesNotMatch(aligned?.system ?? "", /nunca faturado não é removido/i);
+    // A regra anterior ("nunca faturado não é desvinculado") passou a divergir da rotina e bloqueia.
+    const previousRule = officialCommercialPolicyBody().content.replace(
+      /Clientes sem histórico de Faturamento Válido submetem-se[^\n]*/,
+      "Clientes sem histórico de Faturamento Válido não serão automaticamente desvinculados exclusivamente por esta rotina de inatividade; seu tratamento seguirá os critérios comerciais e de gestão aplicáveis."
+    );
+    assert.equal(readDocumentInactivityRule(previousRule).neverInvoicedRule, "KEPT");
+    const stale = auditPolCom001Publication(previousRule, SNAPSHOT).findings.find((item) => item.code === "PORTFOLIO_INACTIVITY_MISMATCH");
+    assert.equal(stale?.severity, "BLOCKING");
+    assert.match(stale?.system ?? "", /a rotina conta o prazo do início da atribuição do responsável atual/);
     // O texto antigo ("PV aprovado") continuaria bloqueando: a auditoria compara, não carimba.
     const legacy = officialCommercialPolicyBody().content.replace(
-      /O prazo de inatividade comercial é contado[^\n]*/,
+      /Para clientes com histórico de Faturamento Válido, o prazo de inatividade comercial é contado[^\n]*/,
       "O período de 90 dias corridos sem novo Pedido de Venda aprovado constitui gatilho automático para verificação da condição de Responsável Comercial do cliente."
     );
     const mismatch = auditPolCom001Publication(legacy, SNAPSHOT).findings.find((item) => item.code === "PORTFOLIO_INACTIVITY_MISMATCH");
@@ -818,10 +828,12 @@ describe("Seção 11 × rotina de carteira do IndusCost (testes 19–29)", () =>
       hasActiveOwner: true,
       lastApprovedOrder: { id: "so-new", orderCode: "PD 02710", issueDate: spNoon("2026-08-20"), status: "SENT_TO_NOMUS" },
       lastValidInvoice: null,
+      assignmentStartedAt: spNoon("2026-08-01"),
       referenceDate,
       preservation: preservationOf({}),
     });
-    assert.equal(withoutInvoice.status, "NEVER_INVOICED");
+    assert.equal(withoutInvoice.neverInvoiced, true);
+    assert.equal(withoutInvoice.clockSource, "ASSIGNMENT_START");
     // NF cancelada posterior não conta: vale a NF válida anterior.
     const latest = pickLatestValidInvoice([
       nfe(),
@@ -874,11 +886,24 @@ describe("Seção 11 × rotina de carteira do IndusCost (testes 19–29)", () =>
     assert.match(section, /deixará automaticamente de possuir Responsável Comercial exclusivo/);
   });
 
-  it("28: cliente sem histórico de Faturamento Válido não é desvinculado só por esta rotina", () => {
-    const decision = decide(null, referenceDate);
-    assert.equal(decision.status, "NEVER_INVOICED");
-    assert.equal(decision.action, "REVIEW_REQUIRED");
-    assert.match(section, /Clientes sem histórico de Faturamento Válido não serão automaticamente desvinculados exclusivamente por esta rotina/);
+  it("28: cliente sem histórico de Faturamento Válido conta 90 dias do início da atribuição do responsável atual", () => {
+    const neverInvoiced = (assignmentStartedAt: Date, preservation = preservationOf({})) =>
+      decideCommercialOwnerInactivityAction({ hasActiveOwner: true, lastValidInvoice: null, assignmentStartedAt, referenceDate, preservation });
+    const within = neverInvoiced(spNoon("2026-06-02"));
+    assert.equal(within.daysSinceInactivityClock, 89);
+    assert.equal(within.status, "NEVER_INVOICED_WITHIN_GRACE");
+    assert.equal(within.action, "KEEP_OWNER");
+    const due = neverInvoiced(spNoon("2026-06-01"));
+    assert.equal(due.daysSinceInactivityClock, 90);
+    assert.equal(due.action, "REMOVE_OWNER");
+    const preserved = neverInvoiced(
+      spNoon("2026-06-01"),
+      preservationOf({ proposals: [{ id: "p1", status: "SENT", expectedCloseDate: spNoon("2026-09-15"), nextActionAt: null, updatedAt: spNoon("2026-08-18") }] })
+    );
+    assert.equal(preserved.status, "PRESERVED_BY_CRM");
+    assert.match(section, /Para clientes sem qualquer histórico de Faturamento Válido, o prazo é contado a partir do início da atribuição do Responsável Comercial atual/);
+    assert.match(section, /a troca de Responsável Comercial não reinicia a contagem de cliente que já possui Faturamento Válido/);
+    assert.doesNotMatch(section, /não serão automaticamente desvinculados/);
   });
 
   it("29: o alinhamento não tocou a rotina: só a descrição do job mudou", () => {

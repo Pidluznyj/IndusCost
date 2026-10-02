@@ -13,6 +13,10 @@ const CUSTOMER_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const CUSTOMER_B = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const REF = new Date("2026-08-30T15:00:00.000Z");
 const LAST_PV = new Date("2026-06-01T15:00:00.000Z");
+/** Início da atribuição a 89, 90 e 91 dias civis de REF (30/08/2026). */
+const START_89 = new Date("2026-06-02T15:00:00.000Z");
+const START_90 = new Date("2026-06-01T15:00:00.000Z");
+const START_91 = new Date("2026-05-31T15:00:00.000Z");
 
 type Owner = {
   id: string;
@@ -21,6 +25,7 @@ type Owner = {
   sellerIdentityKey: string;
   sellerCanonicalName: string;
   createdAt: Date;
+  assignmentStartedAt: Date;
   endedAt: Date | null;
   endReason: string | null;
   blockAutoAssignUntilManual: boolean;
@@ -241,6 +246,7 @@ const maria: Owner = {
   sellerIdentityKey: "maria",
   sellerCanonicalName: "Maria",
   createdAt: new Date("2026-01-01T15:00:00.000Z"),
+  assignmentStartedAt: new Date("2026-01-01T15:00:00.000Z"),
   endedAt: null,
   endReason: null,
   blockAutoAssignUntilManual: false,
@@ -391,31 +397,40 @@ describe("apply/preview da revisão de carteira", () => {
     assert.doesNotMatch(source, /salesOrder\.update|commissionOrderSnapshot|nomusSellerName\s*=|nomusNfe\.update|nomusStockDocument\.update/);
   });
 
-  it("cliente sem PV aprovado não é removido no apply", async () => {
+  it("cliente nunca faturado dentro da carência (89 dias da atribuição) não é removido no apply", async () => {
     const fake = createFakePrisma({
       customers: [{ id: CUSTOMER_B, companyName: "Cliente B", taxId: "2", nomusExternalPersonId: 11 }],
-      owners: [{ ...maria, customerId: CUSTOMER_B, id: "own-2" }],
+      owners: [{ ...maria, customerId: CUSTOMER_B, id: "own-2", assignmentStartedAt: START_89 }],
     });
     const result = await applyCommercialOwnerInactivity(REF, fake.prisma);
     assert.equal(result.removed, 0);
+    assert.equal(result.unchanged, 1);
     assert.equal(result.neverApproved, 1);
     assert.equal(result.neverInvoiced, 1);
+    assert.equal(result.neverInvoicedWithinGrace, 1);
+    assert.equal(result.neverInvoicedReviewDue, 0);
+    assert.deepEqual(result.results[0], { customerId: CUSTOMER_B, action: "NO_CHANGE", reasonCode: "NEVER_INVOICED_WITHIN_GRACE" });
     assert.equal(fake.owners[0]?.isActive, true);
+    assert.equal(fake.writes.reviewCreate, 0);
   });
 
-  it("PV SENT_TO_NOMUS sem NF válida não remove e classifica NEVER_INVOICED", async () => {
-    const fake = createFakePrisma({
+  it("PV SENT_TO_NOMUS sem NF válida não reinicia nada: segue nunca faturado, contado da atribuição", async () => {
+    const seed = {
       customers: [{ id: CUSTOMER_A, companyName: "Cliente A", taxId: "1", nomusExternalPersonId: 10 }],
-      owners: [{ ...maria }],
-      orders: [{ id: "so-1", customerId: CUSTOMER_A, orderCode: "PD 02710", issueDate: LAST_PV, status: "SENT_TO_NOMUS" }],
-    });
-    const preview = await previewCommercialOwnerInactivity(REF, fake.prisma);
+      orders: [{ id: "so-1", customerId: CUSTOMER_A, orderCode: "PD 02710", issueDate: new Date("2026-08-25T15:00:00.000Z"), status: "SENT_TO_NOMUS" }],
+    };
+    const within = createFakePrisma({ ...seed, owners: [{ ...maria, assignmentStartedAt: START_89 }] });
+    const preview = await previewCommercialOwnerInactivity(REF, within.prisma);
     assert.equal(preview.neverInvoiced, 1);
+    assert.equal(preview.neverInvoicedWithinGrace, 1);
     assert.equal(preview.removalEligible, 0);
-    const apply = await applyCommercialOwnerInactivity(REF, fake.prisma);
-    assert.equal(apply.removed, 0);
-    assert.equal(apply.neverInvoiced, 1);
-    assert.equal(fake.owners[0]?.isActive, true);
+    assert.equal((await applyCommercialOwnerInactivity(REF, within.prisma)).removed, 0);
+    assert.equal(within.owners[0]?.isActive, true);
+    // PV recente sem NF não protege: vencidos os 90 dias da atribuição, sem CRM válido, remove.
+    const due = createFakePrisma({ ...seed, owners: [{ ...maria, assignmentStartedAt: START_90 }] });
+    const apply = await applyCommercialOwnerInactivity(REF, due.prisma);
+    assert.equal(apply.removed, 1);
+    assert.equal(due.owners[0]?.isActive, false);
   });
 
   it("auditoria da remoção registra a NF válida, não o último PV aprovado", async () => {
@@ -470,5 +485,237 @@ describe("apply/preview da revisão de carteira", () => {
     assert.equal(apply.removed, 0);
     assert.equal(apply.dataAnomaly, 1);
     assert.equal(fake.owners[0]?.isActive, true);
+  });
+});
+
+describe("revisão de carteira — cliente nunca faturado conta do início da atribuição", () => {
+  const customerB = { id: CUSTOMER_B, companyName: "Cliente B", taxId: "2", nomusExternalPersonId: 11 };
+  const ownerB = (assignmentStartedAt: Date, overrides: Partial<Owner> = {}): Owner => ({
+    ...maria,
+    id: "own-2",
+    customerId: CUSTOMER_B,
+    assignmentStartedAt,
+    ...overrides,
+  });
+  const validProposal = {
+    id: "p1",
+    customerId: CUSTOMER_B,
+    status: "SENT",
+    number: 4412,
+    externalProposalCode: "PP-4412",
+    expectedCloseDate: new Date("2026-09-15T15:00:00.000Z"),
+    nextActionAt: new Date("2026-09-10T15:00:00.000Z"),
+    updatedAt: new Date("2026-08-18T15:00:00.000Z"),
+  };
+
+  it("casos 2 e 3: 90 e 91 dias sem CRM → remove, bloqueia autoatribuição e audita o relógio da atribuição", async () => {
+    for (const [start, days] of [
+      [START_90, 90],
+      [START_91, 91],
+    ] as const) {
+      const fake = createFakePrisma({ customers: [customerB], owners: [ownerB(start)] });
+      const result = await applyCommercialOwnerInactivity(REF, fake.prisma);
+      assert.equal(result.removed, 1);
+      assert.equal(result.neverInvoiced, 1);
+      assert.equal(result.neverInvoicedReviewDue, 1);
+      assert.deepEqual(result.results[0], { customerId: CUSTOMER_B, action: "REMOVE_OWNER", reasonCode: PORTFOLIO_INACTIVITY_REASON });
+      const owner = fake.owners[0]!;
+      assert.equal(owner.isActive, false);
+      assert.equal(owner.blockAutoAssignUntilManual, true);
+      assert.equal(owner.endReason, PORTFOLIO_INACTIVITY_REASON);
+      assert.equal(owner.endedAt?.toISOString(), REF.toISOString());
+      // A baixa não reescreve o início do ciclo encerrado.
+      assert.equal(owner.assignmentStartedAt.toISOString(), start.toISOString());
+      const review = fake.reviews[0] as Record<string, unknown> & { payload: Record<string, unknown> };
+      assert.equal(review.action, "REMOVE_OWNER");
+      assert.equal(review.reasonCode, PORTFOLIO_INACTIVITY_REASON);
+      assert.equal((review.ownerStartedAt as Date).toISOString(), start.toISOString());
+      // Colunas legadas de NF ficam nulas: não recebem "dias desde a atribuição".
+      assert.equal(review.daysSinceLastApprovedOrder, null);
+      assert.equal(review.lastApprovedIssueDate, null);
+      assert.equal(review.lastApprovedSalesOrderId, null);
+      assert.equal(review.payload.inactivityClockSource, "ASSIGNMENT_START");
+      assert.equal(review.payload.inactivityClockDate, start.toISOString().slice(0, 10));
+      assert.equal(review.payload.assignmentStartedAt, start.toISOString());
+      assert.equal(review.payload.daysSinceInactivityClock, days);
+      assert.equal(review.payload.lastValidInvoiceDate, null);
+      assert.equal(review.payload.daysSinceLastValidInvoice, null);
+      assert.equal(review.payload.neverInvoiced, true);
+      assert.equal(review.payload.inactivityBasis, "NO_FIRST_VALID_INVOICE_SINCE_ASSIGNMENT_START");
+      assert.equal(review.payload.clockSource, "assignmentStartedAt");
+      assert.equal((fake.audits[0] as { action: string }).action, PORTFOLIO_INACTIVITY_REASON);
+    }
+  });
+
+  it("caso 4 / exemplo D: ≥ 90 dias com CRM válido → KEEP_OWNER, registra PORTFOLIO_REVIEW_PRESERVED", async () => {
+    const start = new Date("2026-05-12T15:00:00.000Z");
+    const fake = createFakePrisma({ customers: [customerB], owners: [ownerB(start)], proposals: [validProposal] });
+    const preview = await previewCommercialOwnerInactivity(REF, fake.prisma);
+    assert.equal(preview.preservedByCrm, 1);
+    assert.equal(preview.neverInvoicedReviewDue, 1);
+    assert.equal(preview.removalEligible, 0);
+    const result = await applyCommercialOwnerInactivity(REF, fake.prisma);
+    assert.equal(result.removed, 0);
+    assert.equal(result.preserved, 1);
+    assert.deepEqual(result.results[0], { customerId: CUSTOMER_B, action: "KEEP_OWNER", reasonCode: "PORTFOLIO_REVIEW_PRESERVED" });
+    assert.equal(fake.owners[0]?.isActive, true);
+    assert.equal(fake.owners[0]?.blockAutoAssignUntilManual, false);
+    const review = fake.reviews[0] as Record<string, unknown> & { payload: Record<string, unknown> };
+    assert.equal(review.action, "KEEP_OWNER");
+    assert.equal(review.reasonCode, "PORTFOLIO_REVIEW_PRESERVED");
+    assert.equal(review.crmValid, true);
+    assert.ok(review.nextReviewDate);
+    assert.equal(review.daysSinceLastApprovedOrder, null);
+    assert.equal(review.payload.inactivityClockSource, "ASSIGNMENT_START");
+    assert.equal(review.payload.daysSinceInactivityClock, 110);
+    assert.equal(review.payload.neverInvoiced, true);
+    assert.equal((fake.audits[0] as { action: string }).action, "PORTFOLIO_REVIEW_PRESERVED");
+  });
+
+  it("caso 5: ≥ 90 dias só com anotação genérica → remove", async () => {
+    const fake = createFakePrisma({
+      customers: [customerB],
+      owners: [ownerB(START_91)],
+      contacts: [
+        {
+          id: "c1",
+          customerId: CUSTOMER_B,
+          contactDate: new Date("2026-08-20T15:00:00.000Z"),
+          createdAt: new Date("2026-08-20T15:00:00.000Z"),
+          outcome: "RELATIONSHIP_MAINTAINED",
+          reason: "RELATIONSHIP",
+          nextActionType: "NONE",
+          nextActionAt: null,
+        },
+      ],
+    });
+    const result = await applyCommercialOwnerInactivity(REF, fake.prisma);
+    assert.equal(result.removed, 1);
+    assert.equal(fake.owners[0]?.isActive, false);
+    const review = fake.reviews[0] as { crmValid: boolean; payload: Record<string, unknown> };
+    assert.equal(review.crmValid, false);
+    assert.equal(review.payload.crmValid, false);
+  });
+
+  it("caso 8 / exemplo B: NF válida antiga + responsável recém-atribuído → revisão pela NF, sem novo prazo", async () => {
+    const recent = new Date("2026-08-20T15:00:00.000Z");
+    const fake = createFakePrisma({
+      customers: [{ id: CUSTOMER_A, companyName: "Cliente A", taxId: "1", nomusExternalPersonId: 10 }],
+      owners: [{ ...maria, createdAt: recent, assignmentStartedAt: recent }],
+      orders: [{ id: "so-1", customerId: CUSTOMER_A, orderCode: "PV-1", issueDate: LAST_PV, status: "SENT_TO_NOMUS" }],
+      ...validInvoiceSeed("so-1", "2026-05-02"),
+    });
+    const preview = await previewCommercialOwnerInactivity(REF, fake.prisma);
+    const row = preview.rows[0]!;
+    assert.equal(row.inactivityClockSource, "LAST_VALID_INVOICE");
+    assert.equal(row.inactivityClockDate, "2026-05-02");
+    assert.equal(row.daysSinceInactivityClock, 120);
+    assert.equal(row.assignmentStartedAt, "2026-08-20");
+    assert.equal(row.neverInvoiced, false);
+    assert.equal(row.action, "REMOVE_OWNER");
+    assert.equal(preview.neverInvoiced, 0);
+    const result = await applyCommercialOwnerInactivity(REF, fake.prisma);
+    assert.equal(result.removed, 1);
+    const review = fake.reviews[0] as Record<string, unknown> & { payload: Record<string, unknown> };
+    assert.equal(review.daysSinceLastApprovedOrder, 120);
+    assert.equal(review.payload.inactivityClockSource, "LAST_VALID_INVOICE");
+    assert.equal(review.payload.inactivityBasis, "NO_VALID_INVOICE_SINCE_LAST_VALID_INVOICE");
+    assert.equal(review.payload.neverInvoiced, false);
+    assert.equal(review.payload.lastValidInvoiceDate, "2026-05-02");
+    assert.equal(review.payload.assignmentStartedAt, recent.toISOString());
+    assert.equal(review.payload.clockSource, "lastValidInvoiceDate");
+  });
+
+  it("caso 18: execução repetida depois da remoção é idempotente (NO_CHANGE)", async () => {
+    const fake = createFakePrisma({ customers: [customerB], owners: [ownerB(START_91)] });
+    const first = await applyCommercialOwnerInactivity(REF, fake.prisma);
+    assert.equal(first.removed, 1);
+    const writesAfterFirst = { ...fake.writes };
+    const second = await applyCommercialOwnerInactivity(REF, fake.prisma);
+    assert.equal(second.removed, 0);
+    assert.equal(second.preserved, 0);
+    assert.equal(second.results.length, 0);
+    assert.deepEqual(fake.writes, writesAfterFirst);
+    assert.equal(fake.reviews.length, 1);
+    const preview = await previewCommercialOwnerInactivity(REF, fake.prisma);
+    assert.equal(preview.alreadyUnassigned, 1);
+    assert.equal(preview.removalEligible, 0);
+    assert.equal(preview.neverInvoiced, 0);
+  });
+
+  it("troca real de responsável durante a execução não baixa o novo ciclo", async () => {
+    const fake = createFakePrisma({ customers: [customerB], owners: [ownerB(START_91)] });
+    const reassignedAt = new Date("2026-08-30T14:59:00.000Z");
+    const originalFindUnique = fake.raw.crmCustomerCommercialOwner.findUnique;
+    fake.raw.crmCustomerCommercialOwner.findUnique = async (args: { where: { customerId: string } }) => {
+      // Simula o supervisor trocando o responsável entre a leitura da carteira e a transação
+      // (cópia: a linha lida pelo apply não é a mesma instância que o banco devolve depois).
+      const current = await originalFindUnique(args);
+      return current
+        ? { ...current, sellerIdentityKey: "joao", sellerCanonicalName: "João", assignmentStartedAt: reassignedAt }
+        : null;
+    };
+    const result = await applyCommercialOwnerInactivity(REF, fake.prisma);
+    assert.equal(result.removed, 0);
+    assert.equal(result.results[0]?.action, "NO_CHANGE");
+    assert.equal(fake.owners[0]?.isActive, true);
+    assert.equal(fake.reviews.length, 0);
+  });
+
+  it("preview separa os grupos e mostra o relógio de cada linha", async () => {
+    const C = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+    const D = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+    const fake = createFakePrisma({
+      customers: [
+        { id: CUSTOMER_A, companyName: "Com NF recente", taxId: "1", nomusExternalPersonId: 10 },
+        customerB,
+        { id: C, companyName: "Nunca faturado na carência", taxId: "3", nomusExternalPersonId: 12 },
+        { id: D, companyName: "Sem responsável", taxId: "4", nomusExternalPersonId: 13 },
+      ],
+      owners: [
+        { ...maria },
+        ownerB(new Date("2026-05-08T15:00:00.000Z")),
+        ownerB(new Date("2026-08-10T15:00:00.000Z"), { id: "own-3", customerId: C }),
+      ],
+      orders: [{ id: "so-1", customerId: CUSTOMER_A, orderCode: "PV-1", issueDate: LAST_PV, status: "SENT_TO_NOMUS" }],
+      ...validInvoiceSeed("so-1", "2026-08-01"),
+    });
+    const preview = await previewCommercialOwnerInactivity(REF, fake.prisma);
+    assert.equal(preview.customersWithActiveOwner, 3);
+    assert.equal(preview.withinActivityWindow, 1);
+    assert.equal(preview.neverInvoicedWithinGrace, 1);
+    assert.equal(preview.neverInvoicedReviewDue, 1);
+    assert.equal(preview.neverInvoiced, 2);
+    assert.equal(preview.neverApprovedSalesOrder, 2);
+    assert.equal(preview.inReview, 1);
+    assert.equal(preview.removalEligible, 1);
+    assert.equal(preview.dataAnomaly, 0);
+    assert.equal(preview.alreadyUnassigned, 1);
+    const byId = new Map(preview.rows.map((row) => [row.customerId, row]));
+    assert.equal(byId.get(CUSTOMER_B)?.inactivityClockSource, "ASSIGNMENT_START");
+    assert.equal(byId.get(CUSTOMER_B)?.inactivityClockDate, "2026-05-08");
+    assert.equal(byId.get(CUSTOMER_B)?.daysSinceInactivityClock, 114);
+    assert.equal(byId.get(CUSTOMER_B)?.daysSinceLastValidInvoice, null);
+    assert.equal(byId.get(CUSTOMER_B)?.action, "REMOVE_OWNER");
+    assert.equal(byId.get(C)?.action, "KEEP_ACTIVE");
+    assert.equal(byId.get(C)?.status, "NEVER_INVOICED_WITHIN_GRACE");
+    assert.equal(byId.has(D), false);
+    const text = formatPortfolioInactivityPreview(preview);
+    assert.match(text, /abaixo de 90 dias por NF válida=1/);
+    assert.match(text, /nunca faturados dentro da carência \(90 dias da atribuição\)=1/);
+    assert.match(text, /nunca faturados vencidos \(em revisão\)=1/);
+    assert.match(text, /identidade ativos=3\/3/);
+    assert.match(text, /clockSource=ASSIGNMENT_START \| clockDate=2026-05-08 \| dias=114/);
+    assert.match(text, /clockSource=LAST_VALID_INVOICE \| clockDate=2026-08-01 \| dias=29/);
+    assert.equal(fake.writes.ownerUpdate + fake.writes.reviewCreate + fake.writes.auditCreate, 0);
+  });
+
+  it("apply não tem mais atalho que pula nunca faturado", () => {
+    const source = readFileSync(
+      path.join(process.cwd(), "src/lib/commercial/customerCommercialOwnerInactivity.server.ts"),
+      "utf8"
+    );
+    assert.doesNotMatch(source, /reasonCode: NEVER_INVOICED,/);
+    assert.doesNotMatch(source, /decision\.status === "NEVER_INVOICED"/);
   });
 });

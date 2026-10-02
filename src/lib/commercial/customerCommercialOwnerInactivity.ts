@@ -1,6 +1,8 @@
 /**
  * Motor puro da revisão de carteira POL-COM-001 §11.
  * Relógio operacional: última NF / Documento de Saída válido vinculado ao PV.
+ * Cliente que nunca faturou: início da atribuição do responsável atual
+ * (CrmCustomerCommercialOwner.assignmentStartedAt).
  * Não usa CR, AR, proposta nem SalesOrder.issueDate como compra realizada.
  */
 import { DOCUMENT_INACTIVITY_DAYS } from "@/src/lib/commercialPolicy/commercialPolicyNormative.js";
@@ -18,6 +20,9 @@ export const PORTFOLIO_PRESERVED_REASON = "PORTFOLIO_REVIEW_PRESERVED" as const;
 export const NEVER_INVOICED = "NEVER_INVOICED" as const;
 export const DATA_ANOMALY = "DATA_ANOMALY" as const;
 export const MISSING_INVOICE_DATE = "MISSING_INVOICE_DATE" as const;
+export const MISSING_ASSIGNMENT_START = "MISSING_ASSIGNMENT_START" as const;
+export const NEVER_INVOICED_WITHIN_GRACE = "NEVER_INVOICED_WITHIN_GRACE" as const;
+export const NEVER_INVOICED_REVIEW_DUE = "NEVER_INVOICED_REVIEW_DUE" as const;
 /** @deprecated alias estável: a classificação operacional passou a ser NEVER_INVOICED. */
 export const NEVER_APPROVED_SALES_ORDER = NEVER_INVOICED;
 
@@ -34,10 +39,22 @@ export type PortfolioConceptualStatus =
   | "REMOVAL_ELIGIBLE"
   | "UNASSIGNED"
   | "NEVER_APPROVED"
+  /** @deprecated o motor não emite mais: nunca faturado agora é WITHIN_GRACE ou segue a revisão comum. */
   | "NEVER_INVOICED"
+  | "NEVER_INVOICED_WITHIN_GRACE"
   | "DATA_ANOMALY";
 
 export type PortfolioInactivityAction = "KEEP_OWNER" | "REMOVE_OWNER" | "REVIEW_REQUIRED" | "NO_CHANGE";
+
+export type PortfolioInactivityClockSource = "LAST_VALID_INVOICE" | "ASSIGNMENT_START";
+
+export type PortfolioInactivityClock = {
+  kind: PortfolioInactivityClockSource | "DATA_ANOMALY";
+  date: Date | null;
+  days: number | null;
+};
+
+export type NeverInvoicedStage = typeof NEVER_INVOICED_WITHIN_GRACE | typeof NEVER_INVOICED_REVIEW_DUE;
 
 export type LastApprovedSalesOrder = {
   id: string;
@@ -127,6 +144,8 @@ export type PortfolioDecisionInput = {
   /** @deprecated fallback só para testes/API antiga; o relógio oficial é lastValidInvoice */
   lastApprovedOrder?: LastApprovedSalesOrder | null;
   invoiceClockKind?: "INVOICE" | "NEVER_INVOICED" | "DATA_ANOMALY";
+  /** Início do ciclo do responsável atual. Só é relógio quando o cliente nunca faturou. */
+  assignmentStartedAt?: Date | null;
   referenceDate: Date;
   preservation: CommercialPortfolioPreservation;
 };
@@ -136,8 +155,16 @@ export type PortfolioDecision = {
   action: PortfolioInactivityAction;
   reasonCode: string;
   daysSinceLastValidInvoice: number | null;
+  /** @deprecated legado: só dias desde a última NF válida; nunca recebe dias desde a atribuição. */
   daysSinceLastApprovedOrder: number | null;
   reviewDue: boolean;
+  /** Relógio que decidiu. Null = anomalia de dado ou cliente sem responsável e sem NF. */
+  clockSource: PortfolioInactivityClockSource | null;
+  clockDate: Date | null;
+  daysSinceInactivityClock: number | null;
+  /** Cliente sem nenhuma NF / Documento de Saída válido (não é anomalia). */
+  neverInvoiced: boolean;
+  neverInvoicedStage: NeverInvoicedStage | null;
 };
 
 const OPEN_PROPOSAL_STATUSES = new Set(["ANALYSIS", "SENT", "APPROVED"]);
@@ -359,11 +386,17 @@ export function evaluateCommercialPortfolioPreservation(input: {
   referenceDate: Date;
   lastApprovedIssueDate: Date | null;
   lastValidInvoiceDate?: Date | null;
+  /**
+   * Início da atribuição quando o cliente nunca faturou. Só classifica o registro
+   * inválido como artificial (criado após o gatilho); não muda o que é CRM válido.
+   */
+  assignmentClockDate?: Date | null;
   proposals: PortfolioProposalEvidence[];
   contacts: PortfolioContactEvidence[];
 }): CommercialPortfolioPreservation {
   const nextReviewDate = firstOfNextSaoPauloMonth(input.referenceDate);
-  const lastCommercialDate = input.lastValidInvoiceDate ?? input.lastApprovedIssueDate;
+  const lastCommercialDate =
+    input.lastValidInvoiceDate ?? input.lastApprovedIssueDate ?? input.assignmentClockDate ?? null;
 
   const openProposal = [...input.proposals]
     .filter((row) => hasMaterialProposalEvidence(row, input.referenceDate))
@@ -607,73 +640,121 @@ function decisionDays(invoice: LastValidInvoice | null, referenceDate: Date): nu
   return invoice?.invoiceDate ? calendarDaysBetweenSaoPaulo(invoice.invoiceDate, referenceDate) : null;
 }
 
+/**
+ * Relógio dos 90 dias. A NF válida sempre prevalece: a troca de responsável não
+ * reinicia o prazo de quem já faturou. Só o cliente que realmente nunca faturou
+ * conta do início da atribuição atual. NF autorizada sem data utilizável é
+ * anomalia, nunca "nunca faturou".
+ */
+export function resolvePortfolioInactivityClock(input: {
+  lastValidInvoice: LastValidInvoice | null;
+  invoiceClockKind?: PortfolioDecisionInput["invoiceClockKind"];
+  assignmentStartedAt?: Date | null;
+  referenceDate: Date;
+}): PortfolioInactivityClock {
+  const invoice = input.lastValidInvoice;
+  if (isInvoiceDateAnomaly(invoice, input.invoiceClockKind)) {
+    return { kind: "DATA_ANOMALY", date: null, days: null };
+  }
+  if (invoice?.invoiceDate && input.invoiceClockKind !== "NEVER_INVOICED") {
+    return {
+      kind: "LAST_VALID_INVOICE",
+      date: invoice.invoiceDate,
+      days: calendarDaysBetweenSaoPaulo(invoice.invoiceDate, input.referenceDate),
+    };
+  }
+  if (!isUsableInvoiceDate(input.assignmentStartedAt)) {
+    return { kind: "DATA_ANOMALY", date: null, days: null };
+  }
+  return {
+    kind: "ASSIGNMENT_START",
+    date: input.assignmentStartedAt,
+    days: calendarDaysBetweenSaoPaulo(input.assignmentStartedAt, input.referenceDate),
+  };
+}
+
 export function decideCommercialOwnerInactivityAction(input: PortfolioDecisionInput): PortfolioDecision {
   const invoice = resolveLastValidInvoice(input);
-  const days = decisionDays(invoice, input.referenceDate);
+  const invoiceDays = decisionDays(invoice, input.referenceDate);
 
   if (!input.hasActiveOwner) {
     return {
       status: "UNASSIGNED",
       action: "NO_CHANGE",
       reasonCode: "ALREADY_UNASSIGNED",
-      daysSinceLastValidInvoice: days,
-      daysSinceLastApprovedOrder: days,
+      daysSinceLastValidInvoice: invoiceDays,
+      daysSinceLastApprovedOrder: invoiceDays,
       reviewDue: false,
+      clockSource: invoiceDays != null ? "LAST_VALID_INVOICE" : null,
+      clockDate: invoice?.invoiceDate ?? null,
+      daysSinceInactivityClock: invoiceDays,
+      neverInvoiced: false,
+      neverInvoicedStage: null,
     };
   }
 
-  if (isInvoiceDateAnomaly(invoice, input.invoiceClockKind)) {
+  const clock = resolvePortfolioInactivityClock({
+    lastValidInvoice: invoice,
+    invoiceClockKind: input.invoiceClockKind,
+    assignmentStartedAt: input.assignmentStartedAt,
+    referenceDate: input.referenceDate,
+  });
+
+  if (clock.kind === "DATA_ANOMALY" || clock.days == null) {
     return {
       status: "DATA_ANOMALY",
       action: "REVIEW_REQUIRED",
-      reasonCode: MISSING_INVOICE_DATE,
+      reasonCode: isInvoiceDateAnomaly(invoice, input.invoiceClockKind)
+        ? MISSING_INVOICE_DATE
+        : MISSING_ASSIGNMENT_START,
       daysSinceLastValidInvoice: null,
       daysSinceLastApprovedOrder: null,
       reviewDue: false,
+      clockSource: null,
+      clockDate: null,
+      daysSinceInactivityClock: null,
+      neverInvoiced: false,
+      neverInvoicedStage: null,
     };
   }
 
-  if (!invoice || input.invoiceClockKind === "NEVER_INVOICED") {
-    return {
-      status: "NEVER_INVOICED",
-      action: "REVIEW_REQUIRED",
-      reasonCode: NEVER_INVOICED,
-      daysSinceLastValidInvoice: null,
-      daysSinceLastApprovedOrder: null,
-      reviewDue: false,
-    };
-  }
+  const neverInvoiced = clock.kind === "ASSIGNMENT_START";
+  const reviewDue = clock.days >= portfolioInactivityDays();
+  const base = {
+    daysSinceLastValidInvoice: neverInvoiced ? null : clock.days,
+    daysSinceLastApprovedOrder: neverInvoiced ? null : clock.days,
+    reviewDue,
+    clockSource: clock.kind,
+    clockDate: clock.date,
+    daysSinceInactivityClock: clock.days,
+    neverInvoiced,
+    neverInvoicedStage: neverInvoiced
+      ? reviewDue
+        ? NEVER_INVOICED_REVIEW_DUE
+        : NEVER_INVOICED_WITHIN_GRACE
+      : null,
+  };
 
-  const reviewDue = days != null && days >= portfolioInactivityDays();
   if (!reviewDue) {
-    return {
-      status: "ACTIVE",
-      action: "KEEP_OWNER",
-      reasonCode: "WITHIN_ACTIVITY_WINDOW",
-      daysSinceLastValidInvoice: days,
-      daysSinceLastApprovedOrder: days,
-      reviewDue: false,
-    };
+    return neverInvoiced
+      ? { ...base, status: "NEVER_INVOICED_WITHIN_GRACE", action: "KEEP_OWNER", reasonCode: NEVER_INVOICED_WITHIN_GRACE }
+      : { ...base, status: "ACTIVE", action: "KEEP_OWNER", reasonCode: "WITHIN_ACTIVITY_WINDOW" };
   }
 
   if (input.preservation.valid) {
     return {
+      ...base,
       status: "PRESERVED_BY_CRM",
       action: "KEEP_OWNER",
       reasonCode: input.preservation.reasonCode,
-      daysSinceLastValidInvoice: days,
-      daysSinceLastApprovedOrder: days,
-      reviewDue: true,
     };
   }
 
   return {
+    ...base,
     status: "REMOVAL_ELIGIBLE",
     action: "REMOVE_OWNER",
     reasonCode: PORTFOLIO_INACTIVITY_REASON,
-    daysSinceLastValidInvoice: days,
-    daysSinceLastApprovedOrder: days,
-    reviewDue: true,
   };
 }
 

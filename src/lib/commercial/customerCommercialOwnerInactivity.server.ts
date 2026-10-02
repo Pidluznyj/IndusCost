@@ -10,8 +10,8 @@ import {
   APPROVED_SALES_ORDER_STATUS,
   DATA_ANOMALY,
   INACTIVITY_END_REASON_LABEL,
-  MISSING_INVOICE_DATE,
-  NEVER_INVOICED,
+  NEVER_INVOICED_REVIEW_DUE,
+  NEVER_INVOICED_WITHIN_GRACE,
   PORTFOLIO_INACTIVITY_REASON,
   PORTFOLIO_PRESERVED_REASON,
   decideCommercialOwnerInactivityAction,
@@ -28,6 +28,7 @@ import {
   type LastValidInvoice,
   type PortfolioContactEvidence,
   type PortfolioInactivityAction,
+  type PortfolioInactivityClockSource,
   type PortfolioInvoiceCandidate,
   type PortfolioProposalEvidence,
 } from "./customerCommercialOwnerInactivity.js";
@@ -41,6 +42,7 @@ type OwnerRow = {
   sellerIdentityKey: string;
   sellerCanonicalName: string;
   createdAt: Date;
+  assignmentStartedAt: Date;
   endedAt: Date | null;
   endReason: string | null;
   blockAutoAssignUntilManual: boolean;
@@ -71,6 +73,12 @@ export type PortfolioInactivityPreviewRow = {
   stockDocumentId: string | null;
   stockDocumentValidity: string | null;
   daysSinceLastValidInvoice: number | null;
+  /** Relógio que decidiu a linha: última NF válida ou início da atribuição (nunca faturado). */
+  inactivityClockSource: PortfolioInactivityClockSource | null;
+  inactivityClockDate: string | null;
+  daysSinceInactivityClock: number | null;
+  assignmentStartedAt: string | null;
+  neverInvoiced: boolean;
   invoiceStatus: string | null;
   invoiceCanceled: boolean | null;
   lastApprovedSalesOrderId: string | null;
@@ -109,7 +117,10 @@ export type PortfolioInactivityPreview = {
   inReview: number;
   preservedByCrm: number;
   removalEligible: number;
+  /** Total de clientes com responsável ativo e sem nenhuma NF / DS válido (carência + vencidos). */
   neverInvoiced: number;
+  neverInvoicedWithinGrace: number;
+  neverInvoicedReviewDue: number;
   neverApprovedSalesOrder: number;
   dataAnomaly: number;
   alreadyUnassigned: number;
@@ -125,7 +136,10 @@ export type PortfolioInactivityApplyResult = {
   preserved: number;
   unchanged: number;
   skippedUnassigned: number;
+  /** Total de nunca faturados analisados (carência + vencidos). */
   neverInvoiced: number;
+  neverInvoicedWithinGrace: number;
+  neverInvoicedReviewDue: number;
   neverApproved: number;
   dataAnomaly: number;
   results: Array<{
@@ -363,16 +377,22 @@ function decideRow(input: {
     hasActiveOwner: Boolean(input.owner?.isActive),
     lastValidInvoice: input.lastInvoice,
     invoiceClockKind: clockKindFromInvoice(input.lastInvoice),
+    assignmentStartedAt: input.owner?.isActive ? input.owner.assignmentStartedAt : null,
     referenceDate: input.referenceDate,
     preservation: input.preservation,
   });
 }
 
+/** Sem NF válida, o início da atribuição ativa é o relógio usado na avaliação do CRM. */
+function assignmentClockDate(owner: OwnerRow | null, lastInvoice: LastValidInvoice | null): Date | null {
+  if (lastInvoice || !owner?.isActive) return null;
+  return owner.assignmentStartedAt;
+}
+
 function previewAction(
   decision: ReturnType<typeof decideCommercialOwnerInactivityAction>
 ): PortfolioInactivityAction | "KEEP_ACTIVE" | "NEVER_INVOICED" {
-  if (decision.status === "ACTIVE") return "KEEP_ACTIVE";
-  if (decision.status === "NEVER_INVOICED") return "NEVER_INVOICED";
+  if (decision.status === "ACTIVE" || decision.status === "NEVER_INVOICED_WITHIN_GRACE") return "KEEP_ACTIVE";
   if (decision.status === "DATA_ANOMALY") return "REVIEW_REQUIRED";
   return decision.action;
 }
@@ -424,6 +444,11 @@ function toPreviewRow(input: {
     stockDocumentId: input.lastInvoice?.stockDocumentId ?? null,
     stockDocumentValidity: input.lastInvoice?.stockDocumentValidity ?? null,
     daysSinceLastValidInvoice: input.decision.daysSinceLastValidInvoice,
+    inactivityClockSource: input.decision.clockSource,
+    inactivityClockDate: input.decision.clockDate ? saoPauloDateIso(input.decision.clockDate) : null,
+    daysSinceInactivityClock: input.decision.daysSinceInactivityClock,
+    assignmentStartedAt: input.owner?.isActive ? saoPauloDateIso(input.owner.assignmentStartedAt) : null,
+    neverInvoiced: input.decision.neverInvoiced,
     invoiceStatus: input.lastInvoice?.invoiceStatus ?? null,
     invoiceCanceled: input.lastInvoice ? input.lastInvoice.invoiceCanceled : null,
     lastApprovedSalesOrderId: input.lastInvoice?.salesOrderId ?? null,
@@ -479,7 +504,8 @@ export async function previewCommercialOwnerInactivity(
   let inReview = 0;
   let preserved = 0;
   let removal = 0;
-  let neverInvoiced = 0;
+  let neverInvoicedWithinGrace = 0;
+  let neverInvoicedReviewDue = 0;
   let dataAnomaly = 0;
   let unassigned = 0;
   const invoiceDateSourceCounts = emptyDateSourceCounts();
@@ -492,6 +518,7 @@ export async function previewCommercialOwnerInactivity(
       referenceDate,
       lastApprovedIssueDate: lastInvoice?.invoiceDate ?? null,
       lastValidInvoiceDate: lastInvoice?.invoiceDate ?? null,
+      assignmentClockDate: assignmentClockDate(owner, lastInvoice),
       proposals: evidence.proposals.get(customer.id) ?? [],
       contacts: evidence.contacts.get(customer.id) ?? [],
     });
@@ -505,14 +532,15 @@ export async function previewCommercialOwnerInactivity(
     if (decision.reviewDue) inReview += 1;
     if (decision.status === "PRESERVED_BY_CRM") preserved += 1;
     if (decision.action === "REMOVE_OWNER") removal += 1;
-    if (decision.status === "NEVER_INVOICED") neverInvoiced += 1;
+    if (decision.neverInvoicedStage === NEVER_INVOICED_WITHIN_GRACE) neverInvoicedWithinGrace += 1;
+    if (decision.neverInvoicedStage === NEVER_INVOICED_REVIEW_DUE) neverInvoicedReviewDue += 1;
     if (decision.status === "DATA_ANOMALY") dataAnomaly += 1;
     if (decision.status === "UNASSIGNED") unassigned += 1;
 
     const shouldList =
       Boolean(owner?.isActive) ||
       decision.reviewDue ||
-      decision.status === "NEVER_INVOICED" ||
+      decision.neverInvoiced ||
       decision.status === "DATA_ANOMALY";
     if (shouldList) {
       rows.push(toPreviewRow({ customer, owner, lastInvoice, preservation, decision }));
@@ -528,8 +556,10 @@ export async function previewCommercialOwnerInactivity(
     inReview,
     preservedByCrm: preserved,
     removalEligible: removal,
-    neverInvoiced,
-    neverApprovedSalesOrder: neverInvoiced,
+    neverInvoiced: neverInvoicedWithinGrace + neverInvoicedReviewDue,
+    neverInvoicedWithinGrace,
+    neverInvoicedReviewDue,
+    neverApprovedSalesOrder: neverInvoicedWithinGrace + neverInvoicedReviewDue,
     dataAnomaly,
     alreadyUnassigned: unassigned,
     invoiceDateSourceCounts,
@@ -549,24 +579,38 @@ async function recordReviewAndMaybeRemove(input: {
   decision: ReturnType<typeof decideCommercialOwnerInactivityAction>;
 }): Promise<"REMOVED" | "PRESERVED" | "NO_CHANGE"> {
   if (!input.owner.isActive) return "NO_CHANGE";
-  if (input.decision.status === "NEVER_INVOICED" || input.decision.status === "DATA_ANOMALY") {
-    return "NO_CHANGE";
-  }
+  if (input.decision.status === "DATA_ANOMALY") return "NO_CHANGE";
   if (input.decision.action === "REVIEW_REQUIRED") return "NO_CHANGE";
   if (input.decision.action === "KEEP_OWNER" && !input.decision.reviewDue) return "NO_CHANGE";
+  // Sem relógio datado não há remoção: NF sem data utilizável nunca vira "nunca faturou".
+  const clockSource = input.decision.clockSource;
+  const clockDate = input.decision.clockDate;
+  if (!clockSource || !clockDate || input.decision.daysSinceInactivityClock == null) return "NO_CHANGE";
   if (
-    input.decision.action === "REMOVE_OWNER" &&
+    clockSource === "LAST_VALID_INVOICE" &&
     (!input.lastInvoice?.invoiceDate || input.lastInvoice.invoiceDateSource === "MISSING")
   ) {
     return "NO_CHANGE";
   }
+  if (clockSource === "ASSIGNMENT_START" && input.lastInvoice) return "NO_CHANGE";
 
+  // Colunas legadas (lastApproved*/daysSinceLastApprovedOrder) só recebem dado de NF; nunca dias desde a atribuição.
   const days = input.decision.daysSinceLastValidInvoice;
   const payload = {
     customerId: input.customer.id,
     previousOwnerIdentityKey: input.owner.sellerIdentityKey,
     previousOwnerName: input.owner.sellerCanonicalName,
-    ownerStartedAt: input.owner.createdAt.toISOString(),
+    ownerStartedAt: input.owner.assignmentStartedAt.toISOString(),
+    ownerCreatedAt: input.owner.createdAt.toISOString(),
+    assignmentStartedAt: input.owner.assignmentStartedAt.toISOString(),
+    inactivityClockSource: clockSource,
+    inactivityClockDate: saoPauloDateIso(clockDate),
+    daysSinceInactivityClock: input.decision.daysSinceInactivityClock,
+    neverInvoiced: input.decision.neverInvoiced,
+    inactivityBasis:
+      clockSource === "ASSIGNMENT_START"
+        ? "NO_FIRST_VALID_INVOICE_SINCE_ASSIGNMENT_START"
+        : "NO_VALID_INVOICE_SINCE_LAST_VALID_INVOICE",
     lastInvoicedSalesOrderId: input.lastInvoice?.salesOrderId ?? null,
     lastInvoicedSalesOrderNumber: input.lastInvoice?.salesOrderCode ?? null,
     lastValidInvoiceId: input.lastInvoice?.invoiceId ?? null,
@@ -586,7 +630,7 @@ async function recordReviewAndMaybeRemove(input: {
     decisionReason: input.decision.reasonCode,
     runId: input.runId,
     analyzedAt: input.referenceDate.toISOString(),
-    clockSource: "lastValidInvoiceDate",
+    clockSource: clockSource === "ASSIGNMENT_START" ? "assignmentStartedAt" : "lastValidInvoiceDate",
   };
 
   if (input.decision.action === "KEEP_OWNER" && input.decision.reviewDue) {
@@ -599,7 +643,7 @@ async function recordReviewAndMaybeRemove(input: {
           reasonCode: PORTFOLIO_PRESERVED_REASON,
           previousOwnerIdentityKey: input.owner.sellerIdentityKey,
           previousOwnerName: input.owner.sellerCanonicalName,
-          ownerStartedAt: input.owner.createdAt,
+          ownerStartedAt: input.owner.assignmentStartedAt,
           lastApprovedSalesOrderId: input.lastInvoice?.salesOrderId ?? null,
           lastApprovedSalesOrderCode: input.lastInvoice?.salesOrderCode ?? null,
           lastApprovedIssueDate: input.lastInvoice?.invoiceDate ?? null,
@@ -630,11 +674,19 @@ async function recordReviewAndMaybeRemove(input: {
   if (input.decision.action !== "REMOVE_OWNER") return "NO_CHANGE";
 
   const endedAt = input.referenceDate;
+  let removed = false;
   await input.client.$transaction(async (tx) => {
     const current = await tx.crmCustomerCommercialOwner.findUnique({
       where: { customerId: input.customer.id },
     });
     if (!current?.isActive) return;
+    // Nunca faturado: o prazo é do ciclo analisado. Se o responsável foi trocado no meio da execução, o novo ciclo não é baixado.
+    if (
+      clockSource === "ASSIGNMENT_START" &&
+      current.assignmentStartedAt.getTime() !== input.owner.assignmentStartedAt.getTime()
+    ) {
+      return;
+    }
     const deactivated = await tx.crmCustomerCommercialOwner.updateMany({
       where: { customerId: input.customer.id, isActive: true },
       data: {
@@ -649,6 +701,7 @@ async function recordReviewAndMaybeRemove(input: {
       },
     });
     if (deactivated.count === 0) return;
+    removed = true;
     await tx.crmCustomerPortfolioReview.create({
       data: {
         runId: input.runId,
@@ -657,7 +710,7 @@ async function recordReviewAndMaybeRemove(input: {
         reasonCode: PORTFOLIO_INACTIVITY_REASON,
         previousOwnerIdentityKey: current.sellerIdentityKey,
         previousOwnerName: current.sellerCanonicalName,
-        ownerStartedAt: current.createdAt,
+        ownerStartedAt: current.assignmentStartedAt,
         ownerEndedAt: endedAt,
         lastApprovedSalesOrderId: input.lastInvoice?.salesOrderId ?? null,
         lastApprovedSalesOrderCode: input.lastInvoice?.salesOrderCode ?? null,
@@ -686,7 +739,7 @@ async function recordReviewAndMaybeRemove(input: {
       },
     });
   });
-  return "REMOVED";
+  return removed ? "REMOVED" : "NO_CHANGE";
 }
 
 export async function applyCommercialOwnerInactivity(
@@ -712,7 +765,8 @@ export async function applyCommercialOwnerInactivity(
   let removed = 0;
   let preserved = 0;
   let unchanged = 0;
-  let neverInvoiced = 0;
+  let neverInvoicedWithinGrace = 0;
+  let neverInvoicedReviewDue = 0;
   let dataAnomaly = 0;
 
   for (const owner of owners) {
@@ -727,20 +781,15 @@ export async function applyCommercialOwnerInactivity(
       referenceDate,
       lastApprovedIssueDate: lastInvoice?.invoiceDate ?? null,
       lastValidInvoiceDate: lastInvoice?.invoiceDate ?? null,
+      assignmentClockDate: assignmentClockDate(owner, lastInvoice),
       proposals: evidence.proposals.get(owner.customerId) ?? [],
       contacts: evidence.contacts.get(owner.customerId) ?? [],
     });
     const decision = decideRow({ owner, lastInvoice, preservation, referenceDate });
-    if (decision.status === "NEVER_INVOICED" || decision.reasonCode === NEVER_INVOICED) {
-      neverInvoiced += 1;
-      results.push({
-        customerId: owner.customerId,
-        action: "REVIEW_REQUIRED",
-        reasonCode: NEVER_INVOICED,
-      });
-      continue;
-    }
-    if (decision.status === "DATA_ANOMALY" || decision.reasonCode === MISSING_INVOICE_DATE) {
+    // Nunca faturado não é mais pulado: dentro da carência cai em NO_CHANGE; vencido segue a revisão comum.
+    if (decision.neverInvoicedStage === NEVER_INVOICED_WITHIN_GRACE) neverInvoicedWithinGrace += 1;
+    if (decision.neverInvoicedStage === NEVER_INVOICED_REVIEW_DUE) neverInvoicedReviewDue += 1;
+    if (decision.status === "DATA_ANOMALY") {
       dataAnomaly += 1;
       results.push({
         customerId: owner.customerId,
@@ -790,8 +839,10 @@ export async function applyCommercialOwnerInactivity(
     preserved,
     unchanged,
     skippedUnassigned: 0,
-    neverInvoiced,
-    neverApproved: neverInvoiced,
+    neverInvoiced: neverInvoicedWithinGrace + neverInvoicedReviewDue,
+    neverInvoicedWithinGrace,
+    neverInvoicedReviewDue,
+    neverApproved: neverInvoicedWithinGrace + neverInvoicedReviewDue,
     dataAnomaly,
     results,
   };
@@ -805,13 +856,15 @@ export function formatPortfolioInactivityPreview(preview: PortfolioInactivityPre
     `analisados=${preview.analyzedCustomers}`,
     `com responsável ativo=${preview.customersWithActiveOwner}`,
     `abaixo de ${portfolioInactivityDays()} dias por NF válida=${preview.withinActivityWindow}`,
+    `nunca faturados dentro da carência (${portfolioInactivityDays()} dias da atribuição)=${preview.neverInvoicedWithinGrace}`,
+    `nunca faturados vencidos (em revisão)=${preview.neverInvoicedReviewDue}`,
     `em revisão=${preview.inReview}`,
     `preservados por CRM=${preview.preservedByCrm}`,
     `elegíveis para remoção=${preview.removalEligible}`,
     `never invoiced=${preview.neverInvoiced}`,
     `data anomaly=${preview.dataAnomaly}`,
     `já sem responsável=${preview.alreadyUnassigned}`,
-    `identidade ativos=${preview.withinActivityWindow + preview.inReview + preview.neverInvoiced + preview.dataAnomaly}/${preview.customersWithActiveOwner}`,
+    `identidade ativos=${preview.withinActivityWindow + preview.neverInvoicedWithinGrace + preview.inReview + preview.dataAnomaly}/${preview.customersWithActiveOwner}`,
     "",
     `invoiceDateSource: NFE_XML_DH_EMI=${src.NFE_XML_DH_EMI} STOCK_DOCUMENT_DATE=${src.STOCK_DOCUMENT_DATE} NFE_PROCESSING_DATE=${src.NFE_PROCESSING_DATE} MISSING=${src.MISSING}`,
     `CRM: ${Object.entries(crm)
@@ -831,7 +884,9 @@ export function formatPortfolioInactivityPreview(preview: PortfolioInactivityPre
         `NF=${row.lastValidInvoiceNumber ?? "-"}`,
         `NF date=${row.lastValidInvoiceDate ?? "-"}`,
         `dateSource=${row.invoiceDateSource ?? "-"}`,
-        `dias=${row.daysSinceLastValidInvoice ?? "-"}`,
+        `clockSource=${row.inactivityClockSource ?? "-"}`,
+        `clockDate=${row.inactivityClockDate ?? "-"}`,
+        `dias=${row.daysSinceInactivityClock ?? "-"}`,
         `crm=${row.crmValid ? "sim" : "não"}`,
         `crmReason=${row.crmReasonCode ?? "-"}`,
         row.reasonCode,

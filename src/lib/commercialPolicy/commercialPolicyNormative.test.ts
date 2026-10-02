@@ -235,8 +235,10 @@ describe("rascunho e publicação", () => {
     assert.match(finding?.system ?? "", /a rotina conta do último faturamento válido/);
     assert.match(finding?.action ?? "", /não alterar a rotina/);
     const snapshot = buildCurrentCommercialPolicyNormativeSnapshot(RELEASE);
-    assert.equal(snapshot.portfolio.inactivityClock, "LAST_VALID_INVOICE");
-    assert.equal(snapshot.portfolio.neverInvoicedRemoved, false);
+    assert.match(aligned?.document ?? "", /desde o início da atribuição do Responsável Comercial atual/);
+    assert.match(aligned?.system ?? "", /Cliente nunca faturado: 90 dias corridos desde o início da atribuição do Responsável Comercial atual/);
+    assert.equal(snapshot.portfolio.inactivityClock, "LAST_VALID_INVOICE_OR_ASSIGNMENT_START");
+    assert.equal(snapshot.portfolio.neverInvoicedRemoved, true);
     assert.equal(snapshot.portfolio.inactivityDays, 90);
     assert.equal(snapshot.portfolio.crmEvidenceCanPreserveAssignment, true);
     assert.equal(snapshot.portfolio.systemBehavior, "REVIEW_THEN_REMOVE_OR_PRESERVE");

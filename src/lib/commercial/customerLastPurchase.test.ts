@@ -185,10 +185,12 @@ describe("Última compra × rotina de 90 dias — mesmo carregador, mesma data",
     const decision = decideCommercialOwnerInactivityAction({
       hasActiveOwner: true,
       lastValidInvoice: null,
+      assignmentStartedAt: spNoon("2026-09-01"),
       referenceDate: spNoon("2026-09-30"),
       preservation: evaluateCommercialPortfolioPreservation({ referenceDate: spNoon("2026-09-30"), lastApprovedIssueDate: null, proposals: [], contacts: [] }),
     });
-    assert.equal(decision.status, "NEVER_INVOICED");
+    assert.equal(decision.neverInvoiced, true);
+    assert.equal(decision.status, "NEVER_INVOICED_WITHIN_GRACE");
   });
 
   it("10. data inválida/anômala nunca vira MM/AAAA inventado", () => {

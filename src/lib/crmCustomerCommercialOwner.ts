@@ -389,6 +389,30 @@ export async function getCustomerCommercialOwnerPayload(
   };
 }
 
+/**
+ * Início do ciclo do Responsável Comercial (assignmentStartedAt), relógio dos 90 dias
+ * de cliente nunca faturado (POL-COM-001 §11). Só reinicia em nova atribuição,
+ * reativação ou troca real de responsável — comparada pela identidade consolidada
+ * da carteira (sellerIdentityKey e IDs/aliases). Salvar o mesmo responsável ou
+ * editar notas mantém a data.
+ */
+export function resolveCommercialOwnerAssignmentStart(input: {
+  existing:
+    | (CommercialOwnerAssignmentIdentity & { isActive: boolean; assignmentStartedAt: Date })
+    | null
+    | undefined;
+  selected: CommercialOwnerPortfolioScope;
+  now: Date;
+}): { startsNewCycle: boolean; assignmentStartedAt: Date } {
+  const existing = input.existing;
+  const sameActiveOwner =
+    Boolean(existing?.isActive) &&
+    assignmentMatchesCommercialOwnerPortfolio(existing!, input.selected);
+  return sameActiveOwner
+    ? { startsNewCycle: false, assignmentStartedAt: existing!.assignmentStartedAt }
+    : { startsNewCycle: true, assignmentStartedAt: input.now };
+}
+
 export type PatchCustomerCommercialOwnerInput = {
   customerId: string;
   auth: AppAuthContext;
@@ -476,6 +500,20 @@ export async function patchCustomerCommercialOwner(
         ? [selected.externalSellerId]
         : [];
 
+  const cycle = resolveCommercialOwnerAssignmentStart({
+    existing: existing
+      ? {
+          isActive: existing.isActive,
+          assignmentStartedAt: existing.assignmentStartedAt,
+          sellerIdentityKey: existing.sellerIdentityKey,
+          sellerExternalId: existing.sellerExternalId,
+          sellerAliasExternalIds: parseSellerAliasExternalIds(existing.sellerAliasExternalIds),
+        }
+      : null,
+    selected: adminSellerOptionPortfolioScope(selected),
+    now: new Date(),
+  });
+
   const data = {
     customerNameSnapshot: customer.companyName,
     sellerExternalId: selected.externalSellerId,
@@ -486,6 +524,7 @@ export async function patchCustomerCommercialOwner(
     assignmentSource: "MANUAL",
     isActive: true,
     blockAutoAssignUntilManual: false,
+    assignmentStartedAt: cycle.assignmentStartedAt,
     endedAt: null,
     endReason: null,
     notes: input.notes?.trim() || null,

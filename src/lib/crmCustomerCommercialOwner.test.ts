@@ -11,8 +11,13 @@ import {
   canAssignCustomerCommercialOwner,
   formatCommercialOwnerLabel,
   manualCommercialOwnerMatchesSellerScope,
+  resolveCommercialOwnerAssignmentStart,
   resolveCustomerCommercialOwner,
 } from "@/src/lib/crmCustomerCommercialOwner.js";
+import {
+  decideCommercialOwnerInactivityAction,
+  evaluateCommercialPortfolioPreservation,
+} from "@/src/lib/commercial/customerCommercialOwnerInactivity.js";
 import { buildCrmSellerCustomerPortfolioWhere } from "@/src/lib/crmCustomerSellerScope.js";
 import { buildCrmCustomerListScopeWhere } from "@/src/lib/crmCustomersList.js";
 import type { CrmCommercialAccessScope } from "@/src/lib/crmCommercialAccessScope.js";
@@ -358,5 +363,92 @@ describe("crmCustomerCommercialOwner", () => {
     });
     assert.match(label, /GISLENE LIMA/);
     assert.match(label, /464, 645, 646/);
+  });
+});
+
+describe("assignmentStartedAt — início do ciclo do Responsável Comercial (POL-COM-001 §11)", () => {
+  const now = new Date("2026-08-30T15:00:00.000Z");
+  const daysAgo = (days: number) => new Date(now.getTime() - days * 86_400_000);
+  const sellerA = { sellerIdentityKey: "ana souza", externalSellerId: 101, externalSellerIds: [101], responsible: "ANA SOUZA" };
+  const sellerB = { sellerIdentityKey: "bruno dias", externalSellerId: 202, externalSellerIds: [202, 203], responsible: "BRUNO DIAS" };
+  const rowOf = (
+    seller: typeof sellerA,
+    assignmentStartedAt: Date,
+    overrides: Partial<{ isActive: boolean; sellerIdentityKey: string; sellerExternalId: number | null; sellerAliasExternalIds: number[] }> = {}
+  ) => ({
+    isActive: true,
+    assignmentStartedAt,
+    sellerIdentityKey: seller.sellerIdentityKey,
+    sellerExternalId: seller.externalSellerId,
+    sellerAliasExternalIds: seller.externalSellerIds,
+    ...overrides,
+  });
+
+  it("nova atribuição (sem responsável) inicia o ciclo agora", () => {
+    assert.deepEqual(resolveCommercialOwnerAssignmentStart({ existing: null, selected: sellerB, now }), {
+      startsNewCycle: true,
+      assignmentStartedAt: now,
+    });
+  });
+
+  it("caso 9: troca real de A (há 100 dias) para B reinicia o ciclo hoje e o cliente nunca faturado volta à carência", () => {
+    const cycle = resolveCommercialOwnerAssignmentStart({ existing: rowOf(sellerA, daysAgo(100)), selected: sellerB, now });
+    assert.equal(cycle.startsNewCycle, true);
+    assert.equal(cycle.assignmentStartedAt.getTime(), now.getTime());
+    const decision = decideCommercialOwnerInactivityAction({
+      hasActiveOwner: true,
+      lastValidInvoice: null,
+      assignmentStartedAt: cycle.assignmentStartedAt,
+      referenceDate: now,
+      preservation: evaluateCommercialPortfolioPreservation({ referenceDate: now, lastApprovedIssueDate: null, proposals: [], contacts: [] }),
+    });
+    assert.equal(decision.status, "NEVER_INVOICED_WITHIN_GRACE");
+    assert.equal(decision.daysSinceInactivityClock, 0);
+    assert.equal(decision.action, "KEEP_OWNER");
+  });
+
+  it("casos 10 e 11: salvar de novo o mesmo responsável (com ou sem novas notas) não muda assignmentStartedAt", () => {
+    const started = daysAgo(50);
+    const cycle = resolveCommercialOwnerAssignmentStart({ existing: rowOf(sellerB, started), selected: sellerB, now });
+    assert.equal(cycle.startsNewCycle, false);
+    assert.equal(cycle.assignmentStartedAt.getTime(), started.getTime());
+    // O PATCH de notas reenvia o mesmo sellerOptionKey: é o mesmo caminho, e as notas não entram na identidade.
+    const service = readFileSync(join(process.cwd(), "src/lib/crmCustomerCommercialOwner.ts"), "utf8");
+    assert.match(service, /assignmentStartedAt: cycle\.assignmentStartedAt/);
+    assert.doesNotMatch(service, /assignmentStartedAt: new Date\(\)/);
+  });
+
+  it("mesmo vendedor reconhecido por ID consolidado (linha legada com outra chave) não reinicia", () => {
+    const started = daysAgo(50);
+    const legacy = rowOf(sellerB, started, { sellerIdentityKey: "__ID_ONLY__:203", sellerExternalId: 203, sellerAliasExternalIds: [203] });
+    assert.equal(resolveCommercialOwnerAssignmentStart({ existing: legacy, selected: sellerB, now }).startsNewCycle, false);
+    const other = rowOf(sellerB, started, { sellerIdentityKey: "__ID_ONLY__:999", sellerExternalId: 999, sellerAliasExternalIds: [999] });
+    assert.equal(resolveCommercialOwnerAssignmentStart({ existing: other, selected: sellerB, now }).startsNewCycle, true);
+  });
+
+  it("caso 12: reativação manual de responsável inativo inicia o ciclo agora e libera a autoatribuição", () => {
+    const removed = rowOf(sellerB, daysAgo(200), { isActive: false });
+    const cycle = resolveCommercialOwnerAssignmentStart({ existing: removed, selected: sellerB, now });
+    assert.equal(cycle.startsNewCycle, true);
+    assert.equal(cycle.assignmentStartedAt.getTime(), now.getTime());
+    const service = readFileSync(join(process.cwd(), "src/lib/crmCustomerCommercialOwner.ts"), "utf8");
+    assert.match(service, /blockAutoAssignUntilManual: false,\s+assignmentStartedAt: cycle\.assignmentStartedAt,/);
+  });
+
+  it("schema e migration: campo aditivo com backfill por createdAt", () => {
+    const schema = readFileSync(join(process.cwd(), "prisma/schema.prisma"), "utf8");
+    assert.match(schema, /assignmentStartedAt\s+DateTime\s+@default\(now\(\)\)\s+@db\.Timestamp\(6\)/);
+    const sql = readFileSync(
+      join(process.cwd(), "prisma/migrations/20261002120000_crm_owner_assignment_started_at/migration.sql"),
+      "utf8"
+    );
+    assert.match(sql, /ADD COLUMN IF NOT EXISTS "assignmentStartedAt" TIMESTAMP\(6\)/);
+    assert.match(sql, /SET "assignmentStartedAt" = "createdAt"\s+WHERE "assignmentStartedAt" IS NULL/);
+    assert.match(sql, /ALTER COLUMN "assignmentStartedAt" SET NOT NULL/);
+    const statements = sql
+      .split("\n")
+      .filter((line) => !line.trim().startsWith("--"))
+      .join("\n");
+    assert.doesNotMatch(statements, /\bDROP\b|\bDELETE\b|\bTRUNCATE\b|\bRENAME\b|"updatedAt"/i);
   });
 });
