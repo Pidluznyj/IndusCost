@@ -301,6 +301,9 @@ src/lib/analistaCompras.perm43.test.ts
 src/lib/granularPermissions.perm44.rc.test.ts
 src/lib/security/permissionsTreeUi/permissionsTreeUi.test.ts
 src/components/admin/PermissionsTree.test.tsx
+src/lib/commercial/customerActivityMap/customerActivityMap.test.ts
+src/lib/commercial/customerActivityMap/customerActivityMapService.test.ts
+src/components/contextual/customerActivityMap/customerActivityMapVisual.test.ts
 src/lib/satisfaction/satisfactionContracts.test.ts
 src/lib/satisfaction/satisfactionInvitationFilters.test.ts
 src/lib/satisfaction/satisfactionMetrics.test.ts

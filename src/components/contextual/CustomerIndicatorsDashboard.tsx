@@ -16,6 +16,7 @@ import {
   YAxis,
 } from "recharts";
 import { Loader2, X } from "lucide-react";
+import { CustomerActivityMapSection } from "./customerActivityMap/CustomerActivityMapSection";
 
 type ChartRow = { key: string; label: string; count: number };
 
@@ -166,6 +167,8 @@ export function CustomerIndicatorsDashboard() {
           hint="Pré-venda auxiliar — não substitui pedidos."
         />
       </ContextualDashboardKpiGrid>
+
+      <CustomerActivityMapSection />
 
       <div className="rounded-2xl border border-border bg-card p-5 space-y-3">
         <div className="flex flex-wrap items-start justify-between gap-2">

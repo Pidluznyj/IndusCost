@@ -575,6 +575,7 @@ import {
   buildSnapshotSaveData,
 } from "./src/lib/newProductSimulationSnapshot.js";
 import { buildCustomerIndicatorsPayload, normalizeBrazilUf } from "./src/lib/customerIndicators.js";
+import { registerCustomerActivityMapRoutes } from "./src/lib/commercial/customerActivityMap/customerActivityMapRoutes.js";
 import {
   buildCustomerListResponse,
   buildCustomerListWhere,
@@ -14122,6 +14123,9 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
       res.status(500).json({ error: "Erro ao listar clientes." });
     }
   });
+
+  // Clientes › Indicadores › Mapa de Atuação (somente leitura).
+  registerCustomerActivityMapRoutes(app, { requireAppAuth, requireResource });
 
   /** Indicadores agregados do cadastro (somente leitura; base: SalesOrder). */
   app.get("/api/customers/indicators", requireAppAuth, requireResource("commercial.customers", "view"), async (_req, res) => {
