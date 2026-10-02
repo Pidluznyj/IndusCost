@@ -207,3 +207,35 @@ git checkout perf/cash-flow-light-hardening
 ```
 
 Não usar `./scripts/fleetServerDeployValidate.sh` enquanto ele puxa `origin/main` em `/opt/induscost`.
+
+# Auditoria independente de fechamento
+
+Releitura do código em 2026-10-02, sem usar o relatório anterior como prova. HEAD de código da missão: `fbd071d`. Este arquivo é documentação.
+
+## O que o código confirma
+
+- Não existe `CashFlowBaseContext`, `CashFlowReadModel` nem cache financeiro novo desta missão.
+- Não há migration nem índice criado pela missão.
+- `resolveCashFlowProjectionMode()` aparece nove vezes, uma em cada handler HTTP do Fluxo: audit, dashboard, export, annual-comparison, daily-radar, cost-centers, titles, export-data, export.xlsx. Todos passam o modo ao loader. Os loaders nascem `"legacy"`.
+- Relatório executivo, tesouraria, rotas de Contas a Receber, detalhe do pedido e comissões não leem a flag. `getOrderFullAudit` permanece nesses módulos.
+- O ramo light de `buildFinanceArEffectiveContextsFromLightProjection` e `buildLightOrderContextGroups` não chama `getOrderFullAudit` e não tem `catch` que volte ao legacy. Falha de pedido incrementa `orderProjectionFailures` e segue nos demais.
+- Cliente e portfólio no light viram uma união e uma chamada de `loadCashFlowOrderProjections`.
+- Dashboard usa filtros da página mais janela de baixa. Annual usa `createAnnualComparisonBaseFilters` e o ano da query só escolhe o gráfico. Radar usa carteira aberta, sem período, e `arRealizedOnlyRows` vazio.
+- Annual e radar no frontend usam `useSectionVisible` (`IntersectionObserver`) e `AbortController`. O dashboard também aborta o fetch ao trocar filtro.
+- `cf:dashboard` continua sendo o fim do JSON do dashboard, que ainda inclui o spotlight. A métrica não foi redefinida.
+- Spotlight, a segunda query de YTD, o `findMany` de AP depois da projeção e a leitura de todos os runs O2C permanecem. Sem medição, não foram alterados.
+- Export CSV e audit da tela usam `loadCashFlowRows` com a mesma flag do dashboard. O CSV é `buildFinanceCashFlowExportCsv` do mesmo payload do builder, com o YTD canônico injetado na rota, no mesmo campo que a tela grava em `cashReceivedYtd`.
+
+## O que não foi comprovado
+
+`127.0.0.1:5432` responde `ECONNREFUSED`. Não há `psql`, `pg_ctl` nem Docker nesta máquina. `DATABASE_URL` aponta para `localhost` / `induscost`. Banco remoto, homologação e produção não foram acessados. Um shadow em banco vazio não seria população representativa e não seria aceito como zero divergências.
+
+```text
+orders compared: não executado
+schedules compared: não executado
+mismatches: desconhecido
+benchmark before/after: não medido
+PORTFOLIO_ORDER_LIMIT em dados: não medido (configurado = 80)
+```
+
+Por isso o status permanece NÃO APROVADO. A única dependência externa restante é um PostgreSQL local ou de homologação isolada, com a carteira real, para shadow e benchmark.
