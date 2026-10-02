@@ -75,8 +75,10 @@ Transições fora desse fluxo são recusadas (`assertCampaignTransition`).
 apontam. Depois disso, período avaliado e questionário não mudam mais — só a
 janela de resposta e textos de apoio.
 
-**Exclusão**: apenas rascunho nunca publicado, sem convites e sem respostas.
-Todo o resto encerra ou arquiva — histórico não some.
+**Exclusão**: é sempre **lógica** e restrita ao Super administrador, com
+confirmação pelo código da pesquisa. A pesquisa some das telas e das métricas,
+os links e sessões públicas são revogados no mesmo ato e ela deixa de aceitar
+qualquer alteração — mas nada é apagado do banco. Histórico não some.
 
 ---
 
@@ -200,3 +202,31 @@ Registramos `requestId`, `campaignId`, `responseId`, `event`, `result`,
 Nunca: token, cookie, telefone, CNPJ, comentário, respostas, secret do
 Turnstile. Não há IP/User-Agent persistido como dado de negócio, nem
 fingerprinting, nem tracking de terceiros.
+
+---
+
+## 11. Action points (pesquisa encerrada)
+
+Depois que a pesquisa é **encerrada** (ou arquivada), a página de resultados
+ganha a aba **Action points**. Ela lista todos os pontos de atenção — cada nota
+crítica (≤ 2) de resposta enviada — e permite registrar **um** action point por
+ponto de atenção (a âncora é a resposta crítica, `answerId` UNIQUE).
+
+| Campo | Regra |
+|---|---|
+| Responsável | Usuário ativo do IndusCost. Obrigatório. O nome fica em snapshot. |
+| Plano de ação | Texto obrigatório. |
+| Data limite | Obrigatória. |
+| Prioridade | Baixa · Média (padrão) · Alta. |
+| Causa identificada | Opcional. |
+| Situação | Aberto → Em andamento → Concluído / Cancelado. |
+| Resultado da ação | Obrigatório para concluir. |
+| Retorno dado ao cliente em | Opcional — fecha o ciclo com o cliente. |
+
+- **Atrasado** é derivado no backend: prazo vencido e situação ainda aberta ou
+  em andamento. Não é persistido.
+- Pesquisa aberta não aceita action point (`LOCKED`).
+- Permissões: `commercial.satisfaction` **view** para consultar e **update**
+  para criar/editar. O escopo de carteira do vendedor vale aqui também.
+- Auditoria registra criação/alteração com situação, prazo e responsável —
+  nunca o texto do plano.

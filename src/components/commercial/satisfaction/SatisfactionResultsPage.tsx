@@ -1,6 +1,7 @@
 /**
  * Resultado completo de uma pesquisa — página inteira (não modal), com abas
- * Resumo, Critérios, Respostas e Comentários.
+ * Resumo, Critérios, Respostas e Comentários — e, depois de encerrada,
+ * Action points.
  */
 
 import React, { useCallback, useEffect, useState } from "react";
@@ -14,12 +15,13 @@ import {
   type SatisfactionDashboard,
   type SatisfactionResponseRow,
 } from "./satisfactionApi.js";
+import { SatisfactionActionPointsTab } from "./SatisfactionActionPointsTab.js";
 import {
   CustomerAutocompleteFilter,
   type EntityAutocompleteSelection,
 } from "@/src/components/common/CustomerAutocompleteFilter";
 
-type TabId = "summary" | "criteria" | "responses" | "comments";
+type TabId = "summary" | "criteria" | "responses" | "comments" | "actionPoints";
 
 const TABS: Array<{ id: TabId; label: string }> = [
   { id: "summary", label: "Resumo" },
@@ -136,6 +138,12 @@ export function SatisfactionResultsPage() {
   }
 
   const totalPages = Math.max(1, Math.ceil(responsesTotal / pageSize));
+  // Action points só existem depois que a pesquisa foi encerrada.
+  const campaignStatus = data?.campaign?.status;
+  const tabs =
+    campaignStatus === "CLOSED" || campaignStatus === "ARCHIVED"
+      ? [...TABS, { id: "actionPoints" as const, label: "Action points" }]
+      : TABS;
 
   return (
     <div className="space-y-4">
@@ -159,7 +167,7 @@ export function SatisfactionResultsPage() {
       </div>
 
       <div className="flex gap-1 border-b border-[#E2E8F0]" role="tablist">
-        {TABS.map((entry) => (
+        {tabs.map((entry) => (
           <button
             key={entry.id}
             type="button"
@@ -231,6 +239,8 @@ export function SatisfactionResultsPage() {
           </table>
         </div>
       ) : null}
+
+      {tab === "actionPoints" ? <SatisfactionActionPointsTab campaignId={campaignId} /> : null}
 
       {tab === "responses" || tab === "comments" ? (
         <div className="space-y-3">

@@ -364,7 +364,7 @@ export function createSatisfactionCampaignService(deps: { prisma: PrismaClient }
       userId: string | null
     ) {
       const current = await prisma.satisfactionSurveyCampaign.findUnique({ where: { id } });
-      if (!current) throw new SatisfactionDomainError("Pesquisa não encontrada.", "NOT_FOUND");
+      if (!current || current.deletedAt) throw new SatisfactionDomainError("Pesquisa não encontrada.", "NOT_FOUND");
 
       const locked = isCampaignSemanticallyLocked(
         current.status as SatisfactionCampaignStatusValue,
@@ -425,9 +425,9 @@ export function createSatisfactionCampaignService(deps: { prisma: PrismaClient }
     ): Promise<{ added: number; removed: number; total: number }> {
       const campaign = await prisma.satisfactionSurveyCampaign.findUnique({
         where: { id: campaignId },
-        select: { id: true, status: true, publishedAt: true },
+        select: { id: true, status: true, publishedAt: true, deletedAt: true },
       });
-      if (!campaign) throw new SatisfactionDomainError("Pesquisa não encontrada.", "NOT_FOUND");
+      if (!campaign || campaign.deletedAt) throw new SatisfactionDomainError("Pesquisa não encontrada.", "NOT_FOUND");
       if (campaign.status !== "DRAFT") {
         throw new SatisfactionDomainError(
           "A audiência só pode ser alterada enquanto a pesquisa é um rascunho.",
@@ -522,7 +522,7 @@ export function createSatisfactionCampaignService(deps: { prisma: PrismaClient }
         where: { id },
         include: { template: { include: { questions: { orderBy: { sortOrder: "asc" } } } } },
       });
-      if (!campaign) throw new SatisfactionDomainError("Pesquisa não encontrada.", "NOT_FOUND");
+      if (!campaign || campaign.deletedAt) throw new SatisfactionDomainError("Pesquisa não encontrada.", "NOT_FOUND");
 
       assertCampaignTransition(campaign.status as SatisfactionCampaignStatusValue, "OPEN");
 
@@ -629,9 +629,11 @@ export function createSatisfactionCampaignService(deps: { prisma: PrismaClient }
     async closeCampaign(id: string, userId: string | null) {
       const campaign = await prisma.satisfactionSurveyCampaign.findUnique({
         where: { id },
-        select: { id: true, status: true },
+        select: { id: true, status: true, deletedAt: true },
       });
-      if (!campaign) throw new SatisfactionDomainError("Pesquisa não encontrada.", "NOT_FOUND");
+      if (!campaign || campaign.deletedAt) {
+        throw new SatisfactionDomainError("Pesquisa não encontrada.", "NOT_FOUND");
+      }
       assertCampaignTransition(campaign.status as SatisfactionCampaignStatusValue, "CLOSED");
 
       const updated = await prisma.satisfactionSurveyCampaign.update({
@@ -651,9 +653,11 @@ export function createSatisfactionCampaignService(deps: { prisma: PrismaClient }
     async archiveCampaign(id: string, userId: string | null) {
       const campaign = await prisma.satisfactionSurveyCampaign.findUnique({
         where: { id },
-        select: { id: true, status: true },
+        select: { id: true, status: true, deletedAt: true },
       });
-      if (!campaign) throw new SatisfactionDomainError("Pesquisa não encontrada.", "NOT_FOUND");
+      if (!campaign || campaign.deletedAt) {
+        throw new SatisfactionDomainError("Pesquisa não encontrada.", "NOT_FOUND");
+      }
       assertCampaignTransition(campaign.status as SatisfactionCampaignStatusValue, "ARCHIVED");
 
       const updated = await prisma.satisfactionSurveyCampaign.update({
@@ -708,7 +712,7 @@ export function createSatisfactionCampaignService(deps: { prisma: PrismaClient }
     /** Duplica como novo rascunho: mesma configuração, audiência e história zeradas. */
     async duplicateCampaign(id: string, userId: string | null) {
       const source = await prisma.satisfactionSurveyCampaign.findUnique({ where: { id } });
-      if (!source) throw new SatisfactionDomainError("Pesquisa não encontrada.", "NOT_FOUND");
+      if (!source || source.deletedAt) throw new SatisfactionDomainError("Pesquisa não encontrada.", "NOT_FOUND");
 
       const baseCode = `${source.code}_COPIA`;
       let code = baseCode;

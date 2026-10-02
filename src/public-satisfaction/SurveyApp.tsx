@@ -178,6 +178,8 @@ export function SurveyApp() {
 
   const versionRef = useRef<number | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** Só vira true quando o cliente altera algo: abrir o link não é "começar". */
+  const dirtyRef = useRef(false);
   /** Gerada UMA vez por sessão: é o que torna o reenvio idempotente. */
   const idempotencyKey = useRef<string>(
     (globalThis.crypto?.randomUUID?.() ?? `k-${Date.now()}-${Math.random()}`) as string
@@ -330,6 +332,7 @@ export function SurveyApp() {
 
   useEffect(() => {
     if (phase.kind !== "form") return;
+    if (!dirtyRef.current) return;
     scheduleSave();
     return () => {
       if (saveTimer.current) clearTimeout(saveTimer.current);
@@ -337,16 +340,19 @@ export function SurveyApp() {
   }, [answers, respondentName, respondentPhone, phase.kind, scheduleSave]);
 
   const setRating = (code: string, rating: number) => {
+    dirtyRef.current = true;
     setAnswers((prev) => ({ ...prev, [code]: { ...prev[code], rating } }));
     setErrors((prev) => ({ ...prev, [code]: "" }));
   };
 
   const setText = (code: string, text: string) => {
+    dirtyRef.current = true;
     setAnswers((prev) => ({ ...prev, [code]: { ...prev[code], text } }));
     setErrors((prev) => ({ ...prev, [code]: "" }));
   };
 
   const setDate = (code: string, date: string) => {
+    dirtyRef.current = true;
     setAnswers((prev) => ({ ...prev, [code]: { ...prev[code], date } }));
     setErrors((prev) => ({ ...prev, [code]: "" }));
   };
