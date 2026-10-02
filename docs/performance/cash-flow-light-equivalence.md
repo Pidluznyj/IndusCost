@@ -1,7 +1,7 @@
 # Fluxo de Caixa — equivalência legacy × light (Prompt 2)
 
-Data: 2026-10-02  
-Branch: `perf/cash-flow-light-hardening`  
+Data: 2026-10-02
+Branch: `perf/cash-flow-light-hardening`
 HEAD inicial da missão: `ab39ab435ade27297fe25210847701cdeb194f79`
 
 ## Veredito
@@ -10,7 +10,7 @@ HEAD inicial da missão: `ab39ab435ade27297fe25210847701cdeb194f79`
 
 O shadow live, o comparativo de agregados (dashboard, anual, radar) e a auditoria do teto de 80 em dados reais não rodaram. PostgreSQL `localhost:5432` / `induscost` está inacessível (P1001). Não há Postgres instalado nesta máquina. Não houve fallback para banco remoto, homologação ou produção.
 
-Sem essa prova, a flag não foi promovida e os consumers não foram alinhados (Prompt 3 não executado).
+Sem essa prova, a flag não foi promovida. Os handlers HTTP do Fluxo passaram a ler a mesma flag (o default continua legacy). O alinhamento de código não substitui o shadow live.
 
 ## O que a fronteira compara
 

@@ -1,8 +1,8 @@
 # Fluxo de Caixa — baseline de hardening (Prompt 1)
 
-Data: 2026-10-02  
-Branch: `perf/cash-flow-light-hardening`  
-HEAD inicial: `ab39ab435ade27297fe25210847701cdeb194f79`  
+Data: 2026-10-02
+Branch: `perf/cash-flow-light-hardening`
+HEAD inicial: `ab39ab435ade27297fe25210847701cdeb194f79`
 Banco usado na medição: nenhum. `DATABASE_URL` aponta para `localhost:5432` / `induscost`. O servidor não está no ar (P1001) e não há instalação local de PostgreSQL nem Docker. Homologação remota, Tailscale, Nginx e produção não foram acessados.
 
 Working tree preexistente, preservada e fora deste escopo: `tmp-customer-export-tsc.txt`, `tmp-origin-page.tsx`, `tmp-resolve-page.cjs`, `tmp-resolve-page.js`.
@@ -121,7 +121,7 @@ No Fluxo, a chamada está em `buildFinanceArEffectiveContextsForOrders` quando `
 6. Composição em memória com os mesmos mappers do audit e `projectEffectiveScheduleForOrderAudit`.
 7. O caller monta o input com `buildEffectiveScheduleInputFromAudit` e chama `buildSalesOrderEffectiveFinancialSchedule`.
 
-Não há dedupe do loader. Com filtro de cliente, as duas entradas do enrich podem chamar o loader duas vezes.
+Com filtro de cliente, o enrich light une os ids de cliente e de portfólio e chama `loadCashFlowOrderProjections` uma vez. O merge continua com o portfólio sobrescrevendo o cliente. O caminho legacy segue com duas cargas em paralelo.
 
 `projectOrderAuditReceivables` usa `new Date()` dentro do loader. O audit 360º faz o mesmo (`referenceDate: new Date()` na montagem dos CR). Os dois lados ignoram o `referenceDate` do caller nesse status de atraso. Não é uma divergência light-only.
 
