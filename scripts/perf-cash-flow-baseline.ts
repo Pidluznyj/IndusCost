@@ -1,3 +1,5 @@
+import "dotenv/config";
+
 /**
  * PERF 3.1B — linha de base do Fluxo de Caixa (serviços reais + Prisma).
  *
@@ -35,26 +37,45 @@ async function main() {
   const { mkdirSync, writeFileSync } = await import("node:fs");
   const path = await import("node:path");
   const { prisma } = await import("../src/lib/prisma.js");
-  const { measureDevPerfScenario, clearDevPerfSamples, getDevPerfSamples } =
+  const { measureDevPerfPhase, measureDevPerfScenario, clearDevPerfSamples, getDevPerfSamples } =
     await import("../src/lib/devPerfBaseline.server.js");
   const {
+    loadCashFlowArCanonicalCash,
     loadCashFlowRows,
     loadDailyRadarPortfolioRows,
   } = await import("../src/lib/financeCashFlowRoutes.js");
   const {
     parseFinanceCashFlowDashboardFilters,
+    resolveCashFlowArSettlementLoadWindow,
     resolveFinanceCashFlowFiltersForLoad,
+    toArLoadFilters,
+    toCashFlowPortfolioArFilters,
   } = await import("../src/lib/financeCashFlowDashboard.js");
+  const { loadFinanceArManagementRowsFromPrisma } = await import(
+    "../src/lib/financeAccountsReceivableManagement.server.js"
+  );
+  const {
+    PORTFOLIO_ORDER_LIMIT,
+    summarizeFinanceArPortfolioOrderLimit,
+  } = await import("../src/lib/finance/financeAccountsReceivableEffectiveTitles.server.js");
   const { loadRawMaterialCostCenterSpotlight } = await import(
     "../src/lib/financeCashFlowRawMaterialSpotlight.server.js"
   );
   const { loadAnnualComparisonPortfolioRows } = await import(
     "../src/lib/financeExecutiveReportAnnualLoad.js"
   );
-  const { parseAnnualComparisonYear } = await import(
-    "../src/lib/financeCashFlowAnnualComparison.js"
+  const {
+    createAnnualComparisonBaseFilters,
+    injectCashReceivedIntoAnnualComparisonMonths,
+    parseAnnualComparisonYear,
+  } = await import("../src/lib/financeCashFlowAnnualComparison.js");
+  const { injectCashReceivedIntoMonthlyRows } = await import(
+    "../src/lib/financeCashFlowExecutiveSummary.js"
   );
-  const { parseDailyRadarQuery } = await import(
+  const { resolveFinanceReceiptsFreshness } = await import(
+    "../src/lib/financeReceiptsCanonical.server.js"
+  );
+  const { createDailyRadarDashboardFilters, parseDailyRadarQuery } = await import(
     "../src/lib/financeCashFlowDailyRadar.js"
   );
   const {
@@ -103,6 +124,7 @@ async function main() {
       lastProjectionMode: string | null;
       lightLoaderCalls: number;
       fullAuditCalls: number;
+      orderProjectionFailures: number;
     };
   };
 
@@ -306,13 +328,39 @@ async function main() {
       referenceDate,
       load.arSyncCutoff,
       load.apSyncCutoff,
-      { orderContexts: load.orderContexts, nfeOrderLinks: load.nfeOrderLinks }
+      {
+        orderContexts: load.orderContexts,
+        nfeOrderLinks: load.nfeOrderLinks,
+        arRealizedOnlyRows: load.arRealizedOnlyRows,
+      }
     );
-    const rawMaterialCostCenterSpotlight = await loadRawMaterialCostCenterSpotlight({
-      ytdYear: referenceDate.getFullYear(),
-      companyName: dashboardFilters.companyName,
-      referenceDate,
-    });
+    const cashFlowYear = dashboardFilters.year ?? referenceDate.getFullYear();
+    const { cashByCivilMonth, cashReceivedYtd } = await loadCashFlowArCanonicalCash(
+      load.arRows,
+      cashFlowYear,
+      referenceDate
+    );
+    payload.executiveSummary.monthlyTimeline = injectCashReceivedIntoMonthlyRows(
+      payload.executiveSummary.monthlyTimeline,
+      cashFlowYear,
+      cashByCivilMonth
+    );
+    payload.executiveSummary.plannedMonthlyTimeline = injectCashReceivedIntoMonthlyRows(
+      payload.executiveSummary.plannedMonthlyTimeline,
+      cashFlowYear,
+      cashByCivilMonth
+    );
+    payload.executiveSummary.receivable.cashReceivedYtd = cashReceivedYtd;
+    const [rawMaterialCostCenterSpotlight] = await Promise.all([
+      loadRawMaterialCostCenterSpotlight({
+        ytdYear: referenceDate.getFullYear(),
+        companyName: dashboardFilters.companyName,
+        referenceDate,
+      }),
+      measureDevPerfPhase("receiptsFreshness", () =>
+        resolveFinanceReceiptsFreshness(prisma)
+      ),
+    ]);
     return timedAssembleDashboardPayload(payload, rawMaterialCostCenterSpotlight);
   }
 
@@ -324,7 +372,7 @@ async function main() {
       undefined,
       mode
     );
-    return timedBuildAnnual(
+    const payload = timedBuildAnnual(
       load.arRows,
       load.apRows,
       year,
@@ -333,6 +381,17 @@ async function main() {
       load.apSyncCutoff,
       { orderContexts: load.orderContexts, nfeOrderLinks: load.nfeOrderLinks }
     );
+    const { cashByCivilMonth } = await loadCashFlowArCanonicalCash(
+      load.arRows,
+      year,
+      referenceDate
+    );
+    payload.months = injectCashReceivedIntoAnnualComparisonMonths(
+      payload.months,
+      year,
+      cashByCivilMonth
+    );
+    return payload;
   }
 
   async function runRadar(mode: ProjectionMode) {
@@ -356,6 +415,38 @@ async function main() {
 
   const modes: ProjectionMode[] = ["legacy", "light"];
   const byMode: Record<string, unknown> = {};
+
+  async function auditOrderLimit(
+    label: string,
+    filters: ReturnType<typeof parseFinanceCashFlowDashboardFilters>,
+    settlementWindow: boolean
+  ) {
+    const arFilters = toCashFlowPortfolioArFilters(filters);
+    const loaded = await loadFinanceArManagementRowsFromPrisma(
+      prisma,
+      label === "dashboard" ? toArLoadFilters(filters) : arFilters,
+      referenceDate,
+      settlementWindow
+        ? { settlementWindow: resolveCashFlowArSettlementLoadWindow(filters) }
+        : undefined
+    );
+    const summary = await summarizeFinanceArPortfolioOrderLimit(prisma, loaded.rows);
+    console.info(
+      `[perf-cash-flow] order-limit ${label} candidates=${summary.candidateOrders} processed=${summary.processedOrders} limit=${summary.configuredLimit} reached=${summary.limitReached} excluded=${summary.ordersExcludedByLimit}`
+    );
+    return { population: label, arRows: loaded.rows.length, ...summary };
+  }
+
+  const orderLimitAudit = {
+    configuredConstant: PORTFOLIO_ORDER_LIMIT,
+    note:
+      "Contagem distinta antes do take. potentialExcludedProjectedAmount não é calculado: o valor oficial só existe depois do schedule FIN-05.",
+    populations: [
+      await auditOrderLimit("dashboard", dashboardFilters, true),
+      await auditOrderLimit("annual-comparison", createAnnualComparisonBaseFilters(), false),
+      await auditOrderLimit("daily-radar", createDailyRadarDashboardFilters(), false),
+    ],
+  };
 
   clearDevPerfSamples();
   console.info(`[perf-cash-flow] year=${YEAR} warmup=${WARMUP} runs=${RUNS}`);
@@ -412,6 +503,7 @@ async function main() {
       sharedPath: CASH_FLOW_PERF_SHARED_PATH_NOTE,
     },
     screenReadyMetric: "cf:ready (frontend; dashboard+annual+radar)",
+    orderLimitAudit,
     byProjectionSource: byMode,
     sampleCount: getDevPerfSamples().length,
   };

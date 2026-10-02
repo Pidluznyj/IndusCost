@@ -10,6 +10,7 @@ import type { CashFlowProjectionMode } from "./cashFlowLightProjectionFlag.js";
 import {
   recordCashFlowFullAuditCall,
   recordCashFlowLightLoaderCall,
+  recordCashFlowOrderProjectionFailure,
   recordCashFlowProjectionMode,
 } from "./cashFlowProjectionTelemetry.js";
 import { buildEffectiveScheduleInputFromAudit } from "@/src/lib/sales-orders/salesOrderDetailEffectiveFinancial.js";
@@ -22,10 +23,14 @@ import {
   buildFinanceArEffectiveSalesOrderWhere,
 } from "@/src/lib/financeArCancelledSalesOrderExclusion.server.js";
 import { shouldIncludeSalesOrderInOperationalReceivables } from "@/src/lib/financeArCancelledSalesOrderExclusion.js";
+import {
+  summarizePortfolioOrderLimitSelection,
+  type CashFlowPortfolioOrderLimitSummary,
+} from "@/src/lib/finance/cashFlowPortfolioLimitMath.js";
 
 const DEFAULT_ORDER_LIMIT = 24;
 /** Teto de pedidos distintos por portfólio AR (descrição + NF). */
-const PORTFOLIO_ORDER_LIMIT = 80;
+export const PORTFOLIO_ORDER_LIMIT = 80;
 /**
  * Mitigação de latência do Fluxo de Caixa (FC): quantas chamadas a
  * `getOrderFullAudit` (auditoria 360º completa — ~28 consultas por pedido)
@@ -268,6 +273,7 @@ async function buildFinanceArEffectiveContextsFromLightProjection(
         companyName: projection.companyName ?? null,
       } satisfies FinanceArEffectiveOrderContext);
     } catch (err) {
+      recordCashFlowOrderProjectionFailure();
       console.error(
         "loadFinanceArEffectiveOrderContexts(light): falha no pedido",
         order.orderCode,
@@ -339,6 +345,7 @@ async function buildFinanceArEffectiveContextsForOrders(
             companyName: personFromCr?.companyName ?? null,
           } satisfies FinanceArEffectiveOrderContext;
         } catch (err) {
+          recordCashFlowOrderProjectionFailure();
           console.error(
             "loadFinanceArEffectiveOrderContexts: falha no pedido",
             order.orderCode,
@@ -506,6 +513,64 @@ export async function loadFinanceArEffectiveOrderContextsForPortfolio(
     referenceDate,
     projectionMode
   );
+}
+
+const ORDER_ID_SELECT = { id: true } as const;
+
+/**
+ * Auditoria read-only do teto de pedidos. Não chama auditoria 360º nem o
+ * schedule. O valor projetado dos excluídos não é calculado: esse número só
+ * existe depois do motor FIN-05, e somar `totalNetValue` do pedido seria outra
+ * métrica.
+ */
+export async function summarizeFinanceArPortfolioOrderLimit(
+  prisma: PrismaClient,
+  rows: Array<Pick<FinanceArDashboardRow, "description" | "sourceInvoiceId">>,
+  limit = PORTFOLIO_ORDER_LIMIT
+): Promise<CashFlowPortfolioOrderLimitSummary> {
+  const fromDescriptions = collectFinanceArOrderCodesFromPortfolioRows(rows);
+  const fromLinks = await resolveFinanceArPortfolioSalesOrderRefs(prisma, rows);
+  const portfolioOrderCodes = [
+    ...new Set([...fromDescriptions, ...fromLinks.orderCodes]),
+  ];
+  const cap = Math.min(Math.max(limit, 1), PORTFOLIO_ORDER_LIMIT);
+  const priorityIds = [...new Set(fromLinks.salesOrderIds.filter(Boolean))];
+
+  const priorityEligible =
+    priorityIds.length > 0
+      ? await prisma.salesOrder.findMany({
+          where: buildFinanceArEffectiveSalesOrderWhere({
+            id: { in: priorityIds },
+          }) as never,
+          select: ORDER_ID_SELECT,
+          orderBy: { orderCode: "asc" },
+        })
+      : [];
+  const priorityEligibleIds = priorityEligible.map((order) => order.id);
+  const takenPriorityIds = priorityEligibleIds.slice(0, cap);
+
+  let secondaryEligibleIds: string[] = [];
+  const secondaryWhere = buildExactPortfolioSalesOrderWhere(portfolioOrderCodes, []);
+  if (secondaryWhere) {
+    const where = buildFinanceArEffectiveSalesOrderWhere({
+      AND: [
+        secondaryWhere,
+        takenPriorityIds.length > 0 ? { id: { notIn: takenPriorityIds } } : {},
+      ],
+    });
+    const secondary = await prisma.salesOrder.findMany({
+      where: where as never,
+      select: ORDER_ID_SELECT,
+      orderBy: { orderCode: "asc" },
+    });
+    secondaryEligibleIds = secondary.map((order) => order.id);
+  }
+
+  return summarizePortfolioOrderLimitSelection({
+    configuredLimit: cap,
+    priorityEligibleIdsInOrder: priorityEligibleIds,
+    secondaryEligibleIdsExcludingTakenPriority: secondaryEligibleIds,
+  });
 }
 
 export function mergeFinanceArEffectiveOrderContexts(

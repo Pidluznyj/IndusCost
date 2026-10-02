@@ -22,12 +22,18 @@ export type CashFlowProjectionTelemetry = {
   lightLoaderCalls: number;
   /** Execuções de `getOrderFullAudit` para montar contexto do Fluxo de Caixa. */
   fullAuditCalls: number;
+  /**
+   * Pedidos elegíveis cujo schedule não entrou no contexto porque o catch
+   * do builder engoliu o erro. Não inclui pedido filtrado por cancelamento.
+   */
+  orderProjectionFailures: number;
 };
 
 const state: CashFlowProjectionTelemetry = {
   lastProjectionMode: null,
   lightLoaderCalls: 0,
   fullAuditCalls: 0,
+  orderProjectionFailures: 0,
 };
 
 export function recordCashFlowProjectionMode(mode: CashFlowProjectionMode): void {
@@ -42,6 +48,10 @@ export function recordCashFlowFullAuditCall(): void {
   state.fullAuditCalls += 1;
 }
 
+export function recordCashFlowOrderProjectionFailure(): void {
+  state.orderProjectionFailures += 1;
+}
+
 export function getCashFlowProjectionTelemetry(): CashFlowProjectionTelemetry {
   return { ...state };
 }
@@ -50,4 +60,5 @@ export function resetCashFlowProjectionTelemetry(): void {
   state.lastProjectionMode = null;
   state.lightLoaderCalls = 0;
   state.fullAuditCalls = 0;
+  state.orderProjectionFailures = 0;
 }

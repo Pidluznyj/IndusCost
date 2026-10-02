@@ -193,9 +193,11 @@ describe("GATE DE EXECUÇÃO — legacy × light", () => {
       "fullAuditCalls",
       "lastProjectionMode",
       "lightLoaderCalls",
+      "orderProjectionFailures",
     ]);
     assert.equal(t.lastProjectionMode, null);
     assert.equal(t.fullAuditCalls, 0);
     assert.equal(t.lightLoaderCalls, 0);
+    assert.equal(t.orderProjectionFailures, 0);
   });
 });

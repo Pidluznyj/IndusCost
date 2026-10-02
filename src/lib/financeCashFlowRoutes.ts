@@ -251,11 +251,12 @@ function cashFlowArFilterOptions(bundle: Pick<FinanceArTitlesSourceBundle, "orde
  * (`resolveYtdDateRange`); o mapa mensal cobre todo o histórico dos títulos
  * em escopo, mas a injeção por mês só lê as chaves do ano pedido.
  */
-async function loadCashFlowArCanonicalCash(
+export async function loadCashFlowArCanonicalCash(
   arRows: readonly { externalId: number }[],
   year: number,
   referenceDate: Date
 ): Promise<{ cashByCivilMonth: Map<string, number>; cashReceivedYtd: number }> {
+  return measureDevPerfPhase("canonicalCash", async () => {
   const externalIds = [...new Set(arRows.map((row) => row.externalId))];
   const receiptsByReceivable = await listReceiptEventsByReceivables(prisma, externalIds);
   const cashByCivilMonth = sumReceivedAmountByCivilMonth(
@@ -268,6 +269,7 @@ async function loadCashFlowArCanonicalCash(
     receivableExternalIds: externalIds,
   });
   return { cashByCivilMonth, cashReceivedYtd };
+  });
 }
 
 export function registerFinanceCashFlowRoutes(app: express.Express, auth: AuthGuards) {
