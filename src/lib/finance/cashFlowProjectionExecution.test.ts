@@ -186,6 +186,24 @@ describe("GATE DE EXECUÇÃO — legacy × light", () => {
     assert.equal(t.lightLoaderCalls, 0);
   });
 
+  it("modo light no enrich com cliente e portfólio chama o loader uma vez e não o Full Audit", async () => {
+    resetCashFlowProjectionTelemetry();
+    const { enrichFinanceCashFlowArLoadBundle } = await import(
+      "@/src/lib/finance/financeCashFlowEffectiveAr.server.js"
+    );
+    const bundle = await enrichFinanceCashFlowArLoadBundle(
+      makePrisma(),
+      ROWS as never,
+      new Date("2026-03-15T12:00:00.000Z"),
+      { customerName: "Cliente", projectionMode: "light" }
+    );
+    const t = getCashFlowProjectionTelemetry();
+    assert.equal(t.lastProjectionMode, "light");
+    assert.equal(t.lightLoaderCalls, 1);
+    assert.equal(t.fullAuditCalls, 0);
+    assert.ok(bundle.orderContexts.length >= 1);
+  });
+
   it("a telemetria não carrega nada além de números e o modo", () => {
     resetCashFlowProjectionTelemetry();
     const t = getCashFlowProjectionTelemetry();

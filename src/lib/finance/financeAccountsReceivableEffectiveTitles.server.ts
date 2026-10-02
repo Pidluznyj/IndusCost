@@ -6,6 +6,7 @@ import type { PrismaClient } from "@prisma/client";
 import { buildSalesOrderEffectiveFinancialSchedule } from "./salesOrderEffectiveFinancialSchedule.js";
 import { getOrderFullAudit } from "./orderFullAuditService.js";
 import { loadCashFlowOrderProjections } from "./cashFlowOrderProjectionLoader.server.js";
+import type { CashFlowOrderProjection } from "./cashFlowOrderProjectionLoader.server.js";
 import type { CashFlowProjectionMode } from "./cashFlowLightProjectionFlag.js";
 import {
   recordCashFlowFullAuditCall,
@@ -230,7 +231,12 @@ async function buildFinanceArEffectiveContextsFromLightProjection(
     externalCustomerId: number | null;
     Customer: { companyName: string | null; taxId: string | null } | null;
   }>,
-  referenceDate: Date
+  referenceDate: Date,
+  /**
+   * Quando informado, a carga em lote já foi feita pelo caller (união de
+   * contextos). Não chama o loader de novo e não cai no Full Audit.
+   */
+  preloadedProjections?: Map<string, CashFlowOrderProjection>
 ): Promise<FinanceArEffectiveOrderContext[]> {
   const eligible = orders.filter((order) =>
     shouldIncludeSalesOrderInOperationalReceivables({
@@ -240,11 +246,16 @@ async function buildFinanceArEffectiveContextsFromLightProjection(
   );
   if (eligible.length === 0) return [];
 
-  recordCashFlowLightLoaderCall();
-  const projections = await loadCashFlowOrderProjections(prisma, {
-    salesOrderIds: eligible.map((order) => order.id),
-    referenceDate,
-  });
+  let projections: Map<string, CashFlowOrderProjection>;
+  if (preloadedProjections) {
+    projections = preloadedProjections;
+  } else {
+    recordCashFlowLightLoaderCall();
+    projections = await loadCashFlowOrderProjections(prisma, {
+      salesOrderIds: eligible.map((order) => order.id),
+      referenceDate,
+    });
+  }
 
   const contexts: FinanceArEffectiveOrderContext[] = [];
   for (const order of eligible) {
@@ -282,6 +293,71 @@ async function buildFinanceArEffectiveContextsFromLightProjection(
     }
   }
   return contexts;
+}
+
+/**
+ * Uma carga light para vários grupos de pedidos (cliente + portfólio).
+ * A união é determinística: percorre os grupos na ordem recebida e ignora
+ * id repetido. Cada grupo volta na própria ordem. Não há fallback para
+ * `getOrderFullAudit`.
+ */
+export async function buildLightOrderContextGroups(
+  prisma: PrismaClient,
+  groups: Array<
+    Array<{
+      id: string;
+      orderCode: string;
+      status: string | null;
+      sourcePresenceStatus: string | null;
+      externalCustomerId: number | null;
+      Customer: { companyName: string | null; taxId: string | null } | null;
+    }>
+  >,
+  referenceDate: Date
+): Promise<FinanceArEffectiveOrderContext[][]> {
+  recordCashFlowProjectionMode("light");
+  const seen = new Set<string>();
+  const ids: string[] = [];
+  for (const group of groups) {
+    for (const order of group) {
+      if (
+        !shouldIncludeSalesOrderInOperationalReceivables({
+          status: order.status,
+          sourcePresenceStatus: order.sourcePresenceStatus,
+        })
+      ) {
+        continue;
+      }
+      if (seen.has(order.id)) continue;
+      seen.add(order.id);
+      ids.push(order.id);
+    }
+  }
+  const projections =
+    ids.length === 0
+      ? new Map<string, CashFlowOrderProjection>()
+      : await loadSharedLightProjections(prisma, ids, referenceDate);
+  const built: FinanceArEffectiveOrderContext[][] = [];
+  for (const group of groups) {
+    built.push(
+      await buildFinanceArEffectiveContextsFromLightProjection(
+        prisma,
+        group,
+        referenceDate,
+        projections
+      )
+    );
+  }
+  return built;
+}
+
+async function loadSharedLightProjections(
+  prisma: PrismaClient,
+  salesOrderIds: string[],
+  referenceDate: Date
+): Promise<Map<string, CashFlowOrderProjection>> {
+  recordCashFlowLightLoaderCall();
+  return loadCashFlowOrderProjections(prisma, { salesOrderIds, referenceDate });
 }
 
 async function buildFinanceArEffectiveContextsForOrders(
@@ -364,14 +440,12 @@ async function buildFinanceArEffectiveContextsForOrders(
 }
 
 /**
- * Resolve pedidos do contexto (Pedido e/ou cliente) e monta agendas FIN-05.
+ * Resolve pedidos do contexto (Pedido e/ou cliente) sem montar a agenda.
  */
-export async function loadFinanceArEffectiveOrderContexts(
+export async function selectFinanceArEffectiveOrders(
   prisma: PrismaClient,
-  input: LoadFinanceArEffectiveOrderContextsInput,
-  referenceDate: Date = new Date(),
-  projectionMode: CashFlowProjectionMode = "legacy"
-): Promise<FinanceArEffectiveOrderContext[]> {
+  input: LoadFinanceArEffectiveOrderContextsInput
+) {
   if (!shouldLoadEffectiveContexts(input)) return [];
 
   const limit = Math.min(
@@ -411,7 +485,7 @@ export async function loadFinanceArEffectiveOrderContexts(
     whereParts.length === 1 ? whereParts[0]! : { AND: whereParts };
   const where = buildFinanceArEffectiveSalesOrderWhere(commercialWhere);
 
-  const orders = await prisma.salesOrder.findMany({
+  return prisma.salesOrder.findMany({
     where: where as never,
     select: {
       id: true,
@@ -424,7 +498,19 @@ export async function loadFinanceArEffectiveOrderContexts(
     orderBy: { issueDate: "desc" },
     take: limit,
   });
+}
 
+/**
+ * Resolve pedidos do contexto (Pedido e/ou cliente) e monta agendas FIN-05.
+ */
+export async function loadFinanceArEffectiveOrderContexts(
+  prisma: PrismaClient,
+  input: LoadFinanceArEffectiveOrderContextsInput,
+  referenceDate: Date = new Date(),
+  projectionMode: CashFlowProjectionMode = "legacy"
+): Promise<FinanceArEffectiveOrderContext[]> {
+  const orders = await selectFinanceArEffectiveOrders(prisma, input);
+  if (orders.length === 0) return [];
   return buildFinanceArEffectiveContextsForOrders(
     prisma,
     orders,
@@ -434,18 +520,13 @@ export async function loadFinanceArEffectiveOrderContexts(
 }
 
 /**
- * Carrega agendas FIN-05 para todos os pedidos inferidos do portfólio AR
- * (descrição Nomus + vínculo NF → SalesOrderNfeLink).
+ * Pedidos do portfólio AR (NF primeiro, depois código), já no teto, sem agenda.
  */
-export async function loadFinanceArEffectiveOrderContextsForPortfolio(
+export async function selectFinanceArPortfolioOrders(
   prisma: PrismaClient,
-  rows: Array<
-    Pick<FinanceArDashboardRow, "description" | "sourceInvoiceId">
-  >,
-  referenceDate: Date = new Date(),
-  limit = PORTFOLIO_ORDER_LIMIT,
-  projectionMode: CashFlowProjectionMode = "legacy"
-): Promise<FinanceArEffectiveOrderContext[]> {
+  rows: Array<Pick<FinanceArDashboardRow, "description" | "sourceInvoiceId">>,
+  limit = PORTFOLIO_ORDER_LIMIT
+) {
   const fromDescriptions = collectFinanceArOrderCodesFromPortfolioRows(rows);
   const fromLinks = await resolveFinanceArPortfolioSalesOrderRefs(prisma, rows);
   const portfolioOrderCodes = [
@@ -466,9 +547,6 @@ export async function loadFinanceArEffectiveOrderContextsForPortfolio(
     Customer: { select: { companyName: true, taxId: true } },
   } as const;
 
-  // Prioriza pedidos com vínculo NF→Pedido, mas NUNCA ultrapassa o cap:
-  // cada contexto FIN-05 chama getOrderFullAudit (pesado). Sem take, o FC
-  // carregava centenas de agendas e a tela ficava lenta.
   const priorityIds = [...new Set(fromLinks.salesOrderIds.filter(Boolean))];
   const priorityOrders =
     priorityIds.length > 0
@@ -504,7 +582,23 @@ export async function loadFinanceArEffectiveOrderContextsForPortfolio(
     }
   }
 
-  const orders = [...priorityOrders, ...secondaryOrders];
+  return [...priorityOrders, ...secondaryOrders];
+}
+
+/**
+ * Carrega agendas FIN-05 para todos os pedidos inferidos do portfólio AR
+ * (descrição Nomus + vínculo NF → SalesOrderNfeLink).
+ */
+export async function loadFinanceArEffectiveOrderContextsForPortfolio(
+  prisma: PrismaClient,
+  rows: Array<
+    Pick<FinanceArDashboardRow, "description" | "sourceInvoiceId">
+  >,
+  referenceDate: Date = new Date(),
+  limit = PORTFOLIO_ORDER_LIMIT,
+  projectionMode: CashFlowProjectionMode = "legacy"
+): Promise<FinanceArEffectiveOrderContext[]> {
+  const orders = await selectFinanceArPortfolioOrders(prisma, rows, limit);
   if (orders.length === 0) return [];
 
   return buildFinanceArEffectiveContextsForOrders(

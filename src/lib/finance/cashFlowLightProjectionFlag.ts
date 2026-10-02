@@ -25,7 +25,7 @@ export function isCashFlowLightProjectionEnabled(): boolean {
   return process.env[CASH_FLOW_LIGHT_PROJECTION_ENV] === "1";
 }
 
-/** Modo para os três endpoints do Fluxo de Caixa. Demais chamadores: legacy. */
+/** Modo para todos os handlers HTTP do Fluxo de Caixa. Demais chamadores: legacy. */
 export function resolveCashFlowProjectionMode(): CashFlowProjectionMode {
   return isCashFlowLightProjectionEnabled() ? "light" : "legacy";
 }

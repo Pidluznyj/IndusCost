@@ -119,4 +119,14 @@ annual                 = NÃO EXECUTADO
 radar                  = NÃO EXECUTADO
 ```
 
-Status: **NÃO APROVADO**.
+Status: **NÃO APROVADO** para dados reais. O alinhamento da flag (Prompt 4) não substitui esse gate: sem `INDUSCOST_CASH_FLOW_LIGHT_PROJECTION=1` o caminho continua legacy.
+
+## Prompt 4 a 6 — o que foi feito sem banco
+
+Postgres `localhost:5432` segue inacessível. Benchmark before/after não existe.
+
+No modo light, os nove handlers HTTP do Fluxo resolvem a mesma flag e a projeção passa por `cashFlowOrderProjectionLoader` e os builders oficiais. Não há fallback light → `getOrderFullAudit`. O teste de enrich com filtro de cliente mede `lightLoaderCalls = 1` e `fullAuditCalls = 0` quando cliente e portfólio se sobrepõem. Antes dessa união, o enrich disparava o loader duas vezes.
+
+Falha de um pedido continua isolada (o restante do forecast permanece) e incrementa `orderProjectionFailures`. `getOrderFullAudit` segue nos domínios 360º, detalhe do pedido, comissões, relatório executivo e tesouraria.
+
+Não foram alterados, por falta de medição: a segunda query de YTD (a janela usa meia-noite local e a coluna é DATE; recalcular em memória poderia mudar o centavo), o `findMany` de AP em paralelo, o recorte de runs O2C, índices e o `contains` de cliente. O spotlight continua no JSON do dashboard.

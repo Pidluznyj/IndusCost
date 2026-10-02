@@ -286,7 +286,7 @@ export function registerFinanceCashFlowRoutes(app: express.Express, auth: AuthGu
       const filters = parseFiltersOrRespond(res, req.query as Record<string, unknown>);
       if (!filters) return;
 
-      const load = await loadCashFlowRows(filters);
+      const load = await loadCashFlowRows(filters, resolveCashFlowProjectionMode());
       const { arRows, apRows, arSyncCutoff, apSyncCutoff } = load;
       const arOptions = cashFlowArFilterOptions(load);
       const dataset = buildFinanceCashFlowDataset(
@@ -387,7 +387,7 @@ export function registerFinanceCashFlowRoutes(app: express.Express, auth: AuthGu
       const filters = parseFiltersOrRespond(res, req.query as Record<string, unknown>);
       if (!filters) return;
 
-      const load = await loadCashFlowRows(filters);
+      const load = await loadCashFlowRows(filters, resolveCashFlowProjectionMode());
       const { arRows, apRows, arSyncCutoff, apSyncCutoff, arRealizedOnlyRows } = load;
       const arOptions = {
         ...cashFlowArFilterOptions(load),
@@ -488,7 +488,10 @@ export function registerFinanceCashFlowRoutes(app: express.Express, auth: AuthGu
         } as typeof rawQuery;
 
         const referenceDate = new Date();
-        const load = await loadDailyRadarPortfolioRows(referenceDate);
+        const load = await loadDailyRadarPortfolioRows(
+          referenceDate,
+          resolveCashFlowProjectionMode()
+        );
         const { arRows, apRows, arSyncCutoff, apSyncCutoff } = load;
         const arOptions = cashFlowArFilterOptions(load);
         const portfolio = filterDailyRadarPortfolioRows(
@@ -637,7 +640,10 @@ export function registerFinanceCashFlowRoutes(app: express.Express, auth: AuthGu
         } as typeof rawQuery;
 
         const referenceDate = new Date();
-        const load = await loadDailyRadarPortfolioRows(referenceDate);
+        const load = await loadDailyRadarPortfolioRows(
+          referenceDate,
+          resolveCashFlowProjectionMode()
+        );
         const { arRows, apRows, arSyncCutoff, apSyncCutoff } = load;
         const arOptions = cashFlowArFilterOptions(load);
         const portfolio = filterDailyRadarPortfolioRows(
@@ -789,7 +795,10 @@ export function registerFinanceCashFlowRoutes(app: express.Express, auth: AuthGu
         if (!query) return;
 
         const referenceDate = new Date();
-        const load = await loadDailyRadarPortfolioRows(referenceDate);
+        const load = await loadDailyRadarPortfolioRows(
+          referenceDate,
+          resolveCashFlowProjectionMode()
+        );
         const { arRows, apRows, arSyncCutoff, apSyncCutoff } = load;
         const arOptions = cashFlowArFilterOptions(load);
         const portfolio = filterDailyRadarPortfolioRows(
@@ -830,7 +839,10 @@ export function registerFinanceCashFlowRoutes(app: express.Express, auth: AuthGu
         if (!query) return;
 
         const referenceDate = new Date();
-        const load = await loadDailyRadarPortfolioRows(referenceDate);
+        const load = await loadDailyRadarPortfolioRows(
+          referenceDate,
+          resolveCashFlowProjectionMode()
+        );
         const { arRows, apRows, arSyncCutoff, apSyncCutoff } = load;
         const arOptions = cashFlowArFilterOptions(load);
         const portfolio = filterDailyRadarPortfolioRows(

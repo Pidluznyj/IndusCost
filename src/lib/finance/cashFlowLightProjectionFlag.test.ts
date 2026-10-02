@@ -68,15 +68,26 @@ describe("FLAG — resolução da variável", () => {
   });
 });
 
-describe("FLAG — fiação: só três endpoints podem escolher light", () => {
+describe("FLAG — fiação: todo handler do Fluxo resolve a mesma flag", () => {
   const routes = read("src/lib/financeCashFlowRoutes.ts");
+  const handlers: Array<[string, string]> = [
+    ["/api/finance/cash-flow/audit", "loadCashFlowRows("],
+    ["/api/finance/cash-flow/dashboard", "loadCashFlowRows("],
+    ["/api/finance/cash-flow/export", "loadCashFlowRows("],
+    ["/api/finance/cash-flow/annual-comparison", "loadAnnualComparisonPortfolioRows("],
+    ["/api/finance/cash-flow/daily-radar/cost-centers/titles", "loadDailyRadarPortfolioRows("],
+    ["/api/finance/cash-flow/daily-radar/cost-centers", "loadDailyRadarPortfolioRows("],
+    ["/api/finance/cash-flow/daily-radar/export-data", "loadDailyRadarPortfolioRows("],
+    ["/api/finance/cash-flow/daily-radar/export.xlsx", "loadDailyRadarPortfolioRows("],
+    ["/api/finance/cash-flow/daily-radar", "loadDailyRadarPortfolioRows("],
+  ];
 
-  it("a decisão é tomada exatamente 3 vezes nas rotas do Fluxo de Caixa", () => {
+  it("a decisão é tomada uma vez por handler do Fluxo", () => {
     const ocorrencias = routes.split("resolveCashFlowProjectionMode()").length - 1;
     assert.equal(
       ocorrencias,
-      3,
-      `esperava 3 pontos de decisão (dashboard, annual-comparison, daily-radar), achei ${ocorrencias}`
+      handlers.length,
+      `esperava ${handlers.length} pontos de decisão, achei ${ocorrencias}`
     );
   });
 
@@ -92,12 +103,7 @@ describe("FLAG — fiação: só três endpoints podem escolher light", () => {
   });
 
   it("cada ponto de decisão está no handler autorizado", () => {
-    const trechos: Array<[string, string]> = [
-      ["/api/finance/cash-flow/dashboard", "loadCashFlowRows("],
-      ["/api/finance/cash-flow/annual-comparison", "loadAnnualComparisonPortfolioRows("],
-      ["/api/finance/cash-flow/daily-radar", "loadDailyRadarPortfolioRows("],
-    ];
-    for (const [rota, chamada] of trechos) {
+    for (const [rota, chamada] of handlers) {
       const i = routes.indexOf(`"${rota}"`);
       assert.ok(i > 0, `rota ${rota} não encontrada`);
       const janela = routes.slice(i, i + 3000);

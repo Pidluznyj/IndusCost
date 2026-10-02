@@ -125,13 +125,13 @@ describe("PERF 3.1 phases — no-op e isolamento", () => {
 });
 
 describe("PERF 3.1 — fiação Cash Flow Light Projection intacta", () => {
-  it("ainda há exatamente 3 resolveCashFlowProjectionMode nas rotas", () => {
+  it("ainda há um resolveCashFlowProjectionMode por handler do Fluxo", () => {
     const routes = readFileSync(
       join(process.cwd(), "src/lib/financeCashFlowRoutes.ts"),
       "utf8"
     );
     const ocorrencias = routes.split("resolveCashFlowProjectionMode()").length - 1;
-    assert.equal(ocorrencias, 3);
+    assert.equal(ocorrencias, 9);
   });
 
   it("artefatos novos de stats não usam o nome FASE 2C", () => {

@@ -57,20 +57,20 @@ Promise.all(spotlight, resolveFinanceReceiptsFreshness)
 
 ## Consumers
 
-`resolveCashFlowProjectionMode()` só é chamado em três handlers. Os demais loaders do Fluxo nascem com default `"legacy"`. A flag só liga com o valor exato `"1"`.
+`resolveCashFlowProjectionMode()` é chamado em todos os handlers HTTP do Fluxo. Os loaders continuam com default `"legacy"`, então Relatório Executivo, Tesouraria e scripts que não passam o modo não mudam. A flag só liga com o valor exato `"1"`. Com a flag ligada, export, audit, radar, centros de custo e os exports do radar usam a mesma fonte que o dashboard. Sem a flag, todos continuam no Full Audit.
 
 | Consumer | Rota | Loader | projectionMode | Builder | População AR | População AP |
 |---|---|---|---|---|---|---|
-| Dashboard | `GET /api/finance/cash-flow/dashboard` | `loadCashFlowRows` | `resolveCashFlowProjectionMode()` | `buildFinanceCashFlowDashboard` + caixa canônico + spotlight | Filtros da página + janela de baixa do ano; split `periodRows` / `arRealizedOnlyRows` | Filtros da página, eixo de vencimento, cutoff AP |
+| Dashboard | `GET /api/finance/cash-flow/dashboard` | `loadCashFlowRows` | flag | `buildFinanceCashFlowDashboard` + caixa canônico + spotlight | Filtros da página + janela de baixa do ano; split `periodRows` / `arRealizedOnlyRows` | Filtros da página, eixo de vencimento, cutoff AP |
 | Anual | `GET /api/finance/cash-flow/annual-comparison` | `loadAnnualComparisonPortfolioRows` | flag | `buildCashFlowAnnualComparison` + caixa canônico | Carteira `status: all`, sem ano/mês e sem filtros da página | Idem, sem recorte de período |
 | Radar | `GET /api/finance/cash-flow/daily-radar` | `loadDailyRadarPortfolioRows` | flag | `buildFinanceCashFlowDailyRadar` | Carteira `status: open`, sem ano/mês | Carteira aberta, sem período |
-| Export CSV | `GET /api/finance/cash-flow/export` | `loadCashFlowRows` | default legacy | mesmo builder do dashboard + YTD canônico | Igual ao dashboard | Igual ao dashboard |
-| Audit JSON | `GET /api/finance/cash-flow/audit` | `loadCashFlowRows` | default legacy | `buildFinanceCashFlowDataset` + audit payload | Igual ao dashboard | Igual ao dashboard |
+| Export CSV | `GET /api/finance/cash-flow/export` | `loadCashFlowRows` | flag | mesmo builder do dashboard + YTD canônico | Igual ao dashboard | Igual ao dashboard |
+| Audit JSON | `GET /api/finance/cash-flow/audit` | `loadCashFlowRows` | flag | `buildFinanceCashFlowDataset` + audit payload | Igual ao dashboard | Igual ao dashboard |
 | Audit na query do dashboard | `GET .../dashboard?audit=1` | `loadCashFlowRows` | flag | dataset de auditoria | Igual ao dashboard | Igual ao dashboard |
-| Centros de custo do radar | `GET .../daily-radar/cost-centers` | `loadDailyRadarPortfolioRows` | default legacy | radar + `buildCashFlowCostCenterSummary` | Igual ao radar | Igual ao radar |
-| Títulos do centro de custo | `GET .../daily-radar/cost-centers/titles` | idem | default legacy | idem + filtro de títulos | Igual ao radar | Igual ao radar |
-| Export dados do radar | `GET .../daily-radar/export-data` | idem | default legacy | export do radar | Igual ao radar | Igual ao radar |
-| Export xlsx do radar | `GET .../daily-radar/export.xlsx` | idem | default legacy | xlsx | Igual ao radar | Igual ao radar |
+| Centros de custo do radar | `GET .../daily-radar/cost-centers` | `loadDailyRadarPortfolioRows` | flag | radar + `buildCashFlowCostCenterSummary` | Igual ao radar | Igual ao radar |
+| Títulos do centro de custo | `GET .../daily-radar/cost-centers/titles` | idem | flag | idem + filtro de títulos | Igual ao radar | Igual ao radar |
+| Export dados do radar | `GET .../daily-radar/export-data` | idem | flag | export do radar | Igual ao radar | Igual ao radar |
+| Export xlsx do radar | `GET .../daily-radar/export.xlsx` | idem | flag | xlsx | Igual ao radar | Igual ao radar |
 
 Consumers de fora do Fluxo que reutilizam carga parecida e devem continuar no default legacy: Relatório Executivo, radar de caixa do executivo, Tesouraria, rotas de Contas a Receber, detalhe do pedido, comissão e a auditoria 360º. O teste `cashFlowLightProjectionFlag.test.ts` trava isso.
 
@@ -168,7 +168,7 @@ Confirmadas no código:
 - O default operacional é legacy.
 - Full audit está no caminho quente do Fluxo enquanto a flag não é `"1"`.
 - Dashboard, anual e radar não compartilham a mesma população.
-- Export, audit, centros de custo e exports do radar ficam em legacy mesmo com a flag ligada.
+- Com a flag em `"1"`, os handlers HTTP do Fluxo usam o loader light. Sem a flag, o Full Audit continua no caminho.
 - Spotlight e a segunda query de YTD estão no caminho do dashboard.
 - O loader light reutiliza os builders; não é um segundo motor.
 
