@@ -32,6 +32,14 @@ src/lib/simulationFormula.test.ts
 src/lib/newProductSandbox.test.ts
 src/lib/newProductSandbox.effectiveCost.test.ts
 src/lib/newProductSimulationSnapshot.test.ts
+src/lib/newProductSimulationInputs.test.ts
+src/lib/simulationScenario.test.ts
+src/lib/simulationsRoutes.test.ts
+src/lib/simulationsDomainBoundary.test.ts
+src/lib/productCostBaseline.server.test.ts
+src/lib/materialEffectiveCost.test.ts
+src/lib/pricing/commercialPriceFormula.test.ts
+src/lib/projectsSimulationProvenance.test.ts
 src/lib/purchaseIndicatorsStats.test.ts
 src/lib/proposalIndicatorsStats.test.ts
 src/lib/proposalInternalManagementPdf.test.ts
