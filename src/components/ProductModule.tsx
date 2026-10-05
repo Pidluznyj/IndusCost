@@ -122,6 +122,11 @@ import type {
   ProductionCostBulkPublishPreview,
   ProductionCostBulkPublishResult,
 } from "@/src/lib/productionCostBulkPublish";
+import {
+  runProductionCostBulkPublishInChunks,
+  type ProductionCostBulkPublishRun,
+  type ProductionCostBulkPublishRunProgress,
+} from "@/src/lib/productionCostBulkPublishChunkedRun";
 import { ProductCostPublicationPendingCard } from "@/src/components/product/ProductCostPublicationPendingCard";
 import { ProductProductionCostBulkPublishDialog } from "@/src/components/product/ProductProductionCostBulkPublishDialog";
 import { ComponentInjectionCalculationBreakdown } from "@/src/components/product/ComponentInjectionCalculationBreakdown";
@@ -254,7 +259,9 @@ export const ProductModule = () => {
   const [bulkPublishPreview, setBulkPublishPreview] =
     useState<ProductionCostBulkPublishPreview | null>(null);
   const [bulkPublishResult, setBulkPublishResult] =
-    useState<ProductionCostBulkPublishResult | null>(null);
+    useState<ProductionCostBulkPublishRun | null>(null);
+  const [bulkPublishRunProgress, setBulkPublishRunProgress] =
+    useState<ProductionCostBulkPublishRunProgress | null>(null);
   const [bulkPublishError, setBulkPublishError] = useState<string | null>(null);
   const [bulkPublishLoading, setBulkPublishLoading] = useState(false);
   const isEngineeringBulkBusy = Boolean(
@@ -542,7 +549,8 @@ export const ProductModule = () => {
     editingItem?.id,
   ]);
 
-  const openBulkPublishPreview = useCallback(async () => {
+  /** resumeBatchRunId: retomada após interrupção — nova prévia sob o mesmo lote de auditoria. */
+  const openBulkPublishPreview = useCallback(async (resumeBatchRunId?: string) => {
     if (!canPublishProductionCost || selectedIds.length === 0 || isEngineeringBulkBusy) return;
     setBulkPublishOpen(true);
     setBulkPublishPhase("preview");
@@ -557,7 +565,10 @@ export const ProductModule = () => {
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ productIds: selectedIds }),
+          body: JSON.stringify({
+            productIds: selectedIds,
+            ...(resumeBatchRunId ? { batchRunId: resumeBatchRunId } : {}),
+          }),
         }
       );
       setBulkPublishPreview(preview);
@@ -580,50 +591,58 @@ export const ProductModule = () => {
     if (!canPublishProductionCost || !bulkPublishPreview || bulkPublishLoading) return;
     setBulkPublishLoading(true);
     setBulkPublishError(null);
+    setBulkPublishRunProgress(null);
     setPublishBulkProgress({
       current: 0,
       total: Math.max(1, bulkPublishPreview.summary.eligible),
     });
     try {
-      const draftVersionIdsByProduct: Record<string, string> = {};
-      for (const row of bulkPublishPreview.rows) {
-        if (row.eligible && row.draftVersionId) {
-          draftVersionIdsByProduct[row.productId] = row.draftVersionId;
-        }
-      }
-      const result = await fetchJsonOk<ProductionCostBulkPublishResult>(
-        "/api/products/production-cost/bulk-publish",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            productIds: selectedIds,
-            confirm: true,
-            batchRunId: bulkPublishPreview.batchRunId,
-            draftVersionIdsByProduct,
-          }),
-        }
-      );
-      setBulkPublishResult(result);
+      // Um bloco HTTP por vez (BULK_PUBLISH_HTTP_CHUNK_SIZE), mesmo batchRunId em todos.
+      const run = await runProductionCostBulkPublishInChunks({
+        preview: bulkPublishPreview,
+        publishChunk: (request) =>
+          fetchJsonOk<ProductionCostBulkPublishResult>(
+            "/api/products/production-cost/bulk-publish",
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                confirm: true,
+                batchRunId: request.batchRunId,
+                productIds: request.productIds,
+                draftVersionIdsByProduct: request.draftVersionIdsByProduct,
+              }),
+            }
+          ),
+        onProgress: (progress) => {
+          setBulkPublishRunProgress(progress);
+          setPublishBulkProgress({
+            current: progress.processed,
+            total: Math.max(1, progress.total),
+          });
+        },
+      });
+      setBulkPublishResult(run);
       setBulkPublishPhase("result");
-      await fetchData();
-      if (editingItem?.id && selectedIds.includes(editingItem.id)) {
-        setCostPublicationRefreshToken((token) => token + 1);
-      }
-      const publishedIds = result.rows
+      const publishedIds = run.rows
         .filter((r) => r.status === "PUBLISHED")
         .map((r) => r.productId);
       if (publishedIds.length > 0) {
         setSelectedIds((prev) => prev.filter((id) => !publishedIds.includes(id)));
       }
+      // Concluído ou interrompido: a listagem reflete o estado real do backend.
+      await fetchData();
+      if (editingItem?.id && selectedIds.includes(editingItem.id)) {
+        setCostPublicationRefreshToken((token) => token + 1);
+      }
     } catch (error) {
       setBulkPublishError(
         error instanceof Error ? error.message : "Falha na publicação em lote."
       );
-      setBulkPublishPhase("confirm");
     } finally {
       setBulkPublishLoading(false);
       setPublishBulkProgress(null);
+      setBulkPublishRunProgress(null);
     }
   }, [
     canPublishProductionCost,
@@ -1491,6 +1510,7 @@ export const ProductModule = () => {
         phase={bulkPublishPhase}
         preview={bulkPublishPreview}
         result={bulkPublishResult}
+        progress={bulkPublishRunProgress}
         loading={bulkPublishLoading}
         error={bulkPublishError}
         onClose={() => {
@@ -1505,6 +1525,7 @@ export const ProductModule = () => {
         }}
         onRequestConfirm={() => setBulkPublishPhase("confirm")}
         onConfirmPublish={() => void confirmBulkPublish()}
+        onResume={(batchRunId) => void openBulkPublishPreview(batchRunId)}
       />
       {showNomusMaintenanceTab ? (
         <div

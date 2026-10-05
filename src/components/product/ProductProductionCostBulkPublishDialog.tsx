@@ -4,10 +4,11 @@ import { ProjectModalShell } from "@/src/components/projects/ProjectModalShell";
 import { ExecutiveAlert } from "@/src/components/ui/ExecutiveAlert";
 import { formatProductCiu } from "@/src/lib/productCostDisplay";
 import { formatCurrency } from "@/src/lib/utils";
+import type { ProductionCostBulkPublishPreview } from "@/src/lib/productionCostBulkPublish";
 import type {
-  ProductionCostBulkPublishPreview,
-  ProductionCostBulkPublishResult,
-} from "@/src/lib/productionCostBulkPublish";
+  ProductionCostBulkPublishRun,
+  ProductionCostBulkPublishRunProgress,
+} from "@/src/lib/productionCostBulkPublishChunkedRun";
 
 type Phase = "preview" | "confirm" | "result";
 
@@ -15,13 +16,17 @@ type Props = {
   open: boolean;
   phase: Phase;
   preview: ProductionCostBulkPublishPreview | null;
-  result: ProductionCostBulkPublishResult | null;
+  result: ProductionCostBulkPublishRun | null;
+  /** Progresso da publicação por blocos (só enquanto publica). */
+  progress?: ProductionCostBulkPublishRunProgress | null;
   loading: boolean;
   error: string | null;
   onClose: () => void;
   onBackToPreview?: () => void;
   onRequestConfirm: () => void;
   onConfirmPublish: () => void;
+  /** Retomada após interrupção: nova prévia sob o mesmo lote. */
+  onResume?: (batchRunId: string) => void;
 };
 
 function money(value: number | null | undefined): string {
@@ -34,38 +39,74 @@ export function ProductProductionCostBulkPublishDialog({
   phase,
   preview,
   result,
+  progress,
   loading,
   error,
   onClose,
   onBackToPreview,
   onRequestConfirm,
   onConfirmPublish,
+  onResume,
 }: Props) {
   const [ack, setAck] = useState(false);
 
   if (!open) return null;
 
   if (phase === "result" && result) {
+    const interrupted = result.status === "INTERRUPTED";
     return (
       <ProjectModalShell
-        title="Resultado da publicação em lote"
+        title={interrupted ? "Publicação em lote interrompida" : "Resultado da publicação em lote"}
         onClose={onClose}
         footer={
-          <button
-            type="button"
-            className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
-            onClick={onClose}
-            data-testid="bulk-publish-result-close"
-          >
-            Fechar
-          </button>
+          <>
+            {interrupted && onResume ? (
+              <button
+                type="button"
+                className="inline-flex items-center gap-2 rounded-lg border border-[#FBBF24] bg-[#FDE68A] px-4 py-2 text-sm font-medium text-[#92400E] disabled:opacity-60"
+                disabled={loading}
+                onClick={() => onResume(result.batchRunId)}
+                data-testid="bulk-publish-resume"
+              >
+                Retomar (nova prévia)
+              </button>
+            ) : null}
+            <button
+              type="button"
+              className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
+              onClick={onClose}
+              data-testid="bulk-publish-result-close"
+            >
+              Fechar
+            </button>
+          </>
         }
       >
         <div className="space-y-4" data-testid="bulk-publish-result">
+          {error ? (
+            <ExecutiveAlert variant="danger" density="inline" description={error} />
+          ) : null}
+          {interrupted ? (
+            <div data-testid="bulk-publish-interrupted">
+              <ExecutiveAlert
+                variant="danger"
+                density="inline"
+                description={
+                  `Publicação interrompida após ${result.processed} de ${result.total} produtos processados. ` +
+                  `Último bloco confirmado: ${result.confirmedChunks} de ${result.chunkTotal}. ` +
+                  `Publicados: ${result.summary.published}. Pendentes: ${result.pending}. ` +
+                  `Erro: ${result.errorMessage ?? "falha de rede"}. ` +
+                  "O bloco que falhou pode ter sido processado em parte pelo servidor — a retomada gera nova prévia e continua só com os pendentes."
+                }
+              />
+            </div>
+          ) : null}
           <dl className="grid grid-cols-2 gap-2 text-sm sm:grid-cols-4">
             <div>
-              <dt className="text-muted-foreground">Selecionados</dt>
-              <dd className="font-medium">{result.summary.selected}</dd>
+              <dt className="text-muted-foreground">Processados</dt>
+              <dd className="font-medium">
+                {result.processed} / {result.total}
+              </dd>
             </div>
             <div>
               <dt className="text-muted-foreground">Publicados</dt>
@@ -149,6 +190,68 @@ export function ProductProductionCostBulkPublishDialog({
   }
 
   const eligible = preview.summary.eligible;
+
+  if (phase === "confirm" && loading && progress) {
+    const percent =
+      progress.total > 0 ? Math.round((progress.processed / progress.total) * 100) : 0;
+    return (
+      <ProjectModalShell title="Publicando custos" onClose={() => {}}>
+        <div className="space-y-4" data-testid="bulk-publish-progress">
+          <div className="flex flex-wrap items-center gap-2 text-sm text-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            <span>
+              Processados: <strong>{progress.processed}</strong> / {progress.total}
+            </span>
+            <span className="text-muted-foreground">
+              (bloco {Math.min(progress.confirmedChunks + 1, progress.chunkTotal)} de{" "}
+              {progress.chunkTotal})
+            </span>
+          </div>
+          <div
+            className="h-2 w-full overflow-hidden rounded-full bg-muted"
+            role="progressbar"
+            aria-valuemin={0}
+            aria-valuemax={progress.total}
+            aria-valuenow={progress.processed}
+          >
+            <div
+              className="h-full rounded-full bg-emerald-600 transition-all"
+              style={{ width: `${percent}%` }}
+            />
+          </div>
+          <dl className="grid grid-cols-2 gap-2 text-sm sm:grid-cols-3">
+            <div>
+              <dt className="text-muted-foreground">Publicados</dt>
+              <dd className="font-medium text-emerald-700">{progress.summary.published}</dd>
+            </div>
+            <div>
+              <dt className="text-muted-foreground">Já publicados</dt>
+              <dd className="font-medium">{progress.summary.alreadyPublished}</dd>
+            </div>
+            <div>
+              <dt className="text-muted-foreground">Bloqueados</dt>
+              <dd className="font-medium">{progress.summary.blocked}</dd>
+            </div>
+            <div>
+              <dt className="text-muted-foreground">Conflitos</dt>
+              <dd className="font-medium">{progress.summary.conflict}</dd>
+            </div>
+            <div>
+              <dt className="text-muted-foreground">Erros</dt>
+              <dd className="font-medium text-red-600">{progress.summary.error}</dd>
+            </div>
+            <div>
+              <dt className="text-muted-foreground">Ignorados</dt>
+              <dd className="font-medium">{progress.summary.skipped}</dd>
+            </div>
+          </dl>
+          <p className="text-xs text-muted-foreground">
+            Não feche nem recarregue a página até a publicação terminar.
+          </p>
+        </div>
+      </ProjectModalShell>
+    );
+  }
 
   if (phase === "confirm") {
     return (
