@@ -26,7 +26,7 @@
 | Simulador injeção | `engineering.transformation_simulator` | OR view legado |
 | Suprimentos / MP | `suprimentos` (já) | edit/import FE |
 | Inteligência de Mercado | tabs MI já | approve legado |
-| Simulações | `engineering.simulations` | create gated |
+| Simulações | `engineering.simulations` | create, update (arquivar) e delete gated |
 | Projetos | `engineering.projects` | manage / SUPER_ADMIN delete |
 
 ## Gaps eliminados

@@ -197,6 +197,22 @@ export function canCreateSimulations(check: ResourceAwareChecker): boolean {
   return check.hasPermission("simulations.create");
 }
 
+/** Arquivar / restaurar simulações (ação canônica `update`). */
+export function canArchiveSimulations(check: ResourceAwareChecker): boolean {
+  if (typeof check.canPerformAction === "function") {
+    return check.canPerformAction(SIMULATIONS_RESOURCE, "update");
+  }
+  return check.hasPermission("simulations.edit");
+}
+
+/** Arquivar cenário / excluir rascunho de novo produto (ação canônica `delete`). */
+export function canDeleteSimulations(check: ResourceAwareChecker): boolean {
+  if (typeof check.canPerformAction === "function") {
+    return check.canPerformAction(SIMULATIONS_RESOURCE, "delete");
+  }
+  return check.hasPermission("simulations.delete");
+}
+
 export function canViewProjectsModule(check: ResourceAwareChecker): boolean {
   return legacyOrResource(check, ResourceKeys.ENGENHARIA_PROJETOS, () =>
     check.hasPermission("projects.view")

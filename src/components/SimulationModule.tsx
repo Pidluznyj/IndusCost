@@ -1,10 +1,10 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { Link, useSearchParams } from "react-router-dom";
-import { 
-  TrendingUp, 
-  Plus, 
-  Trash2, 
+import {
+  TrendingUp,
+  Plus,
+  Trash2,
   X,
   Loader2,
   Calculator,
@@ -36,7 +36,11 @@ import { GuidedTour } from "@/src/components/tour/GuidedTour";
 import { TourHelpButton } from "@/src/components/tour/TourHelpButton";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { usePermissions } from "@/src/hooks/usePermissions";
-import { canCreateSimulations } from "@/src/lib/commercialEngineeringPermissions";
+import {
+  canArchiveSimulations,
+  canCreateSimulations,
+  canDeleteSimulations,
+} from "@/src/lib/commercialEngineeringPermissions";
 import { SIMULATION_TOUR_STEPS } from "@/src/tours/simulationTourSteps";
 import {
   marginFromCostAndTargetPrice,
@@ -59,10 +63,36 @@ import {
 } from "@/src/lib/componentStandardProcessCost";
 import type { Material } from "@/src/types/material";
 import {
+  isServerComputedSnapshot,
+  LEGACY_SNAPSHOT_NOTICE,
   persistedStatusFromApiRecord,
+  simulationStatusLabel,
   type NewProductSimulationSnapshot,
+  type PersistedSimulationStatus,
 } from "@/src/lib/newProductSimulationSnapshot";
 import { NewProductSimulationReport } from "@/src/components/NewProductSimulationReport";
+import {
+  buildNewProductSimulationInputs,
+  displayResultFromSnapshot,
+  EMPTY_COMMERCIAL_PREMISES_STATE,
+  existingCostKey,
+  existingLineBaselineSource,
+  marginSignLabel,
+  previewNewProductDisplayResult,
+  type NewProductCommercialPremisesState,
+} from "@/src/lib/newProductSimulationInputs";
+import {
+  NO_PUBLISHED_COST_MESSAGE,
+  productCostBaselineBadge,
+  type ProductCostBaselineResult,
+  type ProductCostBaselineSource,
+} from "@/src/lib/productCostBaseline";
+import { ScenarioBaselinePanel } from "@/src/components/simulations/ScenarioBaselinePanel";
+import { ScenarioComparisonSummary } from "@/src/components/simulations/ScenarioComparisonSummary";
+import {
+  SimulationProductSelect,
+  type SimulationProductOption,
+} from "@/src/components/simulations/SimulationProductSelect";
 import { PROJECTS_BASE_PATH } from "@/src/lib/projectsNavigation";
 import {
   parseSimulationsWorkspaceTabParam,
@@ -73,7 +103,7 @@ import {
 type PersistedNewProductSimulationSummary = {
   id: string;
   name: string;
-  status: "DRAFT" | "SAVED";
+  status: PersistedSimulationStatus;
   sourceSimulationId?: string | null;
   productName: string;
   productSku?: string | null;
@@ -85,31 +115,8 @@ type PersistedNewProductSimulation = PersistedNewProductSimulationSummary & {
   snapshot: NewProductSimulationSnapshot;
 };
 
-function pickNumericFromUnknown(o: Record<string, unknown>, key: string): number {
-  const v = o[key];
-  const n = typeof v === "number" ? v : Number(v);
-  return Number.isFinite(n) ? n : 0;
-}
-
-/** Resposta do GET cost-analysis: estrutura validada antes de ler campos. */
-function parseProductCostAnalysisPayload(
-  analysis: unknown,
-  fallbackSku: string,
-  fallbackName: string
-): { sku: string; name: string; mp: number; hh: number; hm: number } {
-  if (!analysis || typeof analysis !== "object") {
-    return { sku: fallbackSku, name: fallbackName, mp: 0, hh: 0, hm: 0 };
-  }
-  const o = analysis as Record<string, unknown>;
-  const sku = typeof o.sku === "string" && o.sku.trim() ? o.sku : fallbackSku;
-  const name = typeof o.name === "string" && o.name.trim() ? o.name : fallbackName;
-  return {
-    sku,
-    name,
-    mp: pickNumericFromUnknown(o, "totalMaterialCost"),
-    hh: pickNumericFromUnknown(o, "totalHH_Unit"),
-    hm: pickNumericFromUnknown(o, "totalHM_Unit"),
-  };
+function formatMoneyOrDash(value: number | null | undefined, digits = 5): string {
+  return typeof value === "number" && Number.isFinite(value) ? formatCurrency(value, digits) : "—";
 }
 
 export const SimulationModule = () => {
@@ -119,12 +126,20 @@ export const SimulationModule = () => {
     ...auth,
     canPerformAction: permissions.canPerformAction,
   });
+  const permissionCheck = { ...auth, canPerformAction: permissions.canPerformAction };
+  const allowArchiveSimulation = canArchiveSimulations(permissionCheck);
+  const allowDeleteSimulation = canDeleteSimulations(permissionCheck);
   const [searchParams, setSearchParams] = useSearchParams();
   const [workspaceTab, setWorkspaceTab] = useState<"SCENARIOS" | "NEW_PRODUCT">(() =>
     parseSimulationsWorkspaceTabParam(searchParams.get("tab"))
   );
   const [simulations, setSimulations] = useState<any[]>([]);
-  const [products, setProducts] = useState<any[]>([]);
+  /** Rótulos de produtos já vistos (seleção, cenários, snapshots) — a lista não é carregada inteira. */
+  const [productLabels, setProductLabels] = useState<Record<string, SimulationProductOption>>({});
+  const [scenarioBaselineAvailable, setScenarioBaselineAvailable] = useState(false);
+  const [scenarioSubmitting, setScenarioSubmitting] = useState(false);
+  const [scenarioError, setScenarioError] = useState<string | null>(null);
+  const [loadWarnings, setLoadWarnings] = useState<string[]>([]);
   const [taxRules, setTaxRules] = useState<any[]>([]);
   /** Materiais Suprimentos — preço efetivo alinhado ao GET /api/materials */
   const [materialCatalog, setMaterialCatalog] = useState<Material[]>([]);
@@ -169,6 +184,12 @@ export const SimulationModule = () => {
   ]);
   const [existingComponentCosts, setExistingComponentCosts] = useState<Record<string, ExistingComponentCost>>({});
   const [existingCostLoadingId, setExistingCostLoadingId] = useState<string | null>(null);
+  /** Motivo explícito quando o custo base de um componente existente não está disponível. */
+  const [existingCostErrors, setExistingCostErrors] = useState<Record<string, string>>({});
+  const [finalPremises, setFinalPremises] = useState<NewProductCommercialPremisesState>(
+    EMPTY_COMMERCIAL_PREMISES_STATE
+  );
+  const [newProductSaving, setNewProductSaving] = useState(false);
   const [savedNewProductSimulations, setSavedNewProductSimulations] = useState<PersistedNewProductSimulationSummary[]>([]);
   const [savedSnapshotSearch, setSavedSnapshotSearch] = useState("");
   const [savedNewProductLoading, setSavedNewProductLoading] = useState(false);
@@ -188,7 +209,17 @@ export const SimulationModule = () => {
     indirectAdj: 0,
     efficiencyAdj: 0,
     marginAdj: 0,
+    baselineSource: "PUBLISHED" as ProductCostBaselineSource,
   });
+
+  const rememberProductLabels = (items: SimulationProductOption[]) => {
+    if (items.length === 0) return;
+    setProductLabels((prev) => {
+      const next = { ...prev };
+      for (const item of items) if (item?.id) next[item.id] = item;
+      return next;
+    });
+  };
 
   const selectWorkspaceTab = (tab: "SCENARIOS" | "NEW_PRODUCT") => {
     setWorkspaceTab(tab);
@@ -208,46 +239,65 @@ export const SimulationModule = () => {
 
   const fetchData = async () => {
     setLoading(true);
-    try {
-      const [s, p, t, mats, hourCostsRaw] = await Promise.all([
-        fetchJsonOk("/api/simulations"),
-        fetchJsonOk("/api/products?cost=1"),
-        fetchJsonOk("/api/tax-rules"),
-        fetchJsonOk("/api/materials"),
-        fetchJsonOk("/api/simulations/default-process-hour-costs").catch(() => null),
-      ]);
-      setSimulations(Array.isArray(s) ? s : []);
-      setProducts(Array.isArray(p) ? p : []);
-      setTaxRules(Array.isArray(t) ? t : []);
-      setMaterialCatalog(Array.isArray(mats) ? (mats as Material[]) : []);
-      const hourCosts = hourCostsRaw as {
-        available?: boolean;
-        globalHhCostPerHour?: number;
-        machineHourCostPerHour?: number;
-        hhSource?: "AUTO" | "MANUAL";
-        error?: string;
-      } | null;
-      if (hourCosts?.available) {
-        setDefaultHourCosts({
-          globalHhCostPerHour: Number(hourCosts.globalHhCostPerHour) || 0,
-          machineHourCostPerHour: Number(hourCosts.machineHourCostPerHour) || 0,
-          hhSource: hourCosts.hhSource ?? "AUTO",
-          available: true,
-        });
-        setDefaultHourCostsError(null);
-      } else {
-        setDefaultHourCosts(null);
-        setDefaultHourCostsError(
-          hourCosts?.error ??
-            "Não foi possível carregar o custo default de HH/HM. Verifique Configurações Gerais."
-        );
-      }
-    } catch (error) {
-      console.error("Erro ao buscar simulações:", error);
-      alert(error instanceof Error ? error.message : "Não foi possível carregar simulações.");
-    } finally {
-      setLoading(false);
+    // Cada fonte é independente: falha em uma (ex.: permissão de materiais) não derruba a tela.
+    const [s, t, mats, hourCostsRaw] = await Promise.allSettled([
+      fetchJsonOk("/api/simulations"),
+      fetchJsonOk("/api/tax-rules"),
+      fetchJsonOk("/api/materials"),
+      fetchJsonOk("/api/simulations/default-process-hour-costs"),
+    ]);
+    const warnings: string[] = [];
+    if (s.status === "fulfilled") {
+      const list = Array.isArray(s.value) ? s.value : [];
+      setSimulations(list);
+      rememberProductLabels(
+        list
+          .filter((row: any) => row?.productId && row?.productSku)
+          .map((row: any) => ({ id: row.productId, sku: row.productSku, name: row.productName ?? "" }))
+      );
+    } else {
+      setSimulations([]);
+      warnings.push(
+        s.reason instanceof Error ? s.reason.message : "Não foi possível carregar os cenários."
+      );
     }
+    if (t.status === "fulfilled") setTaxRules(Array.isArray(t.value) ? t.value : []);
+    else {
+      setTaxRules([]);
+      warnings.push("Regras fiscais indisponíveis para este usuário — criar cenário exige uma regra fiscal.");
+    }
+    if (mats.status === "fulfilled") setMaterialCatalog(Array.isArray(mats.value) ? (mats.value as Material[]) : []);
+    else {
+      setMaterialCatalog([]);
+      warnings.push("Catálogo de materiais indisponível — use linhas manuais nos componentes simulados.");
+    }
+    const hourCosts =
+      hourCostsRaw.status === "fulfilled"
+        ? (hourCostsRaw.value as {
+            available?: boolean;
+            globalHhCostPerHour?: number;
+            machineHourCostPerHour?: number;
+            hhSource?: "AUTO" | "MANUAL";
+            error?: string;
+          } | null)
+        : null;
+    if (hourCosts?.available) {
+      setDefaultHourCosts({
+        globalHhCostPerHour: Number(hourCosts.globalHhCostPerHour) || 0,
+        machineHourCostPerHour: Number(hourCosts.machineHourCostPerHour) || 0,
+        hhSource: hourCosts.hhSource ?? "AUTO",
+        available: true,
+      });
+      setDefaultHourCostsError(null);
+    } else {
+      setDefaultHourCosts(null);
+      setDefaultHourCostsError(
+        hourCosts?.error ??
+          "Não foi possível carregar o custo default de HH/HM. Verifique Configurações Gerais."
+      );
+    }
+    setLoadWarnings(warnings);
+    setLoading(false);
   };
 
   useEffect(() => {
@@ -293,30 +343,63 @@ export const SimulationModule = () => {
     }
   };
 
+  const resetScenarioForm = () => {
+    setFormData({
+      name: "",
+      description: "",
+      productId: "",
+      taxRuleId: "",
+      materialAdj: 0,
+      laborAdj: 0,
+      indirectAdj: 0,
+      efficiencyAdj: 0,
+      marginAdj: 0,
+      baselineSource: "PUBLISHED",
+    });
+    setScenarioError(null);
+    setScenarioBaselineAvailable(false);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (scenarioSubmitting) return;
+    if (!formData.productId) {
+      setScenarioError("Selecione o produto base.");
+      return;
+    }
+    if (!formData.taxRuleId) {
+      setScenarioError("Selecione o canal de venda (regra fiscal).");
+      return;
+    }
+    setScenarioSubmitting(true);
+    setScenarioError(null);
     try {
-      await fetchJsonOk("/api/simulations", {
+      const created = (await fetchJsonOk("/api/simulations", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(formData),
-      });
+      })) as { id?: string; comparison?: unknown };
       setIsModalOpen(false);
-      fetchData();
+      resetScenarioForm();
+      await fetchData();
+      // Abre direto o comparativo BASE × CENÁRIO recém-calculado pelo servidor.
+      if (created?.id) await handleCompare(created.id);
     } catch (error) {
       console.error("Erro ao salvar simulação:", error);
-      alert(error instanceof Error ? error.message : "Não foi possível salvar a simulação.");
+      setScenarioError(error instanceof Error ? error.message : "Não foi possível salvar a simulação.");
+    } finally {
+      setScenarioSubmitting(false);
     }
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm("Excluir esta simulação?")) return;
+    if (!confirm("Arquivar este cenário?\n\nEle sai da lista, mas o registro é preservado.")) return;
     try {
       await fetchOk(`/api/simulations/${id}`, { method: "DELETE" });
       fetchData();
     } catch (error) {
-      console.error("Erro ao excluir:", error);
-      alert(error instanceof Error ? error.message : "Não foi possível excluir a simulação.");
+      console.error("Erro ao arquivar:", error);
+      alert(error instanceof Error ? error.message : "Não foi possível arquivar o cenário.");
     }
   };
 
@@ -453,10 +536,9 @@ export const SimulationModule = () => {
     if (compared) return compared;
     const selectedId = String(formData.productId ?? "").trim();
     if (!selectedId) return null;
-    const selected = products.find((p) => String(p?.id ?? "") === selectedId);
-    const selectedName = String(selected?.name ?? "").trim();
+    const selectedName = String(productLabels[selectedId]?.name ?? "").trim();
     return selectedName || null;
-  }, [workspaceTab, finalProductName, comparing, formData.productId, products]);
+  }, [workspaceTab, finalProductName, comparing, formData.productId, productLabels]);
 
   const updateSimDraftMaterial = (idx: number, field: keyof NewProductMaterialLine, value: string) => {
     setSimDraftMaterials((prev) => {
@@ -759,46 +841,68 @@ export const SimulationModule = () => {
     );
   };
 
-  const ensureExistingComponentCost = async (productId: string) => {
-    if (!productId || existingComponentCosts[productId]) return;
-    const p = products.find((x) => x.id === productId);
-    setExistingCostLoadingId(productId);
+  /**
+   * Custo base de um componente existente na fonte escolhida (resolver do servidor).
+   * Sem fallback: se a base não existir, o motivo fica explícito na linha e o custo não entra.
+   */
+  const ensureExistingComponentCost = async (
+    productId: string,
+    source: ProductCostBaselineSource = "LIVE"
+  ) => {
+    const key = existingCostKey(productId, source);
+    if (!productId || existingComponentCosts[key]) return;
+    setExistingCostLoadingId(key);
     try {
-      const analysis = await fetchJsonOk(`/api/products/${productId}/cost-analysis`);
-      const fields = parseProductCostAnalysisPayload(analysis, String(p?.sku ?? ""), String(p?.name ?? ""));
-      setExistingComponentCosts((prev) => ({
+      const baseline = (await fetchJsonOk(
+        `/api/simulations/product-baseline?productId=${productId}&source=${source}`
+      )) as ProductCostBaselineResult;
+      if (baseline.status === "OK") {
+        setExistingComponentCosts((prev) => ({
+          ...prev,
+          [key]: {
+            id: key,
+            sku: baseline.sku ?? "",
+            name: baseline.name ?? "",
+            mp: baseline.totalMaterialCost,
+            hh: baseline.totalHHUnit,
+            hm: baseline.totalHMUnit,
+          },
+        }));
+        setExistingCostErrors((prev) => {
+          if (!(key in prev)) return prev;
+          const next = { ...prev };
+          delete next[key];
+          return next;
+        });
+        if (baseline.sku) {
+          rememberProductLabels([{ id: productId, sku: baseline.sku, name: baseline.name ?? "" }]);
+        }
+      } else {
+        setExistingCostErrors((prev) => ({
+          ...prev,
+          [key]: baseline.status === "NO_PUBLISHED_COST" ? NO_PUBLISHED_COST_MESSAGE : baseline.message,
+        }));
+      }
+    } catch (error) {
+      setExistingCostErrors((prev) => ({
         ...prev,
-        [productId]: {
-          id: productId,
-          sku: fields.sku,
-          name: fields.name,
-          mp: fields.mp,
-          hh: fields.hh,
-          hm: fields.hm,
-        },
+        [key]: error instanceof Error ? error.message : "Não foi possível carregar o custo base.",
       }));
-    } catch {
-      // keep fallback from consolidated cost if detailed endpoint fails
     } finally {
-      setExistingCostLoadingId(null);
+      setExistingCostLoadingId((current) => (current === key ? null : current));
     }
   };
 
-  const existingComponentsForCalc: ExistingComponentCost[] = products.map((p) => {
-    const detailed = existingComponentCosts[p.id];
-    if (detailed) return detailed;
-    return {
-      id: p.id,
-      sku: String(p.sku ?? ""),
-      name: String(p.name ?? ""),
-      mp: Number(p?.costSummary?.totalIndustrialCost ?? 0),
-      hh: 0,
-      hm: 0,
-    };
-  });
+  const existingLineCostKey = (line: FinalCompositionLine): string =>
+    line.type === "EXISTING_COMPONENT" ? existingCostKey(line.refId, existingLineBaselineSource(line)) : "";
 
+  const existingComponentsForCalc: ExistingComponentCost[] = Object.values(existingComponentCosts);
+
+  /** Prévia local (UX): o número da simulação é sempre o devolvido pelo servidor ao salvar. */
   const finalProductResult = computeFinalProductFromComposition({
-    lines: finalCompositionLines,
+    lines: finalCompositionLines.map((line) =>
+      line.type === "EXISTING_COMPONENT" ? { ...line, refId: existingLineCostKey(line) } : line
+    ),
     existingComponents: existingComponentsForCalc,
     simulatedComponents,
     mode: finalProductMode,
@@ -813,13 +917,47 @@ export const SimulationModule = () => {
       const s = simulatedComponents.find((x) => x.id === line.refId);
       return Number(s?.breakdown.costBase ?? 0);
     }
-    const found = existingComponentsForCalc.find((x) => x.id === line.refId);
+    const found = existingComponentCosts[existingLineCostKey(line)];
     return Number((found?.mp ?? 0) + (found?.hh ?? 0) + (found?.hm ?? 0));
   };
 
   /** Snapshot persistido congelado (imutável na UI) — única fonte para somente leitura + impressão. */
-  const isViewingFrozenSavedSnapshot = activePersistedSimulation?.status === "SAVED";
+  const isViewingFrozenSavedSnapshot =
+    activePersistedSimulation?.status === "SAVED" || activePersistedSimulation?.status === "ARCHIVED";
   const newProductIsReadOnly = isViewingFrozenSavedSnapshot;
+
+  const selectedPremisesTaxRule = taxRules.find((r: any) => r.id === finalPremises.taxRuleId);
+  const localPremises =
+    finalPremises.enabled && selectedPremisesTaxRule
+      ? {
+          taxRatePct: (selectedPremisesTaxRule.TaxComponent ?? []).reduce(
+            (acc: number, c: any) => acc + (Number(c.percentage) || 0),
+            0
+          ),
+          commissionRatePct: Number.parseFloat(finalPremises.commissionRatePct) || 0,
+          otherRatePct: Number.parseFloat(finalPremises.otherRatePct) || 0,
+          freight: Number.parseFloat(finalPremises.freight) || 0,
+        }
+      : null;
+  /**
+   * Congelada: exatamente os números do snapshot (sem recálculo). Em edição: prévia local com a
+   * mesma biblioteca pura do servidor.
+   */
+  const displayResult =
+    isViewingFrozenSavedSnapshot && frozenReportSnapshot
+      ? displayResultFromSnapshot(frozenReportSnapshot)
+      : previewNewProductDisplayResult({
+          mp: finalProductResult.mp,
+          hh: finalProductResult.hh,
+          hm: finalProductResult.hm,
+          mode: finalProductMode,
+          desiredMarginPct: Number.parseFloat(finalDesiredMargin) || 0,
+          targetPrice: Number.parseFloat(finalTargetPrice) || 0,
+          premises: localPremises,
+        });
+  const unavailableExistingLines = finalCompositionLines.filter(
+    (line) => line.type === "EXISTING_COMPONENT" && line.refId && existingCostErrors[existingLineCostKey(line)]
+  );
 
   const snapshotSummaryFromRecord = (row: any): PersistedNewProductSimulationSummary => ({
     id: row.id,
@@ -844,123 +982,27 @@ export const SimulationModule = () => {
     setFinalProductMode("MARGIN");
     setFinalDesiredMargin("20");
     setFinalTargetPrice("0");
+    setFinalPremises(EMPTY_COMMERCIAL_PREMISES_STATE);
     setFinalCompositionLines([{ id: "line-initial", type: "EXISTING_COMPONENT", refId: "", quantity: 1 }]);
     setSimulatedComponents([]);
     resetSimDraft();
     setNewProductInnerTab("FINAL_PRODUCT");
   };
 
-  const buildCurrentNewProductSnapshot = (): NewProductSimulationSnapshot => {
-    const nowIso = new Date().toISOString();
-    const lines = finalCompositionLines.map((line) => {
-      const quantity = Number(line.quantity) || 0;
-      const unitCost = resolveLineUnitCost(line);
-      const lineTotal = unitCost * quantity;
-      if (line.type === "DIRECT_MATERIAL") {
-        return {
-          id: line.id,
-          type: line.type,
-          description: line.description,
-          quantity,
-          unitCost,
-          lineTotal,
-          breakdown: { mp: lineTotal, hh: 0, hm: 0 },
-        };
-      }
-      if (line.type === "SIMULATED_COMPONENT") {
-        const sim = simulatedComponents.find((x) => x.id === line.refId);
-        return {
-          id: line.id,
-          type: line.type,
-          referenceId: line.refId,
-          referenceLabel: sim ? `${sim.sku ? `${sim.sku} — ` : ""}${sim.name}` : "Componente simulado",
-          quantity,
-          unitCost,
-          lineTotal,
-          breakdown: {
-            mp: (sim?.breakdown.mp ?? 0) * quantity,
-            hh: (sim?.breakdown.hh ?? 0) * quantity,
-            hm: (sim?.breakdown.hm ?? 0) * quantity,
-          },
-        };
-      }
-      const ex = existingComponentsForCalc.find((x) => x.id === line.refId);
-      return {
-        id: line.id,
-        type: line.type,
-        referenceId: line.refId,
-        referenceLabel: ex ? `${ex.sku ? `${ex.sku} — ` : ""}${ex.name}` : "Componente existente",
-        quantity,
-        unitCost,
-        lineTotal,
-        breakdown: {
-          mp: (ex?.mp ?? 0) * quantity,
-          hh: (ex?.hh ?? 0) * quantity,
-          hm: (ex?.hm ?? 0) * quantity,
-        },
-      };
+  /** INPUTS enviados ao servidor — nenhum número de resultado sai do navegador. */
+  const buildCurrentNewProductInputs = () =>
+    buildNewProductSimulationInputs({
+      simulationName: snapshotSaveName,
+      productName: finalProductName,
+      productSku: finalProductSku,
+      notes: finalProductNotes,
+      mode: finalProductMode,
+      desiredMarginPct: finalDesiredMargin,
+      targetPrice: finalTargetPrice,
+      premises: finalPremises,
+      lines: finalCompositionLines,
+      simulatedComponents,
     });
-
-    return {
-      header: {
-        simulationName: snapshotSaveName.trim() || finalProductName.trim() || "Simulação sem nome",
-        productName: finalProductName.trim() || "Produto simulado",
-        productSku: finalProductSku.trim() || undefined,
-        notes: finalProductNotes.trim() || undefined,
-        createdAt: nowIso,
-        savedAt: nowIso,
-        origin: "NEW_PRODUCT_SANDBOX",
-      },
-      commercial: {
-        mode: finalProductMode,
-        desiredMarginPct: Number.parseFloat(finalDesiredMargin) || 0,
-        targetPrice: Number.parseFloat(finalTargetPrice) || 0,
-      },
-      composition: {
-        lines,
-        simulatedComponents: simulatedComponents.map((c) => ({
-          id: c.id,
-          name: c.name,
-          sku: c.sku,
-          hh: c.hh,
-          hm: c.hm,
-          costBase: c.breakdown.costBase,
-          mp: c.breakdown.mp,
-          mpPct: c.breakdown.mpPct,
-          hhPct: c.breakdown.hhPct,
-          hmPct: c.breakdown.hmPct,
-          processInputs: c.processInputs,
-          materials: c.materials.map((m) => ({
-            code: m.code,
-            description: m.description,
-            quantity: m.quantity,
-            unit: m.unit,
-            unitCost: m.unitCost,
-            total: materialLineTotal(m),
-            materialId: m.materialId ?? null,
-            source:
-              m.source === "CATALOG" || m.source === "MANUAL"
-                ? m.source
-                : m.materialId
-                  ? "CATALOG"
-                  : "MANUAL",
-          })),
-        })),
-      },
-      result: {
-        mp: finalProductResult.mp,
-        hh: finalProductResult.hh,
-        hm: finalProductResult.hm,
-        costBase: finalProductResult.costBase,
-        mpPct: finalProductResult.mpPct,
-        hhPct: finalProductResult.hhPct,
-        hmPct: finalProductResult.hmPct,
-        price: finalProductResult.price,
-        marginPct: finalProductResult.marginPct,
-        viability: finalProductResult.viability,
-      },
-    };
-  };
 
   const loadSnapshotIntoWorkspace = (
     snapshot: NewProductSimulationSnapshot,
@@ -985,6 +1027,16 @@ export const SimulationModule = () => {
           unitCost: Number(line.unitCost) || 0,
         };
       }
+      if (line.type === "EXISTING_COMPONENT") {
+        return {
+          id: line.id || `line-${idx}`,
+          type: "EXISTING_COMPONENT",
+          refId: line.referenceId ?? "",
+          quantity: Number(line.quantity) || 0,
+          // Snapshot legado não registrou a base: era a engenharia atual.
+          baselineSource: line.baseline?.source === "PUBLISHED" ? "PUBLISHED" : "LIVE",
+        };
+      }
       return {
         id: line.id || `line-${idx}`,
         type: line.type,
@@ -992,20 +1044,45 @@ export const SimulationModule = () => {
         quantity: Number(line.quantity) || 0,
       };
     });
+    rememberProductLabels(
+      snapshot.composition.lines
+        .filter((line) => line.type === "EXISTING_COMPONENT" && line.referenceId)
+        .map((line) => {
+          const label = line.referenceLabel ?? "";
+          const [sku, ...rest] = label.split(" — ");
+          return {
+            id: line.referenceId as string,
+            sku: line.referenceSku ?? (rest.length > 0 ? sku : ""),
+            name: rest.length > 0 ? rest.join(" — ") : label,
+          };
+        })
+    );
+    const snapshotPremises = snapshot.commercial.premises ?? null;
+    setFinalPremises(
+      snapshotPremises
+        ? {
+            enabled: true,
+            taxRuleId: snapshotPremises.taxRuleId ?? "",
+            commissionRatePct: String(snapshotPremises.commissionRatePct ?? 0),
+            otherRatePct: String(snapshotPremises.otherRatePct ?? 0),
+            freight: String(snapshotPremises.freight ?? 0),
+          }
+        : EMPTY_COMMERCIAL_PREMISES_STATE
+    );
     setFinalCompositionLines(
       loadedLines.length > 0
         ? loadedLines
         : [{ id: "line-initial", type: "EXISTING_COMPONENT", refId: "", quantity: 1 }]
     );
-    if (summary.status !== "SAVED") {
+    if (summary.status === "DRAFT") {
       loadedLines.forEach((line) => {
         if (line.type === "EXISTING_COMPONENT" && line.refId) {
-          ensureExistingComponentCost(line.refId);
+          ensureExistingComponentCost(line.refId, existingLineBaselineSource(line));
         }
       });
     }
     setFrozenLineValues(
-      summary.status === "SAVED"
+      summary.status !== "DRAFT"
         ? Object.fromEntries(
             snapshot.composition.lines.map((line, idx) => [
               line.id || `line-${idx}`,
@@ -1054,18 +1131,19 @@ export const SimulationModule = () => {
     setNewProductInnerTab("VIABILITY");
   };
 
-  const handleSaveNewProductSnapshot = async () => {
-    if (newProductIsReadOnly) return;
-    const snapshot = buildCurrentNewProductSnapshot();
+  /**
+   * Salva pelo servidor. freeze=true congela (simulação congelada); freeze=false grava o
+   * rascunho editável. O servidor valida, recalcula e devolve o snapshot.
+   */
+  const handleSaveNewProductSnapshot = async (freeze = true) => {
+    if (newProductIsReadOnly || newProductSaving) return;
+    setNewProductSaving(true);
     try {
+      const draftId = activePersistedSimulation?.status === "DRAFT" ? activePersistedSimulation.id : null;
       const createdRaw = await fetchJsonOk("/api/new-product-simulations/save", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          simulationName: snapshotSaveName.trim() || snapshot.header.simulationName,
-          origin: "NEW_PRODUCT_SANDBOX",
-          snapshot,
-        }),
+        body: JSON.stringify({ inputs: buildCurrentNewProductInputs(), freeze, draftId }),
       });
       if (!createdRaw || typeof createdRaw !== "object") {
         throw new Error("Resposta inválida do servidor ao salvar.");
@@ -1076,12 +1154,18 @@ export const SimulationModule = () => {
         throw new Error("Resposta sem snapshot.");
       }
       const summary = snapshotSummaryFromRecord(createdRaw as PersistedNewProductSimulation);
-      loadSnapshotIntoWorkspace(snap as NewProductSimulationSnapshot, { ...summary, status: "SAVED" });
+      loadSnapshotIntoWorkspace(snap as NewProductSimulationSnapshot, summary);
       fetchSavedNewProductSimulations();
-      alert("Snapshot salvo com sucesso. Registro agora está congelado.");
+      alert(
+        freeze
+          ? "Simulação congelada. O registro não pode mais ser alterado — clone para editar."
+          : "Rascunho da simulação salvo."
+      );
     } catch (error) {
       console.error("Erro ao salvar snapshot:", error);
-      alert(error instanceof Error ? error.message : "Não foi possível salvar snapshot.");
+      alert(error instanceof Error ? error.message : "Não foi possível salvar a simulação.");
+    } finally {
+      setNewProductSaving(false);
     }
   };
 
@@ -1096,24 +1180,36 @@ export const SimulationModule = () => {
     }
   };
 
-  const handleDeleteSavedSnapshot = async (id: string, displayName: string) => {
-    const label = displayName.trim() || "este snapshot";
+  /** Rascunho é excluído; simulação congelada é arquivada (histórico preservado). */
+  const handleDeleteSavedSnapshot = async (
+    id: string,
+    displayName: string,
+    status: PersistedSimulationStatus
+  ) => {
+    const label = displayName.trim() || "esta simulação";
+    const isDraft = status === "DRAFT";
     if (
       !confirm(
-        `Excluir permanentemente «${label}»?\n\nEsta ação é irreversível e remove o registro da biblioteca.`
+        isDraft
+          ? `Excluir o rascunho «${label}»?\n\nRascunhos não são referenciados por projetos e são removidos em definitivo.`
+          : `Arquivar «${label}»?\n\nA simulação sai da lista, mas o registro congelado é preservado (inclusive para projetos que já a usaram).`
       )
     ) {
       return;
     }
     try {
-      await fetchOk(`/api/new-product-simulations/${id}`, { method: "DELETE" });
+      if (isDraft) {
+        await fetchOk(`/api/new-product-simulations/${id}`, { method: "DELETE" });
+      } else {
+        await fetchOk(`/api/new-product-simulations/${id}/archive`, { method: "POST" });
+      }
       if (activePersistedSimulation?.id === id) {
         resetNewProductDraftWorkspace();
       }
       await fetchSavedNewProductSimulations();
     } catch (error) {
-      console.error("Erro ao excluir snapshot:", error);
-      alert(error instanceof Error ? error.message : "Não foi possível excluir o registro.");
+      console.error("Erro ao excluir/arquivar simulação:", error);
+      alert(error instanceof Error ? error.message : "Não foi possível concluir a operação.");
     }
   };
 
@@ -1172,6 +1268,14 @@ export const SimulationModule = () => {
         </div>
       </div>
 
+      {loadWarnings.length > 0 ? (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 space-y-1" data-testid="simulations-load-warnings">
+          {loadWarnings.map((warning) => (
+            <p key={warning}>{warning}</p>
+          ))}
+        </div>
+      ) : null}
+
       <div className="inline-flex rounded-xl border border-border p-1 bg-accent/20">
         <button
           type="button"
@@ -1212,23 +1316,42 @@ export const SimulationModule = () => {
           </div>
         ) : (
           simulations.map((sim) => (
-            <motion.div 
+            <motion.div
               key={sim.id}
               className="bg-card rounded-2xl border border-border overflow-hidden shadow-sm hover:shadow-md transition-all group"
             >
               <div className="p-5 border-b border-border bg-accent/30 flex items-start justify-between">
                 <div>
                   <h3 className="font-bold text-sm">{sim.name}</h3>
-                  <p className="text-[10px] text-muted-foreground line-clamp-1">{sim.description || "Sem descrição"}</p>
+                  <p className="text-[10px] text-muted-foreground line-clamp-1">
+                    {sim.productSku ? `${sim.productSku} — ${sim.productName ?? ""}` : "Produto não encontrado"}
+                  </p>
+                  <span
+                    className={cn(
+                      "mt-1 inline-block rounded-full px-2 py-0.5 text-[9px] font-black uppercase",
+                      sim.baselineSource === "PUBLISHED"
+                        ? "bg-emerald-500/15 text-emerald-800"
+                        : sim.baselineSource === "LIVE"
+                          ? "bg-amber-500/15 text-amber-800"
+                          : "bg-slate-500/15 text-slate-700"
+                    )}
+                    data-testid="scenario-card-baseline"
+                  >
+                    {sim.baselineBadge ?? productCostBaselineBadge(sim.baselineSource ?? null)}
+                  </span>
                 </div>
-                <button 
-                  onClick={() => handleDelete(sim.id)}
-                  className="p-1.5 rounded-lg hover:bg-red-50 text-muted-foreground hover:text-red-500 transition-colors"
-                >
-                  <Trash2 className="h-3 w-3" />
-                </button>
+                {allowDeleteSimulation ? (
+                  <button
+                    onClick={() => handleDelete(sim.id)}
+                    title="Arquivar cenário"
+                    aria-label={`Arquivar cenário ${sim.name}`}
+                    className="p-1.5 rounded-lg hover:bg-red-50 text-muted-foreground hover:text-red-500 transition-colors"
+                  >
+                    <Trash2 className="h-3 w-3" />
+                  </button>
+                ) : null}
               </div>
-              
+
               <div className="p-5 space-y-4">
                 <div className="grid grid-cols-2 gap-2">
                   {Number(sim.materialAdj) !== 0 && (
@@ -1251,9 +1374,14 @@ export const SimulationModule = () => {
                       <Zap className="h-3 w-3" /> Efic: {sim.efficiencyAdj > 0 ? "+" : ""}{sim.efficiencyAdj}%
                     </div>
                   )}
+                  {Number(sim.marginAdj) !== 0 && (
+                    <div className="flex items-center gap-1.5 text-[10px] font-bold text-emerald-700">
+                      <DollarSign className="h-3 w-3" /> Margem: {sim.marginAdj > 0 ? "+" : ""}{sim.marginAdj}% (relativo)
+                    </div>
+                  )}
                 </div>
 
-                <button 
+                <button
                   onClick={() => handleCompare(sim.id)}
                   className="w-full py-2 rounded-xl bg-primary text-primary-foreground text-xs font-bold hover:opacity-90 transition-all flex items-center justify-center gap-2"
                 >
@@ -1283,9 +1411,9 @@ export const SimulationModule = () => {
                 )}
               >
                 {newProductIsReadOnly
-                  ? "Snapshot salvo · somente leitura"
+                  ? `${simulationStatusLabel(activePersistedSimulation?.status ?? "SAVED")} · somente leitura`
                   : activePersistedSimulation?.status === "DRAFT"
-                    ? "Cópia em rascunho (editável)"
+                    ? "Rascunho da simulação (editável)"
                     : "Simulação em edição (não persistida)"}
               </p>
               <div className="flex items-center gap-2 flex-wrap">
@@ -1317,28 +1445,42 @@ export const SimulationModule = () => {
                   onClick={resetNewProductDraftWorkspace}
                   className="px-3 py-1.5 rounded-lg border border-border text-xs font-semibold hover:bg-accent transition-colors"
                 >
-                  Novo draft
+                  Nova simulação
                 </button>
-                <button
-                  type="button"
-                  disabled={newProductIsReadOnly}
-                  onClick={handleSaveNewProductSnapshot}
-                  className={cn(
-                    "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors",
-                    newProductIsReadOnly
-                      ? "bg-accent text-muted-foreground cursor-not-allowed"
-                      : "bg-primary text-primary-foreground hover:opacity-90"
-                  )}
-                >
-                  <Save className="h-3.5 w-3.5" />
-                  Salvar simulação
-                </button>
+                {allowCreateSimulation ? (
+                  <>
+                    <button
+                      type="button"
+                      disabled={newProductIsReadOnly || newProductSaving}
+                      onClick={() => handleSaveNewProductSnapshot(false)}
+                      data-testid="new-product-save-draft"
+                      className="px-3 py-1.5 rounded-lg border border-border text-xs font-semibold hover:bg-accent transition-colors disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      Salvar rascunho
+                    </button>
+                    <button
+                      type="button"
+                      disabled={newProductIsReadOnly || newProductSaving}
+                      onClick={() => handleSaveNewProductSnapshot(true)}
+                      data-testid="new-product-freeze"
+                      className={cn(
+                        "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors",
+                        newProductIsReadOnly || newProductSaving
+                          ? "bg-accent text-muted-foreground cursor-not-allowed"
+                          : "bg-primary text-primary-foreground hover:opacity-90"
+                      )}
+                    >
+                      {newProductSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+                      Salvar e congelar
+                    </button>
+                  </>
+                ) : null}
               </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <label className="space-y-1 md:col-span-2">
-                <span className="text-[10px] font-bold uppercase text-muted-foreground">Nome da simulação (snapshot)</span>
+                <span className="text-[10px] font-bold uppercase text-muted-foreground">Nome da simulação</span>
                 <input
                   type="text"
                   className="w-full p-2.5 rounded-lg border border-border bg-background text-sm"
@@ -1411,9 +1553,14 @@ export const SimulationModule = () => {
                   newProductInnerTab === "VIABILITY" ? "bg-card text-primary shadow-sm" : "text-muted-foreground hover:text-foreground"
                 )}
               >
-                Resumo de viabilidade
+                Custo e análise
               </button>
             </div>
+            {isViewingFrozenSavedSnapshot && frozenReportSnapshot && !isServerComputedSnapshot(frozenReportSnapshot) ? (
+              <p className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700" data-testid="legacy-snapshot-notice">
+                {LEGACY_SNAPSHOT_NOTICE}. Os valores abaixo são exatamente os gravados; clone para recalcular com base registrada.
+              </p>
+            ) : null}
           </div>
 
           {newProductInnerTab === "FINAL_PRODUCT" && (
@@ -1454,19 +1601,15 @@ export const SimulationModule = () => {
                       {line.type === "EXISTING_COMPONENT" && (
                         <div className="col-span-4 space-y-1">
                           <span className="text-[9px] font-bold uppercase text-muted-foreground">Item existente</span>
-                          <SearchableSelect
-                            placeholder="Selecione componente existente..."
-                            options={products.map((p: any) => ({
-                              value: p.id,
-                              label: `${p.sku} — ${p.name}`,
-                              sublabel: p.type === "COMPONENT" ? "Componente cadastrado" : "Produto cadastrado",
-                              searchTerms: `${p.sku} ${p.name}`,
-                            }))}
+                          <SimulationProductSelect
+                            placeholder="Busque o componente existente..."
                             value={line.refId}
+                            selected={line.refId ? (productLabels[line.refId] ?? null) : null}
                             disabled={newProductIsReadOnly}
-                            onChange={(val) => {
+                            onChange={(val, option) => {
+                              if (option) rememberProductLabels([option]);
                               updateCompositionLine(line.id, "refId", val);
-                              ensureExistingComponentCost(val);
+                              ensureExistingComponentCost(val, existingLineBaselineSource(line));
                             }}
                           />
                         </div>
@@ -1554,12 +1697,40 @@ export const SimulationModule = () => {
                       </div>
 
                       {line.type === "EXISTING_COMPONENT" && line.refId && (
-                        <div className="col-span-12 text-[10px] text-muted-foreground">
-                          {existingCostLoadingId === line.refId
-                            ? "Carregando composição detalhada MP/HH/HM do componente existente..."
-                            : existingComponentCosts[line.refId]
-                              ? "Composição do componente existente carregada com custo detalhado (MP + HH + HM)."
-                              : "Usando custo consolidado atual; ao selecionar novamente, o sistema tenta buscar composição detalhada."}
+                        <div className="col-span-12 flex flex-wrap items-center gap-2 text-[10px] text-muted-foreground">
+                          <span className="font-bold uppercase">Base do custo:</span>
+                          {newProductIsReadOnly ? (
+                            <span className="rounded-full bg-accent px-2 py-0.5 font-bold">
+                              {productCostBaselineBadge(
+                                frozenReportSnapshot?.composition.lines.find((l) => l.id === line.id)?.baseline?.source ?? null
+                              )}
+                            </span>
+                          ) : (
+                            <select
+                              className="rounded border border-border bg-background px-1.5 py-0.5 text-[10px]"
+                              value={existingLineBaselineSource(line)}
+                              data-testid="existing-line-baseline"
+                              onChange={(e) => {
+                                const source = e.target.value as ProductCostBaselineSource;
+                                updateCompositionLine(line.id, "baselineSource", source);
+                                ensureExistingComponentCost(line.refId, source);
+                              }}
+                            >
+                              <option value="LIVE">Engenharia atual — não publicada</option>
+                              <option value="PUBLISHED">Custo oficial publicado</option>
+                            </select>
+                          )}
+                          {newProductIsReadOnly ? null : existingCostLoadingId === existingLineCostKey(line) ? (
+                            <span>Carregando MP/HH/HM...</span>
+                          ) : existingCostErrors[existingLineCostKey(line)] ? (
+                            <span className="font-semibold text-red-700" data-testid="existing-line-cost-error">
+                              {existingCostErrors[existingLineCostKey(line)]} O custo desta linha não entra no total.
+                            </span>
+                          ) : existingComponentCosts[existingLineCostKey(line)] ? (
+                            <span>Custo detalhado (MP + HH + HM) carregado desta base.</span>
+                          ) : (
+                            <span>Aguardando custo base...</span>
+                          )}
                         </div>
                       )}
                     </div>
@@ -1963,7 +2134,7 @@ export const SimulationModule = () => {
           {newProductInnerTab === "VIABILITY" && (
             <fieldset disabled={newProductIsReadOnly} className="grid grid-cols-1 xl:grid-cols-3 gap-6 disabled:opacity-95">
               <div className="xl:col-span-2 rounded-2xl border border-border bg-card p-5 space-y-4">
-                <h3 className="text-sm font-black uppercase tracking-wider text-muted-foreground">Comercial do produto final</h3>
+                <h3 className="text-sm font-black uppercase tracking-wider text-muted-foreground">Análise econômica da simulação</h3>
                 <div className="inline-flex rounded-lg border border-border p-1 bg-accent/20">
                   <button type="button" onClick={() => setFinalProductMode("MARGIN")} className={cn("px-3 py-1.5 text-xs font-semibold rounded-md transition-colors", finalProductMode === "MARGIN" ? "bg-card text-primary shadow-sm" : "text-muted-foreground hover:text-foreground")}>Margem desejada</button>
                   <button type="button" onClick={() => setFinalProductMode("TARGET_PRICE")} className={cn("px-3 py-1.5 text-xs font-semibold rounded-md transition-colors", finalProductMode === "TARGET_PRICE" ? "bg-card text-primary shadow-sm" : "text-muted-foreground hover:text-foreground")}>Preço alvo</button>
@@ -1979,34 +2150,106 @@ export const SimulationModule = () => {
                     <input type="number" step="0.00001" className="w-full p-2.5 rounded-lg border border-border bg-background text-sm" value={finalTargetPrice} onChange={(e) => setFinalTargetPrice(e.target.value)} />
                   </label>
                 )}
-                <div className="text-xs text-muted-foreground rounded-lg border border-border bg-accent/10 p-3">
-                  Custo base utilizado no simulador: MP + HH + HM. Sem CIF e sem OPEX nesta fase de sandbox.
+                <div className="space-y-3 rounded-lg border border-border bg-accent/10 p-3">
+                  <label className="flex items-center gap-2 text-xs font-semibold">
+                    <input
+                      type="checkbox"
+                      checked={finalPremises.enabled}
+                      data-testid="new-product-premises-toggle"
+                      onChange={(e) => setFinalPremises((prev) => ({ ...prev, enabled: e.target.checked }))}
+                    />
+                    Incluir premissas comerciais da simulação (impostos, comissão, frete)
+                  </label>
+                  {finalPremises.enabled ? (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div className="space-y-1 md:col-span-2">
+                        <span className="text-[10px] font-bold uppercase text-muted-foreground">Regra fiscal</span>
+                        <SearchableSelect
+                          placeholder="Selecione a regra fiscal..."
+                          options={taxRules.map((r: { id: string; name: string; description?: string }) => ({
+                            value: r.id,
+                            label: r.name,
+                            sublabel: r.description?.trim() || undefined,
+                            searchTerms: [r.name, r.description].filter(Boolean).join(" "),
+                          }))}
+                          value={finalPremises.taxRuleId}
+                          disabled={newProductIsReadOnly}
+                          onChange={(val) => setFinalPremises((prev) => ({ ...prev, taxRuleId: val }))}
+                        />
+                      </div>
+                      {(
+                        [
+                          ["commissionRatePct", "Comissão (%)"],
+                          ["otherRatePct", "Outras variáveis (%)"],
+                          ["freight", "Frete (R$/un)"],
+                        ] as const
+                      ).map(([field, label]) => (
+                        <label key={field} className="space-y-1">
+                          <span className="text-[10px] font-bold uppercase text-muted-foreground">{label}</span>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            className="w-full p-2.5 rounded-lg border border-border bg-background text-sm"
+                            value={finalPremises[field]}
+                            onChange={(e) => setFinalPremises((prev) => ({ ...prev, [field]: e.target.value }))}
+                          />
+                        </label>
+                      ))}
+                      <p className="md:col-span-2 text-[11px] text-muted-foreground">
+                        Premissas apenas desta simulação: não leem nem alteram a Formação de Preço oficial.
+                      </p>
+                    </div>
+                  ) : (
+                    <p className="text-[11px] text-muted-foreground">
+                      Sem premissas comerciais, o resultado é uma <b>análise industrial preliminar</b>: MP + HH + HM e margem
+                      industrial, sem impostos, comissão, frete, CIF ou OPEX. Não é preço comercial.
+                    </p>
+                  )}
                 </div>
               </div>
 
               <div className="rounded-2xl border border-border bg-card p-5 space-y-3">
-                <h3 className="text-sm font-black uppercase tracking-wider text-muted-foreground">Resumo de viabilidade</h3>
+                <h3 className="text-sm font-black uppercase tracking-wider text-muted-foreground">
+                  Custo industrial simulado
+                  <span className="ml-2 rounded-full bg-violet-500/15 px-2 py-0.5 text-[9px] font-black text-violet-800">
+                    {isViewingFrozenSavedSnapshot ? "CONGELADO" : "SIMULADO"}
+                  </span>
+                </h3>
+                {!isViewingFrozenSavedSnapshot && unavailableExistingLines.length > 0 ? (
+                  <p className="rounded-lg border border-red-200 bg-red-50 p-2 text-[11px] font-semibold text-red-800">
+                    {unavailableExistingLines.length} componente(s) existente(s) sem custo base disponível — o total abaixo não os inclui.
+                  </p>
+                ) : null}
                 <SummaryKpiGrid minColumnWidth={140} className={SYSTEM_TOTALIZER_GRID_CLASS}>
-                  <FinanceExecutiveTotalizerCard label="MP total" value={formatCurrency(finalProductResult.mp, 5)} />
-                  <FinanceExecutiveTotalizerCard label="HH total" value={formatCurrency(finalProductResult.hh, 5)} />
-                  <FinanceExecutiveTotalizerCard label="HM total" value={formatCurrency(finalProductResult.hm, 5)} />
+                  <FinanceExecutiveTotalizerCard label="MP total" value={formatCurrency(displayResult.mp, 5)} />
+                  <FinanceExecutiveTotalizerCard label="HH total" value={formatCurrency(displayResult.hh, 5)} />
+                  <FinanceExecutiveTotalizerCard label="HM total" value={formatCurrency(displayResult.hm, 5)} />
                   <FinanceExecutiveTotalizerCard
-                    label="Custo base"
-                    value={formatCurrency(finalProductResult.costBase, 5)}
+                    label="Custo industrial simulado"
+                    value={formatCurrency(displayResult.costBase, 5)}
                   />
                 </SummaryKpiGrid>
-                <div className="rounded-xl border border-primary/30 bg-primary/5 p-3">
-                  <p className="text-[10px] font-bold uppercase text-primary/80">Preço sugerido</p>
-                  <p className="text-xl font-black text-primary">{formatCurrency(finalProductResult.price, 5)}</p>
-                  <p className="text-[11px] text-muted-foreground">
-                    Margem resultante: <b>{formatNumber(finalProductResult.marginPct, 2)}%</b>
-                  </p>
+                <div className="rounded-xl border border-primary/30 bg-primary/5 p-3" data-testid="new-product-price-box">
+                  <p className="text-[10px] font-bold uppercase text-primary/80">{displayResult.priceLabel}</p>
+                  <p className="text-xl font-black text-primary">{formatMoneyOrDash(displayResult.price)}</p>
+                  {displayResult.error ? (
+                    <p className="text-[11px] font-semibold text-red-700">{displayResult.error}</p>
+                  ) : (
+                    <p className="text-[11px] text-muted-foreground">
+                      Margem resultante:{" "}
+                      <b>{displayResult.marginPct == null ? "—" : `${formatNumber(displayResult.marginPct, 2)}%`}</b>
+                    </p>
+                  )}
+                  {!isViewingFrozenSavedSnapshot ? (
+                    <p className="text-[10px] text-muted-foreground">Prévia; o valor da simulação é o calculado pelo servidor ao salvar.</p>
+                  ) : null}
                 </div>
                 <div className="space-y-2">
                   {[
-                    { label: "MP", pct: finalProductResult.mpPct, bar: "bg-orange-500/80" },
-                    { label: "HH", pct: finalProductResult.hhPct, bar: "bg-blue-500/80" },
-                    { label: "HM", pct: finalProductResult.hmPct, bar: "bg-violet-500/80" },
+                    { label: "MP", pct: displayResult.mpPct, bar: "bg-orange-500/80" },
+                    { label: "HH", pct: displayResult.hhPct, bar: "bg-blue-500/80" },
+                    { label: "HM", pct: displayResult.hmPct, bar: "bg-violet-500/80" },
                   ].map((row) => (
                     <div key={row.label} className="space-y-1">
                       <div className="flex items-center justify-between text-xs">
@@ -2020,20 +2263,29 @@ export const SimulationModule = () => {
                   ))}
                 </div>
                 <p
+                  data-testid="new-product-margin-sign"
                   className={cn(
                     "text-xs font-semibold rounded-lg px-3 py-2",
-                    finalProductResult.viability === "VIAVEL"
+                    displayResult.marginSign === "POSITIVA"
                       ? "bg-green-500/10 text-green-700"
-                      : finalProductResult.viability === "ATENCAO"
-                        ? "bg-amber-500/10 text-amber-700"
-                        : "bg-red-500/10 text-red-700"
+                      : displayResult.marginSign === "NULA_OU_NEGATIVA"
+                        ? "bg-red-500/10 text-red-700"
+                        : "bg-slate-500/10 text-slate-700"
                   )}
                 >
-                  {finalProductResult.viability === "VIAVEL"
-                    ? "Viável"
-                    : finalProductResult.viability === "ATENCAO"
-                      ? "Atenção"
-                      : "Inviável"}
+                  {displayResult.analysisKind === "COMMERCIAL_SIMULATED"
+                    ? "Análise comercial da simulação"
+                    : "Análise industrial preliminar"}
+                  : {marginSignLabel(displayResult.marginSign)}
+                  {displayResult.legacyViability
+                    ? ` · classificação gravada no snapshot legado: ${
+                        displayResult.legacyViability === "VIAVEL"
+                          ? "Viável"
+                          : displayResult.legacyViability === "ATENCAO"
+                            ? "Atenção"
+                            : "Inviável"
+                      }`
+                    : ""}
                 </p>
               </div>
             </fieldset>
@@ -2052,9 +2304,9 @@ export const SimulationModule = () => {
               <div className="mb-3 flex flex-shrink-0 flex-wrap items-start justify-between gap-2">
                 <div className="min-w-0">
                   <h3 className="text-xs font-black uppercase tracking-wider text-muted-foreground">
-                    Snapshots salvos
+                    Simulações salvas
                   </h3>
-                  <p className="text-[10px] text-muted-foreground">Biblioteca secundária</p>
+                  <p className="text-[10px] text-muted-foreground">Rascunhos e simulações congeladas</p>
                 </div>
                 <button
                   type="button"
@@ -2095,15 +2347,17 @@ export const SimulationModule = () => {
                             : "border-border bg-accent/10"
                         )}
                       >
-                        <button
-                          type="button"
-                          title="Excluir da biblioteca"
-                          aria-label={`Excluir snapshot ${item.name}`}
-                          onClick={() => handleDeleteSavedSnapshot(item.id, item.name)}
-                          className="absolute right-1.5 top-1.5 z-10 inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive/35 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
-                        >
-                          <Trash2 className="h-3.5 w-3.5 shrink-0" />
-                        </button>
+                        {(item.status === "DRAFT" ? allowDeleteSimulation : allowArchiveSimulation) ? (
+                          <button
+                            type="button"
+                            title={item.status === "DRAFT" ? "Excluir rascunho" : "Arquivar simulação congelada"}
+                            aria-label={`${item.status === "DRAFT" ? "Excluir rascunho" : "Arquivar simulação"} ${item.name}`}
+                            onClick={() => handleDeleteSavedSnapshot(item.id, item.name, item.status)}
+                            className="absolute right-1.5 top-1.5 z-10 inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive/35 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+                          >
+                            <Trash2 className="h-3.5 w-3.5 shrink-0" />
+                          </button>
+                        ) : null}
                         <div className="min-w-0 pr-8">
                           <div className="flex flex-wrap items-center gap-1.5 gap-y-0.5">
                             <p className="text-xs font-black leading-tight">{item.name}</p>
@@ -2115,7 +2369,7 @@ export const SimulationModule = () => {
                                   : "bg-blue-500/15 text-blue-800"
                               )}
                             >
-                              {item.status === "SAVED" ? "Salvo" : "Rascunho"}
+                              {item.status === "SAVED" ? "Congelada" : item.status === "ARCHIVED" ? "Arquivada" : "Rascunho"}
                             </span>
                           </div>
                           <p className="mt-0.5 text-[11px] text-muted-foreground leading-snug">
@@ -2132,13 +2386,15 @@ export const SimulationModule = () => {
                           >
                             Abrir
                           </button>
-                          <button
-                            type="button"
-                            onClick={() => handleCloneSavedSnapshot(item.id)}
-                            className="min-w-[4.5rem] flex-1 rounded-md border border-border bg-background/80 px-2.5 py-1.5 text-center text-[11px] font-semibold text-foreground hover:bg-accent sm:flex-initial"
-                          >
-                            Clonar
-                          </button>
+                          {allowCreateSimulation ? (
+                            <button
+                              type="button"
+                              onClick={() => handleCloneSavedSnapshot(item.id)}
+                              className="min-w-[4.5rem] flex-1 rounded-md border border-border bg-background/80 px-2.5 py-1.5 text-center text-[11px] font-semibold text-foreground hover:bg-accent sm:flex-initial"
+                            >
+                              Clonar
+                            </button>
+                          ) : null}
                         </div>
                       </div>
                     ))}
@@ -2197,7 +2453,7 @@ export const SimulationModule = () => {
       <AnimatePresence>
         {comparing && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm">
-            <motion.div 
+            <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
@@ -2210,7 +2466,11 @@ export const SimulationModule = () => {
                   </div>
                   <div>
                     <h3 className="text-lg font-bold">Análise Comparativa de Cenário</h3>
-                    <p className="text-xs text-muted-foreground">{comparing.base.product} • {comparing.base.sku}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {comparing.base.sku ?? "—"} • {comparing.base.product ?? "Produto"}
+                      {comparing.scenario?.name ? ` · cenário «${comparing.scenario.name}»` : ""}
+                      {comparing.scenario?.createdByName ? ` · por ${comparing.scenario.createdByName}` : ""}
+                    </p>
                   </div>
                 </div>
                 <button onClick={() => setComparing(null)} className="p-2 hover:bg-accent rounded-full transition-colors">
@@ -2353,10 +2613,16 @@ export const SimulationModule = () => {
                     {comparing.simulationNote}
                   </p>
                 )}
+                {comparing.deltas ? <ScenarioComparisonSummary comparison={comparing} /> : null}
+                {comparing.pricingIssue ? (
+                  <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900" data-testid="scenario-pricing-issue">
+                    Preço simulado indisponível com as premissas vigentes: {comparing.pricingIssue.message}
+                  </p>
+                ) : null}
                 <div className="rounded-xl border border-border p-4 bg-card space-y-4">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <h4 className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
-                      Modo comercial
+                      Preço simulado (análise comercial do cenário)
                     </h4>
                     <div className="inline-flex rounded-lg border border-border p-1 bg-accent/20">
                       <button
@@ -2497,16 +2763,18 @@ export const SimulationModule = () => {
                   {/* Official Base */}
                   <div className="p-6 rounded-2xl border border-border bg-accent/5 space-y-6">
                     <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-black uppercase text-muted-foreground tracking-widest">Base Oficial</span>
-                      <span className="px-2 py-0.5 rounded-full bg-muted text-[10px] font-bold">Atual</span>
+                      <span className="text-[10px] font-black uppercase text-muted-foreground tracking-widest">Base da simulação</span>
+                      <span className="px-2 py-0.5 rounded-full bg-muted text-[10px] font-bold">
+                        {comparing.baseline?.badge ?? productCostBaselineBadge(null)}
+                      </span>
                     </div>
                     <div className="space-y-1">
-                      <p className="text-4xl font-black">{formatCurrency(comparing.base.resultados.suggestedPrice, 5)}</p>
-                      <p className="text-xs text-muted-foreground">Preço Sugerido Base</p>
+                      <p className="text-4xl font-black">{formatMoneyOrDash(comparing.base.resultados.suggestedPrice)}</p>
+                      <p className="text-xs text-muted-foreground">Preço simulado da base (premissas vigentes na criação)</p>
                     </div>
                     <div className="pt-4 border-t border-border grid grid-cols-2 gap-4">
                       <div>
-                        <p className="text-[10px] font-bold text-muted-foreground uppercase">CIU Base</p>
+                        <p className="text-[10px] font-bold text-muted-foreground uppercase">Custo base (MP + HH + HM)</p>
                         <p className="text-sm font-bold">{formatCurrency(comparing.base.ciu, 5)}</p>
                       </div>
                       <div>
@@ -2534,12 +2802,14 @@ export const SimulationModule = () => {
                       </div>
                     </div>
                     <div className="space-y-1">
-                      <p className="text-4xl font-black text-primary">{formatCurrency(displayedSuggestedPrice, 5)}</p>
-                      <p className="text-xs text-primary/60">Novo Preço Sugerido</p>
+                      <p className="text-4xl font-black text-primary">
+                        {commercialProjection.feasible ? formatCurrency(displayedSuggestedPrice, 5) : "—"}
+                      </p>
+                      <p className="text-xs text-primary/60">Preço simulado do cenário</p>
                     </div>
                     <div className="pt-4 border-t border-primary/20 grid grid-cols-2 gap-4">
                       <div>
-                        <p className="text-[10px] font-bold text-primary uppercase">Novo CIU</p>
+                        <p className="text-[10px] font-bold text-primary uppercase">Custo simulado</p>
                         <p className="text-sm font-bold">{formatCurrency(comparing.simulated.ciu, 5)}</p>
                       </div>
                       <div>
@@ -2609,8 +2879,8 @@ export const SimulationModule = () => {
                 <div className="p-4 rounded-xl bg-orange-50 border border-orange-100 flex items-start gap-3">
                   <AlertCircle className="h-5 w-5 text-orange-600 shrink-0 mt-0.5" />
                   <p className="text-xs text-orange-800 leading-relaxed">
-                    <b>Atenção:</b> Esta simulação utiliza aproximações baseadas na estrutura de custos atual. 
-                    Os resultados são estimativas para suporte à decisão e não alteram os registros oficiais do sistema.
+                    <b>Atenção:</b> custo e preço acima são <b>simulados</b>. São estimativas para suporte à decisão e não alteram
+                    custo publicado, rascunho oficial de custo, premissas da Formação de Preço nem tabela de preço.
                   </p>
                 </div>
                   </>
@@ -2625,7 +2895,7 @@ export const SimulationModule = () => {
       <AnimatePresence>
         {isModalOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm">
-            <motion.div 
+            <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
@@ -2646,7 +2916,7 @@ export const SimulationModule = () => {
                 </button>
               </div>
 
-              <form onSubmit={handleSubmit} className="p-6 space-y-6">
+              <form onSubmit={handleSubmit} className="p-6 space-y-6 max-h-[80vh] overflow-y-auto">
                 <div className="space-y-4">
                   <div className="space-y-1.5">
                     <label className="text-xs font-bold text-muted-foreground uppercase">Nome do Cenário</label>
@@ -2663,16 +2933,14 @@ export const SimulationModule = () => {
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-1.5">
                         <label className="text-xs font-bold text-muted-foreground uppercase">Produto Base</label>
-                        <SearchableSelect
-                          placeholder="Selecione..."
-                          options={products.map((p: { id: string; sku: string; name: string; type?: string }) => ({
-                            value: p.id,
-                            label: `${p.sku} — ${p.name}`,
-                            sublabel: p.type === "COMPONENT" ? "Componente" : "Produto",
-                            searchTerms: `${p.sku} ${p.name}`,
-                          }))}
+                        <SimulationProductSelect
+                          placeholder="Busque por SKU ou nome..."
                           value={formData.productId}
-                          onChange={(val) => setFormData({...formData, productId: val})}
+                          selected={formData.productId ? (productLabels[formData.productId] ?? null) : null}
+                          onChange={(val, option) => {
+                            if (option) rememberProductLabels([option]);
+                            setFormData({ ...formData, productId: val });
+                          }}
                         />
                       </div>
                       <div className="space-y-1.5">
@@ -2690,11 +2958,17 @@ export const SimulationModule = () => {
                         />
                       </div>
                     </div>
+                    <ScenarioBaselinePanel
+                      productId={formData.productId}
+                      source={formData.baselineSource}
+                      onSourceChange={(source) => setFormData((prev) => ({ ...prev, baselineSource: source }))}
+                      onAvailabilityChange={setScenarioBaselineAvailable}
+                    />
                 </div>
 
                 <div className="space-y-4 pt-4 border-t border-border">
                   <h4 className="text-[10px] font-black uppercase text-muted-foreground tracking-widest">Variáveis de Ajuste (%)</h4>
-                  
+
                   <div className="grid grid-cols-2 gap-6">
                     <div className="space-y-2">
                       <label className="text-[10px] font-bold flex items-center justify-between">
@@ -2703,7 +2977,7 @@ export const SimulationModule = () => {
                           {formData.materialAdj > 0 ? "+" : ""}{formData.materialAdj}%
                         </span>
                       </label>
-                      <input 
+                      <input
                         type="range" min="-50" max="100" step="1"
                         className="w-full accent-primary"
                         value={formData.materialAdj}
@@ -2717,7 +2991,7 @@ export const SimulationModule = () => {
                           {formData.laborAdj > 0 ? "+" : ""}{formData.laborAdj}%
                         </span>
                       </label>
-                      <input 
+                      <input
                         type="range" min="-50" max="100" step="1"
                         className="w-full accent-primary"
                         value={formData.laborAdj}
@@ -2731,7 +3005,7 @@ export const SimulationModule = () => {
                           {formData.indirectAdj > 0 ? "+" : ""}{formData.indirectAdj}%
                         </span>
                       </label>
-                      <input 
+                      <input
                         type="range" min="-50" max="100" step="1"
                         className="w-full accent-primary"
                         value={formData.indirectAdj}
@@ -2745,7 +3019,7 @@ export const SimulationModule = () => {
                           {formData.efficiencyAdj > 0 ? "+" : ""}{formData.efficiencyAdj}%
                         </span>
                       </label>
-                      <input 
+                      <input
                         type="range" min="-50" max="50" step="1"
                         className="w-full accent-primary"
                         value={formData.efficiencyAdj}
@@ -2754,12 +3028,12 @@ export const SimulationModule = () => {
                     </div>
                     <div className="space-y-2">
                       <label className="text-[10px] font-bold flex items-center justify-between">
-                        <span>Margem Desejada</span>
+                        <span title="Variação relativa da margem premissa (ex.: 20% com +50% vira 30%)">Margem desejada (relativo)</span>
                         <span className={cn(formData.marginAdj > 0 ? "text-green-600" : "text-red-600")}>
                           {formData.marginAdj > 0 ? "+" : ""}{formData.marginAdj}%
                         </span>
                       </label>
-                      <input 
+                      <input
                         type="range" min="-50" max="100" step="1"
                         className="w-full accent-primary"
                         value={formData.marginAdj}
@@ -2769,20 +3043,28 @@ export const SimulationModule = () => {
                   </div>
                 </div>
 
+                {scenarioError ? (
+                  <p className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-xs font-semibold text-red-800" data-testid="scenario-form-error">
+                    <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" /> {scenarioError}
+                  </p>
+                ) : null}
+
                 <div className="pt-4 flex items-center gap-3">
-                  <button 
+                  <button
                     type="button"
                     onClick={() => setIsModalOpen(false)}
                     className="flex-1 py-3 rounded-xl font-bold hover:bg-accent transition-colors"
                   >
                     Cancelar
                   </button>
-                  <button 
+                  <button
                     type="submit"
-                    className="flex-1 py-3 rounded-xl font-bold bg-primary text-primary-foreground hover:opacity-90 transition-opacity flex items-center justify-center gap-2"
+                    disabled={scenarioSubmitting || !scenarioBaselineAvailable || !formData.taxRuleId}
+                    data-testid="scenario-form-submit"
+                    className="flex-1 py-3 rounded-xl font-bold bg-primary text-primary-foreground hover:opacity-90 transition-opacity flex items-center justify-center gap-2 disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    <Save className="h-4 w-4" />
-                    Criar Simulação
+                    {scenarioSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                    Criar cenário
                   </button>
                 </div>
               </form>

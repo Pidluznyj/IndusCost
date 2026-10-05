@@ -42,7 +42,7 @@ e **negar** Produtos, Simulações, Projetos, Simulador de Injeção, Dashboard 
 |------------|-------------|---------|
 | Matérias-primas | `engineering.materials` | view, update (edit) |
 | Cotações MI | `engineering.materials.market_intelligence.quotes` | view, update, approve, execute |
-| Simulações | `engineering.simulations` | view, create |
+| Simulações | `engineering.simulations` | view, create, update (arquivar/restaurar), delete (arquivar cenário / excluir rascunho) |
 | Produtos | `engineering.products` | create, update, delete, export |
 
 FE: `canEditMaterials` / `canEditMarketQuotes` / `canApproveMarketQuote` / `canCreateSimulations` via `canPerformAction`.  

@@ -1,5 +1,8 @@
 import type { Prisma } from "@prisma/client";
-import type { NewProductSimulationSnapshot } from "@/src/lib/newProductSimulationSnapshot";
+import type {
+  NewProductSimulationSnapshot,
+  PersistedSimulationStatus,
+} from "@/src/lib/newProductSimulationSnapshot";
 import { persistedStatusFromApiRecord } from "@/src/lib/newProductSimulationSnapshot";
 import { resolveSimulationSnapshotUnitCost } from "@/src/lib/projectsSimulationRefs";
 
@@ -8,7 +11,7 @@ export type ProjectSimulationLookupRow = {
   name: string;
   productName: string;
   productSku: string | null;
-  status: "DRAFT" | "SAVED";
+  status: PersistedSimulationStatus;
   statusLabel: string;
   savedAt: string | null;
   updatedAt: string | null;
@@ -120,6 +123,8 @@ export function serializeSimulationLookupRow(row: SimulationLookupRecord): Proje
   if (status === "DRAFT") {
     selectionBlockedReason =
       "Simulação em rascunho — salve em Simulações → Simular novo produto antes de adicionar ao projeto.";
+  } else if (status === "ARCHIVED") {
+    selectionBlockedReason = "Simulação arquivada — restaure em Simulações para adicionar ao projeto.";
   } else if (missingCost) {
     selectionBlockedReason = "Simulação sem custo industrial calculado no snapshot.";
   } else {
@@ -132,7 +137,7 @@ export function serializeSimulationLookupRow(row: SimulationLookupRecord): Proje
     productName: row.productName,
     productSku: row.productSku,
     status,
-    statusLabel: status === "SAVED" ? "Salvo" : "Rascunho",
+    statusLabel: status === "SAVED" ? "Salvo" : status === "ARCHIVED" ? "Arquivada" : "Rascunho",
     savedAt: row.savedAt?.toISOString() ?? null,
     updatedAt: row.updatedAt?.toISOString() ?? row.createdAt?.toISOString() ?? null,
     unitCost,

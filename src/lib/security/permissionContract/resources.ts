@@ -345,6 +345,8 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
     actions: [
       V(["simulations.view"]),
       C(["simulations.create"]),
+      U(["simulations.edit"], "arquivar / restaurar simulações"),
+      D(["simulations.delete"], "arquivar cenário; excluir rascunho de novo produto"),
     ],
     relatedEndpoints: ["/api/simulations", "/api/new-product-simulations"],
     sensitivity: "medium",

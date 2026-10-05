@@ -56,6 +56,8 @@ export type FinalCompositionLine =
       type: "EXISTING_COMPONENT";
       refId: string;
       quantity: number;
+      /** Base do custo de referência; ausente = engenharia atual (comportamento histórico). */
+      baselineSource?: "PUBLISHED" | "LIVE";
     }
   | {
       id: string;

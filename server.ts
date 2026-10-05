@@ -21,7 +21,7 @@ import {
   parseStandardProcessFields,
   validateStandardProcessFields,
 } from "./src/lib/productCostingModeValidation.js";
-import { resolveDefaultProcessHourCostsFromAnalysisCache, buildOfficialDefaultIndustrialCostsReference } from "./src/lib/componentStandardProcessCost.js";
+import { buildOfficialDefaultIndustrialCostsReference } from "./src/lib/componentStandardProcessCost.js";
 import { civilDateToLocalDate } from "./src/lib/financeCivilDate.js";
 import {
   generateProductionCostTableDraftFromProducts,
@@ -561,6 +561,7 @@ import { registerCostToCashTraceRoutes } from "./src/lib/audit/costToCashTraceRo
 import { registerComponentPerformanceRoutes } from "./src/lib/componentPerformanceRoutes.js";
 import { registerProductionOrdersRoutes } from "./src/lib/productionOrdersRoutes.js";
 import { registerTransformationHhHmSimulationHistoryRoutes } from "./src/lib/transformationHhHmSimulationHistoryRoutes.js";
+import { registerSimulationsRoutes } from "./src/lib/simulationsRoutes.js";
 import { registerProposalInternalManagementPdfRoutes } from "./src/lib/proposalInternalManagementPdfRoutes.js";
 import {
   getNomusDailySyncStatus,
@@ -583,12 +584,7 @@ import {
   startNomusNfesSyncApply,
 } from "./src/lib/nomusNfesSyncRunner.js";
 import { resolveProductBomUsage, type BomUsageSearchKind } from "./src/lib/productBomUsage.js";
-import { simulateScenarioFromBreakdown } from "./src/lib/simulationFormula.js";
 import { buildPricingUnitCalculationBreakdown } from "./src/lib/pricingUnitCalculationBreakdown.js";
-import {
-  buildCloneDraftData,
-  buildSnapshotSaveData,
-} from "./src/lib/newProductSimulationSnapshot.js";
 import { buildCustomerIndicatorsPayload, normalizeBrazilUf } from "./src/lib/customerIndicators.js";
 import { registerCustomerActivityMapRoutes } from "./src/lib/commercial/customerActivityMap/customerActivityMapRoutes.js";
 import {
@@ -11985,248 +11981,12 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     { prisma, isUuid }
   );
 
-  // --- API: Simulations (What-if Analysis) ---
-  app.get(
-    "/api/simulations/default-process-hour-costs",
-    requireAppAuth,
-    requireResource("engineering.simulations", "view"),
-    async (_req, res) => {
-      try {
-        const cache = await initAnalysisCache();
-        const costs = resolveDefaultProcessHourCostsFromAnalysisCache(cache);
-        if (!costs.available) {
-          return res.status(503).json({
-            error: "Não foi possível carregar o custo default de HH/HM. Verifique Configurações Gerais.",
-            available: false,
-          });
-        }
-        return res.json({
-          globalHhCostPerHour: costs.globalHhCostPerHour,
-          machineHourCostPerHour: costs.machineHourCostPerHour,
-          hhSource: costs.hhSource,
-          workingHours: cache.workingHours,
-          energyCost: cache.energyCost,
-          available: true,
-        });
-      } catch (err) {
-        console.error("default-process-hour-costs error:", err);
-        return res.status(503).json({
-          error: "Não foi possível carregar o custo default de HH/HM. Verifique Configurações Gerais.",
-          available: false,
-        });
-      }
-    }
+  // --- API: Simulações da Engenharia (cenários existentes + novo produto) ---
+  registerSimulationsRoutes(
+    app,
+    { requireAppAuth, requireResource, getCurrentAppUser },
+    { prisma, engine: costAnalysisEngine }
   );
-
-  app.get("/api/simulations", requireAppAuth, requireResource("engineering.simulations", "view"), async (req, res) => {
-    const simulations = await prisma.simulation.findMany({
-      orderBy: { createdAt: "desc" },
-    });
-    res.json(simulations);
-  });
-
-  app.post("/api/simulations", requireAppAuth, requireResource("engineering.simulations", "create"), async (req, res) => {
-    const data = req.body;
-    const simulation = await prisma.simulation.create({ data });
-    res.json(simulation);
-  });
-
-  app.delete("/api/simulations/:id", requireAppAuth, requireResource("engineering.simulations", "create"), async (req, res) => {
-    const { id } = req.params;
-    await prisma.simulation.delete({ where: { id } });
-    res.json({ success: true });
-  });
-
-  app.get("/api/simulations/:id/compare", requireAppAuth, requireResource("engineering.simulations", "view"), async (req, res) => {
-    const { id } = req.params;
-    try {
-      const sim = await prisma.simulation.findUnique({ where: { id } });
-      if (!sim) return res.status(404).json({ error: "Simulação não encontrada" });
-
-      // 1. Buscar Dados Oficiais (Base) - Chamada direta da função interna
-      const baseData = await getProductCostAnalysis(sim.productId);
-      if (!baseData) return res.status(404).json({ error: "Produto base não encontrado" });
-      if (isCostAnalysisFailure(baseData)) return res.status(400).json(baseData);
-
-      // Buscar premissas de preço oficiais
-      const pricing = await prisma.productPricing.findUnique({
-        where: { productId_taxRuleId: { productId: sim.productId, taxRuleId: sim.taxRuleId } },
-        include: { TaxRule: { include: { TaxComponent: true } } }
-      });
-
-      if (!pricing) return res.status(404).json({ error: "Configuração de preço base não encontrada" });
-
-      // Simular o retorno do endpoint de cálculo para manter compatibilidade
-      const taxRateBase = pricing.TaxRule.TaxComponent.reduce((acc, c) => acc + Number(c.percentage), 0) / 100;
-      const ciuBase = extractOfficialProductFinalUnitCost(baseData);
-      if (ciuBase == null) {
-        return res.status(400).json({ error: "Custo final da engenharia indisponível para o produto base." });
-      }
-      const opexBase = Number((baseData as { totalOPEX_Unit?: unknown }).totalOPEX_Unit);
-      const freightBase = Number(pricing.freightOut);
-      const commRateBase = Number(pricing.commission) / 100;
-      const marginRateBase = Number(pricing.desiredMargin) / 100;
-      const otherRateBase = Number(pricing.otherVariables) / 100;
-
-      const divisorBase = 1 - taxRateBase - commRateBase - otherRateBase - marginRateBase;
-      const suggestedPriceBase = divisorBase > 0 ? (ciuBase + freightBase) / divisorBase : 0;
-
-      const base = {
-        ciu: ciuBase,
-        custoGerencial: ciuBase + opexBase,
-        premissas: {
-          taxRate: taxRateBase * 100,
-          commRate: commRateBase * 100,
-          otherRate: otherRateBase * 100,
-          marginRate: marginRateBase * 100,
-          freight: freightBase,
-        },
-        resultados: {
-          suggestedPrice: suggestedPriceBase
-        }
-      };
-
-      // 2. Aplicar Ajustes (Simulação) com base real MP + HH + HM (sem CIF/OPEX no custo base)
-    const breakdownBase = {
-      mp: Number((baseData as any).totalMaterialCost ?? 0),
-      hh: Number((baseData as any).totalHH_Unit ?? 0),
-      hm: Number((baseData as any).totalHM_Unit ?? 0),
-    };
-
-    const calc = simulateScenarioFromBreakdown(
-      breakdownBase,
-      {
-        materialAdjPct: Number(sim.materialAdj ?? 0),
-        laborAdjPct: Number(sim.laborAdj ?? 0),
-        hmAdjPct: Number(sim.indirectAdj ?? 0),
-        efficiencyAdjPct: Number(sim.efficiencyAdj ?? 0),
-        marginAdjPct: Number(sim.marginAdj ?? 0),
-      },
-      {
-        taxRatePct: taxRateBase * 100,
-        commRatePct: commRateBase * 100,
-        otherRatePct: otherRateBase * 100,
-        marginRatePct: marginRateBase * 100,
-        freight: freightBase,
-      }
-    );
-
-    const simCIU = calc.simulated.costBase;
-    const simOPEX = base.custoGerencial - base.ciu;
-    const simCustoGerencial = simCIU + simOPEX;
-    const simSuggestedPrice = calc.pricing.simSuggestedPrice;
-
-    res.json({
-      simulationMethod: "REAL_COMPONENT_BREAKDOWN",
-      simulationNote:
-        "Cenário simulado aplica ajustes diretamente nos componentes reais do CIU (MP/HH/HM), mantendo CIF/OPEX fora do custo base principal.",
-      base,
-      simulated: {
-        ciu: simCIU,
-        custoGerencial: simCustoGerencial,
-        suggestedPrice: simSuggestedPrice,
-        marginRate: calc.pricing.marginRatePct,
-        markup: simCIU > 0 ? simSuggestedPrice / simCIU : 0,
-        breakdown: calc.simulated,
-      },
-      breakdown: {
-        base: calc.base,
-        simulated: calc.simulated,
-      },
-      delta: {
-        price: simSuggestedPrice - base.resultados.suggestedPrice,
-        pricePct: ((simSuggestedPrice / base.resultados.suggestedPrice) - 1) * 100,
-        ciu: simCIU - base.ciu,
-        ciuPct: ((simCIU / base.ciu) - 1) * 100,
-      }
-    });
-  } catch (error) {
-    console.error("Simulation comparison error:", error);
-    res.status(500).json({ error: "Erro ao comparar simulação" });
-  }
-});
-
-  // --- API: New Product Simulations (Sandbox Snapshot Persistence) ---
-  app.get("/api/new-product-simulations", requireAppAuth, requireResource("engineering.simulations", "view"), async (req, res) => {
-    const status = String(req.query.status ?? "").toUpperCase();
-    const where =
-      status === "SAVED" || status === "DRAFT"
-        ? { status: status as "SAVED" | "DRAFT" }
-        : undefined;
-    const rows = await prisma.newProductSimulation.findMany({
-      where,
-      orderBy: { createdAt: "desc" },
-      select: {
-        id: true,
-        name: true,
-        status: true,
-        sourceSimulationId: true,
-        productName: true,
-        productSku: true,
-        savedAt: true,
-        createdAt: true,
-      },
-    });
-    res.json(rows);
-  });
-
-  app.get("/api/new-product-simulations/:id", requireAppAuth, requireResource("engineering.simulations", "view"), async (req, res) => {
-    const { id } = req.params;
-    const row = await prisma.newProductSimulation.findUnique({ where: { id } });
-    if (!row) return res.status(404).json({ error: "Simulação de novo produto não encontrada." });
-    res.json(row);
-  });
-
-  app.post("/api/new-product-simulations/save", requireAppAuth, requireResource("engineering.simulations", "create"), async (req, res) => {
-    const { simulationName, snapshot, createdBy, origin } = req.body ?? {};
-    if (!simulationName || typeof simulationName !== "string") {
-      return res.status(400).json({ error: "Nome da simulação é obrigatório." });
-    }
-    if (!snapshot || typeof snapshot !== "object") {
-      return res.status(400).json({ error: "Snapshot inválido." });
-    }
-    const productName = String((snapshot as any)?.header?.productName ?? "").trim();
-    if (!productName) {
-      return res.status(400).json({ error: "Snapshot sem cabeçalho de produto válido." });
-    }
-    const data = buildSnapshotSaveData({
-      simulationName,
-      snapshot,
-      createdBy: typeof createdBy === "string" ? createdBy : undefined,
-      origin: typeof origin === "string" ? origin : undefined,
-    });
-    const created = await prisma.newProductSimulation.create({ data });
-    res.json(created);
-  });
-
-  app.post("/api/new-product-simulations/:id/clone", requireAppAuth, requireResource("engineering.simulations", "create"), async (req, res) => {
-    const { id } = req.params;
-    const source = await prisma.newProductSimulation.findUnique({
-      where: { id },
-      select: { id: true, name: true, snapshot: true },
-    });
-    if (!source) {
-      return res.status(404).json({ error: "Simulação de origem não encontrada." });
-    }
-    const cloneData = buildCloneDraftData(source);
-    const created = await prisma.newProductSimulation.create({ data: cloneData });
-    res.json(created);
-  });
-
-  app.delete("/api/new-product-simulations/:id", requireAppAuth, requireResource("engineering.simulations", "create"), async (req, res) => {
-    const { id } = req.params;
-    try {
-      await prisma.newProductSimulation.delete({ where: { id } });
-      return res.status(204).end();
-    } catch (error: unknown) {
-      const code = (error as { code?: string })?.code;
-      if (code === "P2025") {
-        return res.status(404).json({ error: "Simulação de novo produto não encontrada." });
-      }
-      console.error("DELETE new-product-simulations:", error);
-      return res.status(500).json({ error: "Erro ao excluir simulação de novo produto." });
-    }
-  });
 
   /**
    * Explosão recursiva só de matéria-prima (MP), consolidando por materialId.

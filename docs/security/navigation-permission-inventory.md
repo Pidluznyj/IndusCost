@@ -425,7 +425,7 @@ Chaves literais/constantes usadas com o guard oficial (amostra consolidada dos `
 | `engineering.products` | view, create, update, delete |
 | `engineering.materials` | view, update |
 | `engineering.materials.market_intelligence` (+ `.home`) | view |
-| `engineering.simulations` | view, create |
+| `engineering.simulations` | view, create, update, delete |
 | `engineering.transformation_simulator` | view |
 | `engineering.projects` | view, manage |
 | `commercial.crm.general\|seller\|portfolio` | view |

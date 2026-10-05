@@ -1,10 +1,15 @@
 import React from "react";
 import { formatCurrency, formatNumber } from "@/src/lib/utils";
-import type {
-  NewProductSimulationSnapshot,
-  NewProductSnapshotLine,
-  SnapshotLineType,
+import {
+  isServerComputedSnapshot,
+  LEGACY_SNAPSHOT_NOTICE,
+  type NewProductSimulationSnapshot,
+  type NewProductSnapshotLine,
+  type PersistedSimulationStatus,
+  type SnapshotLineType,
 } from "@/src/lib/newProductSimulationSnapshot";
+import { displayResultFromSnapshot, marginSignLabel } from "@/src/lib/newProductSimulationInputs";
+import { productCostBaselineLabel } from "@/src/lib/productCostBaseline";
 
 function formatIsoDatePt(iso?: string) {
   if (!iso) return "—";
@@ -34,8 +39,33 @@ function lineIdentification(line: NewProductSnapshotLine): string {
 }
 
 function lineSkuOrCode(line: NewProductSnapshotLine): string {
-  if (line.referenceId && String(line.referenceId).trim()) return String(line.referenceId);
+  if (line.referenceSku && String(line.referenceSku).trim()) return String(line.referenceSku);
+  // Snapshot legado: o SKU vinha embutido no rótulo "SKU — Nome".
+  const label = line.referenceLabel ?? "";
+  const separator = label.indexOf(" — ");
+  if (line.type !== "DIRECT_MATERIAL" && separator > 0) return label.slice(0, separator);
   return "—";
+}
+
+/** Origem do custo da linha — LIVE nunca é chamado de oficial. */
+function lineCostOrigin(line: NewProductSnapshotLine, legacy: boolean): string {
+  if (line.type === "DIRECT_MATERIAL") return "Digitado na simulação";
+  if (line.type === "SIMULATED_COMPONENT") return "Componente simulado";
+  if (!line.baseline) return legacy ? "Base não registrada (legado)" : "—";
+  if (line.baseline.source === "PUBLISHED") {
+    return `${productCostBaselineLabel("PUBLISHED")} · versão ${line.baseline.productionCostVersionCode ?? "—"} rev. ${
+      line.baseline.productionCostRevision ?? "—"
+    }`;
+  }
+  return `${productCostBaselineLabel("LIVE")} · ${formatIsoDatePt(line.baseline.calculatedAt ?? undefined)}`;
+}
+
+function moneyOrDash(value: number | null | undefined): string {
+  return typeof value === "number" && Number.isFinite(value) ? formatCurrency(value) : "—";
+}
+
+function percentOrDash(value: number | null | undefined): string {
+  return typeof value === "number" && Number.isFinite(value) ? `${formatNumber(value, 2)}%` : "—";
 }
 
 function viabilityLabel(v: NewProductSimulationSnapshot["result"]["viability"]): string {
@@ -66,11 +96,15 @@ function viabilityPanelClass(v: NewProductSimulationSnapshot["result"]["viabilit
 
 export type NewProductSimulationReportProps = {
   snapshot: NewProductSimulationSnapshot;
-  recordStatus?: "DRAFT" | "SAVED";
+  recordStatus?: PersistedSimulationStatus;
 };
 
 export function NewProductSimulationReport({ snapshot, recordStatus }: NewProductSimulationReportProps) {
   const { header, commercial, composition, result } = snapshot;
+  const legacy = !isServerComputedSnapshot(snapshot);
+  // Mesma leitura usada pela tela da simulação congelada: tela e relatório mostram os mesmos números.
+  const display = displayResultFromSnapshot(snapshot);
+  const premises = commercial.premises ?? null;
 
   return (
     <article className="np-report max-w-[210mm] mx-auto text-slate-900 bg-white text-[13px] leading-relaxed print:text-black">
@@ -80,6 +114,14 @@ export function NewProductSimulationReport({ snapshot, recordStatus }: NewProduc
           IndusCost · Documento interno
         </p>
         <h1 className="text-2xl font-bold tracking-tight text-slate-900 mb-1">Relatório de Simulação de Novo Produto</h1>
+        <p className="text-xs font-semibold text-slate-700" data-testid="report-simulation-notice">
+          SIMULAÇÃO — estimativa de engenharia. Não é custo oficial publicado nem preço oficial.
+        </p>
+        {legacy ? (
+          <p className="mt-1 text-xs text-slate-600" data-testid="report-legacy-notice">
+            {LEGACY_SNAPSHOT_NOTICE}.
+          </p>
+        ) : null}
         <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-2 text-sm">
           <div>
             <span className="text-slate-500">Nome da simulação</span>
@@ -88,7 +130,13 @@ export function NewProductSimulationReport({ snapshot, recordStatus }: NewProduc
           <div>
             <span className="text-slate-500">Status do registro</span>
             <p className="font-semibold">
-              {recordStatus === "SAVED" ? "Salvo (congelado)" : recordStatus === "DRAFT" ? "Rascunho" : "—"}
+              {recordStatus === "SAVED"
+                ? "Salvo (congelado)"
+                : recordStatus === "ARCHIVED"
+                  ? "Arquivada (congelada)"
+                  : recordStatus === "DRAFT"
+                    ? "Rascunho"
+                    : "—"}
             </p>
           </div>
           <div>
@@ -145,8 +193,8 @@ export function NewProductSimulationReport({ snapshot, recordStatus }: NewProduc
               { label: "HH total", value: formatCurrency(result.hh) },
               { label: "HM total", value: formatCurrency(result.hm) },
               { label: "Custo base total", value: formatCurrency(result.costBase) },
-              { label: "Preço calculado", value: formatCurrency(result.price) },
-              { label: "Margem resultante", value: `${formatNumber(result.marginPct, 2)}%` },
+              { label: display.priceLabel, value: moneyOrDash(display.price) },
+              { label: "Margem resultante", value: percentOrDash(display.marginPct) },
             ] as const
           ).map((cell) => (
             <div
@@ -158,8 +206,17 @@ export function NewProductSimulationReport({ snapshot, recordStatus }: NewProduc
             </div>
           ))}
           <div className="rounded-xl border border-slate-300 bg-white px-4 py-3 md:col-span-3">
-            <p className="text-[10px] font-semibold uppercase text-slate-500 tracking-wide">Viabilidade (snapshot)</p>
-            <p className="mt-1 text-lg font-bold tabular-nums">{viabilityLabel(result.viability)}</p>
+            <p className="text-[10px] font-semibold uppercase text-slate-500 tracking-wide">
+              {legacy
+                ? "Viabilidade (snapshot)"
+                : display.analysisKind === "COMMERCIAL_SIMULATED"
+                  ? "Análise comercial da simulação"
+                  : "Análise industrial preliminar"}
+            </p>
+            <p className="mt-1 text-lg font-bold tabular-nums">
+              {legacy && result.viability ? viabilityLabel(result.viability) : marginSignLabel(display.marginSign)}
+            </p>
+            {display.error ? <p className="mt-1 text-xs font-semibold text-red-700">{display.error}</p> : null}
           </div>
         </div>
       </section>
@@ -203,6 +260,7 @@ export function NewProductSimulationReport({ snapshot, recordStatus }: NewProduc
                 <th className="p-2.5 font-semibold border-b border-slate-200">Tipo</th>
                 <th className="p-2.5 font-semibold border-b border-slate-200">Identificação</th>
                 <th className="p-2.5 font-semibold border-b border-slate-200">Ref. / código</th>
+                <th className="p-2.5 font-semibold border-b border-slate-200">Origem do custo</th>
                 <th className="p-2.5 font-semibold border-b border-slate-200 text-right">Qtd.</th>
                 <th className="p-2.5 font-semibold border-b border-slate-200 text-right">Custo unit.</th>
                 <th className="p-2.5 font-semibold border-b border-slate-200 text-right">Total linha</th>
@@ -214,6 +272,7 @@ export function NewProductSimulationReport({ snapshot, recordStatus }: NewProduc
                   <td className="p-2.5 align-top text-slate-600">{lineTypeLabel(line.type)}</td>
                   <td className="p-2.5 align-top font-medium">{lineIdentification(line)}</td>
                   <td className="p-2.5 align-top text-slate-600 tabular-nums">{lineSkuOrCode(line)}</td>
+                  <td className="p-2.5 align-top text-slate-600">{lineCostOrigin(line, legacy)}</td>
                   <td className="p-2.5 align-top text-right tabular-nums">{formatNumber(line.quantity, 4)}</td>
                   <td className="p-2.5 align-top text-right tabular-nums">{formatCurrency(line.unitCost)}</td>
                   <td className="p-2.5 align-top text-right font-medium tabular-nums">{formatCurrency(line.lineTotal)}</td>
@@ -312,7 +371,7 @@ export function NewProductSimulationReport({ snapshot, recordStatus }: NewProduc
           <div>
             <p className="text-[10px] font-semibold uppercase text-slate-500">Modo</p>
             <p className="font-semibold">
-              {commercial.mode === "MARGIN" ? "Margem desejada sobre custo" : "Preço alvo"}
+              {commercial.mode === "MARGIN" ? "Margem desejada (% sobre o preço)" : "Preço alvo"}
             </p>
           </div>
           <div>
@@ -324,13 +383,39 @@ export function NewProductSimulationReport({ snapshot, recordStatus }: NewProduc
             <p className="font-semibold tabular-nums">{formatCurrency(commercial.targetPrice)}</p>
           </div>
           <div>
-            <p className="text-[10px] font-semibold uppercase text-slate-500">Preço final (snapshot)</p>
-            <p className="font-semibold tabular-nums text-base">{formatCurrency(result.price)}</p>
+            <p className="text-[10px] font-semibold uppercase text-slate-500">{display.priceLabel}</p>
+            <p className="font-semibold tabular-nums text-base">{moneyOrDash(display.price)}</p>
           </div>
           <div className="md:col-span-2">
             <p className="text-[10px] font-semibold uppercase text-slate-500">Margem resultante (snapshot)</p>
-            <p className="font-semibold tabular-nums">{formatNumber(result.marginPct, 2)}%</p>
+            <p className="font-semibold tabular-nums">{percentOrDash(display.marginPct)}</p>
           </div>
+          <div className="md:col-span-2" data-testid="report-commercial-premises">
+            <p className="text-[10px] font-semibold uppercase text-slate-500">Premissas comerciais da simulação</p>
+            {premises ? (
+              <p className="font-medium">
+                Impostos {formatNumber(premises.taxRatePct, 2)}%
+                {premises.taxRuleName ? ` (${premises.taxRuleName})` : ""} · Comissão{" "}
+                {formatNumber(premises.commissionRatePct, 2)}% · Outras variáveis{" "}
+                {formatNumber(premises.otherRatePct, 2)}% · Frete {formatCurrency(premises.freight)}
+              </p>
+            ) : (
+              <p className="font-medium">
+                Sem análise comercial: preço e margem acima consideram apenas MP + HH + HM — sem impostos, comissão,
+                frete, CIF ou OPEX. Não usar como preço comercial.
+              </p>
+            )}
+          </div>
+          {snapshot.hourCosts ? (
+            <div className="md:col-span-2" data-testid="report-hour-costs">
+              <p className="text-[10px] font-semibold uppercase text-slate-500">Taxas-hora usadas no processo</p>
+              <p className="font-medium tabular-nums">
+                HH {formatCurrency(snapshot.hourCosts.globalHhCostPerHour)}/h · HM{" "}
+                {formatCurrency(snapshot.hourCosts.machineHourCostPerHour)}/h (
+                {snapshot.hourCosts.hhSource === "MANUAL" ? "HH definido manualmente" : "HH calculado da folha"})
+              </p>
+            </div>
+          ) : null}
         </div>
       </section>
 
@@ -340,12 +425,28 @@ export function NewProductSimulationReport({ snapshot, recordStatus }: NewProduc
           Resumo de viabilidade
         </h2>
         <div
-          className={`rounded-xl border-2 p-6 ${viabilityPanelClass(result.viability)}`}
+          className={`rounded-xl border-2 p-6 ${
+            legacy
+              ? viabilityPanelClass(result.viability)
+              : display.marginSign === "POSITIVA"
+                ? "border-emerald-600/40 bg-emerald-50/80 text-emerald-950"
+                : display.marginSign === "NULA_OU_NEGATIVA"
+                  ? "border-red-600/40 bg-red-50/80 text-red-950"
+                  : "border-slate-300 bg-slate-50 text-slate-900"
+          }`}
         >
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
             <div>
-              <p className="text-[10px] font-bold uppercase tracking-wider opacity-80">Parecer do cenário (snapshot)</p>
-              <p className="text-2xl font-bold mt-1">{viabilityLabel(result.viability)}</p>
+              <p className="text-[10px] font-bold uppercase tracking-wider opacity-80">
+                {legacy
+                  ? "Parecer do cenário (snapshot)"
+                  : display.analysisKind === "COMMERCIAL_SIMULATED"
+                    ? "Análise comercial da simulação"
+                    : "Análise industrial preliminar"}
+              </p>
+              <p className="text-2xl font-bold mt-1">
+                {legacy && result.viability ? viabilityLabel(result.viability) : marginSignLabel(display.marginSign)}
+              </p>
             </div>
             <div className="grid grid-cols-2 gap-4 text-sm">
               <div>
@@ -353,12 +454,14 @@ export function NewProductSimulationReport({ snapshot, recordStatus }: NewProduc
                 <span className="font-bold tabular-nums">{formatCurrency(result.costBase)}</span>
               </div>
               <div>
-                <span className="block text-[10px] font-semibold uppercase opacity-70">Preço final</span>
-                <span className="font-bold tabular-nums">{formatCurrency(result.price)}</span>
+                <span className="block text-[10px] font-semibold uppercase opacity-70">
+                  {display.analysisKind === "COMMERCIAL_SIMULATED" ? "Preço simulado" : "Preço industrial preliminar"}
+                </span>
+                <span className="font-bold tabular-nums">{moneyOrDash(display.price)}</span>
               </div>
               <div>
                 <span className="block text-[10px] font-semibold uppercase opacity-70">Margem</span>
-                <span className="font-bold tabular-nums">{formatNumber(result.marginPct, 2)}%</span>
+                <span className="font-bold tabular-nums">{percentOrDash(display.marginPct)}</span>
               </div>
               <div>
                 <span className="block text-[10px] font-semibold uppercase opacity-70">Composição principal</span>
@@ -374,6 +477,7 @@ export function NewProductSimulationReport({ snapshot, recordStatus }: NewProduc
 
       <footer className="mt-10 pt-6 border-t border-slate-200 text-[10px] text-slate-500 text-center">
         Valores e textos reproduzem exclusivamente o snapshot salvo, sem recálculo a partir do cadastro atual.
+        {header.createdBy?.trim() ? ` Simulação criada por ${header.createdBy.trim()}.` : ""}
       </footer>
     </article>
   );

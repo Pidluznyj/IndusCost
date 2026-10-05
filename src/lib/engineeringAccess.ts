@@ -88,6 +88,11 @@ export const ENGINEERING_PILOT_ENDPOINTS = [
   { method: "POST", path: "/api/simulations*", resourceKey: "engineering.simulations", action: "create" },
   { method: "GET", path: "/api/new-product-simulations*", resourceKey: "engineering.simulations", action: "view" },
   { method: "POST", path: "/api/new-product-simulations*", resourceKey: "engineering.simulations", action: "create" },
+  { method: "POST", path: "/api/simulations/*/unarchive", resourceKey: "engineering.simulations", action: "update" },
+  { method: "POST", path: "/api/new-product-simulations/*/archive", resourceKey: "engineering.simulations", action: "update" },
+  { method: "POST", path: "/api/new-product-simulations/*/unarchive", resourceKey: "engineering.simulations", action: "update" },
+  { method: "DELETE", path: "/api/simulations/*", resourceKey: "engineering.simulations", action: "delete" },
+  { method: "DELETE", path: "/api/new-product-simulations/*", resourceKey: "engineering.simulations", action: "delete" },
 
   { method: "GET", path: "/api/projects", resourceKey: "engineering.projects", action: "view" },
   { method: "POST", path: "/api/projects", resourceKey: "engineering.projects", action: "manage" },

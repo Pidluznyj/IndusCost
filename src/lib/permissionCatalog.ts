@@ -2203,6 +2203,27 @@ export const PERMISSION_CATALOG: PermissionCatalogEntry[] = [
     parentKey: "simulations.view",
     requires: ["simulations.view"],
   }),
+  perm({
+    key: "simulations.edit",
+    label: "Simulações — Arquivar/restaurar",
+    group: OPS,
+    module: "simulations",
+    description: "Arquivar e restaurar simulações congeladas (o snapshot não é alterado).",
+    type: "action",
+    parentKey: "simulations.view",
+    requires: ["simulations.view"],
+  }),
+  perm({
+    key: "simulations.delete",
+    label: "Simulações — Excluir",
+    group: OPS,
+    module: "simulations",
+    description: "Arquivar cenários e excluir rascunhos de simulação de novo produto.",
+    type: "action",
+    parentKey: "simulations.view",
+    requires: ["simulations.view"],
+    risk: "sensitive",
+  }),
   /** Legado: pacote único de custos (compatibilidade 1K-D). */
   perm({
     key: "costs.view",

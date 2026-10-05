@@ -145,6 +145,8 @@ export const PERMISSION_TEMPLATES: Record<
       "opex.view",
       "simulations.view",
       "simulations.create",
+      "simulations.edit",
+      "simulations.delete",
       "projects.view",
       "projects.manage",
     ],

@@ -59,7 +59,7 @@ Regenerar: `npx tsx -e "import { formatPermissionTargetMatrixMarkdown } from './
 | `engineering.products.tab.tree` | Produto — Árvore | ✓ | n/a | n/a | n/a | n/a | n/a | n/a | — |
 | `engineering.projects` | Projetos | ✓ | n/a | n/a | n/a | n/a | n/a | ✓ | — |
 | `engineering.projects.detail` | Projeto — detalhe | ✓ | n/a | n/a | n/a | n/a | n/a | ✓ | — |
-| `engineering.simulations` | Simulações | ✓ | ✓ | n/a | n/a | n/a | n/a | n/a | — |
+| `engineering.simulations` | Simulações | ✓ | ✓ | ✓ | ✓ | n/a | n/a | n/a | Editar = arquivar/restaurar; Excluir = arquivar cenário / excluir rascunho |
 | `engineering.transformation_simulator` | Simulador de Custo de Injeção | ✓ | n/a | n/a | n/a | n/a | n/a | n/a | — |
 | `finance` | Financeiro | ✓ | n/a | n/a | n/a | n/a | n/a | n/a | — |
 | `finance.accounts_payable` | Contas a Pagar | ✓ | n/a | n/a | n/a | ✓ | ✓ | ✓ | — |
