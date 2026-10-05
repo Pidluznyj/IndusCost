@@ -231,7 +231,7 @@ describe("unitaryFormation hardening — detalhe / erros de motor", () => {
 });
 
 describe("unitaryFormation hardening — wiring segurança / cache / regressão", () => {
-  it("rotas exigem auth + commercial.pricing view e Cache-Control no-store", () => {
+  it("rotas READ exigem auth + commercial.pricing view e Cache-Control no-store", () => {
     const server = read("server.ts");
     for (const path of [
       '"/api/pricing/unitary-formation/product-search"',
@@ -250,34 +250,93 @@ describe("unitaryFormation hardening — wiring segurança / cache / regressão"
     }
   });
 
-  it("catálogo comercial e contrato de permissão listam endpoints unitários", () => {
+  it("rotas MUTATION exigem auth + permissão específica (view não basta)", () => {
+    const server = read("server.ts");
+
+    const draftIdx = server.indexOf(
+      '"/api/pricing/unitary-formation/products/:productId/production-cost/draft"'
+    );
+    assert.ok(draftIdx > 0);
+    const draftBlock = server.slice(draftIdx, draftIdx + 1400);
+    assert.match(draftBlock, /requireAppAuth/);
+    assert.match(draftBlock, /requireAnyPermission\(\["pricing\.generate_tables"/);
+    assert.match(draftBlock, /settings\.price_tables\.manage/);
+    assert.doesNotMatch(draftBlock, /requireResource\("commercial\.pricing", "view"\)/);
+    assert.doesNotMatch(draftBlock, /pricing\.publish_tables/);
+    assert.match(draftBlock, /createUnitaryProductionCostDraftFromLive/);
+
+    const publishIdx = server.indexOf(
+      '"/api/pricing/unitary-formation/products/:productId/production-cost/publish"'
+    );
+    assert.ok(publishIdx > 0);
+    const publishBlock = server.slice(publishIdx, publishIdx + 1400);
+    assert.match(publishBlock, /requireAppAuth/);
+    assert.match(publishBlock, /PRODUCTION_COST_TABLE_PUBLISH_PERMISSIONS/);
+    assert.doesNotMatch(publishBlock, /requireResource\("commercial\.pricing", "view"\)/);
+    assert.doesNotMatch(publishBlock, /pricing\.generate_tables/);
+    assert.match(publishBlock, /publishUnitaryProductionCostDraft/);
+    assert.doesNotMatch(publishBlock, /productionCostTableVersion\.update/);
+  });
+
+  it("catálogo comercial e contrato de permissão listam endpoints unitários READ+MUTATION", () => {
     const access = read("src/lib/commercialAccess.ts");
     const contract = read("src/lib/security/permissionContract/resources.ts");
     assert.match(access, /unitary-formation\/product-search/);
-    assert.match(access, /unitary-formation\/products\/:productId/);
+    assert.match(access, /unitary-formation\/products\/:productId"/);
+    assert.match(access, /production-cost\/draft/);
+    assert.match(access, /production-cost\/publish/);
     assert.match(contract, /unitary-formation\/product-search/);
-    assert.match(contract, /unitary-formation\/products\/:productId/);
+    assert.match(contract, /unitary-formation\/products\/:productId"/);
+    assert.match(contract, /production-cost\/draft/);
+    assert.match(contract, /production-cost\/publish/);
+
+    // commercialAccess: GET = view; POST draft/publish = manage (catálogo)
+    assert.match(
+      access,
+      /path:\s*"\/api\/pricing\/unitary-formation\/product-search"[\s\S]*?action:\s*"view"/
+    );
+    assert.match(
+      access,
+      /path:\s*"\/api\/pricing\/unitary-formation\/products\/:productId"[\s\S]*?action:\s*"view"/
+    );
+    assert.match(
+      access,
+      /path:\s*"\/api\/pricing\/unitary-formation\/products\/:productId\/production-cost\/draft"[\s\S]*?action:\s*"manage"/
+    );
+    assert.match(
+      access,
+      /path:\s*"\/api\/pricing\/unitary-formation\/products\/:productId\/production-cost\/publish"[\s\S]*?action:\s*"manage"/
+    );
   });
 
-  it("UI cobre seleção, detalhe, LIVE×PUBLISHED, race guards e sem mutação", () => {
+  it("UI cobre seleção, detalhe, LIVE×DRAFT×PUBLISHED, race guards e mutações protegidas", () => {
     const tab = read("src/components/pricing/UnitaryPriceFormationTab.tsx");
     assert.match(tab, /appendUnitaryFormationCacheBust/);
     assert.match(tab, /createUnitaryFormationRequestSequencer/);
     assert.match(tab, /shouldApplyUnitaryFormationDetailResult/);
     assert.match(tab, /shouldApplyUnitaryFormationSearchResult/);
+    assert.match(tab, /shouldApplyUnitaryFormationMutationResult/);
     assert.match(tab, /cache:\s*["']no-store["']/);
     assert.match(tab, /UNITARY_FORMATION_PRODUCT_SEARCH_DEBOUNCE_MS/);
     assert.match(tab, /unitary-formation-search-cap-hint/);
     assert.match(tab, /unitary-formation-slow-detail-hint/);
     assert.match(tab, /unitary-formation-live-origin/);
     assert.match(tab, /unitary-formation-published-origin/);
+    assert.match(tab, /unitary-formation-draft-origin/);
     assert.match(tab, /unitary-formation-live-error/);
     assert.match(tab, /unitary-formation-live-partial/);
     assert.match(tab, /unitary-formation-published-missing/);
+    assert.match(tab, /unitary-formation-version-refs/);
+    assert.match(tab, /unitary-formation-published-version-meta/);
     assert.match(tab, /unitary-formation-bom-issues/);
-    assert.match(tab, /Comparação LIVE × PUBLISHED/);
-    assert.doesNotMatch(tab, /method:\s*["']POST["']/);
-    assert.doesNotMatch(tab, /Salvar|Publicar|Gerar DRAFT/i);
+    assert.match(tab, /unitary-formation-generate-draft/);
+    assert.match(tab, /unitary-formation-review-publish/);
+    assert.match(tab, /buildUnitaryProductionCostPublishBody/);
+    assert.match(tab, /canGenerateDraft/);
+    assert.match(tab, /canPublishDraft/);
+    assert.doesNotMatch(tab, /method:\s*["']PUT["']/);
+    assert.doesNotMatch(tab, /method:\s*["']PATCH["']/);
+    assert.doesNotMatch(tab, /method:\s*["']DELETE["']/);
   });
 
   it("regressão: aba antiga Preços publicados permanece default e intacta", () => {

@@ -9,6 +9,8 @@ import {
   resolveOfficialProductFinalCostFromAnalysis,
 } from "../productOfficialFinalCost.js";
 import type { EffectiveProductProductionCostResult } from "../productionCostVersioning.js";
+import type { FrozenCostTraceStatus } from "../productEngineeringCostSnapshot.js";
+import { draftMatchesCurrentCalculation } from "../productionCostBulkPublish.js";
 import { civilDateToLocalDate, toCivilDateKey } from "../financeCivilDate.js";
 
 export const UNITARY_FORMATION_PRODUCT_DETAIL_ENDPOINT_PREFIX =
@@ -27,7 +29,24 @@ export type UnitaryFormationComparisonStatus =
   | "ALTERADO"
   | "SEM_CUSTO_PUBLICADO"
   | "ERRO_CALCULO"
-  | "CUSTO_PARCIAL";
+  | "CUSTO_PARCIAL"
+  | "SEM_DRAFT"
+  | "SEM_COMPARACAO";
+
+/**
+ * Estado de workflow da aba — mapeado das regras oficiais
+ * (`FrozenCostTraceStatus` / elegibilidade de publish), sem motor paralelo.
+ */
+export type UnitaryFormationWorkflowState =
+  | "UPDATED"
+  | "LIVE_CHANGED"
+  | "NO_DRAFT"
+  | "DRAFT_READY"
+  | "DRAFT_STALE"
+  | "NOT_PENDING"
+  | "TECHNICAL_ONLY"
+  | "NO_PUBLISHED"
+  | "INVALID";
 
 export type UnitaryFormationBomLineType = "MATERIAL" | "COMPONENT" | "INCOMPLETE";
 
@@ -57,6 +76,13 @@ export type UnitaryFormationCostWarning = {
   context?: string;
 };
 
+export type UnitaryFormationLiveDiagnostics = {
+  costAnalysisPartial: boolean | null;
+  warningCount: number;
+  warnings: UnitaryFormationCostWarning[];
+  error: { code: string; message: string } | null;
+};
+
 export type UnitaryFormationLiveCost = {
   origin: "LIVE";
   source: typeof OFFICIAL_PRODUCT_FINAL_COST_SOURCE;
@@ -65,17 +91,23 @@ export type UnitaryFormationLiveCost = {
   materialCost: number | null;
   laborCost: number | null;
   machineCost: number | null;
+  /** @deprecated Preferir processTotal (HH+HM). Mantido p/ compat. */
   processCost: number | null;
+  /** Apresentação oficial: HH + HM (transformação). */
+  processTotal: number | null;
   overheadCost: number | null;
   otherCost: number | null;
   totalIndustrialCost: number | null;
+  calculationHash: string | null;
   costAnalysisPartial: boolean | null;
   warnings: UnitaryFormationCostWarning[];
+  diagnostics: UnitaryFormationLiveDiagnostics;
 };
 
 export type UnitaryFormationPublishedCost = {
   origin: "PUBLISHED";
   source: "VERSIONED_PRODUCTION_COST_TABLE";
+  exists: boolean;
   status: UnitaryFormationPublishedCostStatus;
   error: { code: string; message: string } | null;
   versionId: string | null;
@@ -84,13 +116,43 @@ export type UnitaryFormationPublishedCost = {
   versionStatus: string | null;
   effectiveDate: string | null;
   publishedAt: string | null;
+  publishedBy: string | null;
+  materialCost: number | null;
+  laborCost: number | null;
+  machineCost: number | null;
+  /** @deprecated Preferir processTotal. */
+  processCost: number | null;
+  /** Apresentação: HH + HM quando processCost persistido = 0. */
+  processTotal: number | null;
+  overheadCost: number | null;
+  otherCost: number | null;
+  unitProductionCost: number | null;
+  calculationHash: string | null;
+};
+
+export type UnitaryFormationDraftCost = {
+  origin: "DRAFT";
+  exists: boolean;
+  versionId: string | null;
+  code: string | null;
+  revision: number | null;
+  status: string | null;
+  createdAt: string | null;
+  createdBy: string | null;
+  source: string | null;
   materialCost: number | null;
   laborCost: number | null;
   machineCost: number | null;
   processCost: number | null;
+  processTotal: number | null;
   overheadCost: number | null;
   otherCost: number | null;
   unitProductionCost: number | null;
+  calculationHash: string | null;
+  /** DRAFT desatualizado em relação ao LIVE atual (hash/custo). */
+  staleRelativeToLive: boolean | null;
+  /** Quantidade de DRAFTs do produto (workflow usa só o mais recente). */
+  draftCount: number;
 };
 
 export type UnitaryFormationComparison = {
@@ -100,6 +162,30 @@ export type UnitaryFormationComparison = {
   diffPercent: number | null;
   status: UnitaryFormationComparisonStatus;
   toleranceAbs: number;
+};
+
+export type UnitaryFormationPairComparison = {
+  leftTotal: number | null;
+  rightTotal: number | null;
+  diffValue: number | null;
+  diffPercent: number | null;
+  status: UnitaryFormationComparisonStatus;
+  toleranceAbs: number;
+};
+
+export type UnitaryFormationComparisons = {
+  liveVsPublished: UnitaryFormationComparison;
+  draftVsPublished: UnitaryFormationPairComparison;
+  draftVsLive: UnitaryFormationPairComparison;
+};
+
+export type UnitaryFormationWorkflow = {
+  state: UnitaryFormationWorkflowState;
+  /** Status oficial do motor de rastreio congelado. */
+  traceStatus: FrozenCostTraceStatus | null;
+  draftMatchesLive: boolean | null;
+  hasDraft: boolean;
+  hasPublished: boolean;
 };
 
 export type UnitaryFormationBomLine = {
@@ -132,9 +218,32 @@ export type UnitaryFormationProductDetailResponse = {
   identification: UnitaryFormationIdentification;
   process: UnitaryFormationProcess;
   liveCost: UnitaryFormationLiveCost;
+  draftCost: UnitaryFormationDraftCost;
   publishedCost: UnitaryFormationPublishedCost;
+  /** @deprecated Preferir comparisons.liveVsPublished */
   comparison: UnitaryFormationComparison;
+  comparisons: UnitaryFormationComparisons;
+  workflow: UnitaryFormationWorkflow;
   bom: UnitaryFormationBomLine[];
+};
+
+/** Linha DRAFT mais recente (já resolvida no server). */
+export type UnitaryFormationDraftVersionRow = {
+  versionId: string;
+  code: string;
+  revision: number;
+  status: string;
+  createdAt: Date | string;
+  createdBy: string | null;
+  source: string | null;
+  materialCost: number | null;
+  laborCost: number | null;
+  machineCost: number | null;
+  processCost: number | null;
+  overheadCost: number | null;
+  otherCost: number | null;
+  unitProductionCost: number | null;
+  calculationHash: string | null;
 };
 
 export type UnitaryFormationProductRow = {
@@ -160,6 +269,25 @@ function safeFinite(value: unknown): number | null {
 
 function roundMoney(value: number): number {
   return Math.round(value * 1e12) / 1e12;
+}
+
+/**
+ * Processo de apresentação: HH + HM (transformação).
+ * Não usa processCost persistido=0 da tabela versionada — histórico intacto.
+ */
+export function deriveUnitaryProcessTotal(input: {
+  laborCost: number | null;
+  machineCost: number | null;
+  storedProcessCost?: number | null;
+}): number | null {
+  const hh = input.laborCost;
+  const hm = input.machineCost;
+  if (hh != null || hm != null) {
+    return roundMoney((hh ?? 0) + (hm ?? 0));
+  }
+  const stored = input.storedProcessCost;
+  if (stored != null && Number.isFinite(stored) && stored > 0) return stored;
+  return null;
 }
 
 /**
@@ -213,8 +341,14 @@ export function mapUnitaryFormationProcess(
   };
 }
 
-export function mapUnitaryFormationLiveCost(analysis: unknown): UnitaryFormationLiveCost {
-  const empty = (status: UnitaryFormationLiveCostStatus, error: UnitaryFormationLiveCost["error"]): UnitaryFormationLiveCost => ({
+export function mapUnitaryFormationLiveCost(
+  analysis: unknown,
+  calculationHash: string | null = null
+): UnitaryFormationLiveCost {
+  const empty = (
+    status: UnitaryFormationLiveCostStatus,
+    error: UnitaryFormationLiveCost["error"]
+  ): UnitaryFormationLiveCost => ({
     origin: "LIVE",
     source: OFFICIAL_PRODUCT_FINAL_COST_SOURCE,
     status,
@@ -223,11 +357,19 @@ export function mapUnitaryFormationLiveCost(analysis: unknown): UnitaryFormation
     laborCost: null,
     machineCost: null,
     processCost: null,
+    processTotal: null,
     overheadCost: null,
     otherCost: null,
     totalIndustrialCost: null,
+    calculationHash: null,
     costAnalysisPartial: null,
     warnings: [],
+    diagnostics: {
+      costAnalysisPartial: null,
+      warningCount: 0,
+      warnings: [],
+      error,
+    },
   });
 
   if (analysis == null) {
@@ -250,10 +392,7 @@ export function mapUnitaryFormationLiveCost(analysis: unknown): UnitaryFormation
   const materialCost = safeFinite(resolved.breakdown.totalMaterialCost ?? raw.totalMaterialCost);
   const laborCost = safeFinite(resolved.breakdown.totalHH_Unit ?? raw.totalHH_Unit);
   const machineCost = safeFinite(resolved.breakdown.totalHM_Unit ?? raw.totalHM_Unit);
-  const processCost =
-    materialCost == null && laborCost == null && machineCost == null
-      ? null
-      : roundMoney((laborCost ?? 0) + (machineCost ?? 0));
+  const processTotal = deriveUnitaryProcessTotal({ laborCost, machineCost });
 
   const warningsRaw = Array.isArray(raw.warnings) ? raw.warnings : [];
   const warnings: UnitaryFormationCostWarning[] = [];
@@ -270,31 +409,45 @@ export function mapUnitaryFormationLiveCost(analysis: unknown): UnitaryFormation
   }
 
   const partial = Boolean(resolved.costAnalysisPartial);
+  const status: UnitaryFormationLiveCostStatus = partial ? "PARTIAL" : "OK";
   return {
     origin: "LIVE",
     source: OFFICIAL_PRODUCT_FINAL_COST_SOURCE,
-    status: partial ? "PARTIAL" : "OK",
+    status,
     error: null,
     materialCost,
     laborCost,
     machineCost,
-    processCost,
+    processCost: processTotal,
+    processTotal,
     overheadCost: null,
     otherCost: null,
     totalIndustrialCost: resolved.finalUnitCost,
+    calculationHash: calculationHash?.trim() || null,
     costAnalysisPartial: partial,
     warnings,
+    diagnostics: {
+      costAnalysisPartial: partial,
+      warningCount: warnings.length,
+      warnings,
+      error: null,
+    },
   };
 }
 
 export function mapUnitaryFormationPublishedCost(
   effective: EffectiveProductProductionCostResult,
-  versionStatus: string | null
+  versionStatus: string | null,
+  extras?: {
+    publishedBy?: string | null;
+    calculationHash?: string | null;
+  }
 ): UnitaryFormationPublishedCost {
   if (effective.status === "SEM_CUSTO") {
     return {
       origin: "PUBLISHED",
       source: "VERSIONED_PRODUCTION_COST_TABLE",
+      exists: false,
       status: "SEM_CUSTO",
       error: null,
       versionId: null,
@@ -303,20 +456,34 @@ export function mapUnitaryFormationPublishedCost(
       versionStatus: null,
       effectiveDate: null,
       publishedAt: null,
+      publishedBy: null,
       materialCost: null,
       laborCost: null,
       machineCost: null,
       processCost: null,
+      processTotal: null,
       overheadCost: null,
       otherCost: null,
       unitProductionCost: null,
+      calculationHash: null,
     };
   }
 
   const bd = effective.breakdown;
+  const materialCost = safeFinite(bd.materialCost);
+  const laborCost = safeFinite(bd.laborCost);
+  const machineCost = safeFinite(bd.machineCost);
+  const storedProcessCost = safeFinite(bd.processCost);
+  const processTotal = deriveUnitaryProcessTotal({
+    laborCost,
+    machineCost,
+    storedProcessCost,
+  });
+
   return {
     origin: "PUBLISHED",
     source: "VERSIONED_PRODUCTION_COST_TABLE",
+    exists: true,
     status: "OK",
     error: null,
     versionId: effective.costTableVersionId,
@@ -325,13 +492,16 @@ export function mapUnitaryFormationPublishedCost(
     versionStatus,
     effectiveDate: toCivilDateKey(effective.effectiveDate),
     publishedAt: effective.publishedAt ? effective.publishedAt.toISOString() : null,
-    materialCost: safeFinite(bd.materialCost),
-    laborCost: safeFinite(bd.laborCost),
-    machineCost: safeFinite(bd.machineCost),
-    processCost: safeFinite(bd.processCost),
+    publishedBy: extras?.publishedBy?.trim() || null,
+    materialCost,
+    laborCost,
+    machineCost,
+    processCost: processTotal,
+    processTotal,
     overheadCost: safeFinite(bd.overheadCost),
     otherCost: safeFinite(bd.otherCost),
     unitProductionCost: safeFinite(effective.unitProductionCost),
+    calculationHash: extras?.calculationHash?.trim() || null,
   };
 }
 
@@ -339,6 +509,7 @@ export function mapUnitaryFormationPublishedCostError(message: string): UnitaryF
   return {
     origin: "PUBLISHED",
     source: "VERSIONED_PRODUCTION_COST_TABLE",
+    exists: false,
     status: "ERROR",
     error: { code: "PUBLISHED_COST_LOOKUP_FAILED", message },
     versionId: null,
@@ -347,13 +518,96 @@ export function mapUnitaryFormationPublishedCostError(message: string): UnitaryF
     versionStatus: null,
     effectiveDate: null,
     publishedAt: null,
+    publishedBy: null,
     materialCost: null,
     laborCost: null,
     machineCost: null,
     processCost: null,
+    processTotal: null,
     overheadCost: null,
     otherCost: null,
     unitProductionCost: null,
+    calculationHash: null,
+  };
+}
+
+export function mapUnitaryFormationDraftCost(
+  draft: UnitaryFormationDraftVersionRow | null,
+  live: UnitaryFormationLiveCost,
+  draftCount: number = 0
+): UnitaryFormationDraftCost {
+  const safeCount = Number.isFinite(draftCount) && draftCount > 0 ? Math.floor(draftCount) : 0;
+  if (!draft) {
+    return {
+      origin: "DRAFT",
+      exists: false,
+      versionId: null,
+      code: null,
+      revision: null,
+      status: null,
+      createdAt: null,
+      createdBy: null,
+      source: null,
+      materialCost: null,
+      laborCost: null,
+      machineCost: null,
+      processCost: null,
+      processTotal: null,
+      overheadCost: null,
+      otherCost: null,
+      unitProductionCost: null,
+      calculationHash: null,
+      staleRelativeToLive: null,
+      draftCount: safeCount,
+    };
+  }
+
+  const laborCost = safeFinite(draft.laborCost);
+  const machineCost = safeFinite(draft.machineCost);
+  const storedProcessCost = safeFinite(draft.processCost);
+  const processTotal = deriveUnitaryProcessTotal({
+    laborCost,
+    machineCost,
+    storedProcessCost,
+  });
+  const createdAt =
+    draft.createdAt instanceof Date
+      ? draft.createdAt.toISOString()
+      : typeof draft.createdAt === "string"
+        ? draft.createdAt
+        : null;
+
+  const matches =
+    live.status === "ERROR"
+      ? false
+      : draftMatchesCurrentCalculation({
+          draftHash: draft.calculationHash,
+          liveHash: live.calculationHash,
+          draftUnitCost: draft.unitProductionCost,
+          liveCiu: live.totalIndustrialCost,
+        });
+
+  return {
+    origin: "DRAFT",
+    exists: true,
+    versionId: draft.versionId,
+    code: draft.code,
+    revision: draft.revision,
+    status: draft.status,
+    createdAt,
+    createdBy: draft.createdBy,
+    source: draft.source,
+    materialCost: safeFinite(draft.materialCost),
+    laborCost,
+    machineCost,
+    processCost: processTotal,
+    processTotal,
+    overheadCost: safeFinite(draft.overheadCost),
+    otherCost: safeFinite(draft.otherCost),
+    unitProductionCost: safeFinite(draft.unitProductionCost),
+    calculationHash: draft.calculationHash?.trim() || null,
+    staleRelativeToLive: !matches,
+    draftCount: Math.max(safeCount, 1),
   };
 }
 
@@ -417,6 +671,153 @@ export function resolveUnitaryFormationComparison(
   };
 }
 
+function resolvePairComparison(input: {
+  leftTotal: number | null;
+  rightTotal: number | null;
+  leftMissingStatus: UnitaryFormationComparisonStatus;
+  rightMissingStatus: UnitaryFormationComparisonStatus;
+  toleranceAbs?: number;
+}): UnitaryFormationPairComparison {
+  const toleranceAbs = input.toleranceAbs ?? UNITARY_FORMATION_COMPARISON_TOLERANCE_ABS;
+  if (input.leftTotal == null) {
+    return {
+      leftTotal: input.leftTotal,
+      rightTotal: input.rightTotal,
+      diffValue: null,
+      diffPercent: null,
+      status: input.leftMissingStatus,
+      toleranceAbs,
+    };
+  }
+  if (input.rightTotal == null) {
+    return {
+      leftTotal: input.leftTotal,
+      rightTotal: null,
+      diffValue: null,
+      diffPercent: null,
+      status: input.rightMissingStatus,
+      toleranceAbs,
+    };
+  }
+  const diffValue = roundMoney(input.leftTotal - input.rightTotal);
+  const diffPercent =
+    input.rightTotal === 0 ? null : roundMoney((diffValue / input.rightTotal) * 100);
+  return {
+    leftTotal: input.leftTotal,
+    rightTotal: input.rightTotal,
+    diffValue,
+    diffPercent,
+    status: Math.abs(diffValue) <= toleranceAbs ? "IGUAL" : "ALTERADO",
+    toleranceAbs,
+  };
+}
+
+export function resolveUnitaryFormationComparisons(input: {
+  live: UnitaryFormationLiveCost;
+  draft: UnitaryFormationDraftCost;
+  published: UnitaryFormationPublishedCost;
+}): UnitaryFormationComparisons {
+  const liveVsPublished = resolveUnitaryFormationComparison(input.live, input.published);
+  const draftVsPublished = !input.draft.exists
+    ? {
+        leftTotal: null,
+        rightTotal: input.published.unitProductionCost,
+        diffValue: null,
+        diffPercent: null,
+        status: "SEM_DRAFT" as const,
+        toleranceAbs: UNITARY_FORMATION_COMPARISON_TOLERANCE_ABS,
+      }
+    : resolvePairComparison({
+        leftTotal: input.draft.unitProductionCost,
+        rightTotal: input.published.status === "OK" ? input.published.unitProductionCost : null,
+        leftMissingStatus: "SEM_COMPARACAO",
+        rightMissingStatus: "SEM_CUSTO_PUBLICADO",
+      });
+  const draftVsLive = !input.draft.exists
+    ? {
+        leftTotal: null,
+        rightTotal: input.live.totalIndustrialCost,
+        diffValue: null,
+        diffPercent: null,
+        status: "SEM_DRAFT" as const,
+        toleranceAbs: UNITARY_FORMATION_COMPARISON_TOLERANCE_ABS,
+      }
+    : resolvePairComparison({
+        leftTotal: input.draft.unitProductionCost,
+        rightTotal:
+          input.live.status === "ERROR" ? null : input.live.totalIndustrialCost,
+        leftMissingStatus: "SEM_COMPARACAO",
+        rightMissingStatus: "ERRO_CALCULO",
+      });
+
+  return { liveVsPublished, draftVsPublished, draftVsLive };
+}
+
+/**
+ * Deriva estado de workflow a partir do `FrozenCostTraceStatus` oficial
+ * + flags de DRAFT (sem inventar motor paralelo).
+ */
+export function resolveUnitaryFormationWorkflowState(input: {
+  liveStatus: UnitaryFormationLiveCostStatus;
+  hasPublished: boolean;
+  hasDraft: boolean;
+  draftMatchesLive: boolean | null;
+  traceStatus: FrozenCostTraceStatus | null;
+}): UnitaryFormationWorkflowState {
+  if (input.liveStatus === "ERROR" || input.traceStatus === "SEM_CUSTO") {
+    return "INVALID";
+  }
+  if (input.traceStatus === "SNAPSHOT_TECNICO_SEM_IMPACTO") {
+    return "TECHNICAL_ONLY";
+  }
+  if (input.hasDraft && input.draftMatchesLive === false) {
+    return "DRAFT_STALE";
+  }
+  if (input.traceStatus === "PENDENTE_PUBLICACAO") {
+    return "DRAFT_READY";
+  }
+  if (input.traceStatus === "ATUALIZADO") {
+    return "UPDATED";
+  }
+  if (!input.hasPublished || input.traceStatus === "SEM_CUSTO_CONGELADO") {
+    return "NO_PUBLISHED";
+  }
+  if (input.traceStatus === "CUSTO_DIVERGENTE") {
+    return "LIVE_CHANGED";
+  }
+  if (!input.hasDraft) {
+    return "NO_DRAFT";
+  }
+  return "NOT_PENDING";
+}
+
+export function buildUnitaryFormationWorkflow(input: {
+  live: UnitaryFormationLiveCost;
+  draft: UnitaryFormationDraftCost;
+  published: UnitaryFormationPublishedCost;
+  traceStatus: FrozenCostTraceStatus | null;
+}): UnitaryFormationWorkflow {
+  const hasDraft = input.draft.exists;
+  const hasPublished = input.published.exists && input.published.status === "OK";
+  const draftMatchesLive =
+    !hasDraft || input.draft.staleRelativeToLive == null
+      ? null
+      : !input.draft.staleRelativeToLive;
+  return {
+    state: resolveUnitaryFormationWorkflowState({
+      liveStatus: input.live.status,
+      hasPublished,
+      hasDraft,
+      draftMatchesLive,
+      traceStatus: input.traceStatus,
+    }),
+    traceStatus: input.traceStatus,
+    draftMatchesLive,
+    hasDraft,
+    hasPublished,
+  };
+}
+
 function asBomLineType(value: unknown): UnitaryFormationBomLineType {
   if (value === "MATERIAL" || value === "COMPONENT" || value === "INCOMPLETE") return value;
   return "INCOMPLETE";
@@ -464,13 +865,42 @@ export function buildUnitaryFormationProductDetailResponse(input: {
   analysis: unknown;
   effective: EffectiveProductProductionCostResult;
   publishedVersionStatus: string | null;
+  liveCalculationHash?: string | null;
+  publishedBy?: string | null;
+  publishedCalculationHash?: string | null;
+  draft?: UnitaryFormationDraftVersionRow | null;
+  draftCount?: number;
+  traceStatus?: FrozenCostTraceStatus | null;
 }): UnitaryFormationProductDetailResponse {
-  const liveCost = mapUnitaryFormationLiveCost(input.analysis);
+  const liveCost = mapUnitaryFormationLiveCost(
+    input.analysis,
+    input.liveCalculationHash ?? null
+  );
   const publishedCost = mapUnitaryFormationPublishedCost(
     input.effective,
-    input.publishedVersionStatus
+    input.publishedVersionStatus,
+    {
+      publishedBy: input.publishedBy ?? null,
+      calculationHash: input.publishedCalculationHash ?? null,
+    }
   );
-  const comparison = resolveUnitaryFormationComparison(liveCost, publishedCost);
+  const draftCost = mapUnitaryFormationDraftCost(
+    input.draft ?? null,
+    liveCost,
+    input.draftCount ?? (input.draft ? 1 : 0)
+  );
+  const comparisons = resolveUnitaryFormationComparisons({
+    live: liveCost,
+    draft: draftCost,
+    published: publishedCost,
+  });
+  const comparison = comparisons.liveVsPublished;
+  const workflow = buildUnitaryFormationWorkflow({
+    live: liveCost,
+    draft: draftCost,
+    published: publishedCost,
+    traceStatus: input.traceStatus ?? null,
+  });
   const bom = liveCost.status === "ERROR" ? [] : mapUnitaryFormationBomLines(input.analysis);
 
   return {
@@ -487,8 +917,11 @@ export function buildUnitaryFormationProductDetailResponse(input: {
     identification: mapUnitaryFormationIdentification(input.product),
     process: mapUnitaryFormationProcess(input.product),
     liveCost,
+    draftCost,
     publishedCost,
     comparison,
+    comparisons,
+    workflow,
     bom,
   };
 }
@@ -530,8 +963,39 @@ export function unitaryFormationComparisonStatusLabel(
       return "ERRO";
     case "CUSTO_PARCIAL":
       return "PARCIAL";
+    case "SEM_DRAFT":
+      return "SEM DRAFT";
+    case "SEM_COMPARACAO":
+      return "SEM COMPARAÇÃO";
     default:
       return status;
+  }
+}
+
+export function unitaryFormationWorkflowStateLabel(
+  state: UnitaryFormationWorkflowState
+): string {
+  switch (state) {
+    case "UPDATED":
+      return "Atualizado";
+    case "LIVE_CHANGED":
+      return "LIVE divergente";
+    case "NO_DRAFT":
+      return "Sem DRAFT";
+    case "DRAFT_READY":
+      return "DRAFT pronto";
+    case "DRAFT_STALE":
+      return "DRAFT desatualizado";
+    case "NOT_PENDING":
+      return "Não pendente";
+    case "TECHNICAL_ONLY":
+      return "Snapshot técnico";
+    case "NO_PUBLISHED":
+      return "Sem publicado";
+    case "INVALID":
+      return "Inválido";
+    default:
+      return state;
   }
 }
 
@@ -544,6 +1008,8 @@ export function unitaryFormationComparisonBadgeClass(
     case "ALTERADO":
       return "bg-amber-100 text-amber-950 border-amber-200";
     case "SEM_CUSTO_PUBLICADO":
+    case "SEM_DRAFT":
+    case "SEM_COMPARACAO":
       return "bg-slate-100 text-slate-800 border-slate-200";
     case "ERRO_CALCULO":
       return "bg-red-100 text-red-800 border-red-200";

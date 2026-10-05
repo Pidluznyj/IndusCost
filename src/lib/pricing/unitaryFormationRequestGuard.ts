@@ -44,6 +44,22 @@ export function shouldApplyUnitaryFormationDetailResult(
   return Boolean(selectedProductId) && selectedProductId === requestedProductId;
 }
 
+/**
+ * Descarta resultado de mutation (gerar DRAFT / publicar) se o SKU mudou
+ * ou se outra mutation mais recente já foi iniciada.
+ */
+export function shouldApplyUnitaryFormationMutationResult(input: {
+  requestedProductId: string;
+  selectedProductId: string | null | undefined;
+  mutationToken: number;
+  latestMutationToken: number;
+}): boolean {
+  if (!shouldApplyUnitaryFormationDetailResult(input.requestedProductId, input.selectedProductId)) {
+    return false;
+  }
+  return input.mutationToken === input.latestMutationToken;
+}
+
 export function shouldShowUnitaryFormationSearchCapHint(
   resultCount: number,
   limit: number = UNITARY_FORMATION_PRODUCT_SEARCH_MAX_LIMIT

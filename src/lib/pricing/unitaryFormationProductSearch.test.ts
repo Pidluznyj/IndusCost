@@ -154,18 +154,21 @@ describe("unitaryFormationProductSearch routes/wiring", () => {
     assert.doesNotMatch(routeBlock, /\.upsert\(/);
   });
 
-  it("PricingModule expõe a aba unitária e consome endpoints read-only", () => {
+  it("PricingModule expõe a aba unitária e consome endpoints oficiais", () => {
     const module = read("src/components/PricingModule.tsx");
     const tab = read("src/components/pricing/UnitaryPriceFormationTab.tsx");
     assert.match(module, /Formação de Preço Unitária/);
     assert.match(module, /UnitaryPriceFormationTab/);
+    assert.match(module, /canGenerateDraft=/);
+    assert.match(module, /canPublishDraft=/);
     assert.match(tab, /unitary-formation\/product-search|buildUnitaryFormationProductSearchUrl/);
     assert.match(tab, /buildUnitaryFormationProductDetailUrl/);
     assert.match(tab, /UNITARY_FORMATION_PRODUCT_SEARCH_DEBOUNCE_MS/);
     assert.match(tab, /appendUnitaryFormationCacheBust|createUnitaryFormationRequestSequencer/);
     assert.match(tab, /Custo Atual \/ LIVE/);
     assert.match(tab, /Custo Oficial \/ PUBLISHED/);
-    assert.doesNotMatch(tab, /simulate-unit|apply-batch|generate-draft/);
+    assert.match(tab, /buildUnitaryProductionCostDraftUrl|production-cost\/draft/);
+    assert.doesNotMatch(tab, /simulate-unit|apply-batch/);
     assert.doesNotMatch(tab, /\/api\/price-table-versions\/.*publish|generateProductionCost|apply-batch/);
     assert.doesNotMatch(tab, /getProductCostAnalysis/);
     assert.doesNotMatch(module, /Gestão Unitária/);

@@ -55,6 +55,14 @@ import {
 import { searchUnitaryFormationProducts } from "./src/lib/pricing/unitaryFormationProductSearch.server.js";
 import { parseUnitaryFormationProductDetailRequest } from "./src/lib/pricing/unitaryFormationDetail.js";
 import { buildUnitaryFormationProductDetail } from "./src/lib/pricing/unitaryFormationDetail.server.js";
+import {
+  parseUnitaryProductionCostDraftRequest,
+  parseUnitaryProductionCostPublishRequest,
+} from "./src/lib/pricing/unitaryFormationProductionCost.js";
+import {
+  createUnitaryProductionCostDraftFromLive,
+  publishUnitaryProductionCostDraft,
+} from "./src/lib/pricing/unitaryFormationProductionCost.server.js";
 import { NO_PUBLISHED_PRODUCTION_COST_TABLE_MESSAGE } from "./src/lib/priceTableProductionCostResolver.js";
 import {
   resolveProposalOfficialMarginFromItems,
@@ -11364,6 +11372,128 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
         return res.status(500).json({
           error: "UNITARY_FORMATION_FAILED",
           message: "Erro ao carregar detalhe da formação unitária.",
+        });
+      }
+    }
+  );
+
+  /**
+   * Gera DRAFT unitário oficial (1 item) a partir do LIVE recalculado no servidor.
+   * Não publica e não altera versões PUBLISHED.
+   */
+  app.post(
+    "/api/pricing/unitary-formation/products/:productId/production-cost/draft",
+    requireAppAuth,
+    requireAnyPermission(["pricing.generate_tables", "settings.price_tables.manage"]),
+    async (req, res) => {
+      res.set("Cache-Control", "no-store, no-cache, must-revalidate");
+      try {
+        const body =
+          req.body && typeof req.body === "object" && !Array.isArray(req.body)
+            ? (req.body as Record<string, unknown>)
+            : {};
+        const parsed = parseUnitaryProductionCostDraftRequest({
+          productId: req.params.productId,
+          body,
+        });
+        if (parsed.ok === false) {
+          return res.status(parsed.error.httpStatus).json({
+            error: parsed.error.code,
+            message: parsed.error.message,
+          });
+        }
+
+        const createdBy =
+          req.appAuth?.email?.trim() ||
+          req.appAuth?.id?.trim() ||
+          req.appAuth?.name?.trim() ||
+          null;
+
+        const result = await createUnitaryProductionCostDraftFromLive(
+          prisma,
+          costAnalysisEngine,
+          {
+            productId: parsed.productId,
+            effectiveDate: parsed.effectiveDate,
+            createdBy,
+          }
+        );
+        if (result.ok === false) {
+          return res.status(result.error.httpStatus).json({
+            error: result.error.code,
+            message: result.error.message,
+          });
+        }
+        return res.status(201).json(result.data);
+      } catch (error) {
+        console.error(
+          "POST /api/pricing/unitary-formation/products/:productId/production-cost/draft:",
+          error
+        );
+        const message =
+          error instanceof Error ? error.message : "Erro ao gerar DRAFT unitário de custo.";
+        return res.status(500).json({
+          error: "UNITARY_PRODUCTION_COST_DRAFT_FAILED",
+          message,
+        });
+      }
+    }
+  );
+
+  /**
+   * Publica DRAFT unitário via publishProductionCostVersionFromDraft (infra oficial).
+   * Revalida LIVE/latest DRAFT antes; não faz UPDATE manual de status.
+   */
+  app.post(
+    "/api/pricing/unitary-formation/products/:productId/production-cost/publish",
+    requireAppAuth,
+    requireAnyPermission([...PRODUCTION_COST_TABLE_PUBLISH_PERMISSIONS]),
+    async (req, res) => {
+      res.set("Cache-Control", "no-store, no-cache, must-revalidate");
+      try {
+        const body =
+          req.body && typeof req.body === "object" && !Array.isArray(req.body)
+            ? (req.body as Record<string, unknown>)
+            : {};
+        const parsed = parseUnitaryProductionCostPublishRequest({
+          productId: req.params.productId,
+          body,
+        });
+        if (parsed.ok === false) {
+          return res.status(parsed.error.httpStatus).json({
+            error: parsed.error.code,
+            message: parsed.error.message,
+          });
+        }
+
+        const publishedBy =
+          req.appAuth?.email?.trim() ||
+          req.appAuth?.id?.trim() ||
+          req.appAuth?.name?.trim() ||
+          null;
+
+        const result = await publishUnitaryProductionCostDraft(prisma, costAnalysisEngine, {
+          productId: parsed.productId,
+          draftVersionId: parsed.draftVersionId,
+          publishedBy,
+        });
+        if (result.ok === false) {
+          return res.status(result.error.httpStatus).json({
+            error: result.error.code,
+            message: result.error.message,
+          });
+        }
+        return res.status(200).json(result.data);
+      } catch (error) {
+        console.error(
+          "POST /api/pricing/unitary-formation/products/:productId/production-cost/publish:",
+          error
+        );
+        const message =
+          error instanceof Error ? error.message : "Erro ao publicar DRAFT unitário de custo.";
+        return res.status(500).json({
+          error: "UNITARY_PRODUCTION_COST_PUBLISH_FAILED",
+          message,
         });
       }
     }

@@ -2574,6 +2574,12 @@ export const PricingModule = () => {
         <UnitaryPriceFormationTab
           selected={unitarySelectedProduct}
           onSelect={setUnitarySelectedProduct}
+          canGenerateDraft={
+            allowGenerateTables || auth.hasPermission("settings.price_tables.manage")
+          }
+          canPublishDraft={
+            allowPublishTables || auth.hasPermission("settings.price_tables.manage")
+          }
         />
       ) : null}
 

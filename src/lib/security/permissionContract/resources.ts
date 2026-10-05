@@ -1068,6 +1068,8 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
       "/api/price-tables",
       "/api/pricing/unitary-formation/product-search",
       "/api/pricing/unitary-formation/products/:productId",
+      "/api/pricing/unitary-formation/products/:productId/production-cost/draft",
+      "/api/pricing/unitary-formation/products/:productId/production-cost/publish",
     ],
     sensitivity: "critical",
     appearsInSidebar: true,
@@ -1077,7 +1079,7 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
     relationalResourceKeys: [],
     moduleId: "pricing",
     notes:
-      "Delete de premissa exige generate_tables|publish_tables (Prompt 13).",
+      "Delete de premissa exige generate_tables|publish_tables (Prompt 13). Formação unitária: GET search/detail com view; POST draft com pricing.generate_tables|settings.price_tables.manage; POST publish com pricing.publish_tables|settings.price_tables.manage.",
   },
   {
     resourceKey: "commercial.commissions",

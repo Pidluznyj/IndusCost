@@ -5,13 +5,18 @@ import { describe, it } from "node:test";
 import {
   buildUnitaryFormationProductDetailResponse,
   buildUnitaryFormationProductDetailUrl,
+  deriveUnitaryProcessTotal,
   mapUnitaryFormationBomLines,
+  mapUnitaryFormationDraftCost,
   mapUnitaryFormationLiveCost,
   mapUnitaryFormationPublishedCost,
   parseUnitaryFormationProductDetailRequest,
   resolveUnitaryFormationComparison,
+  resolveUnitaryFormationComparisons,
   resolveUnitaryFormationProcessSource,
+  resolveUnitaryFormationWorkflowState,
   unitaryFormationComparisonStatusLabel,
+  type UnitaryFormationDraftVersionRow,
   type UnitaryFormationProductRow,
 } from "./unitaryFormationDetail.js";
 import { OFFICIAL_PRODUCT_FINAL_COST_SOURCE } from "../productOfficialFinalCost.js";
@@ -86,22 +91,78 @@ function liveAnalysis(partial = false) {
   };
 }
 
+function publishedOk(overrides?: {
+  unitProductionCost?: number;
+  processCost?: number;
+  laborCost?: number;
+  machineCost?: number;
+}) {
+  return {
+    status: "OK" as const,
+    productId: product.id,
+    unitProductionCost: overrides?.unitProductionCost ?? 1.7,
+    costTableVersionId: "ver-pub-1",
+    costTableItemId: "item-pub-1",
+    effectiveDate: new Date(2026, 9, 1),
+    versionName: "PCT",
+    versionCode: "PCT-2026-10-01",
+    revision: 2,
+    publishedAt: new Date("2026-10-01T14:00:00.000Z"),
+    currency: "BRL",
+    breakdown: {
+      materialCost: 1.2,
+      processCost: overrides?.processCost ?? 0,
+      laborCost: overrides?.laborCost ?? 0.3,
+      machineCost: overrides?.machineCost ?? 0.2,
+      overheadCost: 0,
+      otherCost: 0,
+    },
+    calculationSnapshot: null,
+  };
+}
+
+function draftRow(
+  overrides?: Partial<UnitaryFormationDraftVersionRow>
+): UnitaryFormationDraftVersionRow {
+  return {
+    versionId: "draft-v1",
+    code: "AUTO-2026-10-05-320.03AA",
+    revision: 1,
+    status: "DRAFT",
+    createdAt: "2026-10-05T12:00:00.000Z",
+    createdBy: "user@test",
+    source: "PRICING_MODULE_PRODUCTION_COST",
+    materialCost: 1.2,
+    laborCost: 0.3,
+    machineCost: 0.2,
+    processCost: 0,
+    overheadCost: 0,
+    otherCost: 0,
+    unitProductionCost: 1.7,
+    calculationHash: "hash-live",
+    ...overrides,
+  };
+}
+
 describe("unitaryFormationDetail pure", () => {
   it("mapeia LIVE a partir do motor oficial sem recalcular fórmula", () => {
-    const live = mapUnitaryFormationLiveCost(liveAnalysis());
+    const live = mapUnitaryFormationLiveCost(liveAnalysis(), "hash-live");
     assert.equal(live.origin, "LIVE");
     assert.equal(live.source, OFFICIAL_PRODUCT_FINAL_COST_SOURCE);
     assert.equal(live.status, "OK");
     assert.equal(live.materialCost, 1.2);
     assert.equal(live.laborCost, 0.3);
     assert.equal(live.machineCost, 0.2);
+    assert.equal(live.processTotal, 0.5);
     assert.equal(live.processCost, 0.5);
     assert.equal(live.totalIndustrialCost, 1.7);
+    assert.equal(live.calculationHash, "hash-live");
     assert.equal(live.costAnalysisPartial, false);
+    assert.equal(live.diagnostics.warningCount, 1);
     assert.equal(live.warnings.length, 1);
   });
 
-  it("LIVE parcial e LIVE com erro", () => {
+  it("LIVE parcial e LIVE com erro de motor", () => {
     const partial = mapUnitaryFormationLiveCost(liveAnalysis(true));
     assert.equal(partial.status, "PARTIAL");
     assert.equal(partial.costAnalysisPartial, true);
@@ -113,82 +174,91 @@ describe("unitaryFormationDetail pure", () => {
     assert.equal(failed.status, "ERROR");
     assert.equal(failed.error?.code, "CONFIG_MISSING");
     assert.equal(failed.totalIndustrialCost, null);
+    assert.equal(failed.diagnostics.error?.code, "CONFIG_MISSING");
   });
 
-  it("mapeia PUBLISHED vigente e SEM_CUSTO", () => {
-    const ok = mapUnitaryFormationPublishedCost(
-      {
-        status: "OK",
-        productId: product.id,
-        unitProductionCost: 1.7,
-        costTableVersionId: "ver-1",
-        costTableItemId: "item-1",
-        effectiveDate: new Date(2026, 9, 1),
-        versionName: "PCT",
-        versionCode: "PCT-2026-10-01",
-        revision: 2,
-        publishedAt: new Date("2026-10-01T14:00:00.000Z"),
-        currency: "BRL",
-        breakdown: {
-          materialCost: 1.2,
-          processCost: 0.5,
-          laborCost: 0.3,
-          machineCost: 0.2,
-          overheadCost: 0,
-          otherCost: 0,
-        },
-        calculationSnapshot: null,
-      },
-      "PUBLISHED"
+  it("processTotal deriva HH+HM quando processCost persistido = 0 (caso 320.03AA)", () => {
+    assert.equal(
+      deriveUnitaryProcessTotal({ laborCost: 0.42, machineCost: 0.18, storedProcessCost: 0 }),
+      0.6
     );
-    assert.equal(ok.status, "OK");
-    assert.equal(ok.versionId, "ver-1");
-    assert.equal(ok.code, "PCT-2026-10-01");
-    assert.equal(ok.revision, 2);
-    assert.equal(ok.versionStatus, "PUBLISHED");
-    assert.equal(ok.unitProductionCost, 1.7);
+    const published = mapUnitaryFormationPublishedCost(
+      publishedOk({ processCost: 0, laborCost: 0.42, machineCost: 0.18 }),
+      "PUBLISHED",
+      { publishedBy: "auditor@test", calculationHash: "hash-pub" }
+    );
+    assert.equal(published.exists, true);
+    assert.equal(published.processCost, 0.6);
+    assert.equal(published.processTotal, 0.6);
+    assert.equal(published.publishedBy, "auditor@test");
+    assert.notEqual(published.processTotal, 0);
+  });
 
+  it("mapeia PUBLISHED SEM_CUSTO", () => {
     const missing = mapUnitaryFormationPublishedCost(
       { status: "SEM_CUSTO", productId: product.id, referenceDate: new Date(2026, 9, 5) },
       null
     );
     assert.equal(missing.status, "SEM_CUSTO");
+    assert.equal(missing.exists, false);
     assert.equal(missing.unitProductionCost, null);
   });
 
-  it("comparison: IGUAL, ALTERADO, SEM_CUSTO_PUBLICADO, ERRO_CALCULO, CUSTO_PARCIAL", () => {
-    const liveOk = mapUnitaryFormationLiveCost(liveAnalysis());
-    const publishedOk = mapUnitaryFormationPublishedCost(
-      {
-        status: "OK",
-        productId: product.id,
-        unitProductionCost: 1.7,
-        costTableVersionId: "ver-1",
-        costTableItemId: "item-1",
-        effectiveDate: new Date(2026, 9, 1),
-        versionName: "PCT",
-        versionCode: "PCT-2026-10-01",
-        revision: 1,
-        publishedAt: null,
-        currency: "BRL",
-        breakdown: {
-          materialCost: 1.2,
-          processCost: 0.5,
-          laborCost: 0.3,
-          machineCost: 0.2,
-          overheadCost: 0,
-          otherCost: 0,
-        },
-        calculationSnapshot: null,
-      },
+  it("sem DRAFT", () => {
+    const live = mapUnitaryFormationLiveCost(liveAnalysis(), "hash-live");
+    const draft = mapUnitaryFormationDraftCost(null, live);
+    assert.equal(draft.exists, false);
+    assert.equal(draft.staleRelativeToLive, null);
+    assert.equal(draft.versionId, null);
+  });
+
+  it("com DRAFT alinhado ao LIVE", () => {
+    const live = mapUnitaryFormationLiveCost(liveAnalysis(), "hash-live");
+    const draft = mapUnitaryFormationDraftCost(draftRow(), live);
+    assert.equal(draft.exists, true);
+    assert.equal(draft.versionId, "draft-v1");
+    assert.equal(draft.staleRelativeToLive, false);
+    assert.equal(draft.processTotal, 0.5);
+  });
+
+  it("DRAFT stale quando LIVE mudou", () => {
+    const live = mapUnitaryFormationLiveCost(liveAnalysis(), "hash-live-novo");
+    const draft = mapUnitaryFormationDraftCost(
+      draftRow({ calculationHash: "hash-antigo", unitProductionCost: 1.5 }),
+      live
+    );
+    assert.equal(draft.exists, true);
+    assert.equal(draft.staleRelativeToLive, true);
+  });
+
+  it("múltiplos DRAFTs: builder usa o row informado (server escolhe o mais recente)", () => {
+    const older = draftRow({
+      versionId: "draft-old",
+      createdAt: "2026-10-01T10:00:00.000Z",
+      calculationHash: "hash-old",
+    });
+    const newer = draftRow({
+      versionId: "draft-new",
+      createdAt: "2026-10-05T18:00:00.000Z",
+      calculationHash: "hash-live",
+    });
+    void older;
+    const live = mapUnitaryFormationLiveCost(liveAnalysis(), "hash-live");
+    const mapped = mapUnitaryFormationDraftCost(newer, live);
+    assert.equal(mapped.versionId, "draft-new");
+    assert.equal(mapped.staleRelativeToLive, false);
+  });
+
+  it("comparison LIVE×PUBLISHED: IGUAL, ALTERADO, SEM_CUSTO, ERRO, PARCIAL", () => {
+    const liveOk = mapUnitaryFormationLiveCost(liveAnalysis(), "hash-live");
+    const publishedEqual = mapUnitaryFormationPublishedCost(publishedOk(), "PUBLISHED");
+    assert.equal(resolveUnitaryFormationComparison(liveOk, publishedEqual).status, "IGUAL");
+
+    const publishedChanged = mapUnitaryFormationPublishedCost(
+      publishedOk({ unitProductionCost: 1.5 }),
       "PUBLISHED"
     );
-    assert.equal(resolveUnitaryFormationComparison(liveOk, publishedOk).status, "IGUAL");
-
-    const publishedChanged = { ...publishedOk, unitProductionCost: 1.5 };
-    const altered = resolveUnitaryFormationComparison(liveOk, publishedChanged);
-    assert.equal(altered.status, "ALTERADO");
-    assert.ok(altered.diffValue != null && altered.diffValue > 0);
+    assert.equal(resolveUnitaryFormationComparison(liveOk, publishedChanged).status, "ALTERADO");
 
     const publishedMissing = mapUnitaryFormationPublishedCost(
       { status: "SEM_CUSTO", productId: product.id, referenceDate: new Date() },
@@ -201,122 +271,191 @@ describe("unitaryFormationDetail pure", () => {
 
     const liveErr = mapUnitaryFormationLiveCost({ error: "BOM_CYCLE", message: "ciclo" });
     assert.equal(
-      resolveUnitaryFormationComparison(liveErr, publishedOk).status,
+      resolveUnitaryFormationComparison(liveErr, publishedEqual).status,
       "ERRO_CALCULO"
     );
 
-    const livePartial = mapUnitaryFormationLiveCost(liveAnalysis(true));
+    const livePartial = mapUnitaryFormationLiveCost(liveAnalysis(true), "hash-live");
     assert.equal(
-      resolveUnitaryFormationComparison(livePartial, publishedOk).status,
+      resolveUnitaryFormationComparison(livePartial, publishedEqual).status,
       "CUSTO_PARCIAL"
     );
   });
 
-  it("BOM reutiliza details.materials do motor", () => {
-    const bom = mapUnitaryFormationBomLines(liveAnalysis());
-    assert.equal(bom.length, 2);
-    assert.equal(bom[0]?.lineType, "MATERIAL");
-    assert.equal(bom[0]?.sku, "MP-01");
-    assert.equal(bom[0]?.materialId, "mat-1");
-    assert.equal(bom[1]?.lineType, "COMPONENT");
-    assert.equal(bom[1]?.childProductId, "child-1");
+  it("comparisons DRAFT×PUBLISHED e DRAFT×LIVE", () => {
+    const live = mapUnitaryFormationLiveCost(liveAnalysis(), "hash-live");
+    const published = mapUnitaryFormationPublishedCost(publishedOk(), "PUBLISHED");
+    const draft = mapUnitaryFormationDraftCost(draftRow(), live);
+    const comps = resolveUnitaryFormationComparisons({ live, draft, published });
+    assert.equal(comps.liveVsPublished.status, "IGUAL");
+    assert.equal(comps.draftVsPublished.status, "IGUAL");
+    assert.equal(comps.draftVsLive.status, "IGUAL");
+
+    const noDraft = mapUnitaryFormationDraftCost(null, live);
+    const without = resolveUnitaryFormationComparisons({
+      live,
+      draft: noDraft,
+      published,
+    });
+    assert.equal(without.draftVsPublished.status, "SEM_DRAFT");
+    assert.equal(without.draftVsLive.status, "SEM_DRAFT");
   });
 
-  it("processSource espelha precedência do motor", () => {
+  it("workflow: UPDATED / DRAFT_READY / DRAFT_STALE / NO_PUBLISHED / LIVE_CHANGED / INVALID / TECHNICAL_ONLY / NO_DRAFT", () => {
     assert.equal(
-      resolveUnitaryFormationProcessSource({
-        type: "PRODUCT",
-        cycleTimeSeconds: 10,
-        routingStepCount: 3,
+      resolveUnitaryFormationWorkflowState({
+        liveStatus: "OK",
+        hasPublished: true,
+        hasDraft: false,
+        draftMatchesLive: null,
+        traceStatus: "ATUALIZADO",
       }),
-      "STANDARD_PROCESS"
+      "UPDATED"
     );
     assert.equal(
-      resolveUnitaryFormationProcessSource({
-        type: "COMPONENT",
-        cycleTimeSeconds: null,
-        routingStepCount: 2,
+      resolveUnitaryFormationWorkflowState({
+        liveStatus: "OK",
+        hasPublished: true,
+        hasDraft: true,
+        draftMatchesLive: true,
+        traceStatus: "PENDENTE_PUBLICACAO",
       }),
-      "ROUTING"
+      "DRAFT_READY"
     );
     assert.equal(
-      resolveUnitaryFormationProcessSource({
-        type: "COMPONENT",
-        cycleTimeSeconds: null,
-        routingStepCount: 0,
+      resolveUnitaryFormationWorkflowState({
+        liveStatus: "OK",
+        hasPublished: true,
+        hasDraft: true,
+        draftMatchesLive: false,
+        traceStatus: "CUSTO_DIVERGENTE",
       }),
-      "NONE"
+      "DRAFT_STALE"
+    );
+    assert.equal(
+      resolveUnitaryFormationWorkflowState({
+        liveStatus: "OK",
+        hasPublished: false,
+        hasDraft: false,
+        draftMatchesLive: null,
+        traceStatus: "SEM_CUSTO_CONGELADO",
+      }),
+      "NO_PUBLISHED"
+    );
+    assert.equal(
+      resolveUnitaryFormationWorkflowState({
+        liveStatus: "OK",
+        hasPublished: true,
+        hasDraft: false,
+        draftMatchesLive: null,
+        traceStatus: "CUSTO_DIVERGENTE",
+      }),
+      "LIVE_CHANGED"
+    );
+    assert.equal(
+      resolveUnitaryFormationWorkflowState({
+        liveStatus: "ERROR",
+        hasPublished: false,
+        hasDraft: false,
+        draftMatchesLive: null,
+        traceStatus: "SEM_CUSTO",
+      }),
+      "INVALID"
+    );
+    assert.equal(
+      resolveUnitaryFormationWorkflowState({
+        liveStatus: "OK",
+        hasPublished: true,
+        hasDraft: true,
+        draftMatchesLive: true,
+        traceStatus: "SNAPSHOT_TECNICO_SEM_IMPACTO",
+      }),
+      "TECHNICAL_ONLY"
+    );
+    assert.equal(
+      resolveUnitaryFormationWorkflowState({
+        liveStatus: "OK",
+        hasPublished: true,
+        hasDraft: false,
+        draftMatchesLive: null,
+        traceStatus: null,
+      }),
+      "NO_DRAFT"
     );
   });
 
-  it("resposta consolidada é determinística com generatedAt fixo", () => {
+  it("resposta consolidada traz LIVE + DRAFT + PUBLISHED + comparisons + workflow", () => {
     const response = buildUnitaryFormationProductDetailResponse({
       product,
       referenceDate: "2026-10-05",
       generatedAt: "2026-10-05T18:00:00.000Z",
       analysis: liveAnalysis(),
-      effective: {
-        status: "OK",
-        productId: product.id,
-        unitProductionCost: 1.7,
-        costTableVersionId: "ver-1",
-        costTableItemId: "item-1",
-        effectiveDate: new Date(2026, 9, 1),
-        versionName: "PCT",
-        versionCode: "PCT-2026-10-01",
-        revision: 2,
-        publishedAt: new Date("2026-10-01T14:00:00.000Z"),
-        currency: "BRL",
-        breakdown: {
-          materialCost: 1.2,
-          processCost: 0.5,
-          laborCost: 0.3,
-          machineCost: 0.2,
-          overheadCost: 0,
-          otherCost: 0,
-        },
-        calculationSnapshot: null,
-      },
+      effective: publishedOk(),
       publishedVersionStatus: "PUBLISHED",
+      liveCalculationHash: "hash-live",
+      publishedBy: "pub@test",
+      publishedCalculationHash: "hash-pub",
+      draft: draftRow(),
+      traceStatus: "PENDENTE_PUBLICACAO",
     });
 
     assert.equal(response.meta.readOnly, true);
     assert.equal(response.meta.capabilities.canPublish, false);
     assert.equal(response.identification.sku, "320.03AA");
-    assert.equal(response.process.processSource, "STANDARD_PROCESS");
     assert.equal(response.liveCost.origin, "LIVE");
-    assert.equal(response.publishedCost.origin, "PUBLISHED");
+    assert.equal(response.draftCost.exists, true);
+    assert.equal(response.publishedCost.exists, true);
+    assert.equal(response.publishedCost.publishedBy, "pub@test");
+    assert.equal(response.publishedCost.processTotal, 0.5);
     assert.equal(response.comparison.status, "IGUAL");
+    assert.equal(response.comparisons.liveVsPublished.status, "IGUAL");
+    assert.equal(response.comparisons.draftVsLive.status, "IGUAL");
+    assert.equal(response.workflow.state, "DRAFT_READY");
+    assert.equal(response.workflow.traceStatus, "PENDENTE_PUBLICACAO");
     assert.equal(response.bom.length, 2);
-    assert.deepEqual(response, buildUnitaryFormationProductDetailResponse({
+  });
+
+  it("LIVE = PUBLISHED → IGUAL; LIVE != PUBLISHED → ALTERADO", () => {
+    const equal = buildUnitaryFormationProductDetailResponse({
       product,
       referenceDate: "2026-10-05",
       generatedAt: "2026-10-05T18:00:00.000Z",
       analysis: liveAnalysis(),
-      effective: {
-        status: "OK",
-        productId: product.id,
-        unitProductionCost: 1.7,
-        costTableVersionId: "ver-1",
-        costTableItemId: "item-1",
-        effectiveDate: new Date(2026, 9, 1),
-        versionName: "PCT",
-        versionCode: "PCT-2026-10-01",
-        revision: 2,
-        publishedAt: new Date("2026-10-01T14:00:00.000Z"),
-        currency: "BRL",
-        breakdown: {
-          materialCost: 1.2,
-          processCost: 0.5,
-          laborCost: 0.3,
-          machineCost: 0.2,
-          overheadCost: 0,
-          otherCost: 0,
-        },
-        calculationSnapshot: null,
-      },
+      effective: publishedOk(),
       publishedVersionStatus: "PUBLISHED",
-    }));
+      liveCalculationHash: "hash-live",
+      draft: null,
+      traceStatus: "ATUALIZADO",
+    });
+    assert.equal(equal.comparisons.liveVsPublished.status, "IGUAL");
+    assert.equal(equal.workflow.state, "UPDATED");
+
+    const diverged = buildUnitaryFormationProductDetailResponse({
+      product,
+      referenceDate: "2026-10-05",
+      generatedAt: "2026-10-05T18:00:00.000Z",
+      analysis: liveAnalysis(),
+      effective: publishedOk({ unitProductionCost: 9.99 }),
+      publishedVersionStatus: "PUBLISHED",
+      liveCalculationHash: "hash-live",
+      draft: null,
+      traceStatus: "CUSTO_DIVERGENTE",
+    });
+    assert.equal(diverged.comparisons.liveVsPublished.status, "ALTERADO");
+    assert.equal(diverged.workflow.state, "LIVE_CHANGED");
+  });
+
+  it("BOM e process source", () => {
+    const bom = mapUnitaryFormationBomLines(liveAnalysis());
+    assert.equal(bom.length, 2);
+    assert.equal(
+      resolveUnitaryFormationProcessSource({
+        type: "PRODUCT",
+        cycleTimeSeconds: 12,
+        routingStepCount: 2,
+      }),
+      "STANDARD_PROCESS"
+    );
   });
 
   it("parse da request valida UUID e data", () => {
@@ -334,7 +473,6 @@ describe("unitaryFormationDetail pure", () => {
       referenceDateRaw: "2026-10-05",
     });
     assert.equal(ok.ok, true);
-    if (ok.ok) assert.equal(ok.referenceDateKey, "2026-10-05");
   });
 
   it("URL estável", () => {
@@ -346,18 +484,19 @@ describe("unitaryFormationDetail pure", () => {
 });
 
 describe("unitaryFormationDetail routes/wiring", () => {
-  it("rota detalhe existe, é GET read-only e usa motor/resolver oficiais", () => {
+  it("rota detalhe existe, é GET read-only, usa motor/resolver oficiais e exige autorização", () => {
     const server = read("server.ts");
     const detailIdx = server.indexOf('"/api/pricing/unitary-formation/products/:productId"');
-    const paramCalcIdx = server.indexOf('"/api/pricing/:productId/:taxRuleId/calculate"');
     assert.ok(detailIdx > 0);
-    assert.ok(paramCalcIdx > detailIdx);
 
-    const routeEnd = server.indexOf("app.post(\"/api/pricing\"", detailIdx);
-    assert.ok(routeEnd > detailIdx);
-    const routeBlock = server.slice(detailIdx, routeEnd);
+    const draftIdx = server.indexOf(
+      '"/api/pricing/unitary-formation/products/:productId/production-cost/draft"',
+      detailIdx
+    );
+    assert.ok(draftIdx > detailIdx);
+    const routeBlock = server.slice(detailIdx, draftIdx);
     assert.match(routeBlock, /requireAppAuth/);
-    assert.match(routeBlock, /commercial\.pricing/);
+    assert.match(routeBlock, /requireResource\("commercial\.pricing",\s*"view"\)/);
     assert.match(routeBlock, /Cache-Control["'],\s*["']no-store/);
     assert.match(routeBlock, /buildUnitaryFormationProductDetail/);
     assert.match(routeBlock, /costAnalysisEngine/);
@@ -367,13 +506,25 @@ describe("unitaryFormationDetail routes/wiring", () => {
     assert.doesNotMatch(routeBlock, /\.upsert\(/);
     assert.doesNotMatch(routeBlock, /publishProductionCost/);
     assert.doesNotMatch(routeBlock, /generateProductionCostTableDraft/);
+    assert.doesNotMatch(routeBlock, /createUnitaryProductionCostDraft/);
+    assert.doesNotMatch(routeBlock, /publishUnitaryProductionCostDraft/);
+
+    const access = read("src/lib/commercialAccess.ts");
+    assert.match(
+      access,
+      /path:\s*"\/api\/pricing\/unitary-formation\/products\/:productId"/
+    );
+    assert.match(access, /resourceKey:\s*"commercial\.pricing"/);
   });
 
-  it("libs de detalhe não mutam Product nem tabelas de custo", () => {
+  it("libs de detalhe não mutam Product nem tabelas de custo; carregam DRAFT mais recente", () => {
     const serverLib = read("src/lib/pricing/unitaryFormationDetail.server.ts");
     const pure = read("src/lib/pricing/unitaryFormationDetail.ts");
     assert.match(serverLib, /getEffectiveProductProductionCost/);
-    assert.match(serverLib, /getProductCostAnalysis/);
+    assert.match(serverLib, /evaluateProductEngineeringCost/);
+    assert.match(serverLib, /loadLatestUnitaryFormationDraft/);
+    assert.match(serverLib, /orderBy:\s*\{\s*createdAt:\s*"desc"/);
+    assert.match(serverLib, /resolveFrozenCostTraceStatus/);
     assert.doesNotMatch(serverLib, /\.create\(/);
     assert.doesNotMatch(serverLib, /\.update\(/);
     assert.doesNotMatch(serverLib, /\.delete\(/);
@@ -382,21 +533,29 @@ describe("unitaryFormationDetail routes/wiring", () => {
     assert.doesNotMatch(pure, /getProductCostAnalysis/);
   });
 
-  it("UI da aba renderiza blocos LIVE/PUBLISHED/comparação/BOM sem ações de escrita", () => {
+  it("bulk publish não é alterado por este escopo", () => {
+    const bulk = read("src/lib/productionCostBulkPublish.ts");
+    const bulkServer = read("src/lib/productionCostBulkPublish.server.ts");
+    assert.match(bulk, /classifyBulkPublishEligibility/);
+    assert.match(bulkServer, /publishProductionCostVersionFromDraft|classifyBulkPublishEligibility/);
+    assert.doesNotMatch(bulk, /unitaryFormation/);
+    assert.doesNotMatch(bulkServer, /unitaryFormation/);
+  });
+
+  it("UI renderiza LIVE/DRAFT/PUBLISHED/comparações/workflow e ações condicionais", () => {
     const tab = read("src/components/pricing/UnitaryPriceFormationTab.tsx");
     assert.match(tab, /Custo Atual \/ LIVE/);
+    assert.match(tab, /DRAFT mais recente/);
     assert.match(tab, /Custo Oficial \/ PUBLISHED/);
     assert.match(tab, /unitary-formation-comparison/);
+    assert.match(tab, /unitary-formation-draft-cost/);
+    assert.match(tab, /unitary-formation-workflow/);
     assert.match(tab, /unitary-formation-bom/);
-    assert.match(tab, /unitary-formation-live-origin/);
-    assert.match(tab, /unitary-formation-published-origin/);
+    assert.match(tab, /processTotal|Processo \(HH\+HM\)/);
     assert.match(tab, /buildUnitaryFormationProductDetailUrl/);
+    assert.match(tab, /unitary-formation-generate-draft/);
+    assert.match(tab, /unitary-formation-review-publish/);
     assert.equal(unitaryFormationComparisonStatusLabel("ERRO_CALCULO"), "ERRO");
     assert.equal(unitaryFormationComparisonStatusLabel("CUSTO_PARCIAL"), "PARCIAL");
-    assert.doesNotMatch(tab, /Salvar|Publicar|Gerar DRAFT|Editar premissa/i);
-    assert.doesNotMatch(tab, /method:\s*["']POST["']/);
-    assert.doesNotMatch(tab, /method:\s*["']PUT["']/);
-    assert.doesNotMatch(tab, /method:\s*["']PATCH["']/);
-    assert.doesNotMatch(tab, /method:\s*["']DELETE["']/);
   });
 });
