@@ -49,6 +49,10 @@ import {
 } from "@/src/lib/productionCostDraftItemScope";
 import { buildProductionCostDraftGenerationSummaryLines, buildProductionCostPublicationPendencyLines, type ProductionCostPublicationFeedback } from "@/src/lib/productionCostTablesUi";
 import { CommercialPublishedPricesGrid } from "@/src/components/pricing/CommercialPublishedPricesGrid";
+import {
+  UnitaryPriceFormationTab,
+  type UnitaryFormationSelectedProduct,
+} from "@/src/components/pricing/UnitaryPriceFormationTab";
 import { useCommercialPublishedPrices } from "@/src/components/pricing/useCommercialPublishedPrices";
 import {
   formatPublishedAtLabel,
@@ -215,6 +219,9 @@ export const PricingModule = () => {
   const [tourOpen, setTourOpen] = useState(false);
   const isSuperAdminUser = auth.isSuperAdmin();
   const [adminFormationToolsOpen, setAdminFormationToolsOpen] = useState(false);
+  const [pricingMainTab, setPricingMainTab] = useState<"published" | "unitary">("published");
+  const [unitarySelectedProduct, setUnitarySelectedProduct] =
+    useState<UnitaryFormationSelectedProduct | null>(null);
   const [selectedPricings, setSelectedPricings] = useState<string[]>([]);
 
   const [pricings, setPricings] = useState<any[]>([]);
@@ -2531,6 +2538,46 @@ export const PricingModule = () => {
         </div>
       </div>
 
+      <div
+        className="flex items-end gap-1 overflow-x-auto border-b border-border"
+        role="tablist"
+        aria-label="Modos de Formação de Preço"
+        data-testid="pricing-main-tabs"
+      >
+        {[
+          { id: "published" as const, label: "Preços publicados" },
+          { id: "unitary" as const, label: "Formação de Preço Unitária" },
+        ].map((tab) => {
+          const isActive = pricingMainTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              role="tab"
+              aria-selected={isActive}
+              data-testid={`pricing-main-tab-${tab.id}`}
+              onClick={() => setPricingMainTab(tab.id)}
+              className={cn(
+                "inline-flex items-center gap-2 px-4 py-2.5 text-sm font-semibold rounded-t-lg border border-transparent border-b-0 whitespace-nowrap transition-colors",
+                isActive
+                  ? "bg-card border-border text-foreground -mb-px"
+                  : "text-muted-foreground hover:text-foreground hover:bg-accent/40"
+              )}
+            >
+              {tab.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {pricingMainTab === "unitary" ? (
+        <UnitaryPriceFormationTab
+          selected={unitarySelectedProduct}
+          onSelect={setUnitarySelectedProduct}
+        />
+      ) : null}
+
+      {pricingMainTab === "published" ? (
         <div className="space-y-6" data-tour="pricing-unit-panel">
           {loading ? (
             <div className="p-8 text-center">
@@ -2817,6 +2864,7 @@ export const PricingModule = () => {
       </div>
      </div>
         </div>
+      ) : null}
 
 
       {/* Modal Simulador de Preço (portal + np-report-printing para PDF limpo) */}

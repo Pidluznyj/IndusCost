@@ -127,6 +127,18 @@ export const COMMERCIAL_PILOT_ENDPOINTS = [
     resourceKey: "commercial.price_table",
     action: "view",
   },
+  {
+    method: "GET",
+    path: "/api/pricing/unitary-formation/product-search",
+    resourceKey: "commercial.pricing",
+    action: "view",
+  },
+  {
+    method: "GET",
+    path: "/api/pricing/unitary-formation/products/:productId",
+    resourceKey: "commercial.pricing",
+    action: "view",
+  },
   { method: "POST", path: "/api/pricing/simulate*", resourceKey: "commercial.pricing", action: "execute" },
   { method: "POST", path: "/api/pricing/*", resourceKey: "commercial.pricing", action: "manage" },
 

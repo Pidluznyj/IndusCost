@@ -1063,7 +1063,12 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
       E(["pricing.simulate"]),
       M(["pricing.generate_tables", "pricing.publish_tables"]),
     ],
-    relatedEndpoints: ["/api/pricing", "/api/price-tables"],
+    relatedEndpoints: [
+      "/api/pricing",
+      "/api/price-tables",
+      "/api/pricing/unitary-formation/product-search",
+      "/api/pricing/unitary-formation/products/:productId",
+    ],
     sensitivity: "critical",
     appearsInSidebar: true,
     isTab: false,

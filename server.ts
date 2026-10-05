@@ -48,6 +48,13 @@ import {
 } from "./src/lib/pricing/commercialPublishedPricesApi.js";
 import { buildPublishedPriceSourceTrace } from "./src/lib/pricing/publishedPriceSourceTrace.server.js";
 import { parsePublishedPriceSourceTraceQuery } from "./src/lib/pricing/publishedPriceSourceTraceApi.js";
+import {
+  isUnitaryFormationProductSearchParseError,
+  parseUnitaryFormationProductSearchQuery,
+} from "./src/lib/pricing/unitaryFormationProductSearch.js";
+import { searchUnitaryFormationProducts } from "./src/lib/pricing/unitaryFormationProductSearch.server.js";
+import { parseUnitaryFormationProductDetailRequest } from "./src/lib/pricing/unitaryFormationDetail.js";
+import { buildUnitaryFormationProductDetail } from "./src/lib/pricing/unitaryFormationDetail.server.js";
 import { NO_PUBLISHED_PRODUCTION_COST_TABLE_MESSAGE } from "./src/lib/priceTableProductionCostResolver.js";
 import {
   resolveProposalOfficialMarginFromItems,
@@ -11288,6 +11295,76 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
       } catch (error) {
         console.error("GET /api/pricing/commercial-published-prices:", error);
         return res.status(500).json({ error: "Erro ao consultar preços comerciais publicados." });
+      }
+    }
+  );
+
+  /**
+   * Autocomplete read-only da aba Formação de Preço Unitária.
+   * Não calcula custo/preço e não muta dados.
+   */
+  app.get(
+    "/api/pricing/unitary-formation/product-search",
+    requireAppAuth,
+    requireResource("commercial.pricing", "view"),
+    async (req, res) => {
+      res.set("Cache-Control", "no-store, no-cache, must-revalidate");
+      try {
+        const parsed = parseUnitaryFormationProductSearchQuery(req.query as Record<string, unknown>);
+        if (isUnitaryFormationProductSearchParseError(parsed)) {
+          return res.status(400).json({ error: parsed.code, message: parsed.message });
+        }
+        const payload = await searchUnitaryFormationProducts(prisma, parsed);
+        return res.json(payload);
+      } catch (error) {
+        console.error("GET /api/pricing/unitary-formation/product-search:", error);
+        return res.status(500).json({ error: "Erro ao buscar produtos para formação unitária." });
+      }
+    }
+  );
+
+  /**
+   * Detalhe read-only consolidado (LIVE + PUBLISHED + comparação + BOM).
+   * Não cria versão, não publica e não altera Product/tabelas de custo.
+   */
+  app.get(
+    "/api/pricing/unitary-formation/products/:productId",
+    requireAppAuth,
+    requireResource("commercial.pricing", "view"),
+    async (req, res) => {
+      res.set("Cache-Control", "no-store, no-cache, must-revalidate");
+      try {
+        const referenceDateRaw =
+          typeof req.query.referenceDate === "string" ? req.query.referenceDate : null;
+        const parsed = parseUnitaryFormationProductDetailRequest({
+          productId: req.params.productId,
+          referenceDateRaw,
+        });
+        if (parsed.ok === false) {
+          return res.status(parsed.error.httpStatus).json({
+            error: parsed.error.code,
+            message: parsed.error.message,
+          });
+        }
+
+        const result = await buildUnitaryFormationProductDetail(prisma, costAnalysisEngine, {
+          productId: parsed.productId,
+          referenceDate: parsed.referenceDate,
+          referenceDateKey: parsed.referenceDateKey,
+        });
+        if (result.ok === false) {
+          return res.status(result.error.httpStatus).json({
+            error: result.error.code,
+            message: result.error.message,
+          });
+        }
+        return res.json(result.data);
+      } catch (error) {
+        console.error("GET /api/pricing/unitary-formation/products/:productId:", error);
+        return res.status(500).json({
+          error: "UNITARY_FORMATION_FAILED",
+          message: "Erro ao carregar detalhe da formação unitária.",
+        });
       }
     }
   );

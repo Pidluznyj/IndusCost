@@ -46,6 +46,8 @@ describe("pricingNavigation", () => {
     assert.match(module, /Custo oficial de produção/);
     assert.match(module, /Custo oficial de matéria-prima/);
     assert.match(module, /Auditoria de Custo, Preço e Margem/);
+    assert.match(module, /Formação de Preço Unitária/);
+    assert.match(module, /pricing-main-tabs/);
 
     // Ferramentas internas só renderizam com sanfona aberta + Super Admin.
     assert.match(
