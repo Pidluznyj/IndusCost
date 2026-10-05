@@ -34,3 +34,67 @@ export function resolveSimulationSnapshotUnitCost(snapshot: unknown): number | n
   if (typeof costBase !== "number" || !Number.isFinite(costBase)) return null;
   return costBase;
 }
+
+/** Hash do snapshot congelado: o gravado pelo servidor (v2) ou null em snapshots legados. */
+export function resolveSimulationSnapshotHash(simulation: { snapshotHash?: string | null }): string | null {
+  const hash = simulation.snapshotHash;
+  return typeof hash === "string" && hash.trim() ? hash.trim() : null;
+}
+
+export type ProjectSimulationProvenance = {
+  sourceSimulationId: string;
+  sourceSimulationName: string;
+  sourceSimulationSnapshotHash: string | null;
+  sourceSimulationCostBase: number;
+  sourceSimulationCopiedAt: Date;
+};
+
+/**
+ * Origem do custo copiado de uma simulação congelada. É CÓPIA: mudanças posteriores na
+ * simulação (clone, arquivamento) não alteram o item do projeto.
+ */
+export function buildProjectSimulationProvenance(
+  simulation: { id: string; name: string; snapshotHash?: string | null },
+  costBase: number,
+  copiedAt: Date
+): ProjectSimulationProvenance {
+  return {
+    sourceSimulationId: simulation.id,
+    sourceSimulationName: simulation.name,
+    sourceSimulationSnapshotHash: resolveSimulationSnapshotHash(simulation),
+    sourceSimulationCostBase: costBase,
+    sourceSimulationCopiedAt: copiedAt,
+  };
+}
+
+/** Item veio de simulação? Coluna de origem (novo) ou marcador em notes (legado). */
+export function isSimulationOriginItem(item: {
+  sourceSimulationId?: string | null;
+  notes?: string | null;
+}): boolean {
+  return Boolean(item.sourceSimulationId) || isGuidedSimulationItem(item.notes);
+}
+
+/** Edição de notes não pode apagar o marcador de origem de um item vindo de simulação. */
+export function preserveSimulationRefNotes(
+  previousNotes: string | null | undefined,
+  nextNotes: string | null | undefined,
+  sourceSimulationId?: string | null
+): string | null {
+  const simulationId = sourceSimulationId ?? parseSimulationIdFromNotes(previousNotes);
+  if (!simulationId) return nextNotes ?? null;
+  return buildSimulationRefNotes(simulationId, nextNotes);
+}
+
+/** Texto curto de origem para a lista de itens do projeto. */
+export function describeSimulationOrigin(item: {
+  sourceSimulationName?: string | null;
+  sourceSimulationCopiedAt?: string | Date | null;
+}): string | null {
+  const name = item.sourceSimulationName?.trim();
+  if (!name) return null;
+  const copiedAt = item.sourceSimulationCopiedAt ? new Date(item.sourceSimulationCopiedAt) : null;
+  const date =
+    copiedAt && !Number.isNaN(copiedAt.getTime()) ? copiedAt.toISOString().slice(0, 10) : null;
+  return date ? `${name} · snapshot ${date}` : name;
+}

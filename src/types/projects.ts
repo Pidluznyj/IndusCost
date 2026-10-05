@@ -115,6 +115,12 @@ export type ProjectSimulatedItemRow = {
   requiresEngineeringReview: boolean;
   canBecomeOfficial: boolean;
   notes: string | null;
+  /** Origem do custo quando copiado de uma simulação congelada (cópia, não referência viva). */
+  sourceSimulationId?: string | null;
+  sourceSimulationName?: string | null;
+  sourceSimulationSnapshotHash?: string | null;
+  sourceSimulationCostBase?: number | null;
+  sourceSimulationCopiedAt?: string | null;
 };
 
 export type ProjectStructureLineRow = {

@@ -6,7 +6,7 @@ import {
   parseOtherCostMeta,
   resolveOtherCostItemLineTotal,
 } from "@/src/lib/projectsOtherCostGroups";
-import { isGuidedSimulationItem } from "@/src/lib/projectsSimulationRefs";
+import { describeSimulationOrigin, isSimulationOriginItem } from "@/src/lib/projectsSimulationRefs";
 import type {
   ProjectCostBreakdown,
   ProjectDetail,
@@ -119,6 +119,8 @@ export type ProjectGuidedItemRow = {
   description: string;
   origin: ProjectGuidedOrigin;
   originLabel: string;
+  /** Detalhe da origem (ex.: simulação e data do snapshot copiado). */
+  originDetail?: string | null;
   status: ProjectGuidedStatus;
   statusLabel: string;
   estimatedCost: number | null;
@@ -227,7 +229,7 @@ function productRows(detail: ProjectDetail): ProjectGuidedItemRow[] {
 
   for (const item of detail.simulatedItems) {
     if (isGuidedOtherCostItem(item.notes)) continue;
-    if (isGuidedSimulationItem(item.notes)) {
+    if (isSimulationOriginItem(item)) {
       const cost = item.quotedUnitCost ?? item.estimatedUnitCost;
       rows.push({
         id: item.id,
@@ -239,6 +241,7 @@ function productRows(detail: ProjectDetail): ProjectGuidedItemRow[] {
         description: item.description,
         origin: "FROM_SIMULATION",
         originLabel: ORIGIN_LABEL.FROM_SIMULATION,
+        originDetail: describeSimulationOrigin(item),
         status: resolveStatus(detail.status, cost != null && cost > 0),
         statusLabel: STATUS_LABEL[resolveStatus(detail.status, cost != null && cost > 0)],
         estimatedCost: cost,

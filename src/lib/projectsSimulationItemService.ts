@@ -6,6 +6,7 @@ import {
   type ProjectSimulationLookupRow,
 } from "@/src/lib/projectsSimulationLookup";
 import {
+  buildProjectSimulationProvenance,
   buildSimulationRefNotes,
   GUIDED_SIMULATION_ID_PREFIX,
   isGuidedSimulationItem,
@@ -43,13 +44,30 @@ export async function lookupProjectSimulations(query: string): Promise<ProjectSi
   return filterAndSerializeSimulationLookupRows(rows, q);
 }
 
-export async function addSimulationReferenceToProject(input: {
-  projectId: string;
-  versionId: string;
-  simulationId: string;
-  quantity?: number;
-}): Promise<ReturnType<typeof serializeSimulatedItem>> {
-  const simulation = await prisma.newProductSimulation.findUnique({
+export type AddSimulationReferenceDeps = {
+  /** Injetável em testes; default = cliente Prisma do processo. */
+  db?: Pick<typeof prisma, "newProductSimulation" | "projectSimulatedItem">;
+  recalculateVersionCosts?: (versionId: string) => Promise<unknown>;
+  now?: () => Date;
+};
+
+/**
+ * Simulação congelada → item do projeto. O projeto COPIA `snapshot.result.costBase` e a
+ * origem (id, nome, hash, data); não há referência viva nem recálculo posterior, e o item
+ * nunca vira oficial sozinho (`canBecomeOfficial: false`).
+ */
+export async function addSimulationReferenceToProject(
+  input: {
+    projectId: string;
+    versionId: string;
+    simulationId: string;
+    quantity?: number;
+  },
+  deps: AddSimulationReferenceDeps = {}
+): Promise<ReturnType<typeof serializeSimulatedItem>> {
+  const db = deps.db ?? prisma;
+  const recalculate = deps.recalculateVersionCosts ?? recalculateAndPersistVersionCosts;
+  const simulation = await db.newProductSimulation.findUnique({
     where: { id: input.simulationId },
   });
   if (!simulation) {
@@ -68,19 +86,23 @@ export async function addSimulationReferenceToProject(input: {
     throw new Error("Simulação sem custo industrial calculado.");
   }
 
-  const existing = await prisma.projectSimulatedItem.findFirst({
+  const existing = await db.projectSimulatedItem.findFirst({
     where: {
       projectId: input.projectId,
       versionId: input.versionId,
-      notes: { contains: `${GUIDED_SIMULATION_ID_PREFIX}${input.simulationId}` },
+      OR: [
+        { sourceSimulationId: input.simulationId },
+        { notes: { contains: `${GUIDED_SIMULATION_ID_PREFIX}${input.simulationId}` } },
+      ],
     },
   });
   if (existing) {
     throw new Error("Esta simulação já foi adicionada ao projeto.");
   }
 
-  const row = await prisma.projectSimulatedItem.create({
+  const row = await db.projectSimulatedItem.create({
     data: {
+      ...buildProjectSimulationProvenance(simulation, unitCost, deps.now ? deps.now() : new Date()),
       projectId: input.projectId,
       versionId: input.versionId,
       provisionalCode: simulation.productSku,
@@ -96,7 +118,7 @@ export async function addSimulationReferenceToProject(input: {
     },
   });
 
-  await recalculateAndPersistVersionCosts(input.versionId);
+  await recalculate(input.versionId);
   return serializeSimulatedItem(row);
 }
 

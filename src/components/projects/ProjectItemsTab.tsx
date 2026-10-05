@@ -93,7 +93,14 @@ export function ProjectItemsTab({
                   <td className="px-3 py-2">{item.itemTypeLabel}</td>
                   <td className="px-3 py-2">{item.code ?? item.name}</td>
                   <td className="px-3 py-2">{item.description}</td>
-                  <td className="px-3 py-2">{item.originLabel}</td>
+                  <td className="px-3 py-2">
+                    <div>{item.originLabel}</div>
+                    {item.originDetail ? (
+                      <div className="text-xs text-muted-foreground" data-testid="project-item-origin-detail">
+                        {item.originDetail}
+                      </div>
+                    ) : null}
+                  </td>
                   <td className="px-3 py-2">
                     <span
                       className={cn(

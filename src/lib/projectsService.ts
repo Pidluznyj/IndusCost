@@ -152,6 +152,13 @@ export function serializeSimulatedItem(i: ProjectSimulatedItem): ProjectSimulate
     requiresEngineeringReview: i.requiresEngineeringReview,
     canBecomeOfficial: i.canBecomeOfficial,
     notes: i.notes,
+    sourceSimulationId: i.sourceSimulationId ?? null,
+    sourceSimulationName: i.sourceSimulationName ?? null,
+    sourceSimulationSnapshotHash: i.sourceSimulationSnapshotHash ?? null,
+    sourceSimulationCostBase: dec(i.sourceSimulationCostBase),
+    sourceSimulationCopiedAt: i.sourceSimulationCopiedAt
+      ? i.sourceSimulationCopiedAt.toISOString()
+      : null,
   };
 }
 

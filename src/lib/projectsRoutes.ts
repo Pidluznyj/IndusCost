@@ -13,6 +13,7 @@ type AuthGuards = {
   requireResource: (resourceKey: string, action?: string) => RequestHandler;
   getCurrentAppUser: (req: express.Request) => Promise<AppAuthContext | null>;
 };
+import { isSimulationOriginItem, preserveSimulationRefNotes } from "@/src/lib/projectsSimulationRefs.js";
 import { buildProjectsDashboard } from "@/src/lib/projectsDashboard.js";
 import {
   buildProjectsCustomerLookupWhere,
@@ -815,6 +816,13 @@ export function registerProjectsRoutes(
         return res.status(400).json({ error: "ID inválido." });
       }
       const body = req.body ?? {};
+      const current = await prisma.projectSimulatedItem.findFirst({
+        where: { id: req.params.simulatedItemId, projectId: req.params.id },
+        select: { notes: true, sourceSimulationId: true },
+      });
+      if (!current) return res.status(404).json({ error: "Item simulado não encontrado." });
+      // Item copiado de simulação: a origem não pode ser apagada e ele não vira oficial sozinho.
+      const fromSimulation = isSimulationOriginItem(current);
       const row = await prisma.projectSimulatedItem.update({
         where: { id: req.params.simulatedItemId, projectId: req.params.id },
         data: {
@@ -845,9 +853,15 @@ export function registerProjectsRoutes(
             ? { requiresEngineeringReview: optBool(body.requiresEngineeringReview) }
             : {}),
           ...(body.canBecomeOfficial !== undefined
-            ? { canBecomeOfficial: body.canBecomeOfficial !== false }
+            ? { canBecomeOfficial: fromSimulation ? false : body.canBecomeOfficial !== false }
             : {}),
-          ...(body.notes !== undefined ? { notes: optStr(body.notes) } : {}),
+          ...(body.notes !== undefined
+            ? {
+                notes: fromSimulation
+                  ? preserveSimulationRefNotes(current.notes, optStr(body.notes), current.sourceSimulationId)
+                  : optStr(body.notes),
+              }
+            : {}),
         },
       });
       res.json(serializeSimulatedItem(row));
