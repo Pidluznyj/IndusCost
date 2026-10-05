@@ -199,6 +199,7 @@ function createPublishMockDb(
       findMany: async ({
         where,
         select,
+        include,
       }: {
         where?: {
           costTableVersionId?: string;
@@ -206,7 +207,7 @@ function createPublishMockDb(
           costTableVersion?: { status: string; id?: { not: string } };
         };
         select?: Record<string, boolean>;
-        include?: unknown;
+        include?: { costTableVersion?: { select?: Record<string, boolean> } | boolean };
       }) => {
         let rows = [...items.values()];
         if (where?.costTableVersionId) {
@@ -226,14 +227,48 @@ function createPublishMockDb(
             return true;
           });
         }
-        if (!select) return rows;
         return rows.map((row) => {
-          const out: Record<string, unknown> = {};
-          for (const key of Object.keys(select)) {
-            if (select[key]) out[key] = (row as Record<string, unknown>)[key];
+          const out: Record<string, unknown> = { ...row };
+          if (include?.costTableVersion) {
+            const v = versions.get(row.costTableVersionId);
+            if (v) {
+              const sel =
+                typeof include.costTableVersion === "object"
+                  ? include.costTableVersion.select
+                  : undefined;
+              if (sel) {
+                const picked: Record<string, unknown> = {};
+                for (const key of Object.keys(sel)) {
+                  if (sel[key]) picked[key] = (v as Record<string, unknown>)[key];
+                }
+                out.costTableVersion = picked;
+              } else {
+                out.costTableVersion = v;
+              }
+            }
+          }
+          if (select) {
+            const picked: Record<string, unknown> = {};
+            for (const key of Object.keys(select)) {
+              if (select[key]) picked[key] = out[key];
+            }
+            if (out.costTableVersion) picked.costTableVersion = out.costTableVersion;
+            return picked;
           }
           return out;
         });
+      },
+      count: async ({
+        where,
+      }: {
+        where?: { costTableVersionId?: string; productId?: string };
+      }) => {
+        let rows = [...items.values()];
+        if (where?.costTableVersionId) {
+          rows = rows.filter((i) => i.costTableVersionId === where.costTableVersionId);
+        }
+        if (where?.productId) rows = rows.filter((i) => i.productId === where.productId);
+        return rows.length;
       },
       deleteMany: async ({ where }: { where: { id: { in: string[] } } }) => {
         for (const id of where.id.in) {
@@ -445,6 +480,133 @@ describe("publishUnitaryProductionCostDraft", () => {
     assert.equal(versions.get("pub-old")?.status, "SUPERSEDED");
     assert.ok(versions.get(DRAFT_A)?.publishedAt);
     assert.match(versions.get(DRAFT_A)?.notes ?? "", /UNITARY_FORMATION|unitary|origem/i);
+  });
+
+  it("BUG homolog: após publicar rev corrente, DRAFT stale anterior vira ARCHIVED (não ressuscita)", async () => {
+    // published rev1 → draft rev2 stale (custo diferente) → draft rev3 current → publish rev3
+    const published = seedDraft({
+      draftId: "pub-rev1",
+      productId: PRODUCT_ID,
+      sku: "320.02AA",
+      unit: 1.111558,
+      revision: 1,
+      status: "PUBLISHED",
+      createdAt: new Date("2026-10-01T10:00:00.000Z"),
+    });
+    const staleDraft = seedDraft({
+      draftId: "draft-rev2",
+      productId: PRODUCT_ID,
+      sku: "320.02AA",
+      unit: 0.241281,
+      revision: 2,
+      status: "DRAFT",
+      createdAt: new Date("2026-10-02T10:00:00.000Z"),
+      supersedesVersionId: "pub-rev1",
+      hash: "hash-stale",
+    });
+    const currentDraft = seedDraft({
+      draftId: "draft-rev3",
+      productId: PRODUCT_ID,
+      sku: "320.02AA",
+      unit: 0.293861,
+      revision: 3,
+      status: "DRAFT",
+      createdAt: new Date("2026-10-03T10:00:00.000Z"),
+      supersedesVersionId: "pub-rev1",
+      hash: "hash-current",
+    });
+    const { db, versions } = createPublishMockDb(
+      [{ id: PRODUCT_ID, sku: "320.02AA", name: "Torneira" }],
+      {
+        versions: [published.version, staleDraft.version, currentDraft.version],
+        items: [published.item, staleDraft.item, currentDraft.item],
+      }
+    );
+
+    const result = await publishUnitaryProductionCostDraft(
+      db as never,
+      noopEngine,
+      { productId: PRODUCT_ID, draftVersionId: "draft-rev3", publishedBy: "homolog@test" },
+      {
+        loadTrace: async () =>
+          pendingTrace({
+            liveCiu: 0.293861,
+            liveHash: "hash-current",
+            draftHash: "hash-current",
+            draftUnitCost: 0.293861,
+            draftVersionId: "draft-rev3",
+            frozenVersionId: "pub-rev1",
+            frozenCost: 1.111558,
+            traceStatus: "PENDENTE_PUBLICACAO",
+          }),
+        publishFromDraft: (d, i) => publishProductionCostVersionFromDraft(d, i),
+      }
+    );
+
+    assert.equal(result.ok, true);
+    if (!result.ok) return;
+    assert.equal(versions.get("draft-rev3")?.status, "PUBLISHED");
+    assert.equal(versions.get("draft-rev2")?.status, "ARCHIVED");
+    assert.equal(versions.get("pub-rev1")?.status, "SUPERSEDED");
+    assert.match(versions.get("draft-rev2")?.notes ?? "", /ARCHIVED — rascunho anterior/);
+
+    // Nenhum DRAFT ativo permanece para o produto (read-model não ressuscita)
+    const activeDraftsForProduct = [...versions.values()].filter((v) => v.status === "DRAFT");
+    assert.equal(activeDraftsForProduct.length, 0);
+  });
+
+  it("arquiva só DRAFTs do mesmo produto; DRAFT de outro produto permanece DRAFT", async () => {
+    const otherDraft = seedDraft({
+      draftId: "draft-other",
+      productId: OTHER_PRODUCT,
+      sku: "PB",
+      unit: 5,
+      revision: 1,
+      createdAt: new Date("2026-10-01T08:00:00.000Z"),
+    });
+    // rewrite product on other draft item already OTHER_PRODUCT via seed
+    const stale = seedDraft({
+      draftId: DRAFT_B,
+      productId: PRODUCT_ID,
+      sku: "PA",
+      unit: 8,
+      revision: 1,
+      createdAt: new Date("2026-10-01T09:00:00.000Z"),
+      hash: "hash-8",
+    });
+    const current = seedDraft({
+      draftId: DRAFT_A,
+      productId: PRODUCT_ID,
+      sku: "PA",
+      unit: 10,
+      revision: 2,
+      createdAt: new Date("2026-10-02T09:00:00.000Z"),
+      hash: "hash-10",
+    });
+    const { db, versions } = createPublishMockDb(
+      [
+        { id: PRODUCT_ID, sku: "PA", name: "A" },
+        { id: OTHER_PRODUCT, sku: "PB", name: "B" },
+      ],
+      {
+        versions: [otherDraft.version, stale.version, current.version],
+        items: [otherDraft.item, stale.item, current.item],
+      }
+    );
+
+    const result = await publishUnitaryProductionCostDraft(
+      db as never,
+      noopEngine,
+      { productId: PRODUCT_ID, draftVersionId: DRAFT_A },
+      {
+        loadTrace: async () => pendingTrace(),
+        publishFromDraft: (d, i) => publishProductionCostVersionFromDraft(d, i),
+      }
+    );
+    assert.equal(result.ok, true);
+    assert.equal(versions.get(DRAFT_A)?.status, "PUBLISHED");
+    assert.equal(versions.get(DRAFT_B)?.status, "ARCHIVED");
+    assert.equal(versions.get("draft-other")?.status, "DRAFT");
   });
 
   it("PUBLISHED anterior preservado como SUPERSEDED (não apagado)", async () => {
@@ -781,6 +943,7 @@ describe("publishUnitaryProductionCostDraft", () => {
   it("efeitos colaterais oficiais: publishFromDraft é o caminho real", () => {
     const serverLib = read("src/lib/pricing/unitaryFormationProductionCost.server.ts");
     assert.match(serverLib, /publishProductionCostVersionFromDraft/);
+    assert.match(serverLib, /archiveObsoleteProductDraftsAfterPublication/);
     assert.doesNotMatch(
       serverLib,
       /status:\s*["']PUBLISHED["']\s*,\s*\n\s*publishedAt/
@@ -802,6 +965,16 @@ describe("publishUnitaryProductionCostDraft", () => {
     // view-only / generate_tables não autorizam publicação
     assert.doesNotMatch(block, /requireResource\("commercial\.pricing", "view"\)/);
     assert.doesNotMatch(block, /pricing\.generate_tables/);
+  });
+
+  it("core exporta archiveObsolete; bulk publish path não o chama", () => {
+    const tables = read("src/lib/productionCostTables.server.ts");
+    const bulk = read("src/lib/productionCostBulkPublish.server.ts");
+    const publication = read("src/lib/productionCostPublication.server.ts");
+    assert.match(tables, /export async function archiveObsoleteProductDraftsAfterPublication/);
+    assert.match(tables, /archiveEquivalentProductionCostDrafts/);
+    assert.doesNotMatch(bulk, /archiveObsoleteProductDraftsAfterPublication/);
+    assert.doesNotMatch(publication, /archiveObsoleteProductDraftsAfterPublication/);
   });
 
   it("permissionContract e commercialAccess cobrem draft/publish unitários", () => {

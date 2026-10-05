@@ -441,23 +441,33 @@ function buildArchivedEquivalentDraftNote(publishedVersionId: string): string {
   return `[${stamp}] ARCHIVED — custo equivalente publicado na versão ${publishedVersionId}. Histórico preservado; tabela publicada vigente inalterada.`;
 }
 
+function buildArchivedObsoleteDraftNote(publishedVersionId: string): string {
+  const stamp = new Date().toISOString();
+  return `[${stamp}] ARCHIVED — rascunho anterior do produto após publicação da versão ${publishedVersionId}. Não é mais candidato ativo; histórico preservado.`;
+}
+
 async function archiveProductionCostDraftVersion(
   db: PrismaClient,
   versionId: string,
   publishedVersionId: string,
-  archived: Set<string>
+  archived: Set<string>,
+  noteKind: "equivalent" | "obsolete" = "equivalent"
 ): Promise<void> {
   if (archived.has(versionId)) return;
   const version = await db.productionCostTableVersion.findUnique({
     where: { id: versionId },
-    select: { notes: true },
+    select: { notes: true, status: true },
   });
-  const note = buildArchivedEquivalentDraftNote(publishedVersionId);
+  if (!version || version.status !== "DRAFT") return;
+  const note =
+    noteKind === "obsolete"
+      ? buildArchivedObsoleteDraftNote(publishedVersionId)
+      : buildArchivedEquivalentDraftNote(publishedVersionId);
   await db.productionCostTableVersion.update({
     where: { id: versionId },
     data: {
       status: "ARCHIVED",
-      notes: version?.notes?.trim() ? `${version.notes.trim()}\n${note}` : note,
+      notes: version.notes?.trim() ? `${version.notes.trim()}\n${note}` : note,
     },
   });
   archived.add(versionId);
@@ -559,6 +569,78 @@ export async function archiveEquivalentProductionCostDrafts(
         archived,
         resolvedItemId: draftItem.id,
       });
+    }
+  }
+
+  return [...archived];
+}
+
+/**
+ * Após publicação bem-sucedida de um ou mais produtos: arquiva DRAFTs anteriores
+ * daqueles produtos que deixam de ser candidatos ativos — inclusive com custo diferente
+ * (stale). Não altera PUBLISHED/SUPERSEDED. Não faz DELETE de versão.
+ *
+ * Usado pelo fluxo unitário. O publish em lote continua usando apenas
+ * `archiveEquivalentProductionCostDrafts` (equivalência de custo).
+ */
+export async function archiveObsoleteProductDraftsAfterPublication(
+  db: PrismaClient,
+  input: {
+    publishedVersionId: string;
+    productIds: string[];
+  }
+): Promise<string[]> {
+  const productIds = [...new Set(input.productIds.map((id) => id?.trim()).filter(Boolean))];
+  const archived = new Set<string>();
+
+  for (const productId of productIds) {
+    const draftItems = await db.productionCostTableItem.findMany({
+      where: {
+        productId,
+        costTableVersion: {
+          status: "DRAFT",
+          id: { not: input.publishedVersionId },
+        },
+      },
+      include: {
+        costTableVersion: {
+          select: { id: true, code: true },
+        },
+      },
+    });
+
+    for (const draftItem of draftItems) {
+      const versionId = draftItem.costTableVersionId;
+      if (archived.has(versionId)) continue;
+
+      const siblingCount = await db.productionCostTableItem.count({
+        where: { costTableVersionId: versionId },
+      });
+
+      if (draftItem.costTableVersion.code.startsWith("AUTO-") || siblingCount <= 1) {
+        await archiveProductionCostDraftVersion(
+          db,
+          versionId,
+          input.publishedVersionId,
+          archived,
+          "obsolete"
+        );
+        continue;
+      }
+
+      await db.productionCostTableItem.delete({ where: { id: draftItem.id } });
+      const remaining = await db.productionCostTableItem.count({
+        where: { costTableVersionId: versionId },
+      });
+      if (remaining === 0) {
+        await archiveProductionCostDraftVersion(
+          db,
+          versionId,
+          input.publishedVersionId,
+          archived,
+          "obsolete"
+        );
+      }
     }
   }
 

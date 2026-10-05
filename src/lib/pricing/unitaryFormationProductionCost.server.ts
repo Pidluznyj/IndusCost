@@ -24,6 +24,7 @@ import {
 } from "../productionCostPublication.server.js";
 import {
   addOrUpdateProductionCostTableDraftItem,
+  archiveObsoleteProductDraftsAfterPublication,
   createProductionCostTableDraft,
 } from "../productionCostTables.server.js";
 import { loadMaterialCostEngineCatalogForProductionDraft } from "../materialCostEngineResolver.js";
@@ -75,6 +76,7 @@ export type PublishUnitaryProductionCostDraftDeps = {
     referenceDate?: Date
   ) => Promise<ProductFrozenCostTrace | null>;
   publishFromDraft?: typeof publishProductionCostVersionFromDraft;
+  archiveObsoleteDrafts?: typeof archiveObsoleteProductDraftsAfterPublication;
 };
 
 async function safeDeleteDraftVersion(db: PrismaClient, versionId: string): Promise<void> {
@@ -314,7 +316,16 @@ export async function publishUnitaryProductionCostDraft(
   if (revalidated.ok === false) {
     return { ok: false, error: revalidated.error };
   }
+
+  const archiveObsolete =
+    deps?.archiveObsoleteDrafts ?? archiveObsoleteProductDraftsAfterPublication;
+
   if (revalidated.alreadyPublished === true) {
+    // Cura legado: DRAFTs obsoletos do produto não devem permanecer candidatos.
+    await archiveObsolete(db, {
+      publishedVersionId: input.draftVersionId,
+      productIds: [input.productId],
+    });
     return { ok: true, data: revalidated.data };
   }
 
@@ -329,6 +340,11 @@ export async function publishUnitaryProductionCostDraft(
       auditContext: {
         source: UNITARY_PRODUCTION_COST_PUBLISH_AUDIT_SOURCE,
       },
+    });
+
+    await archiveObsolete(db, {
+      publishedVersionId: published.version.id,
+      productIds: [input.productId],
     });
 
     // Resultado oficial omite `source` e breakdown de custos — lê do banco pós-publish
@@ -416,6 +432,10 @@ export async function publishUnitaryProductionCostDraft(
         },
       });
       if (version?.status === "PUBLISHED" && item) {
+        await archiveObsolete(db, {
+          publishedVersionId: input.draftVersionId,
+          productIds: [input.productId],
+        });
         return {
           ok: true,
           data: buildUnitaryProductionCostPublishResponse({
