@@ -2328,6 +2328,9 @@ model CrmCustomerCommercialOwner {
   isActive               Boolean  @default(true)
   /// Após baixa por POL-COM-001 §11, impede autoatribuição até um supervisor atribuir manualmente.
   blockAutoAssignUntilManual Boolean @default(false)
+  /// Início do ciclo do responsável ATUAL (nova atribuição, reativação ou troca real). Relógio dos 90 dias
+  /// de cliente nunca faturado (POL-COM-001 §11). Salvar o mesmo responsável ou editar notas não altera.
+  assignmentStartedAt    DateTime @default(now()) @db.Timestamp(6)
   endedAt                DateTime? @db.Timestamp(6)
   endReason              String?
   notes                  String?
@@ -11289,6 +11292,19 @@ enum SatisfactionImportBatchStatus {
 /// Questionário versionado. V1 (`CUSTOMER_SATISFACTION_V1`) reproduz a pesquisa
 /// histórica do Google Forms e é imutável (`isLocked`): uma V2 futura nasce como
 /// novo template, jamais editando este.
+enum SatisfactionActionPointStatus {
+  OPEN
+  IN_PROGRESS
+  DONE
+  CANCELLED
+}
+
+enum SatisfactionActionPointPriority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
 model SatisfactionSurveyTemplate {
   id          String                     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   code        String                     @unique
@@ -11367,6 +11383,7 @@ model SatisfactionSurveyCampaign {
   events       SatisfactionSurveyEvent[]
   sessions     SatisfactionPublicSession[]
   importBatches SatisfactionImportBatch[]
+  actionPoints SatisfactionActionPoint[]
 
   @@index([status, opensAt])
   @@index([templateId])
@@ -11543,12 +11560,43 @@ model SatisfactionSurveyAnswer {
 
   response SatisfactionSurveyResponse         @relation(fields: [responseId], references: [id], onDelete: Cascade, onUpdate: Cascade)
   question SatisfactionSurveyCampaignQuestion @relation(fields: [questionId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  actionPoint SatisfactionActionPoint?
 
   @@unique([responseId, questionId])
   @@index([questionId, ratingValue])
 }
 
 /// Funil da campanha: convidados -> abriram -> começaram -> concluíram.
+/// Plano de ação de um ponto de atenção (nota crítica <= 2) de pesquisa
+/// encerrada. Um por resposta crítica — a âncora é o answerId.
+model SatisfactionActionPoint {
+  id                      String                          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  campaignId              String                          @db.Uuid
+  answerId                String                          @unique @db.Uuid
+  responsibleUserId       String                          @db.Uuid
+  /// Nome do responsável na época — a tela não depende do cadastro de usuários.
+  responsibleNameSnapshot String
+  priority                SatisfactionActionPointPriority @default(MEDIUM)
+  status                  SatisfactionActionPointStatus   @default(OPEN)
+  rootCause               String?
+  actionPlan              String
+  dueDate                 DateTime                        @db.Date
+  completedAt             DateTime?                       @db.Timestamptz(6)
+  resultNotes             String?
+  /// Quando o retorno foi dado ao cliente (fecha o ciclo da pesquisa).
+  customerFeedbackAt      DateTime?                       @db.Date
+  createdByUserId         String?                         @db.Uuid
+  updatedByUserId         String?                         @db.Uuid
+  createdAt               DateTime                        @default(now()) @db.Timestamptz(6)
+  updatedAt               DateTime                        @default(now()) @updatedAt @db.Timestamptz(6)
+
+  campaign SatisfactionSurveyCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  answer   SatisfactionSurveyAnswer   @relation(fields: [answerId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@index([campaignId, status])
+  @@index([responsibleUserId, status, dueDate])
+}
+
 model SatisfactionSurveyEvent {
   id           String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   campaignId   String                @db.Uuid

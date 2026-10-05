@@ -121,8 +121,9 @@ export type CommissionMatrixInput = {
  * (margem-alvo e comissão por tabela publicada), lida em runtime; o motor
  * interpola o percentual entre níveis pelo preço vendido. A rotina de carteira (POL-COM-001 §11,
  * customerCommercialOwnerInactivity) remove o responsável exclusivo após 90
- * dias sem NF / Documento de Saída válido, salvo CRM estruturado válido; cliente
- * nunca faturado não é removido. Os 33% do supervisor são regra empresarial
+ * dias sem NF / Documento de Saída válido, salvo CRM estruturado válido; para
+ * cliente nunca faturado o prazo conta do início da atribuição do responsável
+ * atual. Os 33% do supervisor são regra empresarial
  * apurada por processo administrativo, fora do motor (decisão de 30/09/2026).
  */
 export const SYSTEM_NORMATIVE_FACTS = {
@@ -133,7 +134,8 @@ export const SYSTEM_NORMATIVE_FACTS = {
   portfolioCrmEvidenceCanPreserveAssignment: true,
   portfolioSystemBehavior: "REVIEW_THEN_REMOVE_OR_PRESERVE" as const,
   portfolioInactivitySource: "customerCommercialOwnerInactivity (NF / Documento de Saída válido + CRM estruturado)",
-  portfolioInactivityClock: "LAST_VALID_INVOICE" as const,
+  portfolioInactivityClock: "LAST_VALID_INVOICE_OR_ASSIGNMENT_START" as const,
+  portfolioNeverInvoicedRemoved: true,
   coverageParameterized: false,
   channelSlaParameterized: false,
   sellerAttribution: "SALES_ORDER_NOMUS_SELLER" as const,
@@ -168,11 +170,14 @@ export type NormativeSnapshot = {
   portfolio: {
     parameterized: true;
     inactivityDays: number;
-    /** Referência do prazo: última NF / Documento de Saída válido vinculado a PV. */
-    inactivityClock: "LAST_VALID_INVOICE";
+    /**
+     * Referência do prazo: última NF / Documento de Saída válido vinculado a PV;
+     * sem nenhum faturamento válido, início da atribuição do responsável atual.
+     */
+    inactivityClock: "LAST_VALID_INVOICE_OR_ASSIGNMENT_START";
     crmEvidenceCanPreserveAssignment: true;
-    /** Cliente nunca faturado não é removido por esta rotina. */
-    neverInvoicedRemoved: false;
+    /** Cliente nunca faturado também é removido: 90 dias da atribuição atual sem CRM válido. */
+    neverInvoicedRemoved: true;
     systemBehavior: "REVIEW_THEN_REMOVE_OR_PRESERVE";
   };
   pricing: {
@@ -302,7 +307,7 @@ export function buildCurrentCommercialPolicyNormativeSnapshot(
       inactivityDays: DOCUMENT_INACTIVITY_DAYS,
       inactivityClock: SYSTEM_NORMATIVE_FACTS.portfolioInactivityClock,
       crmEvidenceCanPreserveAssignment: true,
-      neverInvoicedRemoved: false,
+      neverInvoicedRemoved: SYSTEM_NORMATIVE_FACTS.portfolioNeverInvoicedRemoved,
       systemBehavior: SYSTEM_NORMATIVE_FACTS.portfolioSystemBehavior,
     },
     pricing: { parameterized: false, normativeVersionId: null },
@@ -456,7 +461,7 @@ const RESOLUTIONS: Record<string, FindingResolution> = {
     owner: "DOCUMENTO",
     where: "Editor de conteúdo (Seção 11)",
     steps: [
-      "Reescrever a Seção 11 conforme a rotina real: 90 dias corridos desde o último faturamento válido (nota fiscal / Documento de Saída), com preservação por registro válido no CRM e sem remoção de cliente nunca faturado.",
+      "Reescrever a Seção 11 conforme a rotina real: 90 dias corridos desde o último faturamento válido (nota fiscal / Documento de Saída); para cliente sem qualquer histórico de Faturamento Válido, 90 dias corridos desde o início da atribuição do Responsável Comercial atual; em ambos, preservação por registro válido no CRM e retirada do responsável sem ele.",
       "Não alterar a rotina de carteira: o sistema é a fonte da verdade.",
       "A pendência some quando o texto descrever a rotina; não há como marcá-la como resolvida manualmente.",
     ],
@@ -792,8 +797,12 @@ export type DocumentInactivityRule = {
   clock: "LAST_VALID_INVOICE" | "APPROVED_SALES_ORDER" | "UNKNOWN";
   /** O texto diz que o CRM válido pode preservar o Responsável Comercial. */
   crmCanPreserve: boolean;
-  /** O texto diz que cliente sem faturamento não é desvinculado só por esta rotina. */
-  neverInvoicedKept: boolean;
+  /**
+   * Como o texto trata cliente sem histórico de Faturamento Válido:
+   * ASSIGNMENT_START = prazo contado do início da atribuição do responsável atual (rotina vigente);
+   * KEPT = "não serão automaticamente desvinculados" (regra anterior); UNSTATED = não trata.
+   */
+  neverInvoicedRule: "ASSIGNMENT_START" | "KEPT" | "UNSTATED";
 };
 
 /** Regra de inatividade como está escrita na Seção 11 do conteúdo auditado. */
@@ -803,30 +812,37 @@ export function readDocumentInactivityRule(content: string): DocumentInactivityR
   const days = /(\d+)\s+dias corridos/i.exec(text);
   const byOrder = /dias corridos sem novo Pedido de Venda aprovado/i.test(text);
   const byInvoice = /faturamento v[áa]lido/i.test(text) && /nota fiscal|documento de sa[íi]da/i.test(text);
+  const neverInvoicedKept = /sem hist[óo]rico de faturamento v[áa]lido n[ãa]o ser[ãa]o automaticamente desvinculados/i.test(text);
+  const neverInvoicedByAssignment =
+    /sem (qualquer )?hist[óo]rico de faturamento v[áa]lido/i.test(text) &&
+    /in[íi]cio da atribui[çc][ãa]o do Respons[áa]vel Comercial atual/i.test(text);
   return {
     days: days ? Number(days[1]) : null,
     clock: byOrder ? "APPROVED_SALES_ORDER" : byInvoice ? "LAST_VALID_INVOICE" : "UNKNOWN",
     crmCanPreserve: /registro v[áa]lido/i.test(text) && /CRM/.test(text),
-    neverInvoicedKept: /sem hist[óo]rico de faturamento v[áa]lido n[ãa]o ser[ãa]o automaticamente desvinculados/i.test(text),
+    // Um texto que ainda diga "não serão desvinculados" contradiz a rotina, mesmo citando a atribuição.
+    neverInvoicedRule: neverInvoicedKept ? "KEPT" : neverInvoicedByAssignment ? "ASSIGNMENT_START" : "UNSTATED",
   };
 }
 
 /**
  * Carteira: o sistema é a fonte da verdade — 90 dias corridos desde a última
- * NF / Documento de Saída válido, preservação por CRM estruturado e cliente
- * nunca faturado não removido. A Seção 11 precisa dizer o mesmo.
+ * NF / Documento de Saída válido ou, para cliente nunca faturado, desde o início
+ * da atribuição do responsável atual; preservação por CRM estruturado nos dois
+ * casos. A Seção 11 precisa dizer o mesmo.
  */
 function auditPortfolioInactivity(content: string, current: NormativeSnapshot | null): PrePublishFinding {
   const document = readDocumentInactivityRule(content);
   const systemDays = current?.portfolio.inactivityDays ?? DOCUMENT_INACTIVITY_DAYS;
-  const systemText = `${SYSTEM_NORMATIVE_FACTS.portfolioInactivitySource}: ${systemDays} dias corridos desde a última NF / Documento de Saída válido vinculado a Pedido de Venda (NF cancelada, devolução e transferência não contam; PV sem faturamento não reinicia; cada NF válida reinicia, mesmo em faturamento parcial). CRM estruturado válido preserva o responsável; atualização técnica, registro genérico ou artificial não. Cliente nunca faturado não é removido por esta rotina.`;
+  const systemText = `${SYSTEM_NORMATIVE_FACTS.portfolioInactivitySource}: ${systemDays} dias corridos desde a última NF / Documento de Saída válido vinculado a Pedido de Venda (NF cancelada, devolução e transferência não contam; PV sem faturamento não reinicia; cada NF válida reinicia, mesmo em faturamento parcial; a troca de responsável não reinicia). Cliente nunca faturado: ${systemDays} dias corridos desde o início da atribuição do Responsável Comercial atual (só nova atribuição, reativação ou troca real de responsável reinicia). Nos dois casos, CRM estruturado válido preserva o responsável; atualização técnica, registro genérico ou artificial não; sem CRM válido, o responsável é removido.`;
   const differences: string[] = [];
   if (document.clock === "APPROVED_SALES_ORDER") differences.push('o texto conta o prazo de "novo Pedido de Venda aprovado"; a rotina conta do último faturamento válido');
   else if (document.clock === "UNKNOWN") differences.push("a Seção 11 não diz que o prazo é contado do último faturamento válido (nota fiscal / Documento de Saída)");
   if (document.days !== null && document.days !== systemDays) differences.push(`o texto fala em ${document.days} dias e a rotina usa ${systemDays}`);
   if (document.days === null) differences.push("a Seção 11 não informa o prazo em dias corridos");
   if (!document.crmCanPreserve) differences.push("o texto não prevê a preservação por registro válido no CRM");
-  if (!document.neverInvoicedKept) differences.push("o texto não diz que cliente sem faturamento válido não é desvinculado só por esta rotina");
+  if (document.neverInvoicedRule === "KEPT") differences.push("o texto diz que cliente sem histórico de faturamento válido não é desvinculado; a rotina conta o prazo do início da atribuição do responsável atual e remove sem CRM válido");
+  else if (document.neverInvoicedRule === "UNSTATED") differences.push("o texto não diz que, para cliente sem histórico de faturamento válido, o prazo é contado do início da atribuição do Responsável Comercial atual");
 
   const base = { category: "CARTEIRA" as const, policySection: POLICY_SECTIONS.inactivity };
   if (differences.length > 0) {
@@ -846,7 +862,7 @@ function auditPortfolioInactivity(content: string, current: NormativeSnapshot | 
     ...base,
     code: "PORTFOLIO_INACTIVITY_ALIGNED",
     severity: "INFORMATIONAL",
-    document: `${document.days} dias corridos desde o último Faturamento Válido (nota fiscal ou Documento de Saída válido); registro válido no CRM pode preservar o Responsável Comercial; cliente sem histórico de faturamento não é desvinculado só por esta rotina.`,
+    document: `${document.days} dias corridos desde o último Faturamento Válido (nota fiscal ou Documento de Saída válido); para cliente sem histórico de Faturamento Válido, ${document.days} dias corridos desde o início da atribuição do Responsável Comercial atual; registro válido no CRM pode preservar o Responsável Comercial; sem ele, o cliente deixa de ter Responsável Comercial exclusivo.`,
     system: systemText,
     action: "Nenhuma. A Seção 11 descreve a rotina de carteira do IndusCost.",
   });
@@ -1090,7 +1106,7 @@ export function buildPolCom001ReconciliationMatrix(current: NormativeSnapshot | 
     },
     {
       section: POLICY_SECTIONS.inactivity,
-      rule: "90 dias corridos desde o último faturamento válido → revisão; CRM válido preserva; sem CRM, retirada automática; nunca faturado não é removido",
+      rule: "90 dias corridos desde o último faturamento válido → revisão; CRM válido preserva; sem CRM, retirada automática; nunca faturado: 90 dias desde o início da atribuição do responsável atual",
       implementation: inactivity?.system ?? "Não conferido.",
       status: inactivity?.code === "PORTFOLIO_INACTIVITY_ALIGNED" ? "ALINHADO" : "DIVERGENTE",
       severity: inactivity?.severity ?? "BLOCKING",

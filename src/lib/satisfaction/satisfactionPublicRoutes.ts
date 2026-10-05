@@ -11,7 +11,7 @@
  */
 
 import crypto from "crypto";
-import type express from "express";
+import express from "express";
 import { prisma } from "@/src/lib/prisma.js";
 import { resolveCookieSecure } from "@/src/lib/appSessionCookie.js";
 import {
@@ -33,6 +33,7 @@ import {
   type SatisfactionRateLimitBucket,
 } from "./satisfactionRateLimit.js";
 import {
+  isMisconfiguredForProduction,
   resolveTurnstileConfig,
   toPublicTurnstileSiteKey,
   turnstileFailureMessage,
@@ -77,6 +78,16 @@ function logPublicEvent(input: {
   );
 }
 
+/**
+ * Parser de corpo da superfície pública, com o teto do contrato (64 KB).
+ * Registrar ANTES do `express.json` global (10 MB): depois de parseado aqui, o
+ * parser global não lê o corpo de novo, então o limite vale de fato — inclusive
+ * para requisição chunked, que não declara Content-Length.
+ */
+export function createSatisfactionPublicBodyParser(): express.RequestHandler {
+  return express.json({ limit: SATISFACTION_INPUT_LIMITS.publicBodyBytes });
+}
+
 type PublicGuards = {
   service?: SatisfactionPublicService;
   /** Injetável para teste; em produção usa o siteverify real. */
@@ -92,6 +103,18 @@ export function registerSatisfactionPublicRoutes(
 
   const trustProxy = process.env.SATISFACTION_TRUST_PROXY === "1";
 
+  // Produção com a superfície pública ligada e sem Turnstile é um desvio: o
+  // link geral fica sem anti-bot. Não derruba o serviço, mas não passa calado.
+  if (
+    (process.env.SATISFACTION_PUBLIC_HOSTS ?? "").trim() &&
+    isMisconfiguredForProduction(resolveTurnstileConfig())
+  ) {
+    console.warn(
+      "[satisfaction:public] ATENÇÃO: superfície pública ativa em produção SEM Turnstile " +
+        "obrigatório (defina SATISFACTION_TURNSTILE_SITE_KEY e SATISFACTION_TURNSTILE_SECRET_KEY)."
+    );
+  }
+
   function limit(
     req: express.Request,
     res: express.Response,
@@ -101,6 +124,7 @@ export function registerSatisfactionPublicRoutes(
       {
         socketAddress: req.socket?.remoteAddress ?? null,
         forwardedFor: req.headers["x-forwarded-for"] ?? null,
+        cfConnectingIp: req.headers["cf-connecting-ip"] ?? null,
       },
       { trustProxy }
     );

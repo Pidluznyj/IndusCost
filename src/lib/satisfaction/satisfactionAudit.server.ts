@@ -13,6 +13,7 @@ export const SATISFACTION_AUDIT_ENTITIES = {
   invitation: "SATISFACTION_INVITATION",
   import: "SATISFACTION_IMPORT",
   export: "SATISFACTION_EXPORT",
+  actionPoint: "SATISFACTION_ACTION_POINT",
 } as const;
 
 export type SatisfactionAuditEntity =

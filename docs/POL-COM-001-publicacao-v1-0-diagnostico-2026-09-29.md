@@ -97,7 +97,7 @@ As alçadas de aprovação do Anexo I continuam no documento como **procedimento
 ### 7.3 Snapshot, exibição e versões
 
 - A matriz exibida (leitor do vendedor, prévia do admin, cópia controlada em PDF) vem de `policyCommissionMatrixFromSnapshot(version.normativeSnapshot)`; antes de publicar, a prévia usa a Formação de Preço atual. Mudar as tabelas depois da publicação muda o hash do snapshot atual (`POLICY_UPDATE_REQUIRED`) e **não** altera o que a versão publicada mostra.
-- `portfolio` no snapshot ganhou `inactivityClock: "LAST_VALID_INVOICE"` e `neverInvoicedRemoved: false`.
+- `portfolio` no snapshot ganhou `inactivityClock: "LAST_VALID_INVOICE"` e `neverInvoicedRemoved: false`. *(Histórico de 29–30/09. Desde 02/10/2026: `LAST_VALID_INVOICE_OR_ASSIGNMENT_START` e `neverInvoicedRemoved: true` — cliente nunca faturado conta 90 dias do início da atribuição do responsável atual; ver `docs/commercial/POL-COM-001-portfolio-inactivity-homologation.md`.)*
 - Mudar o percentual do supervisor (`commission.supervisorShare`) continua exigindo nova versão da política.
 
 ### 7.4 Questionário, declarações e resumo

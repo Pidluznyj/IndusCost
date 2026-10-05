@@ -429,7 +429,7 @@
     "rebuild:sales-order-flow:preview": "tsx scripts/rebuildSalesOrderFlow.ts --preview",
     "rebuild:sales-order-flow:apply": "tsx scripts/rebuildSalesOrderFlow.ts --apply",
     "repair:sales-order-fulfilled-qty-flow": "tsx scripts/repairSalesOrderFulfilledQtyAndFlow.ts",
-    "test:satisfaction": "node --import tsx --test src/lib/satisfaction/satisfactionContracts.test.ts src/lib/satisfaction/satisfactionInvitationFilters.test.ts src/lib/satisfaction/satisfactionMetrics.test.ts src/lib/satisfaction/satisfactionPublicSurface.test.ts src/lib/satisfaction/satisfactionSecurity.test.ts src/lib/satisfaction/satisfactionImport.test.ts src/lib/satisfaction/satisfactionRoutes.test.ts src/lib/satisfaction/satisfactionService.test.ts src/lib/satisfaction/satisfactionCampaignDelete.test.ts src/public-satisfaction/publicTurnstileContract.test.ts",
+    "test:satisfaction": "node --import tsx --test src/lib/satisfaction/satisfactionContracts.test.ts src/lib/satisfaction/satisfactionInvitationFilters.test.ts src/lib/satisfaction/satisfactionMetrics.test.ts src/lib/satisfaction/satisfactionPublicSurface.test.ts src/lib/satisfaction/satisfactionSecurity.test.ts src/lib/satisfaction/satisfactionImport.test.ts src/lib/satisfaction/satisfactionRoutes.test.ts src/lib/satisfaction/satisfactionService.test.ts src/lib/satisfaction/satisfactionCampaignDelete.test.ts src/lib/satisfaction/satisfactionActionPoints.test.ts src/public-satisfaction/publicTurnstileContract.test.ts",
     "test:sales-orders-canonical": "tsx --test src/lib/sales-orders/salesOrderCanonicalValues.test.ts",
     "test:finance:supplier-identity": "tsx --test src/lib/financeSupplierIdentity.test.ts src/lib/financeSupplierIdentityReconcile.test.ts src/lib/financeSupplierRebuild.test.ts src/lib/financeSupplierDocumentEnrichment.test.ts src/lib/financeSupplierEngine.test.ts src/lib/purchasing/supplierNomusOrders.server.test.ts src/components/supply-chain/supplier-performance/SupplierNomusOrdersSection.test.tsx"
   },
@@ -445,6 +445,9 @@
     "html-to-image": "^1.11.13",
     "html2canvas": "^1.4.1",
     "jszip": "^3.10.1",
+    "leaflet": "^1.9.4",
+    "leaflet.heat": "^0.2.0",
+    "leaflet.markercluster": "^1.5.3",
     "lucide-react": "^0.546.0",
     "motion": "^12.38.0",
     "multer": "^2.1.1",
@@ -463,6 +466,9 @@
   "devDependencies": {
     "@types/compression": "^1.8.1",
     "@types/express": "^4.17.21",
+    "@types/leaflet": "^1.9.22",
+    "@types/leaflet.heat": "^0.2.5",
+    "@types/leaflet.markercluster": "^1.5.6",
     "@types/multer": "^2.1.0",
     "@types/node": "^22.14.0",
     "autoprefixer": "^10.4.21",

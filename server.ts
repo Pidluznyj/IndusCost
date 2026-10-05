@@ -265,7 +265,10 @@ import { CanonicalPersonError } from "./src/lib/canonicalPerson.js";
 import { registerGoalRoutes } from "./src/lib/goals/goalRoutes.js";
 import { registerLegalExposureRoutes } from "./src/lib/legalExposure/legalExposureRoutes.js";
 import { registerSatisfactionRoutes } from "./src/lib/satisfaction/satisfactionRoutes.js";
-import { registerSatisfactionPublicRoutes } from "./src/lib/satisfaction/satisfactionPublicRoutes.js";
+import {
+  createSatisfactionPublicBodyParser,
+  registerSatisfactionPublicRoutes,
+} from "./src/lib/satisfaction/satisfactionPublicRoutes.js";
 import {
   createSatisfactionPublicHostGuard,
   isSatisfactionPublicPathAllowed,
@@ -572,6 +575,7 @@ import {
   buildSnapshotSaveData,
 } from "./src/lib/newProductSimulationSnapshot.js";
 import { buildCustomerIndicatorsPayload, normalizeBrazilUf } from "./src/lib/customerIndicators.js";
+import { registerCustomerActivityMapRoutes } from "./src/lib/commercial/customerActivityMap/customerActivityMapRoutes.js";
 import {
   buildCustomerListResponse,
   buildCustomerListWhere,
@@ -1116,6 +1120,9 @@ async function startServer() {
   // o custo de CPU e pago uma vez por cliente. Sem SSE no projeto.
   app.use(compression({ threshold: 1024 }));
 
+  // Superfície pública da Satisfação: teto próprio de 64 KB, antes do parser
+  // global — corpo já parseado aqui não é relido pelo de 10 MB.
+  app.use("/api/public/satisfaction", createSatisfactionPublicBodyParser());
   app.use(express.json({ limit: "10mb" }));
   app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
@@ -14116,6 +14123,9 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
       res.status(500).json({ error: "Erro ao listar clientes." });
     }
   });
+
+  // Clientes › Indicadores › Mapa de Atuação (somente leitura).
+  registerCustomerActivityMapRoutes(app, { requireAppAuth, requireResource });
 
   /** Indicadores agregados do cadastro (somente leitura; base: SalesOrder). */
   app.get("/api/customers/indicators", requireAppAuth, requireResource("commercial.customers", "view"), async (_req, res) => {

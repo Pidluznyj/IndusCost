@@ -11,18 +11,26 @@ import type { PrismaClient } from "@prisma/client";
 import { decimalToNumber } from "./commission-money.js";
 import {
   buildReceiptCompetenceByReceivable,
-  detectSettledWithoutReceipt,
+  partitionSettledReceivablesForAudit,
   resolveCompetencePeriodUtcBounds,
   type CommissionCompetenceInconsistency,
   type CommissionReceiptCompetence,
   type CommissionReceiptEventInput,
+  type SettledReceivablesAuditPartition,
 } from "./commissionReceiptCompetence.js";
+import { isCommissionInternalGroupReceivable } from "./commissionInternalGroupExclusion.js";
 import { loadReceivableIdsWithAnyReceipt as loadReceivableIdsWithAnyReceiptCanonical } from "../financeReceiptsCanonical.server.js";
+import { NOMUS_NFE_STATUS_CANCELLED } from "../nomusNfeClassification.js";
 
 export type CompetenceDb = Pick<PrismaClient, "nomusReceivableReceipt">;
 export type CompetenceWithArDb = Pick<
   PrismaClient,
   "nomusReceivableReceipt" | "nomusAccountsReceivable"
+>;
+/** Auditoria de baixas: também lê a NF-e de origem para reconhecer a cancelada. */
+export type CompetenceSettlementAuditDb = Pick<
+  PrismaClient,
+  "nomusReceivableReceipt" | "nomusAccountsReceivable" | "nomusNfe"
 >;
 
 /**
@@ -181,37 +189,130 @@ export async function loadReceivableIdsWithAnyReceipt(
   return loadReceivableIdsWithAnyReceiptCanonical(db, receivableIds);
 }
 
+export type SettledReceivableAuditRow = {
+  externalId: number;
+  sourceInvoiceId: number | null;
+  personName: string | null;
+  personCnpj: string | null;
+};
+
+export type SettledReceivablesAudit = SettledReceivablesAuditPartition & {
+  /** Todos os títulos baixados no período com `amountReceived > 0`. */
+  settled: SettledReceivableAuditRow[];
+};
+
 /**
- * Baixa sem movimentação financeira no período.
+ * NF-es CANCELADAS dentre as informadas, pelo vínculo determinístico
+ * `NomusAccountsReceivable.sourceInvoiceId` → `NomusNfe.externalId`.
+ * Mesma semântica do módulo de comissões (`commission-source-resolver`):
+ * cancelada = status `NOMUS_NFE_STATUS_CANCELLED`. Uma query, em lote.
+ */
+async function loadCancelledInvoiceIds(
+  db: Pick<PrismaClient, "nomusNfe">,
+  invoiceIds: number[]
+): Promise<Set<number>> {
+  if (invoiceIds.length === 0) return new Set();
+  const rows = await db.nomusNfe.findMany({
+    where: { externalId: { in: invoiceIds }, status: NOMUS_NFE_STATUS_CANCELLED },
+    select: { externalId: true },
+  });
+  return new Set(rows.map((row) => row.externalId));
+}
+
+/**
+ * Fonte ÚNICA da auditoria de baixas do período: a lista de inconsistências e as
+ * contagens agregadas saem desta mesma partição (nunca de duas consultas).
  *
  * A existência de receipt é verificada em TODO o histórico do título
  * (`loadReceivableIdsWithAnyReceipt`), nunca dentro da janela de competência:
  * um CR recebido em 30/06 e baixado em 01/07 tem movimentação financeira real
  * e não pode ser reportado como baixa sem caixa ao processar julho.
  *
- * A baixa continua sem virar fallback de competência — o caso é apenas
- * reportado como inconsistência.
+ * Baixa sem receipt cuja NF-e de origem está CANCELADA é baixa administrativa
+ * do cancelamento: não houve caixa e não falta receipt. Fica classificada à
+ * parte e fora de `SETTLED_WITHOUT_RECEIPT`. Nada aqui cria receipt,
+ * competência, schedule ou comissão — é só classificação.
  *
- * Custo: 2 queries, ambas em lote (nenhuma por título).
+ * Custo: no máximo 3 queries, todas em lote (baixados, receipts, NF-es canceladas).
+ * A terceira só roda se existir baixado sem receipt com NF vinculada.
  */
-export async function loadSettledWithoutReceiptInconsistencies(
-  db: CompetenceWithArDb,
+export async function loadSettledReceivablesAuditForPeriod(
+  db: CompetenceSettlementAuditDb,
   year: number,
   month: number
-): Promise<CommissionCompetenceInconsistency[]> {
+): Promise<SettledReceivablesAudit> {
   const { from, to } = resolveCompetencePeriodUtcBounds(year, month);
   const settled = await db.nomusAccountsReceivable.findMany({
     where: {
       settlementDate: { gte: from, lte: to },
       amountReceived: { gt: 0 },
     },
-    select: { externalId: true },
+    select: { externalId: true, sourceInvoiceId: true, personName: true, personCnpj: true },
   });
-  const settledIds = settled.map((row) => row.externalId);
-  if (settledIds.length === 0) return [];
+  if (settled.length === 0) {
+    return { settled: [], financialReceiptIds: [], cancelledInvoiceSettlementIds: [], settledWithoutReceipt: [] };
+  }
 
-  const withAnyReceipt = await loadReceivableIdsWithAnyReceipt(db, settledIds);
-  return detectSettledWithoutReceipt(settledIds, withAnyReceipt);
+  const withAnyReceipt = await loadReceivableIdsWithAnyReceipt(
+    db,
+    settled.map((row) => row.externalId)
+  );
+  const candidateInvoiceIds = [
+    ...new Set(
+      settled
+        .filter((row) => !withAnyReceipt.has(row.externalId) && row.sourceInvoiceId != null)
+        .map((row) => row.sourceInvoiceId as number)
+    ),
+  ];
+  const cancelledInvoiceIds = await loadCancelledInvoiceIds(db, candidateInvoiceIds);
+
+  return {
+    settled,
+    ...partitionSettledReceivablesForAudit(
+      settled.map((row) => ({ receivableExternalId: row.externalId, sourceInvoiceId: row.sourceInvoiceId })),
+      withAnyReceipt,
+      cancelledInvoiceIds
+    ),
+  };
+}
+
+/**
+ * Baixa sem movimentação financeira no período (`SETTLED_WITHOUT_RECEIPT`).
+ *
+ * Não inclui baixa de NF-e cancelada. A baixa continua sem virar fallback de
+ * competência — o caso é apenas reportado como inconsistência.
+ */
+export async function loadSettledWithoutReceiptInconsistencies(
+  db: CompetenceSettlementAuditDb,
+  year: number,
+  month: number
+): Promise<CommissionCompetenceInconsistency[]> {
+  return (await loadSettledReceivablesAuditForPeriod(db, year, month)).settledWithoutReceipt;
+}
+
+/**
+ * Números agregados da auditoria de baixas, a partir da MESMA partição da lista
+ * detalhada. `limit` corta só as listas de ids exibidas, nunca as contagens.
+ */
+export function summarizeSettledReceivablesAudit(audit: SettledReceivablesAudit, limit: number) {
+  // Intercompany é apenas CONTADO aqui; a política de elegibilidade não muda.
+  const intercompany = audit.settled.filter((row) =>
+    isCommissionInternalGroupReceivable({ customerName: row.personName, customerCnpj: row.personCnpj })
+  ).length;
+  const withoutReceiptIds = audit.settledWithoutReceipt.map((row) => row.receivableExternalId);
+  return {
+    titulos_baixados_no_periodo: audit.settled.length,
+    titulos_baixados_com_receipt_real: audit.financialReceiptIds.length,
+    titulos_baixados_intercompany: intercompany,
+    titulos_baixados_nfe_cancelada: audit.cancelledInvoiceSettlementIds.length,
+    titulos_baixados_nfe_cancelada_ids: audit.cancelledInvoiceSettlementIds.slice(0, limit),
+    titulos_com_baixa_no_periodo_sem_recebimento: withoutReceiptIds.length,
+    // Conferência: recebimento real + NF cancelada + sem recebimento = todos os baixados.
+    conferencia_sem_recebimento_bate:
+      audit.financialReceiptIds.length + audit.cancelledInvoiceSettlementIds.length + withoutReceiptIds.length ===
+      new Set(audit.settled.map((row) => row.externalId)).size,
+    titulos_com_baixa_no_periodo_sem_recebimento_ids: withoutReceiptIds.slice(0, limit),
+  };
 }
 
 /**

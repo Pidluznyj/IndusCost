@@ -8,7 +8,9 @@
  *    com interpolação linear pelo preço praticado (o DOCX trazia degraus por
  *    faixa de Margem Oficial);
  *  - Seção 11: 90 dias contados do último faturamento válido (o DOCX dizia
- *    "sem novo Pedido de Venda aprovado");
+ *    "sem novo Pedido de Venda aprovado"); desde 02/10/2026, cliente sem
+ *    histórico de faturamento conta do início da atribuição do responsável
+ *    atual (antes a candidata dizia que ele não era desvinculado);
  *  - Seção 14: os 33% do Supervisor permanecem, apurados fora do motor;
  *  - Anexo III: "versão 2.0" corrigido para 1.0.
  * A matriz original do DOCX fica em DOCUMENT_ANNEX_I_BANDS (commercialPolicyNormative.ts)
@@ -757,7 +759,7 @@ export const POL_COM_001_CHAPTERS: OfficialPolicyChapter[] = [
     "blocks": [
       {
         "type": "paragraph",
-        "text": "O prazo de inatividade comercial é contado a partir do último Faturamento Válido do cliente: a data da última nota fiscal ou Documento de Saída válido vinculado a um Pedido de Venda. Completados 90 dias corridos sem novo Faturamento Válido, o cliente entra automaticamente em revisão de carteira, para verificação da condição de Responsável Comercial."
+        "text": "Para clientes com histórico de Faturamento Válido, o prazo de inatividade comercial é contado a partir do último Faturamento Válido do cliente: a data da última nota fiscal ou Documento de Saída válido vinculado a um Pedido de Venda. Para clientes sem qualquer histórico de Faturamento Válido, o prazo é contado a partir do início da atribuição do Responsável Comercial atual. Completados 90 dias corridos sem novo Faturamento Válido, o cliente entra automaticamente em revisão de carteira, para verificação da condição de Responsável Comercial."
       },
       {
         "type": "paragraph",
@@ -781,7 +783,15 @@ export const POL_COM_001_CHAPTERS: OfficialPolicyChapter[] = [
       },
       {
         "type": "bullet",
-        "text": "cada Faturamento Válido reinicia a contagem, ainda que o Pedido de Venda tenha sido faturado apenas em parte."
+        "text": "cada Faturamento Válido reinicia a contagem, ainda que o Pedido de Venda tenha sido faturado apenas em parte;"
+      },
+      {
+        "type": "bullet",
+        "text": "a troca de Responsável Comercial não reinicia a contagem de cliente que já possui Faturamento Válido;"
+      },
+      {
+        "type": "bullet",
+        "text": "para cliente sem histórico de Faturamento Válido, a contagem só reinicia com nova atribuição ou com a troca efetiva do Responsável Comercial; nova gravação do mesmo responsável, edição de observações ou atualização técnica do cadastro não reiniciam a contagem."
       },
       {
         "type": "paragraph",
@@ -865,7 +875,7 @@ export const POL_COM_001_CHAPTERS: OfficialPolicyChapter[] = [
       },
       {
         "type": "paragraph",
-        "text": "Clientes sem histórico de Faturamento Válido não serão automaticamente desvinculados exclusivamente por esta rotina de inatividade; seu tratamento seguirá os critérios comerciais e de gestão aplicáveis."
+        "text": "Clientes sem histórico de Faturamento Válido submetem-se à mesma revisão de carteira: completados 90 dias corridos desde o início da atribuição do Responsável Comercial atual sem Faturamento Válido, havendo registro válido no CRM a responsabilidade poderá ser preservada e revista no mês seguinte; não havendo registro válido, o cliente deixará de possuir Responsável Comercial exclusivo."
       },
       {
         "type": "paragraph",

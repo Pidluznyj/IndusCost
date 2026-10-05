@@ -65,10 +65,10 @@ export function createSatisfactionInvitationService(deps: { prisma: PrismaClient
         customerId: true,
         revokedAt: true,
         completedAt: true,
-        campaign: { select: { status: true } },
+        campaign: { select: { status: true, deletedAt: true } },
       },
     });
-    if (!invitation) {
+    if (!invitation || invitation.campaign.deletedAt) {
       throw new SatisfactionDomainError("Convite não encontrado.", "NOT_FOUND");
     }
     return invitation;
@@ -237,6 +237,11 @@ export function createSatisfactionInvitationService(deps: { prisma: PrismaClient
             where: { id: { in: previous.map((p) => p.id) } },
             data: { status: "REVOKED", revokedAt: new Date() },
           });
+          // Link antigo deixa de valer NA HORA — inclusive sessões já abertas.
+          await tx.satisfactionPublicSession.updateMany({
+            where: { accessTokenId: { in: previous.map((p) => p.id) }, revokedAt: null },
+            data: { revokedAt: new Date() },
+          });
         }
         await tx.satisfactionSurveyAccessToken.create({
           data: {
@@ -304,9 +309,9 @@ export function createSatisfactionInvitationService(deps: { prisma: PrismaClient
     ): Promise<SatisfactionIssuedLink> {
       const campaign = await prisma.satisfactionSurveyCampaign.findUnique({
         where: { id: campaignId },
-        select: { id: true, status: true, allowGeneralLink: true },
+        select: { id: true, status: true, allowGeneralLink: true, deletedAt: true },
       });
-      if (!campaign) throw new SatisfactionDomainError("Pesquisa não encontrada.", "NOT_FOUND");
+      if (!campaign || campaign.deletedAt) throw new SatisfactionDomainError("Pesquisa não encontrada.", "NOT_FOUND");
       if (!campaign.allowGeneralLink) {
         throw new SatisfactionDomainError(
           "Esta pesquisa não habilitou o link geral.",
@@ -327,6 +332,10 @@ export function createSatisfactionInvitationService(deps: { prisma: PrismaClient
           await tx.satisfactionSurveyAccessToken.updateMany({
             where: { id: { in: previous.map((p) => p.id) } },
             data: { status: "REVOKED", revokedAt: new Date() },
+          });
+          await tx.satisfactionPublicSession.updateMany({
+            where: { accessTokenId: { in: previous.map((p) => p.id) }, revokedAt: null },
+            data: { revokedAt: new Date() },
           });
         }
         await tx.satisfactionSurveyAccessToken.create({

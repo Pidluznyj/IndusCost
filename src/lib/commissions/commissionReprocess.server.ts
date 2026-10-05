@@ -33,6 +33,12 @@ import { rebuildCommissionReceivableSchedule } from "./commissionReceivableSched
 /** Teto de pedidos analisados por rodada de preview/apply — protege contra varreduras sem filtro. */
 export const MAX_ORDERS = 2000;
 
+/**
+ * Pedidos recalculados em paralelo na análise (dry-run, somente leitura).
+ * Sequencial, 2000 pedidos passavam de 100 s e o proxy devolvia HTTP 524.
+ */
+export const REPROCESS_EVALUATION_CONCURRENCY = 4;
+
 /** TTL do lock operacional — evita lock "travado" por falha sem finally executado (ex.: crash do processo). */
 const REPROCESS_LOCK_TTL_MS = 15 * 60 * 1000;
 
@@ -50,11 +56,19 @@ export class CommissionReprocessError extends Error {
   }
 }
 
+export type CommissionReprocessProgress = {
+  phase: "analyzing" | "applying";
+  processed: number;
+  total: number;
+};
+
 export type CommissionReprocessRunInput = {
   filters: Partial<CommissionReprocessFilters> & Record<string, unknown>;
   userId: string;
   userRole: string;
   permissions?: string[];
+  /** Avanço da rodada, para execução em segundo plano com acompanhamento. */
+  onProgress?: (progress: CommissionReprocessProgress) => void;
 };
 
 export type CommissionReprocessApplyInput = CommissionReprocessRunInput & {
@@ -490,18 +504,35 @@ type ComputeRowsDb = FindAffectedOrdersDb &
 
 async function computeReprocessRows(
   db: ComputeRowsDb,
-  filters: CommissionReprocessFilters
-): Promise<CommissionReprocessDiffRow[]> {
+  filters: CommissionReprocessFilters,
+  onProgress?: (progress: CommissionReprocessProgress) => void
+): Promise<{ rows: CommissionReprocessDiffRow[]; orderLimitReached: boolean }> {
   const orderIds = await findAffectedCommissionSalesOrderIds(db, filters);
   const orders = await loadOrderContextRows(db, orderIds);
   const signals = await loadLifecycleSignals(db, orders);
 
-  const rows: CommissionReprocessDiffRow[] = [];
-  for (const order of orders) {
-    rows.push(await evaluateReprocessRow(db, order, signals, filters));
-  }
+  // Avaliação é dry-run (só leitura): um pequeno pool paralelo, mantendo a ordem dos pedidos.
+  const evaluated = new Array<CommissionReprocessDiffRow>(orders.length);
+  let next = 0;
+  let processed = 0;
+  onProgress?.({ phase: "analyzing", processed: 0, total: orders.length });
+  const worker = async () => {
+    while (next < orders.length) {
+      const index = next;
+      next += 1;
+      evaluated[index] = await evaluateReprocessRow(db, orders[index]!, signals, filters);
+      processed += 1;
+      onProgress?.({ phase: "analyzing", processed, total: orders.length });
+    }
+  };
+  await Promise.all(
+    Array.from({ length: Math.min(REPROCESS_EVALUATION_CONCURRENCY, orders.length) }, () => worker())
+  );
 
-  return rows.filter((row) => row.action === "error" || filters.statuses.includes(row.lifecycle));
+  return {
+    rows: evaluated.filter((row) => row.action === "error" || filters.statuses.includes(row.lifecycle)),
+    orderLimitReached: orderIds.length >= MAX_ORDERS,
+  };
 }
 
 type ReprocessLockValue = { lockedAt: string | null; lockedByUserId?: string | null };
@@ -587,7 +618,7 @@ export async function previewCommissionReprocess(
   const filters = normalizeCommissionReprocessFilters(input.filters);
   await assertReprocessNotLocked(db);
 
-  const rows = await computeReprocessRows(db, filters);
+  const { rows, orderLimitReached } = await computeReprocessRows(db, filters, input.onProgress);
   const summary = aggregateCommissionReprocessSummary(rows);
   const grouped = groupReprocessAffected(rows);
   const filtersHash = hashCommissionReprocessFilters(filters);
@@ -626,6 +657,7 @@ export async function previewCommissionReprocess(
       .map((row) => ({ salesOrderId: row.salesOrderId, message: row.error ?? "Erro desconhecido." })),
     runToken: run.id,
     auditId: run.id,
+    orderLimit: { limit: MAX_ORDERS, reached: orderLimitReached },
   };
 }
 
@@ -689,7 +721,10 @@ export async function applyCommissionReprocess(
   }
 
   return withReprocessLock(db, input.userId, async () => {
-    const rows = await computeReprocessRows(db, filters);
+    const { rows } = await computeReprocessRows(db, filters, input.onProgress);
+    const toRecalculate = rows.filter((row) => row.action === "recalculate").length;
+    let recalculated = 0;
+    input.onProgress?.({ phase: "applying", processed: 0, total: toRecalculate });
 
     const applyRun = await db.commissionCalculationRun.create({
       data: {
@@ -737,7 +772,11 @@ export async function applyCommissionReprocess(
         }
 
         appliedRows.push({ ...row, snapshotAction: materialized.action });
+        recalculated += 1;
+        input.onProgress?.({ phase: "applying", processed: recalculated, total: toRecalculate });
       } catch (err) {
+        recalculated += 1;
+        input.onProgress?.({ phase: "applying", processed: recalculated, total: toRecalculate });
         errorsCount += 1;
         const message = err instanceof Error ? err.message : "Erro ao reprocessar pedido.";
         appliedRows.push({

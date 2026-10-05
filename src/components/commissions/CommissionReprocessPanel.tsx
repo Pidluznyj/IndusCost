@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, Loader2, RefreshCw, ShieldAlert } from "lucide-react";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { usePermissions } from "@/src/hooks/usePermissions";
@@ -27,9 +27,11 @@ import {
 import {
   buildCommissionReprocessCsv,
   defaultCommissionReprocessFilters,
+  isCommissionReprocessJobRunning,
   type CommissionReprocessApplyResult,
   type CommissionReprocessDiffRow,
   type CommissionReprocessFilters,
+  type CommissionReprocessJobRunning,
   type CommissionReprocessLifecycle,
   type CommissionReprocessPreviewResult,
 } from "@/src/lib/commissions/commissionReprocess";
@@ -73,6 +75,43 @@ function downloadCsv(filename: string, csv: string): void {
   URL.revokeObjectURL(url);
 }
 
+const REPROCESS_JOB_POLL_MS = 2000;
+
+type ReprocessProgress = CommissionReprocessJobRunning["progress"];
+
+/**
+ * Rodadas grandes continuam em segundo plano no servidor: o POST devolve
+ * { jobId, status: "running" } e o resultado vem por GET jobs/:jobId.
+ */
+async function runCommissionReprocessRequest<T>(
+  url: string,
+  body: unknown,
+  onProgress: (progress: ReprocessProgress) => void,
+  isCancelled: () => boolean
+): Promise<T | null> {
+  let payload = await fetchJsonOk<T | CommissionReprocessJobRunning>(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  while (isCommissionReprocessJobRunning(payload)) {
+    if (isCancelled()) return null;
+    onProgress(payload.progress);
+    await new Promise((resolve) => window.setTimeout(resolve, REPROCESS_JOB_POLL_MS));
+    if (isCancelled()) return null;
+    payload = await fetchJsonOk<T | CommissionReprocessJobRunning>(
+      `/api/commissions/reprocess/jobs/${encodeURIComponent(payload.jobId)}`
+    );
+  }
+  return payload;
+}
+
+function reprocessProgressLabel(progress: ReprocessProgress, fallback: string): string {
+  if (!progress || progress.total <= 0) return fallback;
+  const verb = progress.phase === "applying" ? "Aplicando" : "Recalculando pelo motor oficial";
+  return `${verb}: ${progress.processed} de ${progress.total} pedido(s)…`;
+}
+
 export function CommissionReprocessPanel() {
   const auth = useAuth();
   const permissions = usePermissions();
@@ -91,6 +130,15 @@ export function CommissionReprocessPanel() {
   const [loadingPreview, setLoadingPreview] = useState(false);
   const [loadingApply, setLoadingApply] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [progress, setProgress] = useState<ReprocessProgress>(null);
+  const unmountedRef = useRef(false);
+
+  useEffect(() => {
+    unmountedRef.current = false;
+    return () => {
+      unmountedRef.current = true;
+    };
+  }, []);
 
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [reason, setReason] = useState("");
@@ -128,22 +176,22 @@ export function CommissionReprocessPanel() {
     setLoadingPreview(true);
     setError(null);
     setApplyResult(null);
+    setProgress(null);
     try {
       const requestFilters = buildRequestFilters();
-      const result = await fetchJsonOk<CommissionReprocessPreviewResult>(
+      const result = await runCommissionReprocessRequest<CommissionReprocessPreviewResult>(
         "/api/commissions/reprocess/preview",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(requestFilters),
-        }
+        requestFilters,
+        setProgress,
+        () => unmountedRef.current
       );
-      setPreview(result);
+      if (result) setPreview(result);
     } catch (err) {
       setPreview(null);
       setError(formatCommissionsApiError(err, "Não foi possível gerar a prévia de reprocessamento."));
     } finally {
       setLoadingPreview(false);
+      setProgress(null);
     }
   }
 
@@ -160,27 +208,25 @@ export function CommissionReprocessPanel() {
     }
     setLoadingApply(true);
     setError(null);
+    setProgress(null);
     try {
       const requestFilters = buildRequestFilters();
-      const result = await fetchJsonOk<CommissionReprocessApplyResult>(
+      const result = await runCommissionReprocessRequest<CommissionReprocessApplyResult>(
         "/api/commissions/reprocess/apply",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            ...requestFilters,
-            reason: reason.trim(),
-            runToken: preview.runToken,
-          }),
-        }
+        { ...requestFilters, reason: reason.trim(), runToken: preview.runToken },
+        setProgress,
+        () => unmountedRef.current
       );
+      if (!result) return;
       setApplyResult(result);
       setConfirmOpen(false);
       setPreview(null);
     } catch (err) {
+      setConfirmOpen(false);
       setError(formatCommissionsApiError(err, "Erro ao aplicar reprocessamento."));
     } finally {
       setLoadingApply(false);
+      setProgress(null);
     }
   }
 
@@ -352,7 +398,9 @@ export function CommissionReprocessPanel() {
         </div>
       </div>
 
-      {loadingPreview ? <CommissionsLoading label="Recalculando comissões via motor oficial…" /> : null}
+      {loadingPreview ? (
+        <CommissionsLoading label={reprocessProgressLabel(progress, "Recalculando comissões via motor oficial…")} />
+      ) : null}
 
       {applyResult ? (
         <ExecutiveAlert
@@ -405,6 +453,14 @@ export function CommissionReprocessPanel() {
               tone={preview.summary.differenceTotal >= 0 ? "success" : "danger"}
             />
           </CommissionsKpiSection>
+
+          {preview.orderLimit?.reached ? (
+            <ExecutiveAlert
+              variant="attention"
+              title={`Prévia limitada aos ${preview.orderLimit.limit} pedidos mais recentes`}
+              description="Os filtros alcançam mais pedidos do que o teto de uma rodada. Pedidos mais antigos ficaram de fora: informe período, vendedor, cliente ou pedido para alcançá-los."
+            />
+          ) : null}
 
           {preview.summary.blockedCount > 0 ? (
             <ExecutiveAlert
@@ -533,6 +589,11 @@ export function CommissionReprocessPanel() {
                 Confirmar
               </button>
             </div>
+            {loadingApply ? (
+              <p className="mt-3 text-xs text-muted-foreground" role="status" aria-live="polite">
+                {reprocessProgressLabel(progress, "Aplicando reprocessamento…")}
+              </p>
+            ) : null}
           </div>
         </div>
       ) : null}

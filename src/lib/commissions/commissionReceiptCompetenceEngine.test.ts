@@ -6,6 +6,8 @@
  *   recebimento 30/06 + baixa 01/07 ⇒ comissão de JUNHO
  */
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, it } from "node:test";
 import {
   buildCommissionReceiptPreview,
@@ -20,7 +22,9 @@ import {
 } from "./commissionReceiptCompetence.js";
 import {
   loadCommissionCompetenceReceivableIdsForPeriod,
+  loadSettledReceivablesAuditForPeriod,
   loadSettledWithoutReceiptInconsistencies,
+  summarizeSettledReceivablesAudit,
 } from "./commissionReceiptCompetence.server.js";
 import { discoverSalesOrderRefsForReceiptMonth } from "./commissionMaterializationOrchestrator.server.js";
 import { findAffectedCommissionSalesOrderIds } from "./commissionReprocess.server.js";
@@ -461,19 +465,35 @@ function makeFakeDb(input: {
   receipts: FakeReceipt[];
   receivables: FakeReceivable[];
   nfeLinks?: Array<{ salesOrderId: string; nfeExternalId: number }>;
+  /** NomusNfe: só o que a auditoria lê (externalId + status). */
+  nfes?: Array<{ externalId: number; status: number | null }>;
   touched?: Set<string>;
 }) {
   const touched = input.touched ?? new Set<string>();
   const mark = (model: string) => touched.add(model);
+  const queries: Array<{ model: string; args: unknown }> = [];
 
   return {
     touched,
+    queries,
+    nomusNfe: {
+      findMany: async (args: { where?: { externalId?: { in: number[] }; status?: number } }) => {
+        mark("nomusNfe");
+        queries.push({ model: "nomusNfe", args });
+        let rows = input.nfes ?? [];
+        const idFilter = args?.where?.externalId?.in;
+        if (idFilter) rows = rows.filter((row) => idFilter.includes(row.externalId));
+        if (args?.where?.status !== undefined) rows = rows.filter((row) => row.status === args.where!.status);
+        return rows.map((row) => ({ externalId: row.externalId }));
+      },
+    },
     nomusReceivableReceipt: {
       findMany: async (args: {
         where?: { receiptDate?: { gte?: Date; lte?: Date; lt?: Date }; receivableExternalId?: { in: number[] } };
         distinct?: string[];
       }) => {
         mark("nomusReceivableReceipt");
+        queries.push({ model: "nomusReceivableReceipt", args });
         let rows = input.receipts.filter((row) =>
           inRange(row.receiptDate, args?.where?.receiptDate)
         );
@@ -500,6 +520,7 @@ function makeFakeDb(input: {
         distinct?: string[];
       }) => {
         mark("nomusAccountsReceivable");
+        queries.push({ model: "nomusAccountsReceivable", args });
         let rows = input.receivables;
         const idFilter = args?.where?.externalId?.in;
         if (idFilter) rows = rows.filter((row) => idFilter.includes(row.externalId));
@@ -705,6 +726,215 @@ describe("seleção temporal do módulo (camada .server)", () => {
     const where = receiptQueries[0].where as Record<string, unknown>;
     assert.equal("receiptDate" in where, false);
     assert.ok(where.receivableExternalId, "consulta deve filtrar por lote de ids");
+  });
+
+  /* ---------------------------------------------------------------------- *
+   * Baixa de CR de NF-e cancelada não é SETTLED_WITHOUT_RECEIPT.
+   * Caso real: NF 7872 (externalId 8218, status 7) cancelada e substituída
+   * pela NF 7873 (externalId 8219, status 4). Os CRs 19851–19855 da 7872
+   * foram baixados em 21/09 sem recebimento — baixa administrativa.
+   * ---------------------------------------------------------------------- */
+  const CANCELLED = 7;
+  const AUTHORIZED = 4;
+  const settledSept = (externalId: number, sourceInvoiceId: number | null): FakeReceivable => ({
+    externalId,
+    sourceInvoiceId,
+    personName: "Cliente NF",
+    personCnpj: null,
+    settlementDate: prismaDate("2026-09-21"),
+  });
+
+  it("TESTE A — baixado sem receipt com NF-e cancelada NÃO é SETTLED_WITHOUT_RECEIPT", async () => {
+    const db = makeFakeDb({
+      receipts: [],
+      receivables: [settledSept(30001, 9001)],
+      nfes: [{ externalId: 9001, status: CANCELLED }],
+    });
+
+    assert.deepEqual(await loadSettledWithoutReceiptInconsistencies(db as never, 2026, 9), []);
+    const audit = await loadSettledReceivablesAuditForPeriod(db as never, 2026, 9);
+    assert.deepEqual(audit.cancelledInvoiceSettlementIds, [30001]);
+    assert.deepEqual(audit.financialReceiptIds, []);
+    // Não virou recebimento nem competência.
+    assert.deepEqual(await loadCommissionCompetenceReceivableIdsForPeriod(db as never, 2026, 9), []);
+  });
+
+  it("TESTE B — baixado sem receipt com NF-e válida CONTINUA SETTLED_WITHOUT_RECEIPT", async () => {
+    const db = makeFakeDb({
+      receipts: [],
+      receivables: [settledSept(30002, 9002)],
+      nfes: [{ externalId: 9002, status: AUTHORIZED }],
+    });
+
+    const inconsistencies = await loadSettledWithoutReceiptInconsistencies(db as never, 2026, 9);
+    assert.deepEqual(
+      inconsistencies.map((row) => [row.code, row.receivableExternalId]),
+      [["SETTLED_WITHOUT_RECEIPT", 30002]]
+    );
+    const audit = await loadSettledReceivablesAuditForPeriod(db as never, 2026, 9);
+    assert.deepEqual(audit.cancelledInvoiceSettlementIds, []);
+  });
+
+  it("TESTE B2 — NF vinculada ausente da base local ou com status nulo não é tratada como cancelada", async () => {
+    const db = makeFakeDb({
+      receipts: [],
+      receivables: [settledSept(30010, 9010), settledSept(30011, 9011)],
+      nfes: [{ externalId: 9011, status: null }],
+    });
+
+    assert.deepEqual(
+      (await loadSettledWithoutReceiptInconsistencies(db as never, 2026, 9)).map((row) => row.receivableExternalId),
+      [30010, 30011]
+    );
+  });
+
+  it("TESTE C — receipt histórico vence: recebimento real mesmo se a NF estiver cancelada", async () => {
+    const db = makeFakeDb({
+      receipts: [
+        { externalId: 500, receivableExternalId: 30003, receiptDate: prismaDate("2026-08-30"), receivedAmount: 450 },
+      ],
+      receivables: [settledSept(30003, 9003)],
+      nfes: [{ externalId: 9003, status: CANCELLED }],
+    });
+
+    const audit = await loadSettledReceivablesAuditForPeriod(db as never, 2026, 9);
+    assert.deepEqual(audit.financialReceiptIds, [30003]);
+    assert.deepEqual(audit.cancelledInvoiceSettlementIds, []);
+    assert.deepEqual(audit.settledWithoutReceipt, []);
+    // Tem receipt: nem consulta a NF-e.
+    assert.equal(db.queries.filter((q) => q.model === "nomusNfe").length, 0);
+  });
+
+  it("TESTE D — baixado sem receipt e SEM NF vinculada continua sinalizado", async () => {
+    const db = makeFakeDb({
+      receipts: [],
+      receivables: [settledSept(30004, null)],
+      nfes: [{ externalId: 9004, status: CANCELLED }],
+    });
+
+    assert.deepEqual(
+      (await loadSettledWithoutReceiptInconsistencies(db as never, 2026, 9)).map((row) => row.receivableExternalId),
+      [30004]
+    );
+    // Sem sourceInvoiceId não há o que consultar em NomusNfe.
+    assert.equal(db.queries.filter((q) => q.model === "nomusNfe").length, 0);
+  });
+
+  it("TESTE E — 200 CRs baixados: 3 queries em lote, uma única em NomusNfe (sem N+1)", async () => {
+    const receivables = Array.from({ length: 200 }, (_, index) => settledSept(40000 + index, 8000 + (index % 50)));
+    const db = makeFakeDb({
+      receipts: [],
+      receivables,
+      // NF-es 8000–8024 canceladas, 8025–8049 válidas.
+      nfes: Array.from({ length: 50 }, (_, index) => ({
+        externalId: 8000 + index,
+        status: index < 25 ? CANCELLED : AUTHORIZED,
+      })),
+    });
+
+    const audit = await loadSettledReceivablesAuditForPeriod(db as never, 2026, 9);
+
+    assert.deepEqual(
+      db.queries.map((q) => q.model),
+      ["nomusAccountsReceivable", "nomusReceivableReceipt", "nomusNfe"]
+    );
+    const nfeWhere = (db.queries[2]!.args as { where: { externalId: { in: number[] }; status: number } }).where;
+    assert.equal(nfeWhere.status, CANCELLED);
+    assert.equal(nfeWhere.externalId.in.length, 50, "ids de NF deduplicados e enviados em um único lote");
+    assert.equal(audit.cancelledInvoiceSettlementIds.length, 100);
+    assert.equal(audit.settledWithoutReceipt.length, 100);
+  });
+
+  const REAL_7872 = {
+    receipts: [
+      // Recebimento real de setembro em um CR da NF substituta.
+      { externalId: 12001, receivableExternalId: 19865, receiptDate: prismaDate("2026-09-25"), receivedAmount: 2292.6 },
+    ] satisfies FakeReceipt[],
+    receivables: [
+      ...[19851, 19852, 19853, 19854, 19855].map((id) => settledSept(id, 8218)),
+      { ...settledSept(19865, 8219), settlementDate: prismaDate("2026-09-25") },
+      // Outro CR da NF válida, baixado sem receipt: inconsistência genuína.
+      { ...settledSept(19866, 8219), settlementDate: prismaDate("2026-09-26") },
+    ] satisfies FakeReceivable[],
+    nfes: [
+      { externalId: 8218, status: CANCELLED },
+      { externalId: 8219, status: AUTHORIZED },
+    ],
+  };
+
+  it("TESTE F — caso real NF 7872: CRs 19851–19855 não geram SETTLED_WITHOUT_RECEIPT", async () => {
+    const db = makeFakeDb(REAL_7872);
+
+    const flagged = (await loadSettledWithoutReceiptInconsistencies(db as never, 2026, 9)).map(
+      (row) => row.receivableExternalId
+    );
+    for (const id of [19851, 19852, 19853, 19854, 19855]) {
+      assert.equal(flagged.includes(id), false, `CR ${id} não pode ser inconsistência`);
+    }
+    const audit = await loadSettledReceivablesAuditForPeriod(db as never, 2026, 9);
+    assert.deepEqual(audit.cancelledInvoiceSettlementIds, [19851, 19852, 19853, 19854, 19855]);
+    // Nenhum deles entra na competência de setembro.
+    const competenceIds = await loadCommissionCompetenceReceivableIdsForPeriod(db as never, 2026, 9);
+    assert.deepEqual(competenceIds, [19865]);
+  });
+
+  it("TESTE G — NF substituta válida (7873) não é afetada pela cancelada, nem o contrário", async () => {
+    const db = makeFakeDb(REAL_7872);
+
+    const audit = await loadSettledReceivablesAuditForPeriod(db as never, 2026, 9);
+    // 19865 (NF 7873) tem receipt de setembro: recebimento real, competência preservada.
+    assert.deepEqual(audit.financialReceiptIds, [19865]);
+    // 19866 (NF 7873 válida) sem receipt: continua alertado.
+    assert.deepEqual(
+      audit.settledWithoutReceipt.map((row) => row.receivableExternalId),
+      [19866]
+    );
+    // Vínculo só por sourceInvoiceId: nenhum CR da 7873 caiu como NF cancelada.
+    assert.equal(audit.cancelledInvoiceSettlementIds.includes(19865), false);
+    assert.equal(audit.cancelledInvoiceSettlementIds.includes(19866), false);
+  });
+
+  it("TESTE H — auditoria agregada e lista detalhada usam a mesma população", async () => {
+    const db = makeFakeDb(REAL_7872);
+
+    const audit = await loadSettledReceivablesAuditForPeriod(db as never, 2026, 9);
+    const detailed = await loadSettledWithoutReceiptInconsistencies(db as never, 2026, 9);
+    const summary = summarizeSettledReceivablesAudit(audit, 200);
+
+    assert.deepEqual(summary, {
+      titulos_baixados_no_periodo: 7,
+      titulos_baixados_com_receipt_real: 1,
+      titulos_baixados_intercompany: 0,
+      titulos_baixados_nfe_cancelada: 5,
+      titulos_baixados_nfe_cancelada_ids: [19851, 19852, 19853, 19854, 19855],
+      titulos_com_baixa_no_periodo_sem_recebimento: 1,
+      conferencia_sem_recebimento_bate: true,
+      titulos_com_baixa_no_periodo_sem_recebimento_ids: [19866],
+    });
+    assert.equal(summary.titulos_com_baixa_no_periodo_sem_recebimento, detailed.length);
+    assert.deepEqual(
+      summary.titulos_com_baixa_no_periodo_sem_recebimento_ids,
+      detailed.map((row) => row.receivableExternalId)
+    );
+    // O limite corta só a lista exibida, nunca a contagem.
+    const limited = summarizeSettledReceivablesAudit(audit, 2);
+    assert.equal(limited.titulos_baixados_nfe_cancelada, 5);
+    assert.deepEqual(limited.titulos_baixados_nfe_cancelada_ids, [19851, 19852]);
+    assert.equal(limited.conferencia_sem_recebimento_bate, true);
+  });
+
+  it("TESTE H2 — o script de auditoria não tem consulta própria de baixados nem número mágico de status", () => {
+    const root = join(import.meta.dirname, "..", "..", "..");
+    const script = readFileSync(join(root, "scripts", "auditCommissionReceiptCompetence.ts"), "utf8");
+    assert.match(script, /loadSettledReceivablesAuditForPeriod\(prisma, year, month\)/);
+    assert.match(script, /\.\.\.summarizeSettledReceivablesAudit\(settledAudit, limit\)/);
+    assert.doesNotMatch(script, /nomusAccountsReceivable\.findMany|classifyReceivableSettlement|loadReceivableIdsWithAnyReceipt/);
+    const server = readFileSync(
+      join(root, "src", "lib", "commissions", "commissionReceiptCompetence.server.ts"),
+      "utf8"
+    );
+    assert.match(server, /status: NOMUS_NFE_STATUS_CANCELLED/);
+    assert.doesNotMatch(server, /status: 7\b|status === 7\b/);
   });
 
   it("TESTE 9 — a camada de competência não toca fechamentos, ledger nem CommissionRecord", async () => {

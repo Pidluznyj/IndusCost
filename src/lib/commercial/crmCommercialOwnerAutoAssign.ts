@@ -53,6 +53,35 @@ export function isAutoAssignBlockedByInactivity(
   return Boolean(existing && !existing.isActive && existing.blockAutoAssignUntilManual);
 }
 
+/**
+ * Dados do upsert da autoatribuição. Só é chamado para carteira vazia e não bloqueada
+ * (guards em assignCommercialOwnerFromSuggestion), então sempre inicia um novo ciclo:
+ * assignmentStartedAt = agora, tanto na criação quanto na reativação de linha inativa.
+ */
+export function buildAutoAssignOwnerWrite(
+  suggestion: AutoAssignSellerSuggestion,
+  input: { aliasIds: number[]; notes: string; performedBy: string; now: Date }
+) {
+  const assignment = {
+    customerNameSnapshot: suggestion.customerName,
+    sellerExternalId: suggestion.sellerExternalId,
+    sellerResponsibleName: suggestion.sellerName,
+    sellerCanonicalName: suggestion.sellerName,
+    sellerIdentityKey: suggestion.sellerIdentityKey,
+    sellerAliasExternalIds: input.aliasIds,
+    assignmentSource: AUTO_ASSIGN_SOURCE,
+    isActive: true,
+    assignmentStartedAt: input.now,
+    notes: input.notes,
+    updatedByName: input.performedBy,
+  };
+  return {
+    create: { customerId: suggestion.customerId, ...assignment, createdByName: input.performedBy },
+    // Só reativa/preenche se linha existia inativa — nunca sobrescreve ativa (guard em assignCommercialOwnerFromSuggestion).
+    update: assignment,
+  };
+}
+
 export function isMappableOrderSeller(row: {
   nomusSellerName: string | null;
   responsible: string | null;
@@ -296,33 +325,12 @@ export async function assignCommercialOwnerFromSuggestion(
 
     await prisma.crmCustomerCommercialOwner.upsert({
       where: { customerId: suggestion.customerId },
-      create: {
-        customerId: suggestion.customerId,
-        customerNameSnapshot: suggestion.customerName,
-        sellerExternalId: suggestion.sellerExternalId,
-        sellerResponsibleName: suggestion.sellerName,
-        sellerCanonicalName: suggestion.sellerName,
-        sellerIdentityKey: suggestion.sellerIdentityKey,
-        sellerAliasExternalIds: aliasIds,
-        assignmentSource: AUTO_ASSIGN_SOURCE,
-        isActive: true,
+      ...buildAutoAssignOwnerWrite(suggestion, {
+        aliasIds,
         notes,
-        createdByName: options?.performedBy ?? "system/auto-assign",
-        updatedByName: options?.performedBy ?? "system/auto-assign",
-      },
-      update: {
-        // Só reativa/preenche se linha existia inativa — nunca sobrescreve ativa (guard acima).
-        customerNameSnapshot: suggestion.customerName,
-        sellerExternalId: suggestion.sellerExternalId,
-        sellerResponsibleName: suggestion.sellerName,
-        sellerCanonicalName: suggestion.sellerName,
-        sellerIdentityKey: suggestion.sellerIdentityKey,
-        sellerAliasExternalIds: aliasIds,
-        assignmentSource: AUTO_ASSIGN_SOURCE,
-        isActive: true,
-        notes,
-        updatedByName: options?.performedBy ?? "system/auto-assign",
-      },
+        performedBy: options?.performedBy ?? "system/auto-assign",
+        now: new Date(),
+      }),
     });
 
     await writeCommercialAuditLog({

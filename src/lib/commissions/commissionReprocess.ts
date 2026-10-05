@@ -97,7 +97,29 @@ export type CommissionReprocessPreviewResult = {
   errors: Array<{ salesOrderId: string; message: string }>;
   runToken: string;
   auditId: string | null;
+  /** Teto de pedidos por rodada; `reached` = a seleção foi cortada nos mais recentes. */
+  orderLimit?: { limit: number; reached: boolean };
 };
+
+/**
+ * Resposta de POST preview/apply e de GET jobs/:jobId enquanto a rodada ainda
+ * roda em segundo plano (HTTP 202). Concluída, a resposta é o próprio resultado.
+ */
+export type CommissionReprocessJobRunning = {
+  jobId: string;
+  kind: "preview" | "apply";
+  status: "running";
+  progress: { phase: "analyzing" | "applying"; processed: number; total: number } | null;
+};
+
+export function isCommissionReprocessJobRunning(value: unknown): value is CommissionReprocessJobRunning {
+  return (
+    value != null &&
+    typeof value === "object" &&
+    (value as { status?: unknown }).status === "running" &&
+    typeof (value as { jobId?: unknown }).jobId === "string"
+  );
+}
 
 export type CommissionReprocessApplyResult = {
   mode: "apply";

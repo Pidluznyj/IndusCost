@@ -121,6 +121,61 @@ export type SatisfactionResponseRow = {
   source: string;
 };
 
+export type SatisfactionActionPoint = {
+  id: string;
+  responsibleUserId: string;
+  responsibleName: string;
+  priority: "LOW" | "MEDIUM" | "HIGH";
+  status: "OPEN" | "IN_PROGRESS" | "DONE" | "CANCELLED";
+  rootCause: string | null;
+  actionPlan: string;
+  /** "AAAA-MM-DD" */
+  dueDate: string | null;
+  overdue: boolean;
+  completedAt: string | null;
+  resultNotes: string | null;
+  customerFeedbackAt: string | null;
+  updatedAt: string;
+};
+
+export type SatisfactionAttentionPointRow = {
+  answerId: string;
+  responseId: string;
+  customerName: string;
+  questionCode: string;
+  criterion: string;
+  rating: number;
+  submittedAt: string | null;
+  responsibleCommercialName: string | null;
+  actionPoint: SatisfactionActionPoint | null;
+};
+
+export type SatisfactionActionPointBoard = {
+  campaign: { id: string; code: string; name: string; status: SatisfactionCampaignStatus };
+  enabled: boolean;
+  summary: {
+    attentionPoints: number;
+    withoutActionPoint: number;
+    open: number;
+    inProgress: number;
+    done: number;
+    cancelled: number;
+    overdue: number;
+  };
+  rows: SatisfactionAttentionPointRow[];
+};
+
+export type SatisfactionActionPointPayload = {
+  responsibleUserId: string;
+  priority: SatisfactionActionPoint["priority"];
+  status: SatisfactionActionPoint["status"];
+  rootCause: string;
+  actionPlan: string;
+  dueDate: string;
+  resultNotes: string;
+  customerFeedbackAt: string | null;
+};
+
 export type Paginated<T> = {
   rows: T[];
   total: number;
@@ -272,6 +327,30 @@ export const satisfactionApi = {
     );
   },
 
+  actionPoints(campaignId: string) {
+    return fetchJsonOk<SatisfactionActionPointBoard>(
+      `${BASE}/campaigns/${campaignId}/action-points`
+    );
+  },
+
+  actionPointAssignees() {
+    return fetchJsonOk<{ users: Array<{ id: string; name: string }> }>(
+      `${BASE}/action-point-assignees`
+    );
+  },
+
+  /** Cria ou atualiza o action point do ponto de atenção (um por resposta crítica). */
+  saveActionPoint(answerId: string, body: SatisfactionActionPointPayload) {
+    return fetchJsonOk<{ actionPoint: SatisfactionActionPoint }>(
+      `${BASE}/action-points/${answerId}`,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      }
+    );
+  },
+
   exportResults(campaignId: string) {
     return fetchJsonOk<{ rows: Record<string, unknown>[] }>(
       `${BASE}/campaigns/${campaignId}/export`
@@ -286,6 +365,19 @@ export const CAMPAIGN_STATUS_LABELS: Record<SatisfactionCampaignStatus, string> 
   OPEN: "Aberta",
   CLOSED: "Encerrada",
   ARCHIVED: "Arquivada",
+};
+
+export const ACTION_POINT_STATUS_LABELS: Record<SatisfactionActionPoint["status"], string> = {
+  OPEN: "Aberto",
+  IN_PROGRESS: "Em andamento",
+  DONE: "Concluído",
+  CANCELLED: "Cancelado",
+};
+
+export const ACTION_POINT_PRIORITY_LABELS: Record<SatisfactionActionPoint["priority"], string> = {
+  LOW: "Baixa",
+  MEDIUM: "Média",
+  HIGH: "Alta",
 };
 
 export const INVITATION_STATUS_LABELS: Record<
