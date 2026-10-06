@@ -1,3 +1,6 @@
+import {
+  isCommercialPolicyConsultRole,
+} from "@/src/lib/commercialPolicy/commercialPolicyConsultAccess.js";
 import type { SidebarAccessibleNavigation, SidebarMenuItemDef } from "@/src/lib/sidebarNavigation.js";
 import { projectInternalContractKeysFromLegacyBag } from "@/src/lib/internalSurfaceAccess.js";
 import {
@@ -70,6 +73,15 @@ export const SIDEBAR_MODULE_CONTRACT_KEYS: Record<AppModuleId, readonly string[]
     "commercial.proposals",
     "commercial.sales_orders",
     "commercial.pricing",
+  ],
+  /**
+   * Política Comercial vigente (consulta). Gate principal por papel em
+   * canViewSidebarModuleFromDto; chaves auxiliares para perfis com acesso comercial.
+   */
+  "commercial-policy": [
+    "commercial.sales_orders",
+    "commercial.crm.seller",
+    "commercial.proposals",
   ],
   proposals: ["commercial.proposals"],
   "sales-orders": ["commercial.sales_orders"],
@@ -274,6 +286,11 @@ export function canViewSidebarModuleFromDto(
   if (dto.isSuperAdmin) return true;
   // Hub Configurações: exclusivo SUPER_ADMIN (fonte oficial: dto.isSuperAdmin).
   if (moduleId === "settings") return false;
+  if (moduleId === "commercial-policy") {
+    // Consulta institucional: papéis comerciais (e SUPER_ADMIN via isSuperAdmin acima).
+    // Sem fallthrough por sales_orders — evita VIEWER com pedidos ver a política.
+    return isCommercialPolicyConsultRole(dto.role);
+  }
   if (moduleId === "crm-commercial") {
     const general = dtoAllowsView(dto, "commercial.crm.general");
     const seller = dtoAllowsView(dto, "commercial.crm.seller");

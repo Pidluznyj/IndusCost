@@ -44,7 +44,10 @@ function authChecker(role: string, permissions: string[]): PermissionChecker {
   return {
     hasPermission: (p) => set.has(p),
     hasAnyPermission: (ps) => ps.some((p) => set.has(p)),
-    authUser: { effectivePermissions: effective },
+    authUser: {
+      effectivePermissions: effective,
+      role: role as NonNullable<PermissionChecker["authUser"]>["role"],
+    },
   };
 }
 
@@ -82,6 +85,7 @@ const EXPECTED_MENU: Record<
     MODULE_LABELS.customers,
     MODULE_LABELS.proposals,
     MODULE_LABELS["commercial-price-table"],
+    MODULE_LABELS["commercial-policy"],
     MODULE_LABELS["sales-orders"],
     MODULE_LABELS["sales-order-flow"],
     MODULE_LABELS["output-documents"],
@@ -170,6 +174,8 @@ describe("validação final — rotas preservadas", () => {
               ? "/commercial/sales-order-flow"
               : moduleId === "commercial-price-table"
                 ? "/commercial/price-table"
+                : moduleId === "commercial-policy"
+                  ? "/commercial/policy"
                 : moduleId === "treasury"
                   ? "/finance/treasury"
                   : moduleId === "invested-capital-recovery"
@@ -204,6 +210,11 @@ describe("validação final — rotas preservadas", () => {
       if (moduleId === "commercial-price-table") {
         assert.match(appTsx, /path=["']commercial\/price-table["']/);
         assert.match(appTsx, /CommercialPriceTableModule/);
+        continue;
+      }
+      if (moduleId === "commercial-policy") {
+        assert.match(appTsx, /path=["']commercial\/policy["']/);
+        assert.match(appTsx, /CommercialPolicyConsultModule/);
         continue;
       }
       if (moduleId === "satisfaction") {
@@ -274,9 +285,11 @@ describe("validação final — permissões por perfil de role", () => {
     assert.ok(ids.includes("proposals"));
     assert.ok(ids.includes("sales-orders"));
     assert.ok(ids.includes("output-documents"));
+    assert.ok(ids.includes("commercial-policy"));
     // Seed role_commercial_manager inclui commissions.view — menu de comissões é esperado.
     assert.equal(canAccessModule("commissions", check), true);
     assert.equal(canAccessModule("pricing", check), false);
+    assert.equal(canAccessModule("commercial-policy", check), true);
     assert.ok(ids.includes("commissions"));
     assert.ok(!ids.includes("pricing"));
     assert.ok(!ids.includes("settings"));
@@ -303,6 +316,8 @@ describe("validação final — permissões por perfil de role", () => {
     assert.ok(ids.includes("proposals"));
     assert.ok(ids.includes("sales-orders"));
     assert.ok(ids.includes("output-documents"));
+    assert.ok(ids.includes("commercial-policy"));
+    assert.equal(canAccessModule("commercial-policy", check), true);
   });
 
   it("VIEWER (perfil Visualizador) não ganha Configurações, Comissões ou Compras", () => {

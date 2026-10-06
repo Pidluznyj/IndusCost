@@ -108,6 +108,8 @@ export const MODULE_MENU_PERMISSION_KEYS: Record<AppModuleId, readonly string[]>
   "sc-purchases": ["operations.supply_chain.purchases.view"],
   pricing: ["pricing.view"],
   "commercial-price-table": [...COMMERCIAL_PRICE_TABLE_VIEW_PERMISSIONS],
+  /** Gate principal por papel comercial (canConsultCommercialPolicy); lista vazia = sem OR de permissões. */
+  "commercial-policy": [],
   employees: ["employees.view"],
   "employees-dashboard": ["employees.dashboard.view", "employees.edit"],
   "org-chart": ["employees.view"],
@@ -201,6 +203,7 @@ export const NAVIGATION_GROUP_DEFINITIONS: readonly NavigationGroup[] = [
       "customers",
       "proposals",
       "commercial-price-table",
+      "commercial-policy",
       "sales-orders",
       "sales-order-flow",
       "output-documents",
@@ -284,6 +287,7 @@ export function getModulePath(moduleId: AppModuleId): string {
     return "/finance/invested-capital-recovery";
   if (moduleId === "sales-order-flow") return "/commercial/sales-order-flow";
   if (moduleId === "commercial-price-table") return "/commercial/price-table";
+  if (moduleId === "commercial-policy") return "/commercial/policy";
   if (moduleId === "satisfaction") return "/commercial/satisfaction";
   if (moduleId === "sc-purchases") return "/supply-chain/purchases";
   if (moduleId === "sc-inventory") return "/supply-chain/inventory";
