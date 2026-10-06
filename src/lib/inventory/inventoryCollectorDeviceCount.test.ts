@@ -754,7 +754,9 @@ describe("2D regressão", () => {
     const human = read("src/lib/inventoryRoutes.ts");
     const collector = read("src/lib/inventory/collector/collectorRoutes.server.ts");
     // Ambos: version/idempotency conflict → 409; SESSION/LINE not found → 404.
-    assert.match(human, /COUNT_LINE_VERSION_CONFLICT[\s\S]{0,800}\? 409/);
+    // Janela alargada: handleInventoryValidation acumula códigos 409 aditivos
+    // (stock sectors, warehouse duplicate, etc.) sem mudar a semântica.
+    assert.match(human, /COUNT_LINE_VERSION_CONFLICT[\s\S]{0,1600}\? 409/);
     assert.match(collector, /COUNT_LINE_VERSION_CONFLICT[\s\S]{0,200}409/);
     assert.match(collector, /SESSION_NOT_FOUND[\s\S]{0,400}404|404[\s\S]{0,400}SESSION_NOT_FOUND/);
     // Nenhum erro público com identidade Tailscale.

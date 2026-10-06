@@ -50,6 +50,16 @@ describe("inventoryRoutes", () => {
     assert.match(routes(), /\/api\/inventory\/warehouses/);
   });
 
+  it("5b. stock-sectors foundation API wired with warehouse manage", () => {
+    const src = routes();
+    assert.match(src, /\/api\/inventory\/stock-sectors/);
+    assert.match(src, /createInventoryStockSector/);
+    assert.match(src, /createInventoryWarehouseRecord/);
+    const postIdx = src.indexOf('app.post("/api/inventory/stock-sectors"');
+    assert.ok(postIdx > 0);
+    assert.match(src.slice(postIdx, postIdx + 350), /warehouseManage/);
+  });
+
   it("7. GET /api/inventory/balances", () => {
     assert.match(routes(), /\/api\/inventory\/balances/);
   });

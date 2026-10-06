@@ -49,6 +49,31 @@ import {
   setCollectorDeviceStatus,
 } from "@/src/lib/inventory/collector/collectorDeviceRegistry.server.js";
 import {
+  STOCK_SECTOR_ACTIVE_SCOPE_DUPLICATE,
+  STOCK_SECTOR_CODE_DUPLICATE,
+  STOCK_SECTOR_NOT_FOUND,
+  STOCK_SECTOR_PREFIX_DUPLICATE,
+  STOCK_SECTOR_SLUG_DUPLICATE,
+} from "@/src/lib/inventory/inventoryStockSectorDomain.js";
+import {
+  parseCreateInventoryStockSectorBody,
+  parseInventoryStockSectorStatusBody,
+  parseUpdateInventoryStockSectorBody,
+} from "@/src/lib/inventory/inventoryStockSectorValidation.js";
+import {
+  createInventoryStockSector,
+  getInventoryStockSectorById,
+  listInventoryStockSectors,
+  parseListInventoryStockSectorsQuery,
+  serializeInventoryStockSector,
+  setInventoryStockSectorStatus,
+  updateInventoryStockSector,
+} from "@/src/lib/inventory/inventoryStockSectorService.server.js";
+import {
+  createInventoryWarehouseRecord,
+  INVENTORY_WAREHOUSE_CODE_DUPLICATE,
+} from "@/src/lib/inventory/inventoryWarehouseWrite.server.js";
+import {
   approveCollectorDeviceEnrollment,
   listCollectorDeviceEnrollments,
   parseApproveCollectorEnrollmentBody,
@@ -167,6 +192,7 @@ function handleInventoryValidation(res: express.Response, error: InventoryValida
     error.code === "BLOCK_NOT_FOUND" ||
     error.code === "SESSION_NOT_FOUND" ||
     error.code === "LINE_NOT_FOUND" ||
+    error.code === STOCK_SECTOR_NOT_FOUND ||
     error.code === COLLECTOR_DEVICE_NOT_FOUND
       ? 404
       : error.code === "NOT_AUTHORIZED"
@@ -182,7 +208,12 @@ function handleInventoryValidation(res: express.Response, error: InventoryValida
             error.code === "INITIAL_BALANCE_DUPLICATE" ||
             error.code === "INITIAL_BALANCE_SCOPE_NOT_EMPTY" ||
             error.code === "RESERVATION_NOT_ACTIVE" ||
-            error.code === "BLOCK_NOT_ACTIVE"
+            error.code === "BLOCK_NOT_ACTIVE" ||
+            error.code === STOCK_SECTOR_CODE_DUPLICATE ||
+            error.code === STOCK_SECTOR_SLUG_DUPLICATE ||
+            error.code === STOCK_SECTOR_PREFIX_DUPLICATE ||
+            error.code === STOCK_SECTOR_ACTIVE_SCOPE_DUPLICATE ||
+            error.code === INVENTORY_WAREHOUSE_CODE_DUPLICATE
           ? 409
           : error.code === COLLECTOR_PUBLIC_BASE_URL_REQUIRED ||
               error.code === COLLECTOR_PUBLIC_BASE_URL_INVALID
@@ -830,23 +861,7 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
       if (!user) return res.status(401).json(inventoryApiError("Autenticação necessária."));
 
       const input = parseCreateInventoryWarehouseBody(req.body);
-      const created = await prisma.inventoryWarehouse.create({
-        data: {
-          code: input.code,
-          name: input.name,
-          description: input.description,
-          status: input.status,
-          allowsMovements: input.allowsMovements,
-          createdByUserId: user.id,
-          updatedByUserId: user.id,
-        },
-      });
-
-      await writeInventoryAuditLog(prisma, {
-        entityType: "InventoryWarehouse",
-        entityId: created.id,
-        action: "CREATE",
-        afterJson: serializeInventoryWarehouse(created),
+      const created = await createInventoryWarehouseRecord(prisma, input, {
         userId: user.id,
         userName: user.name,
       });
@@ -854,11 +869,91 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
       res.status(201).json({ warehouse: serializeInventoryWarehouse(created) });
     } catch (e: unknown) {
       if (e instanceof InventoryValidationError) return handleInventoryValidation(res, e);
-      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
-        return res.status(409).json(inventoryApiError("Código de almoxarifado já cadastrado."));
-      }
       console.error("POST /api/inventory/warehouses", e);
       res.status(500).json(inventoryApiError("Erro ao criar almoxarifado."));
+    }
+  });
+
+  app.get("/api/inventory/stock-sectors", ...view, async (req, res) => {
+    try {
+      const q = parseListInventoryStockSectorsQuery(req.query as Record<string, unknown>);
+      res.json(await listInventoryStockSectors(prisma, q));
+    } catch (e: unknown) {
+      console.error("GET /api/inventory/stock-sectors", e);
+      res.status(500).json(inventoryApiError("Erro ao listar setores de estoque."));
+    }
+  });
+
+  app.get("/api/inventory/stock-sectors/:id", ...view, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const sector = await getInventoryStockSectorById(prisma, id);
+      res.json({ sector: serializeInventoryStockSector(sector) });
+    } catch (e: unknown) {
+      if (e instanceof InventoryValidationError) return handleInventoryValidation(res, e);
+      console.error("GET /api/inventory/stock-sectors/:id", e);
+      res.status(500).json(inventoryApiError("Erro ao carregar setor de estoque."));
+    }
+  });
+
+  app.post("/api/inventory/stock-sectors", ...warehouseManage, async (req, res) => {
+    try {
+      const user = await auth.getCurrentAppUser(req);
+      if (!user) return res.status(401).json(inventoryApiError("Autenticação necessária."));
+
+      const input = parseCreateInventoryStockSectorBody(req.body);
+      const created = await createInventoryStockSector(prisma, input, {
+        userId: user.id,
+        userName: user.name,
+        permissions: user.effectivePermissions,
+      });
+      res.status(201).json({ sector: serializeInventoryStockSector(created) });
+    } catch (e: unknown) {
+      if (e instanceof InventoryValidationError) return handleInventoryValidation(res, e);
+      console.error("POST /api/inventory/stock-sectors", e);
+      res.status(500).json(inventoryApiError("Erro ao criar setor de estoque."));
+    }
+  });
+
+  app.patch("/api/inventory/stock-sectors/:id", ...warehouseManage, async (req, res) => {
+    try {
+      const user = await auth.getCurrentAppUser(req);
+      if (!user) return res.status(401).json(inventoryApiError("Autenticação necessária."));
+      const { id } = req.params;
+      if (!isUuid(id)) return res.status(400).json(inventoryApiError("ID inválido."));
+
+      const patch = parseUpdateInventoryStockSectorBody(req.body);
+      const updated = await updateInventoryStockSector(prisma, id, patch, {
+        userId: user.id,
+        userName: user.name,
+        permissions: user.effectivePermissions,
+      });
+      res.json({ sector: serializeInventoryStockSector(updated) });
+    } catch (e: unknown) {
+      if (e instanceof InventoryValidationError) return handleInventoryValidation(res, e);
+      console.error("PATCH /api/inventory/stock-sectors/:id", e);
+      res.status(500).json(inventoryApiError("Erro ao atualizar setor de estoque."));
+    }
+  });
+
+  app.patch("/api/inventory/stock-sectors/:id/status", ...warehouseManage, async (req, res) => {
+    try {
+      const user = await auth.getCurrentAppUser(req);
+      if (!user) return res.status(401).json(inventoryApiError("Autenticação necessária."));
+      const { id } = req.params;
+      if (!isUuid(id)) return res.status(400).json(inventoryApiError("ID inválido."));
+
+      const status = parseInventoryStockSectorStatusBody(req.body);
+      const updated = await setInventoryStockSectorStatus(prisma, id, status, {
+        userId: user.id,
+        userName: user.name,
+        permissions: user.effectivePermissions,
+      });
+      res.json({ sector: serializeInventoryStockSector(updated) });
+    } catch (e: unknown) {
+      if (e instanceof InventoryValidationError) return handleInventoryValidation(res, e);
+      console.error("PATCH /api/inventory/stock-sectors/:id/status", e);
+      res.status(500).json(inventoryApiError("Erro ao alterar status do setor de estoque."));
     }
   });
 

@@ -6496,6 +6496,20 @@ enum InventoryWarehouseStatus {
   INACTIVE
 }
 
+/// Status operacional de setor configurável de estoque (Collector genérico).
+enum InventoryStockSectorStatus {
+  ACTIVE
+  INACTIVE
+}
+
+/// Estratégia de população/operação do setor no Collector.
+/// STANDARD = genérico (DB). RAW_MATERIAL/PRODUCT reservados a espelhos internos — legado atual não depende desta tabela.
+enum InventoryStockSectorStrategy {
+  STANDARD
+  RAW_MATERIAL
+  PRODUCT
+}
+
 enum InventoryLocationStatus {
   ACTIVE
   INACTIVE
@@ -6679,8 +6693,40 @@ model InventoryWarehouse {
   countLines           InventoryCountLine[]
   stockSnapshotLines   InventoryStockSnapshotLine[]
   defaultForItems      InventoryItem[]              @relation("InventoryItemDefaultWarehouse")
+  stockSectors         InventoryStockSector[]
 
   @@index([status])
+}
+
+/// Setor configurável de estoque (fundação Collector genérico).
+/// Aditivo: RAW_MATERIAL / COMPONENT / FINISHED_PRODUCT NÃO dependem desta tabela.
+/// Sem saldo, sem ledger próprio — aponta warehouse e itemType oficiais.
+model InventoryStockSector {
+  id                String                       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code              String                       @unique
+  name              String
+  slug              String                       @unique
+  status            InventoryStockSectorStatus   @default(ACTIVE)
+  warehouseId       String                       @db.Uuid
+  strategy          InventoryStockSectorStrategy
+  /// Obrigatório em regra de domínio para strategy=STANDARD.
+  itemType          InventoryItemType?
+  sessionCodePrefix String                       @unique
+  allowsCounting    Boolean                      @default(true)
+  allowsWithdrawal  Boolean                      @default(false)
+  createdAt         DateTime                     @default(now()) @db.Timestamptz(6)
+  updatedAt         DateTime                     @default(now()) @updatedAt @db.Timestamptz(6)
+  createdByUserId   String?
+  updatedByUserId   String?
+
+  warehouse InventoryWarehouse @relation(fields: [warehouseId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@index([slug])
+  @@index([code])
+  @@index([status])
+  @@index([warehouseId])
+  @@index([strategy, status])
+  @@index([itemType, warehouseId])
 }
 
 model InventoryLocation {
