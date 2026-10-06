@@ -107,6 +107,9 @@ function hasAppModuleRoute(appTsx: string, moduleId: AppModuleId): boolean {
   if (moduleId === "commercial-price-table") {
     return /path=["']commercial\/price-table["']/.test(appTsx);
   }
+  if (moduleId === "commercial-policy") {
+    return /path=["']commercial\/policy["']/.test(appTsx);
+  }
   if (moduleId === "treasury") {
     return /path=["']finance\/treasury(?:\/\*)?["']/.test(appTsx);
   }
@@ -333,6 +336,8 @@ export function runNavigationGroupingAudit(options?: {
   const fullNav = buildAccessibleSidebarNavigation({
     hasPermission: () => true,
     hasAnyPermission: () => true,
+    // commercial-policy (e futuros módulos role-gated) exigem papel no checker.
+    authUser: { role: "SUPER_ADMIN", effectivePermissions: [] },
   });
   for (const moduleId of SIDEBAR_MODULE_ORDER) {
     const inFlat = fullNav.flatAccessibleItems.some((item) => item.id === moduleId);

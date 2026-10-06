@@ -132,7 +132,7 @@ const PolicyTable: React.FC<{ rows: string[][] }> = ({ rows }) => {
 export const CommercialPolicyReader: React.FC<{
   effectiveFrom: string | null;
   initialChapterId?: string | null;
-  mode?: "acceptance" | "preview";
+  mode?: "acceptance" | "preview" | "consult";
   versionLabel?: string;
   title?: string;
   chapters?: OfficialPolicyChapter[];
@@ -304,7 +304,7 @@ export const CommercialPolicyReader: React.FC<{
               <span className="inline-flex items-center gap-1 rounded-full bg-[#FBF6EA] px-2 py-0.5 font-semibold text-[#9A6B1F]">
                 <Lock className="h-3 w-3" aria-hidden="true" /> Documento controlado
               </span>
-              <span>Uso interno e restrito{mode === "preview" ? " · prévia do super admin" : ""}</span>
+              <span>Uso interno e restrito{mode === "preview" ? " · prévia do super admin" : mode === "consult" ? " · consulta da vigente" : ""}</span>
             </p>
             <h1 className="mt-1 truncate font-serif text-lg font-semibold leading-tight tracking-tight text-[#1F2F4F]">{documentTitle}</h1>
             <p className="truncate text-xs text-slate-500">
@@ -573,7 +573,7 @@ export const CommercialPolicyReader: React.FC<{
               >
                 Próximo <ArrowRight className="h-4 w-4" aria-hidden="true" />
               </button>
-            ) : mode === "preview" || !onFinish ? (
+            ) : mode === "preview" || mode === "consult" || !onFinish ? (
               <p className="px-3 py-2.5 text-sm font-semibold text-slate-500">Fim do documento</p>
             ) : (
               <button

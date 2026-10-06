@@ -86,6 +86,7 @@ import { SoldProductCustomersPage } from "@/src/components/commercial/SoldProduc
 import { OutputDocumentsModule } from "@/src/components/commercial/OutputDocumentsModule";
 import { SalesOrderFlowModule } from "@/src/components/commercial/SalesOrderFlowModule";
 import { CommercialPriceTableModule } from "@/src/components/commercial/CommercialPriceTableModule";
+import { CommercialPolicyConsultModule } from "@/src/components/commercial/CommercialPolicyConsultModule";
 import {
   SALES_ORDER_FLOW_PAGE_SUBTITLE,
   SALES_ORDER_FLOW_PAGE_TITLE,
@@ -1057,6 +1058,7 @@ export default function App() {
             </ModulePageShell>
           }
         />
+        <Route path="commercial/policy" element={<CommercialPolicyConsultModule />} />
         <Route
           path="commercial/satisfaction"
           element={

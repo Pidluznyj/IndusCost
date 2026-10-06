@@ -108,6 +108,18 @@ export function loadMyPolicyAcceptances() {
   }>("/api/commercial-policy/acceptances/mine");
 }
 
+export type CurrentPolicyResponse = {
+  ok: true;
+  version: PendingPolicy | null;
+  myAcceptance: { id: string; acceptedAt: string; evidenceHash: string } | null;
+  signer?: { name: string; email: string; role: string; jobTitle?: string | null };
+};
+
+/** Consulta da política vigente (somente leitura) — mesma fonte do aceite e do PDF. */
+export function loadCurrentCommercialPolicy() {
+  return fetchJsonOk<CurrentPolicyResponse>("/api/commercial-policy/current");
+}
+
 export async function downloadAuthenticatedFile(path: string, fileName: string) {
   const res = await fetch(path, { credentials: "include" });
   if (!res.ok) {

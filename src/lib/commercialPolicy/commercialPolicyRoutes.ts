@@ -50,12 +50,14 @@ import {
   recordKnowledgeAttempt,
   saveSignaturePhoto,
   signCommercialPolicy,
+  settleScheduledVersions,
   versionAdminView,
   versionLabelOf,
   versionPublicView,
   type PolicyActor,
 } from "./commercialPolicyService.js";
 import type { CommercialPolicyStore, StoredAcceptance, StoredVersion } from "./commercialPolicyStore.js";
+import { canConsultCommercialPolicy } from "./commercialPolicyConsultAccess.js";
 import { isCommercialPolicyAudience, sha256Hex, validatePolicyDraft, type PolicyQuestion, type PolicyVersionBody } from "./commercialPolicyRules.js";
 import {
   POL_COM_001_CLASSIFICATION,
@@ -366,6 +368,58 @@ export function registerCommercialPolicyRoutes(app: express.Express, deps: Comme
     return res.json(result);
   });
 
+  /**
+   * Consulta da política vigente (somente leitura).
+   * Mesma fonte de `currentPublished` usada no aceite e no PDF controlado.
+   */
+  app.get("/api/commercial-policy/current", deps.requireAppAuth, async (req, res) => {
+    const user = await actor(req, res);
+    if (!user) return;
+    if (!canConsultCommercialPolicy(user)) {
+      return res.status(403).json({
+        error: "FORBIDDEN",
+        code: "FORBIDDEN",
+        message: "Sem permissão para consultar a Política Comercial.",
+      });
+    }
+    const at = now();
+    await settleScheduledVersions(store, at);
+    const conflicting = await store.countEffectivePublished(at);
+    if (conflicting > 1) {
+      return res.status(409).json({
+        error: "CONFLICTING_PUBLISHED_VERSIONS",
+        code: "CONFLICTING_PUBLISHED_VERSIONS",
+        message: "Há mais de uma política publicada vigente. Contate o administrador.",
+      });
+    }
+    const current = await store.currentPublished(at);
+    if (!current) {
+      return res.json({ ok: true as const, version: null, myAcceptance: null });
+    }
+    const mine = await store.findAcceptance(user.id, current.id);
+    const identity = await identityOf(user.id);
+    return res.json({
+      ok: true as const,
+      version: {
+        ...versionPublicView(current),
+        approver: await approverOf(current),
+      },
+      myAcceptance: mine
+        ? {
+            id: mine.id,
+            acceptedAt: mine.acceptedAt.toISOString(),
+            evidenceHash: mine.evidenceHash,
+          }
+        : null,
+      signer: {
+        name: identity?.name ?? user.name,
+        email: user.email,
+        role: user.role,
+        jobTitle: identity?.jobTitle ?? null,
+      },
+    });
+  });
+
   app.post("/api/commercial-policy/attempts", deps.requireAppAuth, async (req, res) => {
     const user = await actor(req, res);
     if (!user) return;
@@ -526,7 +580,11 @@ export function registerCommercialPolicyRoutes(app: express.Express, deps: Comme
     }
     const mine = await store.findAcceptance(user.id, version.id);
     const current = await store.currentPublished(now());
-    const allowed = user.role === "SUPER_ADMIN" || mine || current?.id === version.id;
+    const isCurrent = current?.id === version.id;
+    const allowed =
+      user.role === "SUPER_ADMIN" ||
+      Boolean(mine) ||
+      (isCurrent && canConsultCommercialPolicy(user));
     if (!allowed || (isCommercialPolicyAudience(user) && user.role !== "SUPER_ADMIN" && user.mustChangePassword)) {
       return res.status(404).json({ error: "NOT_FOUND", code: "NOT_FOUND", message: "Documento não encontrado." });
     }

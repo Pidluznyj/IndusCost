@@ -1,6 +1,7 @@
 /** Mapa módulo → permissões (Fase 1K-D / 1K-D.2). Usa ids reais do Sidebar/App.tsx. */
 
 import { canAccessCommissionsModule } from "@/src/lib/commissionsModulePermissions.js";
+import { canConsultCommercialPolicy } from "@/src/lib/commercialPolicy/commercialPolicyConsultAccess.js";
 import { canViewCommercialPriceTable } from "@/src/lib/commercialPriceTableAccess.js";
 import { resolveCrmCommercialPersona } from "@/src/lib/crmCommercialPersona.js";
 import { evaluateFleetRouteAccess } from "./fleetPermissionResolve.js";
@@ -29,6 +30,7 @@ export type AppModuleId =
   | "taxes"
   | "pricing"
   | "commercial-price-table"
+  | "commercial-policy"
   | "proposals"
   | "sales-orders"
   | "sales-order-flow"
@@ -81,6 +83,7 @@ export const SIDEBAR_MODULE_ORDER: AppModuleId[] = [
   "taxes",
   "pricing",
   "commercial-price-table",
+  "commercial-policy",
   "proposals",
   "sales-orders",
   "sales-order-flow",
@@ -145,6 +148,12 @@ export function canAccessModule(moduleId: AppModuleId, check: PermissionChecker)
       return check.hasPermission("pricing.view");
     case "commercial-price-table":
       return canViewCommercialPriceTable(check);
+    case "commercial-policy":
+      return canConsultCommercialPolicy({
+        role: check.authUser?.role ?? null,
+        mustAcceptCommercialPolicy: (check.authUser as { mustAcceptCommercialPolicy?: boolean | null } | null | undefined)
+          ?.mustAcceptCommercialPolicy,
+      });
     case "employees":
       return check.hasPermission("employees.view");
     case "employees-dashboard":
@@ -391,6 +400,12 @@ export function resolveModuleIdFromPath(pathname: string): AppModuleId | null {
   ) {
     return "commercial-price-table";
   }
+  if (
+    normalized === "/commercial/policy" ||
+    normalized.startsWith("/commercial/policy/")
+  ) {
+    return "commercial-policy";
+  }
   if (normalized === "/supply-chain/purchases" || normalized.startsWith("/supply-chain/purchases/")) {
     return "sc-purchases";
   }
@@ -417,6 +432,8 @@ export function getFirstAllowedModulePath(check: PermissionChecker): string | nu
       if (moduleId === "sc-receiving") return "/supply-chain/receiving";
       if (moduleId === "sales-order-flow") return "/commercial/sales-order-flow";
       if (moduleId === "satisfaction") return "/commercial/satisfaction";
+      if (moduleId === "commercial-price-table") return "/commercial/price-table";
+      if (moduleId === "commercial-policy") return "/commercial/policy";
       if (moduleId === "treasury") return "/finance/treasury";
       if (moduleId === "invested-capital-recovery")
         return "/finance/invested-capital-recovery";
@@ -449,6 +466,7 @@ export const MODULE_LABELS: Record<AppModuleId, string> = {
   taxes: "Tributos",
   pricing: "Formação de Preço",
   "commercial-price-table": "Tabela comercial",
+  "commercial-policy": "Política Comercial",
   proposals: "Propostas",
   "sales-orders": "Pedidos de venda",
   "sales-order-flow": "Fluxo de Pedidos",
