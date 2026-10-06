@@ -90,6 +90,8 @@ export const PROJECT_LIST_CURRENT_VERSION_INCLUDE = {
       },
     },
     simulatedItems: true,
+    // Só o vínculo linha → item, para não somar duas vezes um item já presente na estrutura.
+    structureLines: { select: { simulatedItemId: true } },
   },
 } as const;
 
@@ -590,6 +592,7 @@ export function computeSeparateMoldInvestment(
 export type ProjectListVersionSource = ProjectVersion & {
   molds?: Pick<ProjectMold, "chargeMode" | "constructionCost">[];
   simulatedItems?: ProjectSimulatedItem[];
+  structureLines?: { simulatedItemId: string | null }[];
 };
 
 export function computeProjectListEstimatedValue(
@@ -605,7 +608,8 @@ export function computeProjectListEstimatedValue(
       unitCost: unitCost ?? 0,
       separateMoldCost,
     },
-    simulatedItems
+    simulatedItems,
+    version.structureLines ?? []
   );
 
   if (!Number.isFinite(total)) return null;

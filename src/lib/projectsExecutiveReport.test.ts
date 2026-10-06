@@ -26,6 +26,40 @@ const MOLD_TOTAL = 52_000;
 const OTHER_COST_BATCH_ID = "other-cost-batch-11111111-1111-1111-1111-111111111111";
 const OTHER_COST_TOTAL = 5_075;
 
+function structureLineForItem(
+  id: string,
+  simulatedItemId: string,
+  description: string,
+  unitCost: number
+): ProjectDetail["structureLines"][number] {
+  return {
+    id,
+    simulatedProductId: null,
+    parentLineId: null,
+    level: 0,
+    treePath: null,
+    snapshotRootProductId: null,
+    lineType: "COMPONENT",
+    sourceType: "SIMULATED_ITEM",
+    existingProductId: null,
+    existingMaterialId: null,
+    simulatedItemId,
+    sourceOfficialBomId: null,
+    sourceOfficialRoutingId: null,
+    descriptionSnapshot: description,
+    unitSnapshot: "UN",
+    quantity: 1,
+    lossPercent: 0,
+    officialQuantitySnapshot: null,
+    officialLossPercentSnapshot: null,
+    officialUnitCostSnapshot: null,
+    unitCostSnapshot: unitCost,
+    totalCost: unitCost,
+    costSource: null,
+    isChangedFromOfficial: false,
+  } as ProjectDetail["structureLines"][number];
+}
+
 function buildDetailFixture(): ProjectDetail {
   const itemA = "aaaaaaaa-aaaa-4111-8111-aaaaaaaaaaaa";
   const itemB = "bbbbbbbb-bbbb-4111-8111-bbbbbbbbbbbb";
@@ -97,7 +131,13 @@ function buildDetailFixture(): ProjectDetail {
         notes: null,
       },
     ],
-    structureLines: [],
+    // costBreakdown.componentCost/unitCost (11,5) já contêm os dois itens (3 + 8,5); as linhas
+    // de estrutura abaixo tornam o cenário coerente com isso. Sem elas, o item vindo de
+    // simulação (itemA) seria somado de novo no total do projeto.
+    structureLines: [
+      structureLineForItem("line-a", itemA, "Haste IRIS", 3),
+      structureLineForItem("line-b", itemB, "Torneira IRIS", 8.5),
+    ],
     molds: [
       {
         id: moldId,

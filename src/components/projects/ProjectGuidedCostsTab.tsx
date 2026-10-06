@@ -216,7 +216,11 @@ export function ProjectGuidedCostsTab({
         <StatCard
           label="Custo unitário estimado (legado)"
           value={formatMoney(guided.estimatedUnitCost)}
-          hint="Visão anterior do fluxo guiado"
+          hint={
+            guided.simulationItemsUnitCost > 0
+              ? `Inclui ${formatMoney(guided.simulationItemsUnitCost)} de itens vindos de simulação (custo copiado)`
+              : "Visão anterior do fluxo guiado"
+          }
         />
         <StatCard label="Investimento inicial" value={formatMoney(guided.initialInvestment)} />
         <StatCard label="Outros custos do projeto" value={formatMoney(guided.otherProjectCosts)} />

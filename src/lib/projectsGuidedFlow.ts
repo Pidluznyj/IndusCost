@@ -140,6 +140,8 @@ export type ProjectGuidedCostSummary = {
   otherCostCount: number;
   pendingCount: number;
   estimatedUnitCost: number;
+  /** Parcela do custo unitário que vem de itens copiados de simulações congeladas. */
+  simulationItemsUnitCost: number;
   initialInvestment: number;
   otherProjectCosts: number;
   totalProjectCost: number;
@@ -350,11 +352,56 @@ export function buildProjectGuidedItems(detail: ProjectDetail): ProjectGuidedIte
   return [...productRows(detail), ...moldRows(detail), ...otherCostRows(detail)];
 }
 
+/** Linha de estrutura que já carrega o custo de um item (entra em `costBreakdown.unitCost`). */
+export type ProjectStructureItemRef = { simulatedItemId?: string | null };
+
+/**
+ * Custo unitário CONGELADO de um item vindo de simulação — o valor gravado no próprio
+ * ProjectSimulatedItem (mesma leitura da lista de itens: cotado, senão estimado).
+ * Não consulta a Simulation, nem custo LIVE, nem custo publicado.
+ */
+export function resolveSimulationOriginItemUnitCost(
+  item: Pick<ProjectSimulatedItemRow, "quotedUnitCost" | "estimatedUnitCost">
+): number {
+  const cost = item.quotedUnitCost ?? item.estimatedUnitCost;
+  return typeof cost === "number" && Number.isFinite(cost) ? cost : 0;
+}
+
+/**
+ * Soma dos itens vindos de simulação que ainda NÃO estão no custo unitário da estrutura.
+ * Cada item entra exatamente uma vez: se uma linha de estrutura já aponta para ele
+ * (`simulatedItemId`), o custo já está em `costBreakdown.unitCost` e não é somado de novo.
+ */
+export function sumSimulationOriginItemsUnitCost(
+  simulatedItems: ProjectSimulatedItemRow[],
+  structureLines: readonly ProjectStructureItemRef[] = []
+): number {
+  const alreadyInStructure = new Set(
+    structureLines.map((line) => line.simulatedItemId).filter((id): id is string => Boolean(id))
+  );
+  const total = simulatedItems
+    .filter(
+      (item) =>
+        isSimulationOriginItem(item) &&
+        !isGuidedOtherCostItem(item.notes) &&
+        !alreadyInStructure.has(item.id)
+    )
+    .reduce((acc, item) => acc + resolveSimulationOriginItemUnitCost(item), 0);
+  return Number.isFinite(total) ? total : 0;
+}
+
+/**
+ * Total estimado do projeto = custo unitário (estrutura + itens vindos de simulação)
+ * + investimento inicial + outros custos. Um item vindo de simulação é um produto do projeto
+ * e, como o produto oficial, compõe o custo unitário — só que pelo valor copiado e congelado.
+ */
 export function resolveProjectEstimatedTotalCost(
   costBreakdown: Pick<ProjectCostBreakdown, "unitCost" | "separateMoldCost">,
-  simulatedItems: ProjectSimulatedItemRow[]
+  simulatedItems: ProjectSimulatedItemRow[],
+  structureLines: readonly ProjectStructureItemRef[] = []
 ): number {
-  const estimatedUnitCost = costBreakdown.unitCost ?? 0;
+  const estimatedUnitCost =
+    (costBreakdown.unitCost ?? 0) + sumSimulationOriginItemsUnitCost(simulatedItems, structureLines);
   const initialInvestment = costBreakdown.separateMoldCost ?? 0;
   const otherProjectCosts = simulatedItems
     .filter((item) => isGuidedOtherCostItem(item.notes))
@@ -376,9 +423,14 @@ export function computeProjectGuidedCosts(detail: ProjectDetail): ProjectGuidedC
   const otherCostCount = items.filter((i) => i.entityKind === "other_cost").length;
   const pendingCount = items.filter((i) => i.status === "PENDING_COST").length;
 
+  const simulationItemsUnitCost = sumSimulationOriginItemsUnitCost(
+    detail.simulatedItems,
+    detail.structureLines
+  );
   const totalProjectCost = resolveProjectEstimatedTotalCost(
     detail.costBreakdown,
-    detail.simulatedItems
+    detail.simulatedItems,
+    detail.structureLines
   );
 
   return {
@@ -387,7 +439,9 @@ export function computeProjectGuidedCosts(detail: ProjectDetail): ProjectGuidedC
     moldCount,
     otherCostCount,
     pendingCount,
-    estimatedUnitCost: detail.costBreakdown.unitCost ?? 0,
+    // Estrutura + itens vindos de simulação: os cards somam exatamente o total.
+    estimatedUnitCost: (detail.costBreakdown.unitCost ?? 0) + simulationItemsUnitCost,
+    simulationItemsUnitCost,
     initialInvestment: detail.costBreakdown.separateMoldCost ?? 0,
     otherProjectCosts: detail.simulatedItems
       .filter((i) => isGuidedOtherCostItem(i.notes))
