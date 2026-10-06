@@ -1,6 +1,6 @@
 # Simulações da Engenharia — governança de custo e fronteiras de domínio
 
-Status: implementado na branch `feat/engineering-simulations-cost-governance` (outubro/2026).
+Status: implementado na branch `feat/engineering-simulations-cost-governance` (outubro/2026), integrada à main `27ce0fca` (custo de produção como snapshot PUBLISHED completo).
 Escopo: módulo **Simulações** (cenários existentes + novo produto) e sua integração com **Projetos**.
 Fora de escopo: Formação de Preço oficial, publicação de custo e tabela de preço (ver seção 9).
 
@@ -96,6 +96,7 @@ catálogo/manuais, processo padrão). O que mudou:
   `sourceSimulationSnapshotHash`, `sourceSimulationCostBase`, `sourceSimulationCopiedAt`
   (o marcador em `notes` é mantido por compatibilidade e não pode ser apagado na edição).
 - A lista de itens do projeto mostra a origem ("Simulações · S1 · snapshot 2026-10-05").
+- O item entra no **total do projeto** exatamente uma vez, pelo custo copiado (seção 14).
 
 ## 7. Integrações permitidas e proibidas
 
@@ -135,8 +136,8 @@ Não há workflow de promoção implementado nesta entrega.
 ### Outros achados
 - **Projetos — perda de BOM**: `q × u × (1 + perda)` (projetos) × `q / (1 − perda)` (motor).
   Não alterado porque mudaria custos persistidos; caracterizado em `materialEffectiveCost.test.ts`.
-- **Projetos — total**: item vindo de simulação aparece na lista com seu custo, mas
-  `resolveProjectEstimatedTotalCost` soma só estrutura, ferramental e outros custos.
+- **Projetos — custo persistido da versão**: `ProjectVersion.unitCost/totalEstimatedCost/suggestedPrice`
+  continuam derivados só da estrutura; o total exibido já inclui o item de simulação (seção 14).
 - **Express 4 + async**: outras rotas do `server.ts` sem try/catch podem gerar rejeição não
   tratada; aqui só as de Simulações foram blindadas (`asyncRoute`).
 - **`settingsApplyHhHmSimulation`** altera `HH_VALUE_OVERRIDE`/`ENERGY_COST` e muda o LIVE de
@@ -154,3 +155,229 @@ Não há workflow de promoção implementado nesta entrega.
    `create` não consegue mais arquivar/excluir.
 3. Cenários novos sobre PUBLISHED exigem custo publicado do produto; sem ele a tela oferece a
    engenharia atual de forma explícita.
+
+## 11. Diagrama de fronteira
+
+```
+                 ┌───────────────────────────────┐
+   lê (somente)  │          SIMULAÇÕES           │
+ ┌──────────────▶│  cenário existente            │
+ │               │  novo produto                 │
+ │               │  escreve SÓ em Simulation e   │
+ │               │  NewProductSimulation         │
+ │               └───────────────┬───────────────┘
+ │                               │ cópia do snapshot congelado
+ │                               ▼ (custo, id, nome, hash, data)
+ │               ┌───────────────────────────────┐
+ │               │           PROJETOS            │
+ │               │ oficial + simulado + cotação  │
+ │               │ + ferramental + outros custos │
+ │               └───────────────────────────────┘
+ │
+ │  Produto · Material · Regra fiscal · premissas vigentes (ProductPricing, leitura)
+ │  custo LIVE (getProductCostAnalysis) · custo PUBLISHED (getEffectiveProductProductionCost)
+ │
+ └── UNIVERSO OFICIAL (não é escrito por Simulações nem por Projetos via simulação)
+     Produto real → Engenharia LIVE → DRAFT (pode ser parcial) → PUBLISHED (snapshot completo)
+                 → Formação de Preço oficial → Tabela de preço
+```
+
+Não existe seta `Simulação → custo publicado` nem `Simulação → Formação de Preço`.
+
+### Leituras permitidas
+`Product`, `Material`, `TaxRule/TaxComponent`, `ProductPricing` (apenas `findUnique`, premissas
+de referência do cenário), parâmetros globais de HH/HM (via cache do motor), custo LIVE e custo
+PUBLISHED.
+
+### Escritas proibidas
+`ProductionCostTableVersion`, `ProductionCostTableItem`, `ProductPricing`, `PriceTable*`,
+qualquer chamada a publicação de custo (unitária, em lote, snapshot completo) ou de tabela de preço.
+
+## 12. Fonte exata das bases
+
+**PUBLISHED** — `getEffectiveProductProductionCost(db, productId, referenceDate)` em
+`src/lib/productionCostTables.server.ts`, chamada só por `resolveProductCostBaseline`
+(`src/lib/productCostBaseline.server.ts`). É o leitor oficial de **custo efetivo por produto e
+data** — o mesmo usado por margem de pedido, margem de proposta, comissões e CMV da DRE:
+
+- considera versões `PUBLISHED` e `SUPERSEDED` com `effectiveDate ≤ data de referência`;
+- escolhe, **por produto**, o melhor item (vigência mais recente, depois status, publicação, revisão);
+- ignora item com custo ≤ 0; sem item válido devolve `SEM_CUSTO` → `NO_PUBLISHED_COST`;
+- nunca lê DRAFT, nunca lê LIVE.
+
+Por ser por produto, funciona tanto com o snapshot completo atual (commit `27ce0fca`) quanto com
+as versões publicadas parciais do legado: o simulador **não** assume que "a última versão
+publicada global" contém todos os produtos. A data de referência é o instante da criação do
+cenário (ou do cálculo do novo produto) e fica gravada junto com `versionId`, código, revisão e
+vigência.
+
+O resolvedor comercial de tabela de preço (`priceTableProductionCostResolver`) é outro caminho,
+de versão única, e **não** é usado nem alterado aqui.
+
+**LIVE** — `getProductCostAnalysis(productId, cache, true)` do motor oficial
+(`productCostAnalysisEngine.server.ts`), com `initAnalysisCache()` novo a cada chamada (sem
+catálogo de MP versionado: custo vivo de material). Fica gravado o instante do cálculo.
+
+## 13. Semântica de eficiência
+
+`processo' = transformação própria / f + setup próprio + HH/HM dos filhos`, com `f = 1 + ajuste/100`.
+
+Exemplo (teste "eficiência — exemplo numérico explícito"):
+
+| Parcela | Base | Eficiência +25% |
+|---|---|---|
+| Material (X) | 10,00 | 10,00 |
+| Mão de obra própria — transformação (Y) | 2,00 | 1,60 |
+| Máquina própria — transformação (Z) | 3,00 | 2,40 |
+| Setup (S) | 0,50 + 0,50 | 0,50 + 0,50 |
+| Filhos (F) | 1,00 + 1,50 | 1,00 + 1,50 |
+| **Total** | **18,50** | **17,50** |
+
+A decomposição transformação × setup vem do detalhe do motor (LIVE). Sobre PUBLISHED ela só é
+usada quando HH e HM vivos coincidem com os publicados (processo inalterado desde a publicação);
+caso contrário a API recusa o ajuste de eficiência (`EFFICIENCY_DECOMPOSITION_UNAVAILABLE`).
+
+## 14. Regra do total do Projeto
+
+`total = custo unitário + investimento inicial + outros custos do projeto`, onde
+
+`custo unitário = estrutura (costBreakdown.unitCost) + itens vindos de simulação`.
+
+- O item vindo de simulação é um produto do projeto e, como o produto oficial, compõe o custo
+  unitário — pelo valor **copiado e congelado** no próprio `ProjectSimulatedItem`
+  (`quotedUnitCost ?? estimatedUnitCost`, a mesma leitura da lista de itens).
+- Entra **exatamente uma vez**: se uma linha de estrutura já aponta para o item
+  (`simulatedItemId`), o custo já está na estrutura e não é somado de novo.
+- O cálculo é puro (`resolveProjectEstimatedTotalCost` em `src/lib/projectsGuidedFlow.ts`): não
+  consulta a Simulation, o custo LIVE nem o custo publicado.
+- `ProjectSimulatedItem` não tem quantidade própria: conta como 1 produto. Custo zero/ausente soma zero.
+- Componentes/matérias-primas criados no projeto continuam entrando só quando usados na
+  estrutura (regra anterior, inalterada).
+- Vale para: aba Custos, tela inicial do projeto, relatório executivo, snapshot de custo e valor
+  estimado na listagem/dashboard de projetos.
+- **Não alterado:** os campos persistidos `ProjectVersion.unitCost / totalEstimatedCost /
+  suggestedPrice`, que continuam derivados só da estrutura; precificação e amortização do projeto
+  já tratavam o item de simulação individualmente e não mudaram.
+
+## 15. Permissões
+
+Recurso `engineering.simulations`.
+
+| Operação | Ação canônica | Chave legada |
+|---|---|---|
+| Visualizar cenários, simulações e relatórios | `view` | `simulations.view` |
+| Criar cenário · salvar rascunho · editar rascunho · congelar · clonar · prévia | `create` | `simulations.create` |
+| Arquivar / restaurar simulação congelada · restaurar cenário | `update` | `simulations.edit` |
+| Arquivar cenário · excluir rascunho de novo produto | `delete` | `simulations.delete` |
+
+- Exclusão definitiva existe **só** para rascunho de novo produto. Cenário e simulação congelada
+  são arquivados.
+- Simulação congelada não tem rota de alteração; tentar salvar por cima devolve 409.
+- `SUPER_ADMIN` pode tudo; somente-leitura só vê; quem tem só `create` não arquiva nem exclui.
+- Papéis com `canManage` recebem `update`/`delete` pelo baseline. Perfis existentes que tinham
+  só `simulations.create` **deixam de arquivar/excluir** até receberem as chaves novas — por
+  desenho; as permissões não foram alargadas para evitar o 403.
+
+## 16. Migrations — revisão
+
+| Item | `20261005120000` (enum) | `20261006120000` (colunas) |
+|---|---|---|
+| SQL | `ALTER TYPE … ADD VALUE IF NOT EXISTS 'ARCHIVED'` | `ADD COLUMN IF NOT EXISTS` (22 colunas) + `CREATE INDEX IF NOT EXISTS` |
+| Nullability / default | — | todas anuláveis, sem default |
+| NOT NULL / backfill | não | não |
+| Foreign keys | não | não (ids em colunas UUID simples, padrão do repositório) |
+| Lock esperado | catálogo do tipo, instantâneo | `ACCESS EXCLUSIVE` breve por tabela (só metadados); o índice faz `SHARE` em `ProjectSimulatedItem` durante a criação — tabela pequena |
+| Dados existentes | intactos | intactos (colunas novas nulas) |
+| Idempotência | sim | sim |
+| Rollback conceitual | valor de enum permanece (inofensivo) | colunas podem permanecer; nenhum DROP é necessário |
+
+- O valor de enum fica em migration própria porque não pode ser usado na transação em que é criado.
+- `Simulation` não tem migration de criação no histórico; por isso `ALTER TABLE IF EXISTS`.
+
+**Ordem obrigatória: migration primeiro, código depois.**
+
+- *Código antigo com migration aplicada:* funciona. O client antigo não conhece as colunas novas
+  e ninguém grava `ARCHIVED`.
+- *Código novo sem migration:* **quebra** — o client novo seleciona as colunas novas em
+  `Simulation`, `NewProductSimulation` **e `ProjectSimulatedItem`**, então as telas de
+  Simulações e de Projetos falhariam.
+- *Rollback de código depois de arquivar algo:* o client antigo não conhece `ARCHIVED` e falharia
+  ao ler essas linhas. Antes de voltar o código, restaurar pela tela (ou tratar essas linhas).
+
+## 17. Compatibilidade com o snapshot completo de custo (main `27ce0fca`)
+
+- A feature não altera `productionCostCompleteSnapshot*`, `productionCostBulkPublish*`,
+  `unitaryFormationProductionCost*`, `productionCostTables.server.ts`,
+  `priceTableProductionCostResolver` nem `priceTablePublication*`.
+- A única dependência do domínio oficial é o leitor `getEffectiveProductProductionCost`, cujo
+  comportamento não mudou no commit `27ce0fca`.
+- Com o exemplo oficial (publicado A=10, B=20, C=30; LIVE B=22, C=45), um cenário sobre
+  PUBLISHED de C usa 30 e um cenário sobre LIVE usa 45 — e nenhum dos dois publica nada.
+
+## 18. Riscos residuais
+
+- Validado com testes (Prisma em memória) e tela em ambiente simulado; **não** com PostgreSQL
+  nem em homologação — é o objetivo do runbook abaixo.
+- Perfis sem as chaves novas perdem arquivar/excluir até o ajuste de permissões.
+- Eficiência sobre base publicada depende de o processo vivo coincidir com o publicado.
+- `ProjectVersion.unitCost` persistido não inclui o item de simulação (ver seção 14).
+- Cenário legado continua calculando sobre a engenharia atual no momento da consulta.
+
+## 19. Runbook de homologação
+
+Pré-requisitos: aplicar as duas migrations, publicar o código, rodar
+`npm run permissions:seed:contract:dry` e depois `:apply`.
+
+**Antes de começar — contagens de controle (somente leitura):**
+```sql
+SELECT 'ProductionCostTableVersion' t, count(*), max("updatedAt") FROM "ProductionCostTableVersion"
+UNION ALL SELECT 'ProductionCostTableItem', count(*), max("updatedAt") FROM "ProductionCostTableItem"
+UNION ALL SELECT 'ProductPricing', count(*), max("updatedAt") FROM "ProductPricing"
+UNION ALL SELECT 'PriceTableVersion', count(*), max("updatedAt") FROM "PriceTableVersion"
+UNION ALL SELECT 'PriceTableItem', count(*), max("updatedAt") FROM "PriceTableItem";
+```
+Guardar o resultado.
+
+**Caso A — produto com PUBLISHED ≠ LIVE.** Criar cenário com base "Custo publicado": base =
+valor oficial, com versão/revisão/vigência. Criar outro com "Engenharia atual": base = valor
+atual, selo `LIVE — NÃO PUBLICADO`. Conferir os dois valores contra
+`GET /api/production-cost-tables/effective-cost?productId=…` e contra a aba de custo do produto.
+
+**Caso B — produto sem PUBLISHED.** A tela mostra "Este produto não possui custo oficial
+publicado" e o botão de criar fica desabilitado até escolher "Usar Engenharia atual". Não há
+troca automática.
+
+**Caso C — drivers.** Num produto com setup > 0, sobre LIVE: MP +10% muda só MP; HH +8% só HH;
+HM +15% só HM; eficiência ±: muda HH/HM, MP igual, e a variação é menor que a de dividir o
+processo inteiro. Sobre PUBLISHED com processo alterado desde a publicação: eficiência é recusada
+com mensagem.
+
+**Caso D — novo produto.** Compor com item real (base LIVE e depois PUBLISHED), componente
+simulado com ciclo/cavidades/eficiência/setup/lote, material de catálogo com custo sobrescrito e
+material manual. Verificar: linha em branco ignorada, quantidade zero aceita, quantidade negativa
+recusada, salvar sem nome usa "Produto simulado". Salvar rascunho, reabrir, congelar. Reabrir a
+congelada: mesmos números; relatório igual à tela; taxas HH/HM e origem dos custos no relatório.
+
+**Caso E — Projetos.** Adicionar a simulação congelada a um projeto que já tenha item oficial.
+Conferir: origem ("Simulações · nome · snapshot data"), custo copiado, e **total do projeto =
+oficial + simulado (+ ferramental + outros)**. Depois arquivar a simulação e clonar/alterar o
+clone: o projeto não muda.
+```sql
+SELECT id, description, "estimatedUnitCost", "quotedUnitCost", "canBecomeOfficial",
+       "sourceSimulationId", "sourceSimulationName", "sourceSimulationCostBase",
+       "sourceSimulationSnapshotHash", "sourceSimulationCopiedAt"
+FROM "ProjectSimulatedItem" WHERE "sourceSimulationId" IS NOT NULL ORDER BY "createdAt" DESC LIMIT 10;
+```
+Esperado: `canBecomeOfficial = false` e hash igual ao `snapshotHash` da simulação.
+
+**Caso F — segurança.** Somente-leitura: vê, sem botões de criar/salvar/arquivar; API devolve
+403. Só criar: cria, congela, clona; não arquiva nem exclui. Com `simulations.edit`: arquiva e
+restaura. Com `simulations.delete`: exclui rascunho e arquiva cenário. Tentar salvar por cima de
+congelada → 409. UUID inválido → 400 (servidor continua de pé).
+
+**Caso G — banco.** Repetir a consulta de controle do início: contagens e datas máximas das cinco
+tabelas oficiais devem estar **idênticas**. Conferir o que a feature gravou:
+```sql
+SELECT status, count(*) FROM "NewProductSimulation" GROUP BY status;
+SELECT "baselineSource", count(*) FROM "Simulation" GROUP BY "baselineSource";
+```
