@@ -40,6 +40,8 @@ src/lib/productCostBaseline.server.test.ts
 src/lib/materialEffectiveCost.test.ts
 src/lib/pricing/commercialPriceFormula.test.ts
 src/lib/projectsSimulationProvenance.test.ts
+src/lib/projectsSimulationTotal.test.ts
+src/lib/simulationsBoundaryRuntime.test.ts
 src/lib/purchaseIndicatorsStats.test.ts
 src/lib/proposalIndicatorsStats.test.ts
 src/lib/proposalInternalManagementPdf.test.ts

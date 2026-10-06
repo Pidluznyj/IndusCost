@@ -284,3 +284,52 @@ describe("computeLegacyScenarioComparison — registros sem base gravada", () =>
     near(cmp.simulated.ciu, 1.3);
   });
 });
+
+describe("eficiência — exemplo numérico explícito (X, Y, Z, F, S)", () => {
+  // material X = 10,00 | mão de obra própria (transformação) Y = 2,00 | máquina própria
+  // (transformação) Z = 3,00 | filhos F = 1,00 (HH) + 1,50 (HM) | setup S = 0,50 (HH) + 0,50 (HM)
+  const base = {
+    mp: 10,
+    hh: 2 + 0.5 + 1, // Y + setup HH + filhos HH = 3,50
+    hm: 3 + 0.5 + 1.5, // Z + setup HM + filhos HM = 5,00
+    ownProcess: { transformHh: 2, transformHm: 3, setupHh: 0.5, setupHm: 0.5 },
+  };
+
+  it("eficiência +25% só divide Y e Z; material, filhos e setup ficam iguais", () => {
+    const r = simulateScenarioDrivers(base, { ...NO_ADJ, efficiencyAdjPct: 25 });
+    assert.ok(r.ok === true);
+    if (r.ok === true) {
+      assert.equal(r.simulated.mp, 10); // X intacto
+      near(r.simulated.hh, 2 / 1.25 + 0.5 + 1); // 1,60 + 0,50 + 1,00 = 3,10
+      near(r.simulated.hm, 3 / 1.25 + 0.5 + 1.5); // 2,40 + 0,50 + 1,50 = 4,40
+      near(r.simulated.costBase, 17.5);
+      near(r.base.costBase, 18.5);
+      // a redução total é exatamente a da transformação própria: (2 + 3) × (1 − 1/1,25) = 1,00
+      near(r.base.costBase - r.simulated.costBase, 1);
+    }
+  });
+
+  it("eficiência −20% só aumenta Y e Z", () => {
+    const r = simulateScenarioDrivers(base, { ...NO_ADJ, efficiencyAdjPct: -20 });
+    if (r.ok === true) {
+      assert.equal(r.simulated.mp, 10);
+      near(r.simulated.hh, 2 / 0.8 + 0.5 + 1); // 4,00
+      near(r.simulated.hm, 3 / 0.8 + 0.5 + 1.5); // 5,75
+    }
+  });
+
+  it("a base informada não é mutada pelo cálculo", () => {
+    const frozen = JSON.stringify(base);
+    simulateScenarioDrivers(base, { ...NO_ADJ, materialAdjPct: 30, laborAdjPct: 10, hmAdjPct: 5, efficiencyAdjPct: 40 });
+    assert.equal(JSON.stringify(base), frozen);
+  });
+
+  it("drivers combinados: taxa-hora multiplica o processo já ajustado pela eficiência", () => {
+    const r = simulateScenarioDrivers(base, { ...NO_ADJ, materialAdjPct: 10, laborAdjPct: 8, hmAdjPct: 15, efficiencyAdjPct: 25 });
+    if (r.ok === true) {
+      near(r.simulated.mp, 11);
+      near(r.simulated.hh, 3.1 * 1.08);
+      near(r.simulated.hm, 4.4 * 1.15);
+    }
+  });
+});
