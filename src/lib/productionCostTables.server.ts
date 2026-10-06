@@ -22,6 +22,10 @@ import {
 } from "./productionCostVersioning.js";
 import { startOfCivilDate } from "./financeCivilDate.js";
 import { hasProductionCostDifference } from "./productEngineeringCostWarning.js";
+import {
+  evaluateProductionCostPublishBase,
+  PRODUCTION_COST_PUBLISH_STALE_BASE_PREFIX,
+} from "./productionCostCompleteSnapshot.js";
 
 export type {
   EffectiveProductProductionCostResult,
@@ -379,18 +383,27 @@ export async function publishProductionCostTableVersion(
       });
     }
 
-    const row = await tx.productionCostTableVersion.update({
-      where: { id: input.versionId },
-      data: {
-        status: "PUBLISHED",
-        publishedAt,
-        publishedBy: input.publishedBy?.trim() || null,
-        notes: auditNote,
-      },
-      include: { items: true },
+    const currentPublished = await tx.productionCostTableVersion.findFirst({
+      where: { code: version.code, status: "PUBLISHED" },
+      orderBy: [{ revision: "desc" }, { publishedAt: "desc" }],
+      select: { id: true, code: true, revision: true },
     });
 
-    const supersedeId = input.supersedeVersionId ?? version.supersedesVersionId;
+    // Legado: DRAFT sem supersedes explícito adopta a PUBLISHED vigente.
+    // Snapshot completo moderno sempre grava supersedes — base errada → STALE_BASE.
+    let supersedeId = input.supersedeVersionId ?? version.supersedesVersionId;
+    if (currentPublished && !supersedeId) {
+      supersedeId = currentPublished.id;
+    }
+
+    const baseCheck = evaluateProductionCostPublishBase({
+      draftSupersedesVersionId: supersedeId,
+      currentPublishedVersionId: currentPublished?.id ?? null,
+    });
+    if (baseCheck.ok === false) {
+      throw new Error(baseCheck.message);
+    }
+
     if (supersedeId) {
       const prior = await tx.productionCostTableVersion.findUnique({
         where: { id: supersedeId },
@@ -400,14 +413,40 @@ export async function publishProductionCostTableVersion(
       if (prior.code !== version.code) {
         throw new Error("Versão a substituir deve ter o mesmo code.");
       }
-      if (prior.status === "PUBLISHED") {
-        await tx.productionCostTableVersion.update({
-          where: { id: supersedeId },
-          data: { status: "SUPERSEDED" },
-        });
+    }
+
+    // Claim atômico do DRAFT — evita dois publishers no mesmo versionId.
+    const claimed = await tx.productionCostTableVersion.updateMany({
+      where: { id: input.versionId, status: "DRAFT" },
+      data: {
+        status: "PUBLISHED",
+        publishedAt,
+        publishedBy: input.publishedBy?.trim() || null,
+        notes: auditNote,
+      },
+    });
+    if (claimed.count !== 1) {
+      throw new Error("Versão já publicada (imutável).");
+    }
+
+    // Claim atômico da base vigente — se outro publish venceu, aborta (rollback do claim acima).
+    if (currentPublished) {
+      const superseded = await tx.productionCostTableVersion.updateMany({
+        where: { id: currentPublished.id, status: "PUBLISHED" },
+        data: { status: "SUPERSEDED" },
+      });
+      if (superseded.count !== 1) {
+        throw new Error(
+          `${PRODUCTION_COST_PUBLISH_STALE_BASE_PREFIX} publicação concorrente detectada (base ${currentPublished.id}). Rematerialize e republicar.`
+        );
       }
     }
 
+    const row = await tx.productionCostTableVersion.findUnique({
+      where: { id: input.versionId },
+      include: { items: true },
+    });
+    if (!row) throw new Error("Versão não encontrada após publicação.");
     return row;
   });
 

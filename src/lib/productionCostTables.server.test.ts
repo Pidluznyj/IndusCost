@@ -56,9 +56,19 @@ function createMockDb() {
 
   const db = {
     productionCostTableVersion: {
-        findFirst: async ({ where, orderBy }: { where: { code: string }; orderBy: { revision: "desc" } }) => {
-          const rows = [...versions.values()].filter((v) => v.code === where.code);
-          if (orderBy.revision === "desc") {
+        findFirst: async ({
+          where,
+          orderBy,
+        }: {
+          where: { code: string; status?: string };
+          orderBy?: { revision: "desc" } | Array<Record<string, string>>;
+        }) => {
+          let rows = [...versions.values()].filter((v) => v.code === where.code);
+          if (where.status) rows = rows.filter((v) => v.status === where.status);
+          const order = Array.isArray(orderBy) ? orderBy : orderBy ? [orderBy] : [];
+          if (order.length && "revision" in order[0]!) {
+            rows.sort((a, b) => b.revision - a.revision);
+          } else if (!Array.isArray(orderBy) && orderBy?.revision === "desc") {
             rows.sort((a, b) => b.revision - a.revision);
           }
           return rows[0] ?? null;
@@ -110,6 +120,19 @@ function createMockDb() {
             return { ...row, items: versionItems };
           }
           return row;
+        },
+        updateMany: async ({
+          where,
+          data,
+        }: {
+          where: { id: string; status?: string };
+          data: Partial<VersionRow>;
+        }) => {
+          const row = versions.get(where.id);
+          if (!row) return { count: 0 };
+          if (where.status && row.status !== where.status) return { count: 0 };
+          Object.assign(row, data, { updatedAt: new Date() });
+          return { count: 1 };
         },
       },
       productionCostTableItem: {

@@ -598,6 +598,7 @@ export const ProductModule = () => {
     });
     try {
       // Um bloco HTTP por vez (BULK_PUBLISH_HTTP_CHUNK_SIZE), mesmo batchRunId em todos.
+      // validate = revalida; finalize (último) = snapshot completo único.
       const run = await runProductionCostBulkPublishInChunks({
         preview: bulkPublishPreview,
         publishChunk: (request) =>
@@ -611,6 +612,9 @@ export const ProductModule = () => {
                 batchRunId: request.batchRunId,
                 productIds: request.productIds,
                 draftVersionIdsByProduct: request.draftVersionIdsByProduct,
+                phase: request.phase,
+                chunkIndex: request.chunkIndex,
+                chunkTotal: request.chunkTotal,
               }),
             }
           ),

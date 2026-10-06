@@ -12396,6 +12396,9 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
           confirm?: unknown;
           batchRunId?: unknown;
           draftVersionIdsByProduct?: unknown;
+          phase?: unknown;
+          chunkIndex?: unknown;
+          chunkTotal?: unknown;
         };
         if (body.confirm !== true) {
           return res.status(400).json({
@@ -12423,11 +12426,24 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
           !Array.isArray(body.draftVersionIdsByProduct)
             ? (body.draftVersionIdsByProduct as Record<string, string>)
             : null;
+        const phase =
+          body.phase === "validate" || body.phase === "finalize" ? body.phase : null;
+        const chunkIndex =
+          typeof body.chunkIndex === "number" && Number.isFinite(body.chunkIndex)
+            ? body.chunkIndex
+            : null;
+        const chunkTotal =
+          typeof body.chunkTotal === "number" && Number.isFinite(body.chunkTotal)
+            ? body.chunkTotal
+            : null;
         const result = await executeProductionCostBulkPublish(prisma, costAnalysisEngine, {
           productIds,
           publishedBy,
           batchRunId,
           draftVersionIdsByProduct,
+          phase,
+          chunkIndex,
+          chunkTotal,
         });
         return res.json(result);
       } catch (error) {

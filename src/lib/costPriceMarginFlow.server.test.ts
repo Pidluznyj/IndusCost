@@ -461,6 +461,19 @@ function createEndToEndFlowDb(input: {
         }
         return row;
       },
+      updateMany: async ({
+        where,
+        data,
+      }: {
+        where: { id: string; status?: string };
+        data: Partial<ProdVersionRow>;
+      }) => {
+        const row = prodVersions.get(where.id);
+        if (!row) return { count: 0 };
+        if (where.status && row.status !== where.status) return { count: 0 };
+        Object.assign(row, data, { updatedAt: new Date() });
+        return { count: 1 };
+      },
     },
     productionCostTableItem: {
       upsert: async ({
@@ -815,7 +828,15 @@ function createMockEngine(
   costs: Record<string, { total: number } | "FAIL">
 ): ProductCostAnalysisEngine {
   return {
-    initAnalysisCache: async () => ({}),
+    initAnalysisCache: async () =>
+      ({
+        indirectCosts: [],
+        factoryHoursMonthly: 0,
+        globalHhCost: 0,
+        energyCost: 0,
+        workingHours: 0,
+        opexRatePerHour: 0,
+      }) satisfies import("./productCostAnalysisEngine.server.js").AnalysisCache,
     getProductCostAnalysis: async (productId: string) => {
       const entry = costs[productId];
       if (entry === "FAIL") return { error: "CONFIG_MISSING", message: "Config ausente." };

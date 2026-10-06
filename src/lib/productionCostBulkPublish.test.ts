@@ -211,6 +211,7 @@ describe("productionCostBulkPublish — elegibilidade pura", () => {
     ];
     assert.equal(summarizeBulkPublishResult(resultRows).published, 1);
     assert.equal(summarizeBulkPublishResult(resultRows).error, 1);
+    assert.equal(summarizeBulkPublishResult(resultRows).validated, 0);
   });
 });
 
@@ -245,11 +246,13 @@ describe("badges — pendente vs divergente", () => {
 });
 
 describe("productionCostBulkPublish — wiring canônico", () => {
-  it("lote reutiliza publishProductionCostVersionFromDraft", () => {
+  it("lote materializa snapshot completo e publica via caminho oficial", () => {
     const src = read("src/lib/productionCostBulkPublish.server.ts");
+    assert.match(src, /materializeCompleteProductionCostSnapshot/);
     assert.match(src, /publishProductionCostVersionFromDraft/);
     assert.match(src, /PRODUCTION_COST_BULK_PUBLISH_SOURCE/);
-    assert.doesNotMatch(src, /productionCostTableVersion\.update/);
+    assert.match(src, /archiveObsoleteProductDraftsAfterPublication/);
+    assert.doesNotMatch(src, /productionCostTableVersion\.update\(\s*\{\s*[^}]*status:\s*["']PUBLISHED["']/);
     assert.equal(PRODUCTION_COST_BULK_PUBLISH_SOURCE, "BULK_PUBLISH_ENGINEERING");
   });
 

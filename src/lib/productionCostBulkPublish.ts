@@ -16,6 +16,7 @@ export const PRODUCTION_COST_BULK_PUBLISH_DEFAULT_CHUNK_SIZE = 25;
 
 export const PRODUCTION_COST_BULK_PUBLISH_ITEM_STATUSES = [
   "ELIGIBLE",
+  "VALIDATED",
   "PUBLISHED",
   "ALREADY_PUBLISHED",
   "SKIPPED",
@@ -106,6 +107,8 @@ export type ProductionCostBulkPublishResultRow = {
 export type ProductionCostBulkPublishResultSummary = {
   selected: number;
   processed: number;
+  /** Revalidado em chunk HTTP — ainda sem PUBLISHED. */
+  validated: number;
   published: number;
   alreadyPublished: number;
   skipped: number;
@@ -114,10 +117,22 @@ export type ProductionCostBulkPublishResultSummary = {
   error: number;
 };
 
+/** Fase da requisição HTTP: validar patch vs publicar snapshot completo. */
+export type ProductionCostBulkPublishPhase = "validate" | "finalize";
+
 export type ProductionCostBulkPublishResult = {
   batchRunId: string;
   finishedAt: string;
   chunkSize: number;
+  phase: ProductionCostBulkPublishPhase;
+  /** Presente após finalize bem-sucedido (versão completa publicada). */
+  completePublishedVersionId?: string | null;
+  snapshot?: {
+    totalItems: number;
+    changedCount: number;
+    carriedForwardCount: number;
+    missingCount: number;
+  } | null;
   summary: ProductionCostBulkPublishResultSummary;
   rows: ProductionCostBulkPublishResultRow[];
 };
@@ -279,6 +294,7 @@ export function summarizeBulkPublishResult(
   return {
     selected: rows.length,
     processed: rows.length,
+    validated: rows.filter((r) => r.status === "VALIDATED").length,
     published: rows.filter((r) => r.status === "PUBLISHED").length,
     alreadyPublished: rows.filter((r) => r.status === "ALREADY_PUBLISHED").length,
     skipped: rows.filter((r) => r.status === "SKIPPED").length,

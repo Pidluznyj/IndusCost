@@ -79,6 +79,20 @@ describe("commercialPublishedPricesApi", () => {
 describe("commercialPublishedPricesRoutes", () => {
   const server = () => read("server.ts");
 
+  /** Só o bloco GET commercial-published-prices — sem rotas seguintes (ex.: unitary-formation). */
+  function commercialPublishedPricesRouteBlock(src: string): string {
+    const start = src.indexOf('"/api/pricing/commercial-published-prices"');
+    assert.ok(start >= 0, "rota commercial-published-prices ausente");
+    const rest = src.slice(start + 1);
+    const nextRoute = rest.search(/\n\s*app\.(get|post|put|patch|delete)\(/);
+    const end =
+      nextRoute >= 0
+        ? start + 1 + nextRoute
+        : src.indexOf('app.post("/api/pricing"', start);
+    assert.ok(end > start, "fim do bloco da rota commercial-published-prices não encontrado");
+    return src.slice(start, end);
+  }
+
   it("endpoint retorna 200 e usa service único", () => {
     const src = server();
     assert.match(src, /\/api\/pricing\/commercial-published-prices/);
@@ -93,11 +107,7 @@ describe("commercialPublishedPricesRoutes", () => {
   });
 
   it("permissão e autenticação liberam consumidores comerciais (sem exigir Formação de Preço)", () => {
-    const src = server();
-    const routeBlock = src.slice(
-      src.indexOf('"/api/pricing/commercial-published-prices"'),
-      src.indexOf('app.post("/api/pricing"', src.indexOf('"/api/pricing/commercial-published-prices"'))
-    );
+    const routeBlock = commercialPublishedPricesRouteBlock(server());
     assert.match(routeBlock, /requireAppAuth/);
     assert.match(routeBlock, /requireAnyPermission\(\[/);
     assert.match(routeBlock, /price_table\.view/);
@@ -116,10 +126,7 @@ describe("commercialPublishedPricesRoutes", () => {
   });
 
   it("endpoint não recalcula preço nem altera dados", () => {
-    const routeBlock = server().slice(
-      server().indexOf('"/api/pricing/commercial-published-prices"'),
-      server().indexOf('app.post("/api/pricing"', server().indexOf('"/api/pricing/commercial-published-prices"'))
-    );
+    const routeBlock = commercialPublishedPricesRouteBlock(server());
     assert.doesNotMatch(routeBlock, /getProductCostAnalysis/);
     assert.doesNotMatch(routeBlock, /calculatePriceTableItemFromFrozenCost/);
     assert.doesNotMatch(routeBlock, /\.create\(/);
