@@ -117,3 +117,26 @@ export function buildSectorCollectorAbsoluteUrl(
   }
   return joinCollectorPublicUrl(resolution.baseUrl, buildSectorCollectorPath(sector));
 }
+
+/** Slug de deep-link aceito para setor configurável (mesmo formato do cadastro). */
+const SECTOR_SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+/**
+ * URL ABSOLUTA do deep-link de um setor pelo slug — setores configuráveis
+ * pelo cadastro de setores de estoque. Mesma base pública canônica e mesmo fail-closed de
+ * buildSectorCollectorAbsoluteUrl; slug fora do formato é recusado.
+ */
+export function buildSectorCollectorAbsoluteUrlForSlug(
+  slug: string,
+  env: NodeJS.ProcessEnv = process.env
+): string {
+  const normalized = String(slug ?? "").trim();
+  if (!SECTOR_SLUG_RE.test(normalized) || normalized.length > 80) {
+    throw new InventoryValidationError("Setor de contagem não suportado.", COLLECTOR_INVALID_SECTOR);
+  }
+  const resolution = resolveCollectorPublicBaseUrl(env);
+  if (isCollectorPublicBaseUrlFailure(resolution)) {
+    throw new InventoryValidationError(resolution.message, resolution.code);
+  }
+  return joinCollectorPublicUrl(resolution.baseUrl, `/collector/sector/${normalized}`);
+}

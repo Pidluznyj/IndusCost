@@ -2,9 +2,9 @@
  * Criação canônica de InventoryWarehouse — reutilizável por rotas e futuros formulários
  * (ex.: setor com "criar almoxarifado novo"). Sem regras de setor aqui.
  */
-import type { InventoryWarehouse, PrismaClient } from "@prisma/client";
+import type { InventoryWarehouse } from "@prisma/client";
 import { Prisma } from "@prisma/client";
-import { writeInventoryAuditLog } from "./inventoryAudit.server.js";
+import { writeInventoryAuditLogInTx } from "./inventoryAudit.server.js";
 import { serializeInventoryWarehouse } from "./inventorySerialization.server.js";
 import type { CreateInventoryWarehouseInput } from "./inventoryValidation.js";
 import { InventoryValidationError } from "./inventoryTypes.js";
@@ -16,8 +16,14 @@ export type InventoryWarehouseWriteContext = {
   userName?: string | null;
 };
 
+/** PrismaClient ou transação já aberta (setor + almoxarifado na mesma transação). */
+export type InventoryWarehouseWriteDb = Pick<
+  Prisma.TransactionClient,
+  "inventoryWarehouse" | "inventoryAuditLog"
+>;
+
 export async function createInventoryWarehouseRecord(
-  prisma: PrismaClient,
+  prisma: InventoryWarehouseWriteDb,
   input: CreateInventoryWarehouseInput,
   context: InventoryWarehouseWriteContext
 ): Promise<InventoryWarehouse> {
@@ -34,7 +40,7 @@ export async function createInventoryWarehouseRecord(
       },
     });
 
-    await writeInventoryAuditLog(prisma, {
+    await writeInventoryAuditLogInTx(prisma, {
       entityType: "InventoryWarehouse",
       entityId: created.id,
       action: "CREATE",

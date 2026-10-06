@@ -36,6 +36,7 @@ import {
   type CollectorSectorPrepareDiagnostics,
   type CollectorWarehouseSummary,
 } from "./collectorSectorPrepare.server.js";
+import { resolveCountSessionAdjustmentCostCenterId } from "./collectorStandardSector.server.js";
 import {
   assertCollectorSessionCompatibleWithSector,
   collectorSectorFromSessionCode,
@@ -579,6 +580,11 @@ export async function applyCollectorSessionAdjustments(
 
   const ctx: CountSessionContext = {
     ...deviceContext(input.deviceId),
+    // Setor configurável: centro de custo dos ajustes negativos vem do setor.
+    adjustmentCostCenterId: await resolveCountSessionAdjustmentCostCenterId(
+      prisma,
+      session.code
+    ),
   };
 
   if (session.status === "WAITING_APPROVAL") {

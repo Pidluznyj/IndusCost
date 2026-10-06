@@ -58,7 +58,8 @@ describe("inventoryNavigation", () => {
     assert.equal(tabs.some((t) => t.id === "balances" && !t.comingSoon), true);
     assert.equal(tabs.some((t) => t.id === "reservations" && !t.comingSoon), true);
     assert.equal(tabs.some((t) => t.id === "audit" && !t.comingSoon), true);
-    assert.equal(INVENTORY_TAB_DEFS.length, 10);
+    assert.equal(INVENTORY_TAB_DEFS.length, 11);
+    assert.equal(tabs.some((t) => t.id === "stockSectors" && !t.comingSoon), true);
     assert.equal(tabs.some((t) => t.id === "implantation" && !t.comingSoon), true);
     assert.equal(
       tabs.some((t) => t.id === "collectorDevices" && !t.comingSoon),

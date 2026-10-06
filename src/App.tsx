@@ -642,6 +642,17 @@ export default function App() {
           }
         />
         <Route
+          path="inventory/stock-sectors"
+          element={
+            <ModulePageShell
+              title="Estoque / Almoxarifado"
+              description="Setores de estoque atendidos pelo Collector no celular."
+            >
+              <InventoryModule initialTab="stockSectors" />
+            </ModulePageShell>
+          }
+        />
+        <Route
           path="inventory/counts"
           element={
             <ModulePageShell

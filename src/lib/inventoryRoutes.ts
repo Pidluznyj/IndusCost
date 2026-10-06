@@ -36,6 +36,7 @@ import {
   COLLECTOR_PUBLIC_BASE_URL_INVALID,
   COLLECTOR_PUBLIC_BASE_URL_REQUIRED,
   buildSectorCollectorAbsoluteUrl,
+  buildSectorCollectorAbsoluteUrlForSlug,
   collectorSectorLabel,
   parseCollectorSector,
 } from "@/src/lib/inventory/collector/collectorSectorContract.js";
@@ -49,21 +50,33 @@ import {
   setCollectorDeviceStatus,
 } from "@/src/lib/inventory/collector/collectorDeviceRegistry.server.js";
 import {
+  resolveStandardCollectorSector,
+  tryParseLegacyCollectorSector,
+} from "@/src/lib/inventory/collector/collectorSectorResolve.server.js";
+import { resolveCountSessionAdjustmentCostCenterId } from "@/src/lib/inventory/collector/collectorStandardSector.server.js";
+import {
+  assertValidStockSectorItemType,
   STOCK_SECTOR_ACTIVE_SCOPE_DUPLICATE,
   STOCK_SECTOR_CODE_DUPLICATE,
+  STOCK_SECTOR_HAS_ACTIVE_SESSION,
   STOCK_SECTOR_NOT_FOUND,
   STOCK_SECTOR_PREFIX_DUPLICATE,
   STOCK_SECTOR_SLUG_DUPLICATE,
 } from "@/src/lib/inventory/inventoryStockSectorDomain.js";
 import {
+  hasNewWarehouseInStockSectorBody,
   parseCreateInventoryStockSectorBody,
+  parseCreateInventoryStockSectorWithWarehouseBody,
   parseInventoryStockSectorStatusBody,
   parseUpdateInventoryStockSectorBody,
 } from "@/src/lib/inventory/inventoryStockSectorValidation.js";
 import {
+  countInventoryStockSectorEligibleItems,
   createInventoryStockSector,
+  createInventoryStockSectorWithWarehouse,
   getInventoryStockSectorById,
   listInventoryStockSectors,
+  loadInventoryStockSectorFormOptions,
   parseListInventoryStockSectorsQuery,
   serializeInventoryStockSector,
   setInventoryStockSectorStatus,
@@ -213,6 +226,7 @@ function handleInventoryValidation(res: express.Response, error: InventoryValida
             error.code === STOCK_SECTOR_SLUG_DUPLICATE ||
             error.code === STOCK_SECTOR_PREFIX_DUPLICATE ||
             error.code === STOCK_SECTOR_ACTIVE_SCOPE_DUPLICATE ||
+            error.code === STOCK_SECTOR_HAS_ACTIVE_SESSION ||
             error.code === INVENTORY_WAREHOUSE_CODE_DUPLICATE
           ? 409
           : error.code === COLLECTOR_PUBLIC_BASE_URL_REQUIRED ||
@@ -884,6 +898,34 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
     }
   });
 
+  // Listas fechadas do formulário (tipos de item, almoxarifados ativos, centros
+  // de custo ativos). Registrada antes de /:id para não ser capturada por ele.
+  app.get("/api/inventory/stock-sectors/form-options", ...warehouseManage, async (_req, res) => {
+    try {
+      res.json(await loadInventoryStockSectorFormOptions(prisma));
+    } catch (e: unknown) {
+      console.error("GET /api/inventory/stock-sectors/form-options", e);
+      res.status(500).json(inventoryApiError("Erro ao carregar opções de setor."));
+    }
+  });
+
+  // Prévia: quantos itens o setor enxergaria — COUNT no banco, sem carregar itens.
+  app.get("/api/inventory/stock-sectors/preview", ...warehouseManage, async (req, res) => {
+    try {
+      const itemType = assertValidStockSectorItemType(req.query.itemType);
+      const warehouseId = String(req.query.warehouseId ?? "").trim() || null;
+      const eligibleItems = await countInventoryStockSectorEligibleItems(prisma, {
+        itemType,
+        warehouseId,
+      });
+      res.json({ itemType, warehouseId, eligibleItems });
+    } catch (e: unknown) {
+      if (e instanceof InventoryValidationError) return handleInventoryValidation(res, e);
+      console.error("GET /api/inventory/stock-sectors/preview", e);
+      res.status(500).json(inventoryApiError("Erro ao calcular a prévia do setor."));
+    }
+  });
+
   app.get("/api/inventory/stock-sectors/:id", ...view, async (req, res) => {
     try {
       const { id } = req.params;
@@ -901,12 +943,25 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
       const user = await auth.getCurrentAppUser(req);
       if (!user) return res.status(401).json(inventoryApiError("Autenticação necessária."));
 
-      const input = parseCreateInventoryStockSectorBody(req.body);
-      const created = await createInventoryStockSector(prisma, input, {
+      const adminContext = {
         userId: user.id,
         userName: user.name,
         permissions: user.effectivePermissions,
-      });
+      };
+      // Almoxarifado novo + setor: uma transação só (sem almoxarifado órfão).
+      if (hasNewWarehouseInStockSectorBody(req.body)) {
+        const combined = await createInventoryStockSectorWithWarehouse(
+          prisma,
+          parseCreateInventoryStockSectorWithWarehouseBody(req.body),
+          adminContext
+        );
+        return res.status(201).json({
+          sector: serializeInventoryStockSector(combined.sector),
+          warehouse: combined.warehouse,
+        });
+      }
+      const input = parseCreateInventoryStockSectorBody(req.body);
+      const created = await createInventoryStockSector(prisma, input, adminContext);
       res.status(201).json({ sector: serializeInventoryStockSector(created) });
     } catch (e: unknown) {
       if (e instanceof InventoryValidationError) return handleInventoryValidation(res, e);
@@ -2249,9 +2304,19 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
       const { id } = req.params;
       if (!isUuid(id)) return res.status(400).json(inventoryApiError("ID inválido."));
 
+      // Conferência de setor configurável: o centro de custo dos ajustes
+      // negativos vem do setor (o motor segue decidindo quando é obrigatório).
+      const sessionForCostCenter = await prisma.inventoryCountSession.findUnique({
+        where: { id },
+        select: { code: true },
+      });
       const result = await generateInventoryCountAdjustments(prisma, id, {
         userId: user.id,
         permissions: user.effectivePermissions,
+        adjustmentCostCenterId: await resolveCountSessionAdjustmentCostCenterId(
+          prisma,
+          sessionForCostCenter?.code
+        ),
       });
 
       res.json({
@@ -2505,6 +2570,17 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
       const user = await auth.getCurrentAppUser(req);
       if (!user) return res.status(401).json(inventoryApiError("Autenticação necessária."));
 
+      // Setor configurável (InventoryStockSector ACTIVE STANDARD): mesmo deep-link
+      // /collector/sector/<slug> sobre a mesma base pública; legado segue abaixo.
+      const sectorRaw = req.query.sector ?? "RAW_MATERIAL";
+      if (!tryParseLegacyCollectorSector(sectorRaw)) {
+        const standard = await resolveStandardCollectorSector(prisma, sectorRaw);
+        return res.json({
+          sector: standard.code,
+          label: standard.label,
+          url: buildSectorCollectorAbsoluteUrlForSlug(standard.slug),
+        });
+      }
       const sector = parseCollectorSector(req.query.sector ?? "RAW_MATERIAL");
       const url = buildSectorCollectorAbsoluteUrl(sector);
       res.json({

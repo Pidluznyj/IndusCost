@@ -63,6 +63,7 @@ export type FakeLineSeed = {
 
 /** Setor configurável (InventoryStockSector) — só o motor STANDARD lê. */
 export type FakeStockSectorSeed = {
+  defaultCostCenterId?: string | null;
   id: string;
   code: string;
   name?: string;
@@ -182,6 +183,7 @@ export function createCollectorCountFakeDb(seed: {
       itemType: null,
       allowsCounting: true,
       allowsWithdrawal: false,
+      defaultCostCenterId: null,
       ...s,
     })) as Row[],
     costCenters: (seed.costCenters ?? []).map((c) => ({ isActive: true, ...c })) as Row[],
@@ -236,6 +238,20 @@ export function createCollectorCountFakeDb(seed: {
         if (!(cond as Row[]).some((w) => matchRow(model, row, w))) return false;
         continue;
       }
+      if (key === "AND") {
+        if (!(cond as Row[]).every((w) => matchRow(model, row, w))) return false;
+        continue;
+      }
+      // Relação 1:N item → saldos (pertencimento por saldo no almoxarifado).
+      if (model === "item" && key === "balances") {
+        const some = (cond as Row).some as Row | undefined;
+        if (!some) throw new Error("fake: item.balances só suporta { some }");
+        const has = state.balances.some(
+          (b) => b.itemId === row.id && matchRow("balance", b, some)
+        );
+        if (!has) return false;
+        continue;
+      }
       const relation = RELATIONS[model]?.[key];
       if (relation) {
         const [target, fk] = relation;
@@ -288,11 +304,18 @@ export function createCollectorCountFakeDb(seed: {
   });
 
   const inventoryItem = {
-    findMany: async (args: Row = {}) =>
-      distinctRows(
+    findMany: async (args: Row = {}) => {
+      let rows = distinctRows(
         state.items.filter((item) => matchRow("item", item, args.where)),
         args.distinct
-      ).map(joinItem),
+      );
+      if (JSON.stringify(args.orderBy ?? null).includes('"code"')) {
+        rows = [...rows].sort((a, b) => String(a.code).localeCompare(String(b.code)));
+      }
+      const skip = typeof args.skip === "number" ? args.skip : 0;
+      const end = typeof args.take === "number" ? skip + args.take : undefined;
+      return rows.slice(skip, end).map(joinItem);
+    },
     findUnique: async (args: Row) => {
       const row = byId(state.items, args.where.id);
       return row ? joinItem(row) : null;

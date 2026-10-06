@@ -11,7 +11,10 @@
  * O cliente manda apenas o slug; quem decide a strategy é o servidor.
  */
 import type { InventoryItemType, Prisma } from "@prisma/client";
-import { InventoryValidationError } from "./../inventoryTypes.js";
+import {
+  INVENTORY_COST_CENTER_REQUIRED_ITEM_TYPES,
+  InventoryValidationError,
+} from "./../inventoryTypes.js";
 import {
   COLLECTOR_INVALID_SECTOR,
   COLLECTOR_SECTORS,
@@ -62,6 +65,8 @@ export type CollectorStandardSectorRef = {
   warehouse: { id: string; code: string; name: string; status: "ACTIVE" };
   allowsCounting: boolean;
   allowsWithdrawal: boolean;
+  /** Centro de custo das saídas do setor (retirada e ajuste negativo de contagem). */
+  defaultCostCenterId: string | null;
   capabilities: CollectorSectorCapabilities;
 };
 
@@ -110,6 +115,10 @@ export function tryParseLegacyCollectorSector(raw: unknown): CollectorLegacySect
 
 type SectorResolveDb = Pick<Prisma.TransactionClient, "inventoryStockSector">;
 
+const COLLECTOR_LEGACY_SECTOR_ITEM_TYPES: ReadonlySet<InventoryItemType> = new Set(
+  Object.values(COLLECTOR_SECTOR_ITEM_TYPE)
+);
+
 const SECTOR_INCLUDE = {
   warehouse: { select: { id: true, code: true, name: true, status: true } },
 } as const;
@@ -125,6 +134,7 @@ type StandardSectorRow = {
   sessionCodePrefix: string;
   allowsCounting: boolean;
   allowsWithdrawal: boolean;
+  defaultCostCenterId?: string | null;
   warehouseId: string;
   warehouse: { id: string; code: string; name: string; status: string } | null;
 };
@@ -147,6 +157,22 @@ export function toStandardCollectorSectorRef(row: StandardSectorRow): CollectorS
   if (!row.itemType) {
     throw new InventoryValidationError(
       "Setor sem tipo de item configurado.",
+      COLLECTOR_SECTOR_MISCONFIGURED
+    );
+  }
+  // itemType dos setores legados tem fluxo próprio e nunca é atendido como STANDARD.
+  if (COLLECTOR_LEGACY_SECTOR_ITEM_TYPES.has(row.itemType)) {
+    throw new InventoryValidationError(
+      "Tipo de item reservado aos setores legados do Collector.",
+      COLLECTOR_SECTOR_MISCONFIGURED
+    );
+  }
+  const defaultCostCenterId = row.defaultCostCenterId ?? null;
+  // Saída desses tipos exige centro de custo no motor de movimentos: setor sem
+  // um configurado não conseguiria retirar nem aplicar ajuste negativo.
+  if (INVENTORY_COST_CENTER_REQUIRED_ITEM_TYPES.has(row.itemType) && !defaultCostCenterId) {
+    throw new InventoryValidationError(
+      "Setor sem centro de custo padrão configurado.",
       COLLECTOR_SECTOR_MISCONFIGURED
     );
   }
@@ -194,6 +220,7 @@ export function toStandardCollectorSectorRef(row: StandardSectorRow): CollectorS
       status: "ACTIVE",
     },
     ...capabilities,
+    defaultCostCenterId,
     capabilities,
   };
 }

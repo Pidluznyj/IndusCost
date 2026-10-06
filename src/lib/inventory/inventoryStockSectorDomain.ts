@@ -4,6 +4,7 @@
  */
 import { COLLECTOR_SECTORS } from "./collector/collectorSectorContract.js";
 import {
+  INVENTORY_COST_CENTER_REQUIRED_ITEM_TYPES,
   INVENTORY_ITEM_TYPES,
   InventoryValidationError,
   type InventoryItemType,
@@ -34,6 +35,45 @@ export const STOCK_SECTOR_WAREHOUSE_INACTIVE = "STOCK_SECTOR_WAREHOUSE_INACTIVE"
 export const STOCK_SECTOR_STRATEGY_NOT_ALLOWED = "STOCK_SECTOR_STRATEGY_NOT_ALLOWED";
 export const STOCK_SECTOR_ITEM_TYPE_REQUIRED = "STOCK_SECTOR_ITEM_TYPE_REQUIRED";
 export const STOCK_SECTOR_LEGACY_RESERVED = "STOCK_SECTOR_LEGACY_RESERVED";
+export const STOCK_SECTOR_COST_CENTER_REQUIRED = "STOCK_SECTOR_COST_CENTER_REQUIRED";
+export const STOCK_SECTOR_COST_CENTER_INVALID = "STOCK_SECTOR_COST_CENTER_INVALID";
+export const STOCK_SECTOR_HAS_ACTIVE_SESSION = "STOCK_SECTOR_HAS_ACTIVE_SESSION";
+
+/**
+ * itemTypes dos setores legados do Collector (MP/CP/PA). Têm fluxo próprio
+ * (cold-start, materialId, productId) e nunca viram setor STANDARD.
+ */
+export const STOCK_SECTOR_LEGACY_ITEM_TYPES: ReadonlySet<InventoryItemType> = new Set([
+  "RAW_MATERIAL",
+  "COMPONENT",
+  "FINISHED_PRODUCT",
+]);
+
+/** itemTypes que um setor STANDARD pode atender. */
+export const INVENTORY_STOCK_SECTOR_STANDARD_ITEM_TYPES: readonly InventoryItemType[] =
+  INVENTORY_ITEM_TYPES.filter((type) => !STOCK_SECTOR_LEGACY_ITEM_TYPES.has(type));
+
+/**
+ * O motor de movimentos exige centro de custo nas saídas destes tipos — inclusive
+ * no ajuste negativo de contagem. O setor precisa então de um centro de custo padrão.
+ */
+export function stockSectorRequiresCostCenter(
+  itemType: InventoryItemType | null | undefined
+): boolean {
+  return itemType != null && INVENTORY_COST_CENTER_REQUIRED_ITEM_TYPES.has(itemType);
+}
+
+export function assertStockSectorCostCenter(
+  itemType: InventoryItemType | null | undefined,
+  defaultCostCenterId: string | null | undefined
+): void {
+  if (stockSectorRequiresCostCenter(itemType) && !defaultCostCenterId) {
+    throw new InventoryValidationError(
+      "Este tipo de item exige centro de custo nas saídas: informe o centro de custo padrão do setor.",
+      STOCK_SECTOR_COST_CENTER_REQUIRED
+    );
+  }
+}
 
 const LEGACY_PREFIXES = new Set<string>(
   Object.values(COLLECTOR_SECTORS).map((s) => s.sessionCodePrefix.toUpperCase())
@@ -127,7 +167,28 @@ export function assertValidStockSectorItemType(raw: unknown): InventoryItemType 
   if (!(INVENTORY_ITEM_TYPES as readonly string[]).includes(value)) {
     throw new InventoryValidationError("itemType inválido.", "INVALID_ITEM_TYPE");
   }
+  if (STOCK_SECTOR_LEGACY_ITEM_TYPES.has(value as InventoryItemType)) {
+    throw new InventoryValidationError(
+      "Matéria-prima, Componentes e Produto acabado têm fluxo próprio no Collector e não podem virar setor configurável.",
+      STOCK_SECTOR_LEGACY_RESERVED
+    );
+  }
   return value as InventoryItemType;
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+/** null / "" → sem centro de custo; qualquer outra coisa precisa ser UUID. */
+export function normalizeStockSectorCostCenterId(raw: unknown): string | null {
+  const value = String(raw ?? "").trim();
+  if (!value) return null;
+  if (!UUID_RE.test(value)) {
+    throw new InventoryValidationError(
+      "Centro de custo inválido.",
+      STOCK_SECTOR_COST_CENTER_INVALID
+    );
+  }
+  return value;
 }
 
 export function assertUserAllowedStrategy(
@@ -175,28 +236,36 @@ export type NormalizedCreateStockSectorInput = {
   allowsCounting: boolean;
   allowsWithdrawal: boolean;
   status: InventoryStockSectorStatusCode;
+  defaultCostCenterId: string | null;
 };
 
-export function normalizeCreateStockSectorFields(input: {
-  code: unknown;
-  name: unknown;
-  slug: unknown;
-  warehouseId: unknown;
-  strategy?: unknown;
-  itemType: unknown;
-  sessionCodePrefix: unknown;
-  allowsCounting?: unknown;
-  allowsWithdrawal?: unknown;
-  status?: unknown;
-}): NormalizedCreateStockSectorInput {
+export function normalizeCreateStockSectorFields(
+  input: {
+    code: unknown;
+    name: unknown;
+    slug: unknown;
+    warehouseId: unknown;
+    strategy?: unknown;
+    itemType: unknown;
+    sessionCodePrefix: unknown;
+    allowsCounting?: unknown;
+    allowsWithdrawal?: unknown;
+    status?: unknown;
+    defaultCostCenterId?: unknown;
+  },
+  /** true quando o almoxarifado será criado junto com o setor (ainda sem id). */
+  opts: { warehouseCreatedWithSector?: boolean } = {}
+): NormalizedCreateStockSectorInput {
   const code = assertValidStockSectorCode(normalizeStockSectorCode(input.code));
   const name = String(input.name ?? "").trim();
   if (!name) {
     throw new InventoryValidationError("name é obrigatório.", "FIELD_REQUIRED");
   }
   const slug = assertValidStockSectorSlug(normalizeStockSectorSlug(input.slug));
-  const warehouseId = String(input.warehouseId ?? "").trim();
-  if (!warehouseId) {
+  const warehouseId = opts.warehouseCreatedWithSector
+    ? ""
+    : String(input.warehouseId ?? "").trim();
+  if (!warehouseId && !opts.warehouseCreatedWithSector) {
     throw new InventoryValidationError("warehouseId é obrigatório.", "FIELD_REQUIRED");
   }
   const strategy = assertUserAllowedStrategy(
@@ -213,7 +282,10 @@ export function normalizeCreateStockSectorFields(input: {
   if (!(INVENTORY_STOCK_SECTOR_STATUSES as readonly string[]).includes(statusRaw)) {
     throw new InventoryValidationError("status inválido.", "INVALID_STATUS");
   }
+  const defaultCostCenterId = normalizeStockSectorCostCenterId(input.defaultCostCenterId);
+  assertStockSectorCostCenter(itemType, defaultCostCenterId);
   return {
+    defaultCostCenterId,
     code,
     name,
     slug,

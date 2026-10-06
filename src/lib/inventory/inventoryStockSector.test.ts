@@ -61,7 +61,15 @@ const WH_INACTIVE = {
   allowsMovements: true,
 };
 
+const COST_CENTER = {
+  id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+  code: "ADM",
+  name: "Administrativo",
+  isActive: true,
+};
+
 type SectorRow = {
+  defaultCostCenterId: string | null;
   id: string;
   code: string;
   name: string;
@@ -91,6 +99,7 @@ function createStockSectorFakeDb() {
   const withWarehouse = (row: SectorRow) => ({
     ...row,
     warehouse: state.warehouses.find((w) => w.id === row.warehouseId)!,
+    defaultCostCenter: row.defaultCostCenterId === COST_CENTER.id ? COST_CENTER : null,
   });
 
   const assertUniques = (data: Partial<SectorRow>, excludingId?: string) => {
@@ -220,6 +229,7 @@ function createStockSectorFakeDb() {
         sessionCodePrefix: String(data.sessionCodePrefix),
         allowsCounting: Boolean(data.allowsCounting),
         allowsWithdrawal: Boolean(data.allowsWithdrawal),
+        defaultCostCenterId: (data.defaultCostCenterId as string | null) ?? null,
         createdAt: new Date(),
         updatedAt: new Date(),
         createdByUserId: (data.createdByUserId as string | null) ?? null,
@@ -258,6 +268,12 @@ function createStockSectorFakeDb() {
   const tx = {
     inventoryStockSector: sectorModel,
     inventoryWarehouse: warehouseModel,
+    costCenter: {
+      findUnique: async ({ where }: { where: { id: string } }) =>
+        where.id === COST_CENTER.id ? COST_CENTER : null,
+    },
+    // Nenhuma conferência aberta neste fake: edição estrutural liberada.
+    inventoryCountSession: { count: async () => 0 },
     inventoryAuditLog: {
       create: async ({ data }: { data: Record<string, unknown> }) => {
         state.auditLogs.push(data);
@@ -313,6 +329,8 @@ const validCreate = {
   allowsCounting: true,
   allowsWithdrawal: false,
   status: "ACTIVE" as const,
+  // ADMINISTRATIVE_SUPPLY exige centro de custo nas saídas.
+  defaultCostCenterId: COST_CENTER.id,
 };
 
 describe("InventoryStockSector schema/migration", () => {
@@ -412,6 +430,7 @@ describe("InventoryStockSector domain validation", () => {
       itemType: "administrative_supply",
       sessionCodePrefix: "ad",
       allowsWithdrawal: "false",
+      defaultCostCenterId: COST_CENTER.id,
     });
     assert.equal(parsed.code, "ADMINISTRATIVO");
     assert.equal(parsed.slug, "administrativo");

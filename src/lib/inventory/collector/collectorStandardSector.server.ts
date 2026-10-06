@@ -24,6 +24,7 @@ import type {
   CollectorOperationalState,
   CollectorWarehouseSummary,
 } from "./collectorSectorPrepare.server.js";
+import { standardSectorStockControlledItemWhere } from "./collectorStandardEligibility.js";
 import {
   assertCollectorCountingAllowed,
   COLLECTOR_COUNTING_DENIED,
@@ -37,6 +38,8 @@ import {
   lockCollectorWarehouseSessions,
 } from "./collectorSessionCompatibility.server.js";
 
+export { standardSectorStockControlledItemWhere };
+
 type Tx = Parameters<Parameters<PrismaClient["$transaction"]>[0]>[0];
 type ReadDb = PrismaClient | Tx;
 
@@ -45,17 +48,6 @@ export const COLLECTOR_STANDARD_WAREHOUSE_NOT_ELIGIBLE = "WAREHOUSE_NOT_ELIGIBLE
 
 /** Linhas por createMany — folga larga sob o limite de parâmetros do PostgreSQL. */
 const COUNT_LINE_INSERT_CHUNK = 1000;
-
-/** Predicado do item elegível do setor STANDARD (sem materialId / productId). */
-export function standardSectorStockControlledItemWhere(
-  sector: Pick<CollectorStandardSectorRef, "itemType">
-) {
-  return {
-    status: "ACTIVE" as const,
-    itemType: sector.itemType,
-    controlsStock: true,
-  };
-}
 
 /**
  * O almoxarifado do setor é fixo. warehouseId vindo do cliente é opcional e só
@@ -490,4 +482,33 @@ export async function assertCollectorSessionCountingAllowed(
       COLLECTOR_COUNTING_DENIED
     );
   }
+}
+
+// ---------------------------------------------------------------------------
+// Centro de custo dos ajustes negativos de uma conferência.
+//
+// Saída de alguns tipos de item (inclusive NEGATIVE_ADJUSTMENT) exige centro de
+// custo no motor de movimentos. Quem o informa é a configuração do setor dono
+// da conferência, reconhecido pelo prefixo do código. Legado (MP/CP/PA) e
+// códigos fora do formato Collector saem sem consultar nada.
+// ---------------------------------------------------------------------------
+
+type SectorCostCenterDb = {
+  inventoryStockSector?: {
+    findUnique: (args: any) => Promise<{ defaultCostCenterId: string | null } | null>;
+  };
+};
+
+export async function resolveCountSessionAdjustmentCostCenterId(
+  db: SectorCostCenterDb,
+  sessionCode: string | null | undefined
+): Promise<string | null> {
+  const prefix = collectorSessionCodePrefix(sessionCode);
+  if (!prefix || COLLECTOR_LEGACY_SESSION_CODE_PREFIXES.has(prefix)) return null;
+  if (typeof db.inventoryStockSector?.findUnique !== "function") return null;
+  const sector = await db.inventoryStockSector.findUnique({
+    where: { sessionCodePrefix: prefix },
+    select: { defaultCostCenterId: true },
+  });
+  return sector?.defaultCostCenterId ?? null;
 }

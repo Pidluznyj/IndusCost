@@ -63,11 +63,13 @@ import {
 } from "./collectorDeviceEnrollment.server.js";
 import {
   COLLECTOR_ITEM_NOT_ELIGIBLE,
-  listCollectorStandardWithdrawItems,
   listCollectorWithdrawItems,
   withdrawCollectorMaterial,
-  withdrawCollectorStandardItem,
 } from "./collectorWithdrawal.server.js";
+import {
+  listCollectorStandardWithdrawItems,
+  withdrawCollectorStandardItem,
+} from "./collectorStandardWithdrawal.server.js";
 import {
   assertCollectorCountingAllowed,
   COLLECTOR_COUNTING_DENIED,
@@ -937,11 +939,14 @@ export function registerInventoryCollectorRoutes(
       const q = typeof req.query.q === "string" ? req.query.q : null;
       if (isCollectorStandardSectorRef(sectorRef)) {
         assertStandardSectorWarehouse(sectorRef, warehouseId);
-        const standardItems = await listCollectorStandardWithdrawItems(prisma, {
+        // Busca e paginação no servidor: o catálogo do setor não vai inteiro ao aparelho.
+        const page = await listCollectorStandardWithdrawItems(prisma, {
           sector: sectorRef,
           q,
+          limit: req.query.limit,
+          offset: req.query.offset,
         });
-        return res.json({ items: standardItems });
+        return res.json(page);
       }
       const sector = sectorRef.code;
       if (!UUID_RE.test(warehouseId)) {
@@ -975,15 +980,14 @@ export function registerInventoryCollectorRoutes(
       const rawLocation = String(body.locationId ?? "").trim();
 
       if (isCollectorStandardSectorRef(sectorRef)) {
-        const rawCostCenter = String(body.costCenterId ?? "").trim();
-        if (!UUID_RE.test(itemId) || (rawCostCenter && !UUID_RE.test(rawCostCenter))) {
+        if (!UUID_RE.test(itemId)) {
           return res.status(400).json({ error: "Identificador inválido.", code: "INVALID_ID" });
         }
         if (rawLocation && !UUID_RE.test(rawLocation)) {
           return res.status(400).json({ error: "Endereço inválido.", code: "INVALID_ID" });
         }
-        // Tipo do movimento e almoxarifado são do servidor: constante no
-        // serviço e fixo no setor. O corpo não escolhe nenhum dos dois.
+        // Tipo do movimento, almoxarifado e centro de custo são do servidor:
+        // constante no serviço e fixos no setor. O corpo não escolhe nenhum.
         const standardResult = await withdrawCollectorStandardItem(
           prisma,
           {
@@ -994,7 +998,7 @@ export function registerInventoryCollectorRoutes(
             locationId: rawLocation || null,
             quantity: body.quantity as number,
             person: body.person as string,
-            costCenterId: rawCostCenter || null,
+            destination: body.destination,
           },
           { id: device.deviceId }
         );

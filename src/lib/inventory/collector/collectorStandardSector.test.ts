@@ -48,10 +48,10 @@ import {
   createAndStartCollectorStandardSectorSession,
   populateStandardSectorCountLines,
 } from "./collectorStandardSector.server.js";
+import { listCollectorStandardWithdrawItems } from "./collectorStandardWithdrawal.server.js";
 import {
   COLLECTOR_INSUFFICIENT_STOCK_MESSAGE,
   COLLECTOR_ITEM_NOT_ELIGIBLE,
-  listCollectorStandardWithdrawItems,
 } from "./collectorWithdrawal.server.js";
 
 function read(rel: string): string {
@@ -68,10 +68,10 @@ const uuid = (n: number, block = "1111") =>
 const WH_ADM = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const WH_OTHER = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const WH_OFF = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+const COST_CENTER = "cc000000-0000-4000-8000-000000000001";
+const COST_CENTER_OTHER = "cc000000-0000-4000-8000-000000000002";
 const SECTOR_ADM = "5ec70000-0000-4000-8000-000000000001";
 const SECTOR_EMB = "5ec70000-0000-4000-8000-000000000002";
-const COST_CENTER = "cc000000-0000-4000-8000-000000000001";
-const COST_CENTER_OFF = "cc000000-0000-4000-8000-000000000002";
 const DEVICE_ID = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
 
 const ADM_1 = uuid(1); // padrão no ADMINISTRATIVO, sem saldo
@@ -101,6 +101,8 @@ const ADMINISTRATIVO: FakeStockSectorSeed = {
   sessionCodePrefix: "ADM",
   allowsCounting: true,
   allowsWithdrawal: true,
+  // ADMINISTRATIVE_SUPPLY exige centro de custo nas saídas: vem do setor.
+  defaultCostCenterId: COST_CENTER,
 };
 
 const EMBALAGENS: FakeStockSectorSeed = {
@@ -164,7 +166,7 @@ function fakeDb(
     sectors: overrides.sectors ?? [ADMINISTRATIVO, EMBALAGENS],
     sessions: overrides.sessions,
     lines: overrides.lines,
-    costCenters: [{ id: COST_CENTER }, { id: COST_CENTER_OFF, isActive: false }],
+    costCenters: [{ id: COST_CENTER }, { id: COST_CENTER_OTHER }],
   });
 }
 
@@ -197,7 +199,6 @@ function withdraw(db: Db, body: Record<string, unknown>) {
       itemId: ADM_2,
       quantity: 4,
       person: "Maria",
-      costCenterId: COST_CENTER,
       ...body,
     },
   });
@@ -225,6 +226,7 @@ describe("STANDARD · resolve", () => {
       warehouse: { id: WH_ADM, code: "ADMINISTRATIVO", name: "Administrativo", status: "ACTIVE" },
       allowsCounting: true,
       allowsWithdrawal: true,
+      defaultCostCenterId: COST_CENTER,
       capabilities: { allowsCounting: true, allowsWithdrawal: true },
     });
     assert.deepEqual(db.state.queries, ["inventoryStockSector.findUnique"], "uma consulta só");
@@ -279,6 +281,25 @@ describe("STANDARD · resolve", () => {
         `prefixo ${sessionCodePrefix}`
       );
     }
+  });
+
+  it("7b. itemType dos setores legados nunca é atendido como STANDARD", async () => {
+    for (const itemType of ["RAW_MATERIAL", "COMPONENT", "FINISHED_PRODUCT"]) {
+      const db = fakeDb({ sectors: [{ ...ADMINISTRATIVO, itemType, defaultCostCenterId: null }] });
+      await assert.rejects(
+        () => admRef(db),
+        codeOf(COLLECTOR_SECTOR_MISCONFIGURED),
+        `itemType ${itemType}`
+      );
+    }
+  });
+
+  it("7c. tipo que exige centro de custo sem centro de custo no setor falha fechado", async () => {
+    const db = fakeDb({ sectors: [{ ...ADMINISTRATIVO, defaultCostCenterId: null }] });
+    await assert.rejects(() => admRef(db), codeOf(COLLECTOR_SECTOR_MISCONFIGURED));
+    // Tipo que não exige centro de custo resolve sem ele.
+    const emb = await resolveStandardCollectorSector(fakeDb().client, "embalagens");
+    assert.equal(emb.defaultCostCenterId, null);
   });
 
   it("8. legado resolve sem tocar no banco, mesmo com a tabela de setores vazia", async () => {
@@ -851,10 +872,10 @@ describe("STANDARD · contagem", () => {
     assert.equal(db.balanceOf(EMB_1, WH_OTHER), 15);
   });
 
-  it("38. regra canônica de centro de custo NÃO é contornada: ajuste negativo de ADMINISTRATIVE_SUPPLY", async () => {
-    // Limite conhecido do motor de movimentos (não do Collector): saída de
-    // ADMINISTRATIVE_SUPPLY — inclusive NEGATIVE_ADJUSTMENT — exige centro de
-    // custo, e a conferência não informa um. O motor recusa e nada é gravado.
+  it("38. ajuste negativo de tipo que exige centro de custo usa o centro de custo do setor", async () => {
+    // O motor de movimentos exige centro de custo em saída de
+    // ADMINISTRATIVE_SUPPLY — inclusive NEGATIVE_ADJUSTMENT. Quem informa é a
+    // configuração do setor; a regra do motor continua valendo.
     const db = fakeDb();
     const run = await countFinalizeApply(db, "administrativo", {
       [ADM_1]: 0,
@@ -862,10 +883,22 @@ describe("STANDARD · contagem", () => {
       [ADM_HIST]: 3,
     });
     assert.equal(run.finalized.status, 200, JSON.stringify(run.finalized.body));
-    assert.equal(run.applied!.status, 400, JSON.stringify(run.applied!.body));
-    assert.equal(run.applied!.body.code, "COST_CENTER_REQUIRED");
-    assert.equal(db.balanceOf(ADM_2, WH_ADM), 10, "saldo intacto");
-    assert.equal(db.state.movements.length, 0);
+    assert.equal(run.applied!.status, 200, JSON.stringify(run.applied!.body));
+    assert.equal(db.balanceOf(ADM_2, WH_ADM), 7);
+    const [movement] = db.state.movements;
+    assert.equal(db.state.movements.length, 1);
+    assert.equal(movement!.movementType, "NEGATIVE_ADJUSTMENT");
+    assert.equal(Number(movement!.quantity), 3);
+    assert.equal(movement!.costCenterId, COST_CENTER);
+    assert.equal(db.state.sessions[0]!.status, "ADJUSTED");
+  });
+
+  it("38b. ajuste positivo não carrega centro de custo; legado não consulta setor", async () => {
+    const db = fakeDb();
+    await countFinalizeApply(db, "administrativo", { [ADM_1]: 4, [ADM_2]: 10, [ADM_HIST]: 3 });
+    const [movement] = db.state.movements;
+    assert.equal(movement!.movementType, "POSITIVE_ADJUSTMENT");
+    assert.equal(movement!.costCenterId ?? null, null);
   });
 });
 
@@ -884,6 +917,7 @@ describe("STANDARD · retirada", () => {
       item: { code: "ADM-002", description: "ADM-002", unit: "UN" },
       quantity: 4,
       withdrawnBy: "Maria",
+      remainingQuantity: 6,
     });
     assert.equal(db.balanceOf(ADM_2, WH_ADM), 6);
     const [movement] = db.state.movements;
@@ -899,11 +933,22 @@ describe("STANDARD · retirada", () => {
     assert.equal(row!.movementId, movement!.id);
   });
 
-  it("40. movementType e almoxarifado do corpo não mandam em nada", async () => {
+  it("40. movementType, centro de custo e ator do corpo não mandam em nada", async () => {
     const db = fakeDb();
-    const result = await withdraw(db, { movementType: "MANUAL_ENTRY", warehouseId: WH_ADM });
+    const result = await withdraw(db, {
+      movementType: "MANUAL_ENTRY",
+      warehouseId: WH_ADM,
+      costCenterId: COST_CENTER_OTHER,
+    });
+    // Identidade no corpo é recusada antes de qualquer coisa.
+    const spoofed = await withdraw(db, { operationId: "w-spoof", actorType: "USER", userId: "u-1" });
+    assert.equal(spoofed.status, 400, JSON.stringify(spoofed.body));
+    assert.equal(spoofed.body.code, "COLLECTOR_IDENTITY_FIELD_REJECTED");
+    assert.equal(db.state.movements.length, 1, "a tentativa com identidade não movimenta");
     assert.equal(result.status, 200, JSON.stringify(result.body));
     assert.equal(db.state.movements[0]!.movementType, "REQUISITION_EXIT");
+    assert.equal(db.state.movements[0]!.costCenterId, COST_CENTER, "centro de custo é o do setor");
+    assert.equal(db.state.movements[0]!.createdByUserId, null);
     assert.equal(db.balanceOf(ADM_2, WH_ADM), 6, "saiu, não entrou");
   });
 
@@ -989,57 +1034,43 @@ describe("STANDARD · retirada", () => {
     assert.equal(db.balanceOf(ADM_2, WH_ADM), 5);
   });
 
-  it("47. centro de custo: exigência do motor intacta; inexistente/inativo recusado", async () => {
+  it("47. destino informado vai para as observações do movimento", async () => {
     const db = fakeDb();
-    const missing = await withdraw(db, { costCenterId: undefined });
-    assert.equal(missing.status, 400, JSON.stringify(missing.body));
-    assert.equal(missing.body.code, "COST_CENTER_REQUIRED");
-
-    for (const costCenterId of [COST_CENTER_OFF, uuid(998, "9999")]) {
-      const invalid = await withdraw(db, { costCenterId });
-      assert.equal(invalid.status, 400, JSON.stringify(invalid.body));
-      assert.equal(invalid.body.code, "COST_CENTER_NOT_FOUND");
-    }
-    assert.equal(db.balanceOf(ADM_2, WH_ADM), 10);
-    assert.equal(db.state.movements.length, 0);
-    assert.equal(db.state.withdrawals.length, 0);
+    const result = await withdraw(db, { destination: "  Recepção  " });
+    assert.equal(result.status, 200, JSON.stringify(result.body));
+    assert.match(String(db.state.movements[0]!.notes), /destino: Recepção/);
+    assert.match(String(db.state.movements[0]!.reason), /Maria/);
   });
 
   it("48. setor cujo itemType não exige centro de custo retira sem ele", async () => {
     const db = fakeDb();
-    const result = await withdraw(db, {
-      sector: "embalagens",
-      itemId: EMB_1,
-      quantity: 5,
-      costCenterId: undefined,
-    });
+    const result = await withdraw(db, { sector: "embalagens", itemId: EMB_1, quantity: 5 });
     assert.equal(result.status, 200, JSON.stringify(result.body));
+    assert.equal(result.body.remainingQuantity, 15);
     assert.equal(db.balanceOf(EMB_1, WH_OTHER), 15);
     assert.equal(db.state.withdrawals[0]!.sector, "EMBALAGENS");
+    assert.equal(db.state.movements[0]!.costCenterId ?? null, null);
   });
 
-  it("49. lista: itens do setor no almoxarifado do setor, sem quantidade, em 2 consultas", async () => {
+  it("49. lista: itens do setor, com saldo disponível do servidor, em 3 consultas", async () => {
     const db = fakeDb();
     const sector = await admRef(db);
     db.state.queries.length = 0;
-    const items = await listCollectorStandardWithdrawItems(db.client, { sector });
+    const page = await listCollectorStandardWithdrawItems(db.client, { sector });
     assert.deepEqual(
-      items.map((i) => i.itemId),
-      [ADM_1, ADM_2, ADM_HIST]
+      page.items.map((i) => [i.itemId, i.availableQuantity]),
+      [
+        [ADM_1, 0],
+        [ADM_2, 10],
+        [ADM_HIST, 3],
+      ]
     );
-    for (const item of items) {
-      assert.deepEqual(Object.keys(item).sort(), [
-        "code",
-        "description",
-        "itemId",
-        "locationCode",
-        "locationId",
-        "locationName",
-        "unit",
-      ]);
-    }
+    assert.equal(page.balanceVisible, true);
+    assert.equal(page.hasMore, false);
+    assert.equal(page.nextOffset, null);
     assert.deepEqual([...db.state.queries].sort(), [
       "inventoryBalance.findMany",
+      "inventoryCountSession.count",
       "inventoryItem.findMany",
     ]);
 
@@ -1051,6 +1082,81 @@ describe("STANDARD · retirada", () => {
       viaRoute.body.items.map((i: { itemId: string }) => i.itemId),
       [ADM_2]
     );
+  });
+
+  it("49b. durante conferência em contagem o saldo fica oculto (contagem cega preservada)", async () => {
+    const db = fakeDb();
+    assert.equal((await openSession(db)).status, 201);
+    const list = await callCollectorRoute(db.client, "get", `${WITHDRAW_ROUTE}/items`, {
+      query: { sector: "administrativo" },
+    });
+    assert.equal(list.status, 200, JSON.stringify(list.body));
+    assert.equal(list.body.balanceVisible, false);
+    for (const item of list.body.items) assert.equal(item.availableQuantity, null);
+
+    const result = await withdraw(db, {});
+    assert.equal(result.status, 200, JSON.stringify(result.body));
+    assert.equal(result.body.remainingQuantity, null);
+    assert.equal(db.balanceOf(ADM_2, WH_ADM), 6, "a retirada em si continua valendo");
+  });
+
+  it("49c. catálogo grande: busca e paginação no servidor, consultas constantes", async () => {
+    const items: FakeItemSeed[] = [];
+    const balances: FakeBalanceSeed[] = [];
+    for (let i = 0; i < 1200; i += 1) {
+      const id = uuid(i + 1, "7777");
+      items.push({
+        id,
+        code: `CAT-${String(i).padStart(4, "0")}`,
+        description: i % 100 === 0 ? `Papel sulfite ${i}` : `Item ${i}`,
+        itemType: "ADMINISTRATIVE_SUPPLY",
+        defaultWarehouseId: WH_ADM,
+      });
+      if (i % 2 === 0) balances.push({ itemId: id, warehouseId: WH_ADM, physicalQuantity: i });
+    }
+    const db = fakeDb({ items, balances });
+    const sector = await admRef(db);
+
+    db.state.queries.length = 0;
+    const first = await listCollectorStandardWithdrawItems(db.client, { sector });
+    assert.equal(first.items.length, 50);
+    assert.equal(first.hasMore, true);
+    assert.equal(first.nextOffset, 50);
+    assert.equal(first.items[0]!.code, "CAT-0000");
+    assert.equal(db.state.queries.length, 3, "3 consultas para 1.200 itens");
+
+    const second = await listCollectorStandardWithdrawItems(db.client, {
+      sector,
+      offset: first.nextOffset,
+    });
+    assert.equal(second.items[0]!.code, "CAT-0050");
+
+    const capped = await listCollectorStandardWithdrawItems(db.client, { sector, limit: 5000 });
+    assert.equal(capped.items.length, 100, "página limitada no servidor");
+
+    db.state.queries.length = 0;
+    const search = await listCollectorStandardWithdrawItems(db.client, { sector, q: "SULFITE" });
+    assert.equal(search.items.length, 12);
+    assert.equal(search.hasMore, false);
+    assert.equal(db.state.queries.length, 3);
+  });
+
+  it("49d. toque duplo: a mesma intenção reenviada não debita de novo", async () => {
+    const db = fakeDb();
+    const results = [];
+    for (let i = 0; i < 4; i += 1) results.push(await withdraw(db, { operationId: "tap-1" }));
+    assert.deepEqual(
+      results.map((r) => [r.status, r.body.idempotent]),
+      [
+        [200, false],
+        [200, true],
+        [200, true],
+        [200, true],
+      ]
+    );
+    assert.equal(db.state.movements.length, 1);
+    assert.equal(db.state.withdrawals.length, 1);
+    assert.equal(db.balanceOf(ADM_2, WH_ADM), 6);
   });
 });
 
@@ -1151,6 +1257,8 @@ describe("STANDARD · legado intacto e fronteiras", () => {
   const RESOLVE = "src/lib/inventory/collector/collectorSectorResolve.server.ts";
   const ROUTES = "src/lib/inventory/collector/collectorRoutes.server.ts";
   const WITHDRAWAL = "src/lib/inventory/collector/collectorWithdrawal.server.ts";
+  const STANDARD_WITHDRAWAL = "src/lib/inventory/collector/collectorStandardWithdrawal.server.ts";
+  const ELIGIBILITY = "src/lib/inventory/collector/collectorStandardEligibility.ts";
 
   it("54. rotas do legado não consultam InventoryStockSector", async () => {
     const CP = uuid(400, "2222");
@@ -1193,7 +1301,7 @@ describe("STANDARD · legado intacto e fronteiras", () => {
   });
 
   it("56. o motor genérico não tem setor, slug ou itemType fixo", () => {
-    for (const file of [ENGINE, RESOLVE]) {
+    for (const file of [ENGINE, RESOLVE, STANDARD_WITHDRAWAL, ELIGIBILITY]) {
       const code = codeOnly(read(file));
       for (const hardcoded of [/ADMINISTRATIV/i, /"ADM"/, /PACKAGING/, /"PPE"/]) {
         assert.doesNotMatch(code, hardcoded, `${file} não pode conter ${hardcoded}`);
@@ -1223,5 +1331,10 @@ describe("STANDARD · legado intacto e fronteiras", () => {
       1,
       "um único ponto de movimentação para legado e STANDARD"
     );
+    const standardWithdrawal = codeOnly(read(STANDARD_WITHDRAWAL));
+    assert.match(standardWithdrawal, /executeCollectorWithdrawal\(/);
+    assert.doesNotMatch(standardWithdrawal, /createInventoryMovementInTx|inventoryMovement\./);
+    assert.doesNotMatch(standardWithdrawal, /inventoryBalance\.(create|update|upsert|delete)/);
+    assert.doesNotMatch(routes, /body\.costCenterId|body\.actorType|body\.deviceId/);
   });
 });

@@ -2092,6 +2092,7 @@ model CostCenter {
   purchaseRequestsDefault PurchaseRequest[]     @relation("PurchaseRequestDefaultCc")
   purchaseRequestItems    PurchaseRequestItem[]
   inventoryMovements      InventoryMovement[]
+  inventoryStockSectors   InventoryStockSector[]
 }
 
 model PurchaseRequest {
@@ -6714,13 +6715,18 @@ model InventoryStockSector {
   sessionCodePrefix String                       @unique
   allowsCounting    Boolean                      @default(true)
   allowsWithdrawal  Boolean                      @default(false)
+  /// Centro de custo usado nas saídas do setor (retirada e ajuste negativo de contagem).
+  /// Obrigatório em regra de domínio quando o itemType exige centro de custo.
+  defaultCostCenterId String?                    @db.Uuid
   createdAt         DateTime                     @default(now()) @db.Timestamptz(6)
   updatedAt         DateTime                     @default(now()) @updatedAt @db.Timestamptz(6)
   createdByUserId   String?
   updatedByUserId   String?
 
-  warehouse InventoryWarehouse @relation(fields: [warehouseId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  warehouse         InventoryWarehouse @relation(fields: [warehouseId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  defaultCostCenter CostCenter?        @relation(fields: [defaultCostCenterId], references: [id], onDelete: Restrict, onUpdate: NoAction)
 
+  @@index([defaultCostCenterId])
   @@index([slug])
   @@index([code])
   @@index([status])

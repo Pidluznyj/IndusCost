@@ -24,6 +24,12 @@ export type CountSessionContext = {
   deviceId?: string | null;
   actorType?: "USER" | "DEVICE";
   permissions?: readonly string[];
+  /**
+   * Centro de custo dos ajustes NEGATIVOS desta conferência (saída). Vem da
+   * configuração do setor de estoque; o motor de movimentos continua decidindo
+   * quando ele é obrigatório.
+   */
+  adjustmentCostCenterId?: string | null;
 };
 
 function assertCanApprove(permissions: readonly string[] | undefined): void {
@@ -339,6 +345,9 @@ export async function generateInventoryCountAdjustments(
           notes: `Conferência física ${session.code}`,
           originType: "COUNT_SESSION",
           originId: line.id,
+          ...(diff < 0 && context.adjustmentCostCenterId
+            ? { costCenterId: context.adjustmentCostCenterId }
+            : {}),
           ...(diff > 0
             ? {
                 destinationWarehouseId: line.warehouseId,

@@ -10,7 +10,8 @@ export const INVENTORY_TAB_IDS = [
   "implantation",
   "movements",
   "counts",
-  "collectorDevices",
+  "collectorDevices",
+  "stockSectors",
   "reservations",
   "audit",
 ] as const;
@@ -84,8 +85,15 @@ export const INVENTORY_TAB_DEFS: InventoryTabDef[] = [
     showInNav: true,
     navOrder: 65,
   },
-  {
-    id: "reservations",
+  {
+    id: "stockSectors",
+    label: "Setores / Collector",
+    description: "Setores de estoque atendidos pelo celular: almoxarifado, tipo de item e QR.",
+    showInNav: true,
+    navOrder: 67,
+  },
+  {
+    id: "reservations",
     label: "Reservas",
     description: "Reservas ativas, bloqueios e cancelamentos autorizados.",
     showInNav: true,
@@ -117,7 +125,8 @@ export function resolveInventoryTabFromPath(pathname: string): InventoryTabId {
   if (pathname.includes("/inventory/balances")) return "balances";
   if (pathname.includes("/inventory/implantation")) return "implantation";
   if (pathname.includes("/inventory/counts")) return "counts";
-  if (pathname.includes("/inventory/collector-devices")) return "collectorDevices";
+  if (pathname.includes("/inventory/collector-devices")) return "collectorDevices";
+  if (pathname.includes("/inventory/stock-sectors")) return "stockSectors";
   if (pathname.includes("/inventory/reservations")) return "reservations";
   if (pathname.includes("/inventory/audit")) return "audit";
   return "overview";

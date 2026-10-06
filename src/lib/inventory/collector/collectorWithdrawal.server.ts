@@ -31,14 +31,6 @@ import {
   type CollectorSectorCode,
 } from "./collectorSectorContract.js";
 import { RAW_MATERIAL_STOCK_CONTROLLED_ITEM_WHERE } from "./collectorSectorEligibility.js";
-import {
-  assertCollectorWithdrawalAllowed,
-  type CollectorStandardSectorRef,
-} from "./collectorSectorResolve.server.js";
-import {
-  assertStandardSectorWarehouse,
-  standardSectorStockControlledItemWhere,
-} from "./collectorStandardSector.server.js";
 
 export const COLLECTOR_ITEM_NOT_ELIGIBLE = "COLLECTOR_ITEM_NOT_ELIGIBLE";
 export const COLLECTOR_WITHDRAWAL_PERSON_MAX = 120;
@@ -79,8 +71,6 @@ type WithdrawalPrisma = Pick<
   PrismaClient,
   "inventoryBalance" | "inventoryCollectorWithdrawal" | "$transaction"
 >;
-
-type StandardWithdrawalPrisma = Pick<PrismaClient, "inventoryBalance" | "inventoryItem">;
 
 /** Mesmo arredondamento do Inventory — Decimal(20,6). */
 function roundQuantity(value: number): number {
@@ -240,141 +230,14 @@ export async function withdrawCollectorMaterial(
   );
 }
 
-/**
- * Itens que um setor STANDARD pode retirar no seu almoxarifado: mesmo conjunto
- * da população da contagem (saldo no almoxarifado ou almoxarifado padrão).
- * 2 leituras em lote; o DTO não carrega quantidade alguma.
- */
-export async function listCollectorStandardWithdrawItems(
-  prisma: StandardWithdrawalPrisma,
-  input: { sector: CollectorStandardSectorRef; q?: string | null }
-): Promise<CollectorWithdrawItemDto[]> {
-  assertCollectorWithdrawalAllowed(input.sector);
-  const warehouseId = input.sector.warehouseId;
-  const term = typeof input.q === "string" ? input.q.trim() : "";
-  const itemWhere = {
-    ...standardSectorStockControlledItemWhere(input.sector),
-    ...(term
-      ? {
-          OR: [
-            { code: { contains: term, mode: "insensitive" as const } },
-            { description: { contains: term, mode: "insensitive" as const } },
-          ],
-        }
-      : {}),
-  };
-  const [balanceRows, defaultItems] = await Promise.all([
-    prisma.inventoryBalance.findMany({
-      where: { warehouseId, item: itemWhere },
-      select: {
-        itemId: true,
-        locationId: true,
-        item: { select: { code: true, description: true, unit: true } },
-        location: { select: { code: true, name: true } },
-      },
-    }),
-    prisma.inventoryItem.findMany({
-      where: { ...itemWhere, defaultWarehouseId: warehouseId },
-      select: { id: true, code: true, description: true, unit: true },
-    }),
-  ]);
-
-  const rows: CollectorWithdrawItemDto[] = balanceRows.map((row) => ({
-    itemId: row.itemId,
-    code: row.item.code,
-    description: row.item.description,
-    unit: row.item.unit,
-    locationId: row.locationId,
-    locationCode: row.location?.code ?? null,
-    locationName: row.location?.name ?? null,
-  }));
-  const withBalance = new Set(balanceRows.map((row) => row.itemId));
-  for (const item of defaultItems) {
-    if (withBalance.has(item.id)) continue;
-    rows.push({
-      itemId: item.id,
-      code: item.code,
-      description: item.description,
-      unit: item.unit,
-      locationId: null,
-      locationCode: null,
-      locationName: null,
-    });
-  }
-  rows.sort((a, b) => a.code.localeCompare(b.code, "pt-BR"));
-  return rows.slice(0, 500);
-}
+export type CollectorWithdrawableItem = { code: string; description: string; unit: string };
 
 /**
- * Retirada de setor STANDARD. Só acontece se o setor permite retirada; o
- * almoxarifado é o do setor (o cliente não redireciona) e o item precisa ser
- * elegível e pertencer a ele. Tipo de movimento e bloqueio de saldo são os
- * mesmos da retirada de Matéria-prima — mesmo motor, mesma idempotência.
- *
- * costCenterId é um fato informado na operação, não uma válvula: o motor
- * continua exigindo centro de custo para os tipos de item que o exigem
- * (COST_CENTER_REQUIRED) — aqui só se confere que o informado existe e está ativo.
+ * Núcleo único da retirada — Matéria-prima e setores STANDARD
+ * (collectorStandardWithdrawal.server.ts) passam por aqui: mesmo tipo de
+ * movimento, mesmo motor, mesma idempotência.
  */
-export async function withdrawCollectorStandardItem(
-  prisma: PrismaClient,
-  input: {
-    sector: CollectorStandardSectorRef;
-    operationId: string;
-    itemId: string;
-    /** Opcional; quando informado precisa ser o almoxarifado do setor. */
-    warehouseId?: string | null;
-    locationId: string | null;
-    quantity: number;
-    person: string;
-    costCenterId?: string | null;
-  },
-  device: { id: string }
-): Promise<CollectorWithdrawalResult> {
-  const sector = input.sector;
-  assertCollectorWithdrawalAllowed(sector);
-  const warehouseId = assertStandardSectorWarehouse(sector, input.warehouseId);
-
-  const costCenterId = String(input.costCenterId ?? "").trim() || null;
-  if (costCenterId) {
-    const costCenter = await prisma.costCenter.findUnique({
-      where: { id: costCenterId },
-      select: { id: true, isActive: true },
-    });
-    if (!costCenter || !costCenter.isActive) {
-      throw new InventoryValidationError(
-        "Centro de custo inexistente ou inativo.",
-        "COST_CENTER_NOT_FOUND"
-      );
-    }
-  }
-
-  return executeCollectorWithdrawal(
-    prisma,
-    {
-      operationId: input.operationId,
-      itemId: input.itemId,
-      warehouseId,
-      locationId: input.locationId,
-      quantity: input.quantity,
-      person: input.person,
-      sectorCode: sector.code,
-      sectorLabel: sector.label,
-      costCenterId,
-      assertItem: (tx) =>
-        assertStandardWithdrawableItem(tx, {
-          sector,
-          itemId: input.itemId,
-          locationId: input.locationId,
-        }),
-    },
-    device
-  );
-}
-
-type WithdrawableItem = { code: string; description: string; unit: string };
-
-/** Núcleo único da retirada — legado e STANDARD passam por aqui. */
-async function executeCollectorWithdrawal(
+export async function executeCollectorWithdrawal(
   prisma: PrismaClient,
   input: {
     operationId: string;
@@ -387,7 +250,9 @@ async function executeCollectorWithdrawal(
     sectorCode: string;
     sectorLabel: string;
     costCenterId: string | null;
-    assertItem: (tx: InventoryTx) => Promise<WithdrawableItem>;
+    /** Complemento opcional das observações do movimento (ex.: destino). */
+    notesSuffix?: string | null;
+    assertItem: (tx: InventoryTx) => Promise<CollectorWithdrawableItem>;
   },
   device: { id: string }
 ): Promise<CollectorWithdrawalResult> {
@@ -414,7 +279,9 @@ async function executeCollectorWithdrawal(
           quantity,
           unit: item.unit,
           reason: buildWithdrawalReason(person),
-          notes: buildWithdrawalNotesForLabel(input.sectorLabel, person),
+          notes:
+            buildWithdrawalNotesForLabel(input.sectorLabel, person) +
+            (input.notesSuffix ? ` · ${input.notesSuffix}` : ""),
           sourceWarehouseId: input.warehouseId,
           sourceLocationId: input.locationId,
           originType: "OTHER",
@@ -508,47 +375,6 @@ async function assertWithdrawableItem(
     );
   }
   return row.item;
-}
-
-/**
- * STANDARD: o item precisa passar o predicado do setor (ACTIVE, itemType do
- * setor, controla estoque) E pertencer ao almoxarifado do setor — saldo no par
- * almoxarifado/endereço pedido, ou almoxarifado padrão quando não há endereço.
- * Item de outro tipo, inativo ou de outro almoxarifado some aqui, antes de
- * qualquer débito. No máximo 2 leituras.
- */
-async function assertStandardWithdrawableItem(
-  tx: InventoryTx,
-  input: {
-    sector: Pick<CollectorStandardSectorRef, "itemType" | "warehouseId">;
-    itemId: string;
-    locationId: string | null;
-  }
-): Promise<WithdrawableItem> {
-  const notEligible = () =>
-    new InventoryValidationError(
-      "Item não disponível para retirada neste setor.",
-      COLLECTOR_ITEM_NOT_ELIGIBLE
-    );
-  const item = await tx.inventoryItem.findFirst({
-    where: { id: input.itemId, ...standardSectorStockControlledItemWhere(input.sector) },
-    select: { code: true, description: true, unit: true, defaultWarehouseId: true },
-  });
-  if (!item) throw notEligible();
-  const balance = await tx.inventoryBalance.findFirst({
-    where: {
-      itemId: input.itemId,
-      warehouseId: input.sector.warehouseId,
-      locationId: input.locationId,
-    },
-    select: { id: true },
-  });
-  if (!balance) {
-    const belongsByDefault =
-      input.locationId == null && item.defaultWarehouseId === input.sector.warehouseId;
-    if (!belongsByDefault) throw notEligible();
-  }
-  return { code: item.code, description: item.description, unit: item.unit };
 }
 
 function isUniqueViolation(e: unknown): boolean {
