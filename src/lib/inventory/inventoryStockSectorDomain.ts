@@ -45,8 +45,8 @@ const LEGACY_SLUGS = new Set<string>(Object.values(COLLECTOR_SECTORS).map((s) =>
 const CODE_RE = /^[A-Z][A-Z0-9_]{1,63}$/;
 /** Slug URL-safe lowercase. */
 const SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
-/** Prefixo de sessão Collector: exatamente 2 letras A–Z. */
-const PREFIX_RE = /^[A-Z]{2}$/;
+/** Prefixo de sessão Collector: 2 a 4 letras A–Z (ex.: AD, ADM). */
+const PREFIX_RE = /^[A-Z]{2,4}$/;
 
 export function normalizeStockSectorCode(raw: unknown): string {
   return String(raw ?? "")
@@ -109,7 +109,7 @@ export function assertValidStockSectorSlug(slug: string): string {
 export function assertValidStockSectorPrefix(prefix: string): string {
   if (!PREFIX_RE.test(prefix)) {
     throw new InventoryValidationError(
-      "sessionCodePrefix deve ter exatamente 2 letras maiúsculas (ex.: AD).",
+      "sessionCodePrefix deve ter de 2 a 4 letras maiúsculas (ex.: ADM).",
       "INVALID_STOCK_SECTOR_PREFIX"
     );
   }

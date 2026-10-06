@@ -4,8 +4,8 @@
  *
  * InventoryCountSession não tem coluna de setor. A prova é o itemType das
  * InventoryCountLine já existentes: um setor só continua sessão cujas linhas
- * sejam TODAS do seu itemType. O prefixo do código (MP-/CP-/PA-, do contrato)
- * é apenas sinal auxiliar:
+ * sejam TODAS do seu itemType. O prefixo do código (MP-/CP-/PA-/ADM-…,
+ * do contrato ou do InventoryStockSector.sessionCodePrefix) é sinal auxiliar:
  *  - com linhas, prefixo de OUTRO setor do Collector é contradição → recusa;
  *  - sem linhas, é a única prova disponível — vale só o prefixo do próprio
  *    setor; qualquer outro caso falha fechado.
@@ -25,27 +25,41 @@ import {
 
 export const COLLECTOR_ACTIVE_SESSION_INCOMPATIBLE = "COLLECTOR_ACTIVE_SESSION_INCOMPATIBLE";
 
-/** itemType contado por setor — é a identidade do setor dentro das linhas. */
+/** itemType contado por setor legado — identidade do setor dentro das linhas. */
 export const COLLECTOR_SECTOR_ITEM_TYPE: Readonly<Record<CollectorSectorCode, InventoryItemType>> = {
   RAW_MATERIAL: "RAW_MATERIAL",
   COMPONENT: "COMPONENT",
   FINISHED_PRODUCT: "FINISHED_PRODUCT",
 };
 
-const COLLECTOR_SESSION_CODE_RE = /^([A-Z]{2})-\d{8}-\d+$/;
+/** Formato do prefixo de sessão: 2 a 4 letras (legado usa 2; STANDARD até 4, ex.: ADM). */
+export const COLLECTOR_SESSION_CODE_PREFIX_RE = /^[A-Z]{2,4}$/;
+
+const COLLECTOR_SESSION_CODE_RE = /^([A-Z]{2,4})-\d{8}-\d+$/;
+
+/** Prefixos reservados aos setores legados (MP/CP/PA). */
+export const COLLECTOR_LEGACY_SESSION_CODE_PREFIXES: ReadonlySet<string> = new Set(
+  COLLECTOR_SECTOR_CODES.map((sector) => COLLECTOR_SECTORS[sector].sessionCodePrefix)
+);
+
+/** Prefixo de um código de sessão no formato Collector (MP-/CP-/PA-/ADM-…), ou null. */
+export function collectorSessionCodePrefix(code: string | null | undefined): string | null {
+  const match = COLLECTOR_SESSION_CODE_RE.exec(String(code ?? "").trim());
+  return match ? match[1] : null;
+}
 
 /**
- * Setor do Collector sinalizado pelo código da sessão (MP-/CP-/PA-AAAAMMDD-NNN).
- * null quando o código não é de setor do Collector (ex.: conferência manual CF-).
+ * Setor legado do Collector sinalizado pelo código da sessão (MP-/CP-/PA-…).
+ * null quando o código não é de setor legado (ex.: CF- manual ou STANDARD ADM-).
  */
 export function collectorSectorFromSessionCode(
   code: string | null | undefined
 ): CollectorSectorCode | null {
-  const match = COLLECTOR_SESSION_CODE_RE.exec(String(code ?? "").trim());
-  if (!match) return null;
+  const prefix = collectorSessionCodePrefix(code);
+  if (!prefix) return null;
   return (
     COLLECTOR_SECTOR_CODES.find(
-      (sector) => COLLECTOR_SECTORS[sector].sessionCodePrefix === match[1]
+      (sector) => COLLECTOR_SECTORS[sector].sessionCodePrefix === prefix
     ) ?? null
   );
 }
@@ -62,27 +76,59 @@ export type CollectorSessionCompatibility = {
   reason: CollectorSessionCompatibilityReason;
 };
 
-/** Regra pura — sem I/O. foreignLineCount = linhas com itemType diferente do setor. */
+/**
+ * Compatibilidade por identidade (itemType + prefixo de sessão) — serve legado e STANDARD.
+ * foreignLineCount = linhas com itemType diferente do esperado.
+ *
+ * Com linhas, só prefixo de OUTRO setor conhecido contradiz: os legados sempre,
+ * mais os de knownSectorPrefixes (demais InventoryStockSector). Prefixo
+ * desconhecido (CF- manual) segue valendo pelas linhas, como sempre valeu.
+ */
+export function evaluateCollectorSessionIdentityCompatibility(input: {
+  expectedItemType: InventoryItemType;
+  expectedSessionCodePrefix: string;
+  sessionCode: string;
+  lineCount: number;
+  foreignLineCount: number;
+  knownSectorPrefixes?: Iterable<string>;
+}): CollectorSessionCompatibility {
+  const prefix = collectorSessionCodePrefix(input.sessionCode);
+  const expected = String(input.expectedSessionCodePrefix ?? "")
+    .trim()
+    .toUpperCase();
+  if (input.lineCount > 0) {
+    if (input.foreignLineCount > 0) {
+      return { compatible: false, reason: "LINES_OF_OTHER_ITEM_TYPE" };
+    }
+    if (prefix != null && prefix !== expected) {
+      const known = new Set<string>(COLLECTOR_LEGACY_SESSION_CODE_PREFIXES);
+      for (const other of input.knownSectorPrefixes ?? []) known.add(other);
+      if (known.has(prefix)) {
+        return { compatible: false, reason: "PREFIX_OF_OTHER_SECTOR" };
+      }
+    }
+    return { compatible: true, reason: "LINES_MATCH_SECTOR" };
+  }
+  if (prefix === expected) {
+    return { compatible: true, reason: "EMPTY_SESSION_OWN_PREFIX" };
+  }
+  return { compatible: false, reason: "EMPTY_SESSION_UNPROVEN" };
+}
+
+/** Regra pura legado — delega à identidade (comportamento preservado). */
 export function evaluateCollectorSessionCompatibility(input: {
   sector: CollectorSectorCode;
   sessionCode: string;
   lineCount: number;
   foreignLineCount: number;
 }): CollectorSessionCompatibility {
-  const prefixSector = collectorSectorFromSessionCode(input.sessionCode);
-  if (input.lineCount > 0) {
-    if (input.foreignLineCount > 0) {
-      return { compatible: false, reason: "LINES_OF_OTHER_ITEM_TYPE" };
-    }
-    if (prefixSector != null && prefixSector !== input.sector) {
-      return { compatible: false, reason: "PREFIX_OF_OTHER_SECTOR" };
-    }
-    return { compatible: true, reason: "LINES_MATCH_SECTOR" };
-  }
-  if (prefixSector === input.sector) {
-    return { compatible: true, reason: "EMPTY_SESSION_OWN_PREFIX" };
-  }
-  return { compatible: false, reason: "EMPTY_SESSION_UNPROVEN" };
+  return evaluateCollectorSessionIdentityCompatibility({
+    expectedItemType: COLLECTOR_SECTOR_ITEM_TYPE[input.sector],
+    expectedSessionCodePrefix: COLLECTOR_SECTORS[input.sector].sessionCodePrefix,
+    sessionCode: input.sessionCode,
+    lineCount: input.lineCount,
+    foreignLineCount: input.foreignLineCount,
+  });
 }
 
 type CollectorSessionDb = Pick<
@@ -91,10 +137,9 @@ type CollectorSessionDb = Pick<
 >;
 
 function incompatibleSessionError(
-  sector: CollectorSectorCode,
+  label: string,
   sessionCode: string
 ): InventoryValidationError {
-  const label = COLLECTOR_SECTORS[sector].label;
   return new InventoryValidationError(
     `Já existe uma conferência em contagem neste almoxarifado (${sessionCode}) que não é do setor ${label}. ` +
       `Conclua ou cancele essa conferência antes de iniciar a contagem de ${label}.`,
@@ -103,9 +148,9 @@ function incompatibleSessionError(
 }
 
 /** Total de linhas e linhas de outro itemType por sessão — 2 consultas em lote. */
-async function loadSessionLineStats(
+async function loadSessionLineStatsByItemType(
   db: CollectorSessionDb,
-  sector: CollectorSectorCode,
+  expectedItemType: InventoryItemType,
   sessionIds: string[]
 ): Promise<Map<string, { lineCount: number; foreignLineCount: number }>> {
   const stats = new Map<string, { lineCount: number; foreignLineCount: number }>();
@@ -120,7 +165,7 @@ async function loadSessionLineStats(
       by: ["sessionId"],
       where: {
         sessionId: { in: sessionIds },
-        item: { itemType: { not: COLLECTOR_SECTOR_ITEM_TYPE[sector] } },
+        item: { itemType: { not: expectedItemType } },
       },
       _count: { _all: true },
     }),
@@ -137,8 +182,16 @@ async function loadSessionLineStats(
   return stats;
 }
 
+async function loadSessionLineStats(
+  db: CollectorSessionDb,
+  sector: CollectorSectorCode,
+  sessionIds: string[]
+): Promise<Map<string, { lineCount: number; foreignLineCount: number }>> {
+  return loadSessionLineStatsByItemType(db, COLLECTOR_SECTOR_ITEM_TYPE[sector], sessionIds);
+}
+
 /**
- * Falha fechado quando a sessão não pode ser continuada pelo setor.
+ * Falha fechado quando a sessão não pode ser continuada pelo setor legado.
  * Devolve o total de linhas já existente (0 = sessão vazia do próprio setor).
  */
 export async function assertCollectorSessionCompatibleWithSector(
@@ -153,7 +206,38 @@ export async function assertCollectorSessionCompatibleWithSector(
     lineCount: entry.lineCount,
     foreignLineCount: entry.foreignLineCount,
   });
-  if (!verdict.compatible) throw incompatibleSessionError(input.sector, input.session.code);
+  if (!verdict.compatible) {
+    throw incompatibleSessionError(COLLECTOR_SECTORS[input.sector].label, input.session.code);
+  }
+  return { lineCount: entry.lineCount };
+}
+
+/** Compatibilidade por identidade STANDARD (itemType + sessionCodePrefix). */
+export async function assertCollectorSessionCompatibleWithIdentity(
+  db: CollectorSessionDb,
+  input: {
+    label: string;
+    expectedItemType: InventoryItemType;
+    expectedSessionCodePrefix: string;
+    knownSectorPrefixes?: Iterable<string>;
+    session: { id: string; code: string };
+  }
+): Promise<{ lineCount: number }> {
+  const stats = await loadSessionLineStatsByItemType(db, input.expectedItemType, [
+    input.session.id,
+  ]);
+  const entry = stats.get(input.session.id) ?? { lineCount: 0, foreignLineCount: 0 };
+  const verdict = evaluateCollectorSessionIdentityCompatibility({
+    expectedItemType: input.expectedItemType,
+    expectedSessionCodePrefix: input.expectedSessionCodePrefix,
+    sessionCode: input.session.code,
+    lineCount: entry.lineCount,
+    foreignLineCount: entry.foreignLineCount,
+    knownSectorPrefixes: input.knownSectorPrefixes,
+  });
+  if (!verdict.compatible) {
+    throw incompatibleSessionError(input.label, input.session.code);
+  }
   return { lineCount: entry.lineCount };
 }
 
@@ -161,7 +245,7 @@ export async function assertCollectorSessionCompatibleWithSector(
  * Conferência COUNTING que o setor pode continuar no almoxarifado — ou null.
  *
  * scope "latest": só a COUNTING mais recente (fluxo atual do RAW_MATERIAL).
- * scope "all": todas as COUNTING do almoxarifado (Componentes / Produto acabado).
+ * scope "all": todas as COUNTING do almoxarifado (Componentes / Produto acabado / STANDARD).
  * Qualquer candidata incompatível → COLLECTOR_ACTIVE_SESSION_INCOMPATIBLE; nunca
  * é pulada para devolver outra.
  */
@@ -193,7 +277,52 @@ export async function findCollectorSectorActiveSession(
       lineCount: entry.lineCount,
       foreignLineCount: entry.foreignLineCount,
     });
-    if (!verdict.compatible) throw incompatibleSessionError(input.sector, session.code);
+    if (!verdict.compatible) {
+      throw incompatibleSessionError(COLLECTOR_SECTORS[input.sector].label, session.code);
+    }
+  }
+  return sessions[0];
+}
+
+/** Active session para STANDARD — avalia todas as COUNTING do warehouse fixo do setor. */
+export async function findCollectorStandardSectorActiveSession(
+  db: CollectorSessionDb,
+  input: {
+    label: string;
+    expectedItemType: InventoryItemType;
+    expectedSessionCodePrefix: string;
+    knownSectorPrefixes?: Iterable<string>;
+    warehouseId: string;
+  }
+) {
+  const sessions = await db.inventoryCountSession.findMany({
+    where: { warehouseId: input.warehouseId, status: "COUNTING" },
+    include: {
+      warehouse: { select: { id: true, code: true, name: true } },
+      lines: { select: { countedQuantity: true } },
+    },
+    orderBy: { startedAt: "desc" },
+  });
+  if (sessions.length === 0) return null;
+
+  const stats = await loadSessionLineStatsByItemType(
+    db,
+    input.expectedItemType,
+    sessions.map((session) => session.id)
+  );
+  for (const session of sessions) {
+    const entry = stats.get(session.id) ?? { lineCount: 0, foreignLineCount: 0 };
+    const verdict = evaluateCollectorSessionIdentityCompatibility({
+      expectedItemType: input.expectedItemType,
+      expectedSessionCodePrefix: input.expectedSessionCodePrefix,
+      sessionCode: session.code,
+      lineCount: entry.lineCount,
+      foreignLineCount: entry.foreignLineCount,
+      knownSectorPrefixes: input.knownSectorPrefixes,
+    });
+    if (!verdict.compatible) {
+      throw incompatibleSessionError(input.label, session.code);
+    }
   }
   return sessions[0];
 }

@@ -37,7 +37,6 @@ import {
 import { parseCollectorCountBody, COLLECTOR_FORBIDDEN_IDENTITY_FIELDS, COLLECTOR_IDENTITY_FIELD_REJECTED } from "./collectorCountContract.js";
 import { parseCollectorQrText } from "./collectorQrContract.js";
 import {
-  parseCollectorSector,
   collectorSectorLabel,
   type CollectorSectorCode,
 } from "./collectorSectorContract.js";
@@ -64,9 +63,26 @@ import {
 } from "./collectorDeviceEnrollment.server.js";
 import {
   COLLECTOR_ITEM_NOT_ELIGIBLE,
+  listCollectorStandardWithdrawItems,
   listCollectorWithdrawItems,
   withdrawCollectorMaterial,
+  withdrawCollectorStandardItem,
 } from "./collectorWithdrawal.server.js";
+import {
+  assertCollectorCountingAllowed,
+  COLLECTOR_COUNTING_DENIED,
+  COLLECTOR_WITHDRAWAL_DENIED,
+  isCollectorStandardSectorRef,
+  resolveCollectorSectorRef,
+} from "./collectorSectorResolve.server.js";
+import {
+  assertCollectorSessionCountingAllowed,
+  assertStandardSectorWarehouse,
+  createAndStartCollectorStandardSectorSession,
+  findStandardSectorActiveSession,
+  resolveCollectorStandardSectorOperationalContext,
+  serializeStandardSector,
+} from "./collectorStandardSector.server.js";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -87,7 +103,10 @@ function respondCollectorValidationError(
     error.code === QR_LINE_NOT_FOUND ||
     error.code === COLLECTOR_ITEM_NOT_ELIGIBLE
       ? 404
-      : error.code === "NOT_AUTHORIZED" || error.code === COLLECTOR_CAPABILITY_DENIED
+      : error.code === "NOT_AUTHORIZED" ||
+          error.code === COLLECTOR_CAPABILITY_DENIED ||
+          error.code === COLLECTOR_COUNTING_DENIED ||
+          error.code === COLLECTOR_WITHDRAWAL_DENIED
         ? 403
         : error.code === COUNT_LINE_VERSION_CONFLICT ||
             error.code === COUNT_OPERATION_IDEMPOTENCY_CONFLICT ||
@@ -289,7 +308,35 @@ export function registerInventoryCollectorRoutes(
         });
       }
 
-      const sector = parseCollectorSector(sectorRaw);
+      // O servidor decide a strategy: legado (MP/CP/PA) resolve sem banco e
+      // segue no fluxo atual; setor configurável STANDARD vai ao motor genérico.
+      const sectorRef = await resolveCollectorSectorRef(prisma, sectorRaw);
+      if (isCollectorStandardSectorRef(sectorRef)) {
+        const resolved = await resolveCollectorStandardSectorOperationalContext(
+          prisma,
+          sectorRef
+        );
+        // Setor só de retirada não consulta (nem esbarra em) conferências.
+        const activeSession = sectorRef.allowsCounting
+          ? summarizeActiveSession(await findStandardSectorActiveSession(prisma, sectorRef))
+          : null;
+        return res.json({
+          device: row
+            ? {
+                id: row.id,
+                name: row.name,
+                canManageCountSessions: row.canManageCountSessions,
+                canApplyCountAdjustments: row.canApplyCountAdjustments,
+              }
+            : null,
+          sector: serializeStandardSector(sectorRef),
+          warehouses: resolved.warehouses,
+          activeSession,
+          operationalState: activeSession ? "READY" : resolved.operationalState,
+          diagnostics: resolved.diagnostics,
+        });
+      }
+      const sector = sectorRef.code;
       // Dispatch na borda: MP segue no resolvedor próprio; Componentes/Produto
       // acabado resolvem almoxarifado só por presença logística do produto.
       const resolved = isCollectorProductSector(sector)
@@ -376,8 +423,16 @@ export function registerInventoryCollectorRoutes(
           .status(403)
           .json({ error: "Dispositivo não autorizado.", code: "COLLECTOR_DEVICE_UNAUTHORIZED" });
       }
-      const sector = parseCollectorSector(req.query.sector);
+      const sectorRef = await resolveCollectorSectorRef(prisma, req.query.sector);
       const warehouseId = String(req.query.warehouseId ?? "").trim();
+      if (isCollectorStandardSectorRef(sectorRef)) {
+        assertCollectorCountingAllowed(sectorRef);
+        // Almoxarifado é o do setor; o informado só é aceito se coincidir.
+        assertStandardSectorWarehouse(sectorRef, warehouseId);
+        const standardSession = await findStandardSectorActiveSession(prisma, sectorRef);
+        return res.json({ activeSession: summarizeActiveSession(standardSession) });
+      }
+      const sector = sectorRef.code;
       if (!UUID_RE.test(warehouseId)) {
         return res.status(400).json({ error: "Almoxarifado inválido.", code: "INVALID_ID" });
       }
@@ -444,10 +499,22 @@ export function registerInventoryCollectorRoutes(
       }
 
       const body = (req.body ?? {}) as Record<string, unknown>;
-      const sector = parseCollectorSector(body.sector);
+      const sectorRef = await resolveCollectorSectorRef(prisma, body.sector);
       let warehouseId = typeof body.warehouseId === "string" ? body.warehouseId.trim() : "";
       const operationId =
         typeof body.operationId === "string" ? body.operationId.trim() : null;
+
+      if (isCollectorStandardSectorRef(sectorRef)) {
+        const standardResult = await createAndStartCollectorStandardSectorSession(prisma, {
+          sector: sectorRef,
+          warehouseId,
+          deviceId: device.deviceId,
+          deviceName: caps?.name ?? null,
+          operationId,
+        });
+        return res.status(standardResult.reused ? 200 : 201).json(standardResult);
+      }
+      const sector = sectorRef.code;
 
       if (!warehouseId) {
         const warehouses = isCollectorProductSector(sector)
@@ -539,6 +606,7 @@ export function registerInventoryCollectorRoutes(
         return res.status(400).json({ error: "ID inválido.", code: "INVALID_ID" });
       }
       const input = parseCollectorCountBody(req.body);
+      await assertCollectorSessionCountingAllowed(prisma, sessionId);
       const result = await recordInventoryCount(
         prisma,
         {
@@ -594,6 +662,7 @@ export function registerInventoryCollectorRoutes(
           return res.status(400).json({ error: "ID inválido.", code: "INVALID_ID" });
         }
         const body = (req.body ?? {}) as Record<string, unknown>;
+        await assertCollectorSessionCountingAllowed(prisma, sessionId);
         const summary = await finalizeCollectorSession(prisma, {
           sessionId,
           deviceId: device.deviceId,
@@ -648,6 +717,7 @@ export function registerInventoryCollectorRoutes(
             code: "COLLECTOR_OPERATION_ID_REQUIRED",
           });
         }
+        await assertCollectorSessionCountingAllowed(prisma, sessionId);
         const result = await applyCollectorSessionAdjustments(prisma, {
           sessionId,
           deviceId: device.deviceId,
@@ -809,6 +879,7 @@ export function registerInventoryCollectorRoutes(
 
         const input = parseCollectorCountBody(req.body);
 
+        await assertCollectorSessionCountingAllowed(prisma, sessionId);
         const result = await recordInventoryCount(
           prisma,
           {
@@ -858,12 +929,24 @@ export function registerInventoryCollectorRoutes(
           .status(403)
           .json({ error: "Dispositivo não autorizado.", code: "COLLECTOR_DEVICE_UNAUTHORIZED" });
       }
-      const sector = parseCollectorSector(req.query.sector ?? "raw-material");
+      const sectorRef = await resolveCollectorSectorRef(
+        prisma,
+        req.query.sector ?? "raw-material"
+      );
       const warehouseId = String(req.query.warehouseId ?? "").trim();
+      const q = typeof req.query.q === "string" ? req.query.q : null;
+      if (isCollectorStandardSectorRef(sectorRef)) {
+        assertStandardSectorWarehouse(sectorRef, warehouseId);
+        const standardItems = await listCollectorStandardWithdrawItems(prisma, {
+          sector: sectorRef,
+          q,
+        });
+        return res.json({ items: standardItems });
+      }
+      const sector = sectorRef.code;
       if (!UUID_RE.test(warehouseId)) {
         return res.status(400).json({ error: "Almoxarifado inválido.", code: "INVALID_ID" });
       }
-      const q = typeof req.query.q === "string" ? req.query.q : null;
       const items = await listCollectorWithdrawItems(prisma, { warehouseId, sector, q });
       res.json({ items });
     } catch (e: unknown) {
@@ -886,13 +969,41 @@ export function registerInventoryCollectorRoutes(
       rejectIdentityFields(req.body);
 
       const body = (req.body ?? {}) as Record<string, unknown>;
-      const sector = parseCollectorSector(body.sector ?? "raw-material");
+      const sectorRef = await resolveCollectorSectorRef(prisma, body.sector ?? "raw-material");
       const itemId = String(body.itemId ?? "").trim();
       const warehouseId = String(body.warehouseId ?? "").trim();
+      const rawLocation = String(body.locationId ?? "").trim();
+
+      if (isCollectorStandardSectorRef(sectorRef)) {
+        const rawCostCenter = String(body.costCenterId ?? "").trim();
+        if (!UUID_RE.test(itemId) || (rawCostCenter && !UUID_RE.test(rawCostCenter))) {
+          return res.status(400).json({ error: "Identificador inválido.", code: "INVALID_ID" });
+        }
+        if (rawLocation && !UUID_RE.test(rawLocation)) {
+          return res.status(400).json({ error: "Endereço inválido.", code: "INVALID_ID" });
+        }
+        // Tipo do movimento e almoxarifado são do servidor: constante no
+        // serviço e fixo no setor. O corpo não escolhe nenhum dos dois.
+        const standardResult = await withdrawCollectorStandardItem(
+          prisma,
+          {
+            sector: sectorRef,
+            operationId: String(body.operationId ?? ""),
+            itemId,
+            warehouseId,
+            locationId: rawLocation || null,
+            quantity: body.quantity as number,
+            person: body.person as string,
+            costCenterId: rawCostCenter || null,
+          },
+          { id: device.deviceId }
+        );
+        return res.json(standardResult);
+      }
+      const sector = sectorRef.code;
       if (!UUID_RE.test(itemId) || !UUID_RE.test(warehouseId)) {
         return res.status(400).json({ error: "Identificador inválido.", code: "INVALID_ID" });
       }
-      const rawLocation = String(body.locationId ?? "").trim();
       if (rawLocation && !UUID_RE.test(rawLocation)) {
         return res.status(400).json({ error: "Endereço inválido.", code: "INVALID_ID" });
       }

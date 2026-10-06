@@ -61,6 +61,23 @@ export type FakeLineSeed = {
   countedQuantity?: number | null;
 };
 
+/** Setor configurável (InventoryStockSector) — só o motor STANDARD lê. */
+export type FakeStockSectorSeed = {
+  id: string;
+  code: string;
+  name?: string;
+  slug: string;
+  status?: "ACTIVE" | "INACTIVE";
+  strategy?: string;
+  itemType?: string | null;
+  sessionCodePrefix: string;
+  warehouseId: string;
+  allowsCounting?: boolean;
+  allowsWithdrawal?: boolean;
+};
+
+export type FakeCostCenterSeed = { id: string; isActive?: boolean };
+
 const dec = (value: unknown) =>
   value instanceof Prisma.Decimal ? value : new Prisma.Decimal(String(value ?? 0));
 
@@ -78,6 +95,12 @@ function matchScalar(actual: unknown, cond: unknown): boolean {
     if ("in" in c) return (c.in as unknown[]).includes(actual);
     if ("notIn" in c) return !(c.notIn as unknown[]).includes(actual);
     if ("startsWith" in c) return String(actual ?? "").startsWith(String(c.startsWith));
+    if ("contains" in c) {
+      const insensitive = c.mode === "insensitive";
+      const haystack = insensitive ? String(actual ?? "").toLowerCase() : String(actual ?? "");
+      const needle = insensitive ? String(c.contains).toLowerCase() : String(c.contains);
+      return haystack.includes(needle);
+    }
     if ("equals" in c) return actual === c.equals;
     throw new Error(`fake: filtro não suportado ${JSON.stringify(cond)}`);
   }
@@ -90,6 +113,8 @@ export function createCollectorCountFakeDb(seed: {
   balances?: FakeBalanceSeed[];
   sessions?: FakeSessionSeed[];
   lines?: FakeLineSeed[];
+  sectors?: FakeStockSectorSeed[];
+  costCenters?: FakeCostCenterSeed[];
 }) {
   // Ids no formato UUID: as rotas do Collector validam UUID antes do serviço.
   let seq = 0;
@@ -150,6 +175,19 @@ export function createCollectorCountFakeDb(seed: {
     balanceWriteStacks: [] as string[],
     /** Escritas por modelo.método — prova de "não cria / não edita". */
     writes: [] as string[],
+    sectors: (seed.sectors ?? []).map((s) => ({
+      name: s.code,
+      status: "ACTIVE",
+      strategy: "STANDARD",
+      itemType: null,
+      allowsCounting: true,
+      allowsWithdrawal: false,
+      ...s,
+    })) as Row[],
+    costCenters: (seed.costCenters ?? []).map((c) => ({ isActive: true, ...c })) as Row[],
+    withdrawals: [] as Row[],
+    /** Toda chamada modelo.método, na ordem — prova de ausência de N+1. */
+    queries: [] as string[],
   };
 
   const newLine = (data: Row): Row => ({
@@ -526,10 +564,64 @@ export function createCollectorCountFakeDb(seed: {
       updateMany: forbidden("product.updateMany"),
       upsert: forbidden("product.upsert"),
     },
+    inventoryStockSector: {
+      findUnique: async (args: Row) => {
+        const where = args.where as Row;
+        const field = ["id", "slug", "code", "sessionCodePrefix"].find((f) => where[f] != null);
+        if (!field) throw new Error("fake: inventoryStockSector.findUnique sem chave única");
+        const row = state.sectors.find((s) => s[field] === where[field]);
+        if (!row) return null;
+        return args.include?.warehouse
+          ? { ...row, warehouse: byId(state.warehouses, row.warehouseId) }
+          : row;
+      },
+      findMany: async (args: Row = {}) =>
+        state.sectors.filter((s) => matchRow("sector", s, args.where)),
+      create: forbidden("inventoryStockSector.create"),
+      update: forbidden("inventoryStockSector.update"),
+    },
+    costCenter: {
+      findUnique: async (args: Row) => byId(state.costCenters, args.where.id),
+    },
+    inventoryCollectorWithdrawal: {
+      findUnique: async (args: Row) =>
+        state.withdrawals.find((w) => w.operationId === args.where.operationId) ?? null,
+      create: async (args: Row) => {
+        if (state.withdrawals.some((w) => w.operationId === args.data.operationId)) {
+          throw new Prisma.PrismaClientKnownRequestError("Unique constraint", {
+            code: "P2002",
+            clientVersion: Prisma.prismaVersion.client,
+            meta: { target: ["operationId"] },
+          });
+        }
+        state.writes.push("inventoryCollectorWithdrawal.create");
+        const row: Row = { id: nextId("withdrawal"), ...args.data };
+        state.withdrawals.push(row);
+        return row;
+      },
+    },
   };
+  // Registro de consultas: cada chamada modelo.método entra em state.queries.
+  for (const [model, table] of Object.entries(client)) {
+    if (!table || typeof table !== "object") continue;
+    for (const [method, fn] of Object.entries(table as Row)) {
+      if (typeof fn !== "function") continue;
+      (table as Row)[method] = (...args: unknown[]) => {
+        state.queries.push(`${model}.${method}`);
+        return (fn as (...a: unknown[]) => unknown)(...args);
+      };
+    }
+  }
   // Transação com rollback das tabelas de dados: erro dentro dela não deixa
   // sessão, linha, saldo ou movimento pela metade (como no PostgreSQL).
-  const TX_TABLES = ["sessions", "lines", "balances", "movements", "observations"] as const;
+  const TX_TABLES = [
+    "sessions",
+    "lines",
+    "balances",
+    "movements",
+    "observations",
+    "withdrawals",
+  ] as const;
   client.$transaction = async (fn: (tx: unknown) => Promise<unknown>) => {
     const snapshot = TX_TABLES.map((table) => state[table].map((row) => ({ ...row })));
     try {

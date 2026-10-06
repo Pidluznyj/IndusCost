@@ -1,6 +1,6 @@
 # Arquitetura genérica de setores de estoque (Stock Collector)
 
-**Status:** auditoria + preparação (sem implementação de fundação neste passo)  
+**Status:** auditoria (§1–11) + fundação e motor STANDARD implementados (§12)  
 **Branch de trabalho:** `docs/inventory-stock-sector-architecture`  
 **Baseline HEAD:** `a383d7a8ad1b224df80383131f28b915857c974d`  
 **Data da auditoria:** 2026-10-06  
@@ -407,6 +407,35 @@ Erros **não** são introduzidos por este doc. Amostra em inventory (preexistent
 4. Flag default off.  
 5. Testes: tabela vazia ≡ comportamento atual; nenhum teste de MP/CP/PA quebrado.  
 6. **Não** ligar STANDARD no Collector ainda (isso é fase 2).
+
+## 12. Fase 2 — motor genérico STANDARD (implementado)
+
+Entrou de forma aditiva; MP/CP/PA seguem nos fluxos próprios e não consultam `InventoryStockSector`.
+
+| Peça | Arquivo |
+|---|---|
+| Resolução (legado sem banco → `InventoryStockSector` por slug, fail closed) | `collectorSectorResolve.server.ts` |
+| Elegibilidade, população, sessão, contexto, capacidade de contagem por sessão | `collectorStandardSector.server.ts` |
+| Compatibilidade por identidade (`itemType` + `sessionCodePrefix`) | `collectorSessionCompatibility.server.ts` |
+| Retirada STANDARD (mesmo núcleo e mesmo motor da retirada de MP) | `collectorWithdrawal.server.ts` |
+| Dispatch LEGACY × STANDARD decidido no servidor | `collectorRoutes.server.ts` |
+| Testes | `collectorStandardSector.test.ts` |
+
+Decisões que divergem das seções anteriores:
+
+- **Prefixo de sessão: 2 a 4 letras** (§4.4 dizia exatamente 2). O caso real usa `ADM`; os legados continuam com 2. Com linhas, só prefixo de outro setor **conhecido** (legado ou outro `InventoryStockSector`) contradiz a sessão — prefixo desconhecido (`CF-` manual) segue valendo pelas linhas, como antes.
+- **Sem feature flag** (§7 previa uma): tabela vazia ≡ legado intacto, e `status=INACTIVE` desliga o setor.
+- **Almoxarifado fixo no setor**: `warehouseId` do cliente é opcional e só é aceito se coincidir.
+- **Capacidades no servidor**: `allowsCounting=false` bloqueia abrir/consultar sessão e também contar/finalizar/aplicar em sessão já aberta (reconhecida pelo prefixo); `allowsWithdrawal=false` bloqueia lista e retirada.
+
+### 12.1 Centro de custo (pendência de regra, não contornada)
+
+O motor de movimentos exige `costCenterId` em saídas de `ADMINISTRATIVE_SUPPLY`, `MAINTENANCE`, `PPE`, `PRODUCTION_SUPPLY` e `OTHER` — inclusive `NEGATIVE_ADJUSTMENT`.
+
+- **Retirada STANDARD**: a rota aceita `costCenterId` opcional (validado: existe e está ativo) e o repassa ao motor. Sem ele, setores desses tipos recebem `COST_CENTER_REQUIRED`. A tela do Collector ainda não coleta centro de custo.
+- **Ajuste de contagem negativo** nesses tipos: `apply-adjustments` falha com `COST_CENTER_REQUIRED` (a conferência não informa centro de custo — vale também para a conferência manual). Implantação por contagem a partir de saldo zero (só ajustes positivos) funciona.
+
+Enquanto a regra não for decidida, o setor ADMINISTRATIVO opera contagem de implantação; contagem com divergência negativa e retirada pelo tablet dependem dessa decisão.
 
 ---
 
