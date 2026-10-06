@@ -22,6 +22,10 @@ import {
 } from "./productionCostVersioning.js";
 import { startOfCivilDate } from "./financeCivilDate.js";
 import { hasProductionCostDifference } from "./productEngineeringCostWarning.js";
+import {
+  evaluateProductionCostPublishBase,
+  PRODUCTION_COST_PUBLISH_STALE_BASE_PREFIX,
+} from "./productionCostCompleteSnapshot.js";
 
 export type {
   EffectiveProductProductionCostResult,
@@ -379,18 +383,27 @@ export async function publishProductionCostTableVersion(
       });
     }
 
-    const row = await tx.productionCostTableVersion.update({
-      where: { id: input.versionId },
-      data: {
-        status: "PUBLISHED",
-        publishedAt,
-        publishedBy: input.publishedBy?.trim() || null,
-        notes: auditNote,
-      },
-      include: { items: true },
+    const currentPublished = await tx.productionCostTableVersion.findFirst({
+      where: { code: version.code, status: "PUBLISHED" },
+      orderBy: [{ revision: "desc" }, { publishedAt: "desc" }],
+      select: { id: true, code: true, revision: true },
     });
 
-    const supersedeId = input.supersedeVersionId ?? version.supersedesVersionId;
+    // Legado: DRAFT sem supersedes explícito adopta a PUBLISHED vigente.
+    // Snapshot completo moderno sempre grava supersedes — base errada → STALE_BASE.
+    let supersedeId = input.supersedeVersionId ?? version.supersedesVersionId;
+    if (currentPublished && !supersedeId) {
+      supersedeId = currentPublished.id;
+    }
+
+    const baseCheck = evaluateProductionCostPublishBase({
+      draftSupersedesVersionId: supersedeId,
+      currentPublishedVersionId: currentPublished?.id ?? null,
+    });
+    if (baseCheck.ok === false) {
+      throw new Error(baseCheck.message);
+    }
+
     if (supersedeId) {
       const prior = await tx.productionCostTableVersion.findUnique({
         where: { id: supersedeId },
@@ -400,14 +413,40 @@ export async function publishProductionCostTableVersion(
       if (prior.code !== version.code) {
         throw new Error("Versão a substituir deve ter o mesmo code.");
       }
-      if (prior.status === "PUBLISHED") {
-        await tx.productionCostTableVersion.update({
-          where: { id: supersedeId },
-          data: { status: "SUPERSEDED" },
-        });
+    }
+
+    // Claim atômico do DRAFT — evita dois publishers no mesmo versionId.
+    const claimed = await tx.productionCostTableVersion.updateMany({
+      where: { id: input.versionId, status: "DRAFT" },
+      data: {
+        status: "PUBLISHED",
+        publishedAt,
+        publishedBy: input.publishedBy?.trim() || null,
+        notes: auditNote,
+      },
+    });
+    if (claimed.count !== 1) {
+      throw new Error("Versão já publicada (imutável).");
+    }
+
+    // Claim atômico da base vigente — se outro publish venceu, aborta (rollback do claim acima).
+    if (currentPublished) {
+      const superseded = await tx.productionCostTableVersion.updateMany({
+        where: { id: currentPublished.id, status: "PUBLISHED" },
+        data: { status: "SUPERSEDED" },
+      });
+      if (superseded.count !== 1) {
+        throw new Error(
+          `${PRODUCTION_COST_PUBLISH_STALE_BASE_PREFIX} publicação concorrente detectada (base ${currentPublished.id}). Rematerialize e republicar.`
+        );
       }
     }
 
+    const row = await tx.productionCostTableVersion.findUnique({
+      where: { id: input.versionId },
+      include: { items: true },
+    });
+    if (!row) throw new Error("Versão não encontrada após publicação.");
     return row;
   });
 
@@ -441,23 +480,33 @@ function buildArchivedEquivalentDraftNote(publishedVersionId: string): string {
   return `[${stamp}] ARCHIVED — custo equivalente publicado na versão ${publishedVersionId}. Histórico preservado; tabela publicada vigente inalterada.`;
 }
 
+function buildArchivedObsoleteDraftNote(publishedVersionId: string): string {
+  const stamp = new Date().toISOString();
+  return `[${stamp}] ARCHIVED — rascunho anterior do produto após publicação da versão ${publishedVersionId}. Não é mais candidato ativo; histórico preservado.`;
+}
+
 async function archiveProductionCostDraftVersion(
   db: PrismaClient,
   versionId: string,
   publishedVersionId: string,
-  archived: Set<string>
+  archived: Set<string>,
+  noteKind: "equivalent" | "obsolete" = "equivalent"
 ): Promise<void> {
   if (archived.has(versionId)) return;
   const version = await db.productionCostTableVersion.findUnique({
     where: { id: versionId },
-    select: { notes: true },
+    select: { notes: true, status: true },
   });
-  const note = buildArchivedEquivalentDraftNote(publishedVersionId);
+  if (!version || version.status !== "DRAFT") return;
+  const note =
+    noteKind === "obsolete"
+      ? buildArchivedObsoleteDraftNote(publishedVersionId)
+      : buildArchivedEquivalentDraftNote(publishedVersionId);
   await db.productionCostTableVersion.update({
     where: { id: versionId },
     data: {
       status: "ARCHIVED",
-      notes: version?.notes?.trim() ? `${version.notes.trim()}\n${note}` : note,
+      notes: version.notes?.trim() ? `${version.notes.trim()}\n${note}` : note,
     },
   });
   archived.add(versionId);
@@ -559,6 +608,78 @@ export async function archiveEquivalentProductionCostDrafts(
         archived,
         resolvedItemId: draftItem.id,
       });
+    }
+  }
+
+  return [...archived];
+}
+
+/**
+ * Após publicação bem-sucedida de um ou mais produtos: arquiva DRAFTs anteriores
+ * daqueles produtos que deixam de ser candidatos ativos — inclusive com custo diferente
+ * (stale). Não altera PUBLISHED/SUPERSEDED. Não faz DELETE de versão.
+ *
+ * Usado pelo fluxo unitário. O publish em lote continua usando apenas
+ * `archiveEquivalentProductionCostDrafts` (equivalência de custo).
+ */
+export async function archiveObsoleteProductDraftsAfterPublication(
+  db: PrismaClient,
+  input: {
+    publishedVersionId: string;
+    productIds: string[];
+  }
+): Promise<string[]> {
+  const productIds = [...new Set(input.productIds.map((id) => id?.trim()).filter(Boolean))];
+  const archived = new Set<string>();
+
+  for (const productId of productIds) {
+    const draftItems = await db.productionCostTableItem.findMany({
+      where: {
+        productId,
+        costTableVersion: {
+          status: "DRAFT",
+          id: { not: input.publishedVersionId },
+        },
+      },
+      include: {
+        costTableVersion: {
+          select: { id: true, code: true },
+        },
+      },
+    });
+
+    for (const draftItem of draftItems) {
+      const versionId = draftItem.costTableVersionId;
+      if (archived.has(versionId)) continue;
+
+      const siblingCount = await db.productionCostTableItem.count({
+        where: { costTableVersionId: versionId },
+      });
+
+      if (draftItem.costTableVersion.code.startsWith("AUTO-") || siblingCount <= 1) {
+        await archiveProductionCostDraftVersion(
+          db,
+          versionId,
+          input.publishedVersionId,
+          archived,
+          "obsolete"
+        );
+        continue;
+      }
+
+      await db.productionCostTableItem.delete({ where: { id: draftItem.id } });
+      const remaining = await db.productionCostTableItem.count({
+        where: { costTableVersionId: versionId },
+      });
+      if (remaining === 0) {
+        await archiveProductionCostDraftVersion(
+          db,
+          versionId,
+          input.publishedVersionId,
+          archived,
+          "obsolete"
+        );
+      }
     }
   }
 

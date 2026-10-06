@@ -85,9 +85,12 @@ function resultRow(
 
 function respond(
   request: ProductionCostBulkPublishChunkRequest,
-  statusFor: (productId: string) => ProductionCostBulkPublishItemStatus = () => "PUBLISHED"
+  statusFor: (productId: string) => ProductionCostBulkPublishItemStatus = () =>
+    request.phase === "finalize" ? "PUBLISHED" : "VALIDATED"
 ) {
   return {
+    phase: request.phase,
+    completePublishedVersionId: request.phase === "finalize" ? "complete-pub-1" : null,
     rows: request.productIds.map((id) =>
       resultRow(id, request.draftVersionIdsByProduct[id], statusFor(id))
     ),
@@ -107,7 +110,7 @@ describe("productionCostBulkPublishChunkedRun — blocos HTTP", () => {
     [50, 2],
     [354, 15],
   ] as const) {
-    it(`${count} produto(s) → ${expectedRequests} request(s)`, async () => {
+    it(`${count} produto(s) → ${expectedRequests} request(s) (validate* + finalize)`, async () => {
       const calls: ProductionCostBulkPublishChunkRequest[] = [];
       const run = await runProductionCostBulkPublishInChunks({
         preview: makePreview(count),
@@ -126,24 +129,34 @@ describe("productionCostBulkPublishChunkedRun — blocos HTTP", () => {
       assert.equal(run.pending, 0);
       assert.equal(run.rows.length, count);
       assert.equal(run.summary.published, count);
+      assert.equal(run.completePublishedVersionId, "complete-pub-1");
 
-      // Mesmo batchRunId em todos; cada produto exatamente uma vez, na ordem da prévia.
+      // Mesmo batchRunId em todos; finalize é o último e carrega TODOS os elegíveis.
       assert.deepEqual([...new Set(calls.map((c) => c.batchRunId))], ["batch-unico"]);
+      const finalize = calls[calls.length - 1]!;
+      assert.equal(finalize.phase, "finalize");
       assert.deepEqual(
-        calls.flatMap((c) => c.productIds),
+        finalize.productIds,
         Array.from({ length: count }, (_, i) => `p${i + 1}`)
       );
-      for (const call of calls) {
+      assert.equal(finalize.chunkIndex, expectedRequests);
+      assert.equal(finalize.chunkTotal, expectedRequests);
+
+      for (let i = 0; i < calls.length - 1; i += 1) {
+        const call = calls[i]!;
+        assert.equal(call.phase, "validate");
         assert.equal(call.confirm, true);
         assert.ok(call.productIds.length <= BULK_PUBLISH_HTTP_CHUNK_SIZE);
-        // draftVersionIdsByProduct contém somente (e todos) os produtos do bloco.
         assert.deepEqual(Object.keys(call.draftVersionIdsByProduct), call.productIds);
-        for (const id of call.productIds) {
-          assert.equal(call.draftVersionIdsByProduct[id], `draft${id.slice(1)}`);
-        }
+      }
+      if (count === 26) {
+        assert.equal(calls[0]!.productIds.length, 25);
+        assert.equal(calls[0]!.phase, "validate");
       }
       if (count === 354) {
-        assert.equal(calls[14].productIds.length, 4);
+        assert.equal(calls[13]!.phase, "validate");
+        assert.equal(calls[14]!.phase, "finalize");
+        assert.equal(calls[14]!.productIds.length, 354);
       }
     });
   }
@@ -157,8 +170,9 @@ describe("productionCostBulkPublishChunkedRun — blocos HTTP", () => {
       ])
     );
     assert.equal(requests.length, 1);
-    assert.deepEqual(requests[0].productIds, ["p1", "p2"]);
-    assert.deepEqual(requests[0].draftVersionIdsByProduct, { p1: "draft1", p2: "draft2" });
+    assert.equal(requests[0]!.phase, "finalize");
+    assert.deepEqual(requests[0]!.productIds, ["p1", "p2"]);
+    assert.deepEqual(requests[0]!.draftVersionIdsByProduct, { p1: "draft1", p2: "draft2" });
   });
 
   it("sem elegíveis não chama o endpoint", async () => {
@@ -194,9 +208,10 @@ describe("productionCostBulkPublishChunkedRun — blocos HTTP", () => {
     assert.equal(run.status, "COMPLETED");
     assert.equal(maxInFlight, 1);
     assert.deepEqual(events, ["start-1", "end-1", "start-2", "end-2", "start-3", "end-3"]);
+    assert.equal(run.summary.published, 60);
   });
 
-  it("falha no bloco 3 interrompe o bloco 4 e preserva os resultados anteriores", async () => {
+  it("falha no bloco 3 interrompe o bloco 4 e NÃO deixa PUBLISHED", async () => {
     const started: number[] = [];
     const progress: ProductionCostBulkPublishRunProgress[] = [];
     const run = await runProductionCostBulkPublishInChunks({
@@ -219,12 +234,13 @@ describe("productionCostBulkPublishChunkedRun — blocos HTTP", () => {
     assert.equal(run.processed, 50);
     assert.equal(run.pending, 50);
     assert.equal(run.rows.length, 50);
-    assert.equal(run.summary.published, 50);
+    assert.equal(run.summary.published, 0);
+    assert.equal(run.summary.validated, 50);
+    assert.equal(run.completePublishedVersionId ?? null, null);
     assert.deepEqual(
       run.rows.map((r) => r.productId),
       Array.from({ length: 50 }, (_, i) => `p${i + 1}`)
     );
-    // O bloco que falhou não gera progresso.
     assert.deepEqual(progress.map((p) => p.processed), [0, 25, 50]);
   });
 
@@ -236,9 +252,10 @@ describe("productionCostBulkPublishChunkedRun — blocos HTTP", () => {
     assert.equal(run.status, "INTERRUPTED");
     assert.equal(run.failedChunk, 1);
     assert.equal(run.processed, 0);
+    assert.equal(run.summary.published, 0);
   });
 
-  it("progresso é atualizado após cada bloco confirmado", async () => {
+  it("progresso: validate acumula; só finalize marca published", async () => {
     const progress: ProductionCostBulkPublishRunProgress[] = [];
     await runProductionCostBulkPublishInChunks({
       preview: makePreview(354),
@@ -248,7 +265,7 @@ describe("productionCostBulkPublishChunkedRun — blocos HTTP", () => {
     assert.equal(progress.length, 16);
     assert.deepEqual(
       progress.map((p) => p.processed),
-      [...Array.from({ length: 15 }, (_, i) => i * 25), 354]
+      [...Array.from({ length: 14 }, (_, i) => i * 25), 350, 354]
     );
     assert.deepEqual(
       progress.map((p) => p.confirmedChunks),
@@ -259,11 +276,16 @@ describe("productionCostBulkPublishChunkedRun — blocos HTTP", () => {
       assert.equal(p.pending, 354 - p.processed);
       assert.equal(p.chunkTotal, 15);
       assert.equal(p.batchRunId, "batch-unico");
-      assert.equal(p.summary.published, p.processed);
     }
+    // Antes do finalize: só VALIDATED
+    assert.equal(progress[14]!.summary.published, 0);
+    assert.equal(progress[14]!.summary.validated, 350);
+    // Após finalize: PUBLISHED completo (rows substituídos)
+    assert.equal(progress[15]!.summary.published, 354);
+    assert.equal(progress[15]!.summary.validated, 0);
   });
 
-  it("resumo global vem dos rows acumulados (ALREADY_PUBLISHED, bloqueios, conflitos, erros)", async () => {
+  it("resumo global vem dos rows do finalize (ALREADY_PUBLISHED, bloqueios, conflitos, erros)", async () => {
     const statusFor = (productId: string): ProductionCostBulkPublishItemStatus => {
       const n = Number(productId.slice(1));
       if (n <= 5) return "ALREADY_PUBLISHED";
@@ -281,6 +303,7 @@ describe("productionCostBulkPublishChunkedRun — blocos HTTP", () => {
     assert.deepEqual(run.summary, {
       selected: 354,
       processed: 354,
+      validated: 0,
       published: 339,
       alreadyPublished: 5,
       skipped: 1,
@@ -299,11 +322,15 @@ describe("productionCostBulkPublishChunkedRun — wiring na UI", () => {
     assert.match(mod, /batchRunId: request\.batchRunId/);
     assert.match(mod, /productIds: request\.productIds/);
     assert.match(mod, /draftVersionIdsByProduct: request\.draftVersionIdsByProduct/);
+    assert.match(mod, /phase: request\.phase/);
   });
 
-  it("orquestrador não paraleliza blocos", () => {
+  it("orquestrador não paraleliza blocos e separa validate/finalize", () => {
     const src = read("src/lib/productionCostBulkPublishChunkedRun.ts");
     assert.doesNotMatch(src, /Promise\.all/);
+    assert.match(src, /phase: "validate"/);
+    assert.match(src, /phase: "finalize"/);
+    assert.match(src, /HTTP CHUNK ≠ PUBLICATION TRANSACTION/);
   });
 
   it("diálogo mostra progresso, interrupção e retomada", () => {
@@ -311,5 +338,13 @@ describe("productionCostBulkPublishChunkedRun — wiring na UI", () => {
     assert.match(dialog, /data-testid="bulk-publish-progress"/);
     assert.match(dialog, /Publicação interrompida após/);
     assert.match(dialog, /data-testid="bulk-publish-resume"/);
+  });
+
+  it("backend materializa snapshot completo só no finalize", () => {
+    const server = read("src/lib/productionCostBulkPublish.server.ts");
+    assert.match(server, /materializeCompleteProductionCostSnapshot/);
+    assert.match(server, /phase === "validate"/);
+    assert.match(server, /archiveObsoleteProductDraftsAfterPublication/);
+    assert.match(server, /batchRunId/);
   });
 });

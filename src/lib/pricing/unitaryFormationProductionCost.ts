@@ -239,6 +239,7 @@ export type UnitaryProductionCostPublishErrorCode =
   | "STALE_DRAFT"
   | "CONFLICT_NEWER_DRAFT"
   | "CONFLICT_STATUS_CHANGED"
+  | "CONFLICT_STALE_BASE"
   | "WRONG_PRODUCT"
   | "INACTIVE_PRODUCT"
   | "INVALID_COST"
@@ -254,11 +255,23 @@ export type UnitaryProductionCostPublishError = {
   message: string;
 };
 
+/** Resumo do snapshot completo materializado antes da publicação unitária. */
+export type UnitaryProductionCostPublishSnapshotSummary = {
+  totalItems: number;
+  changedCount: number;
+  carriedForwardCount: number;
+  missingCount: number;
+  candidateDraftVersionId: string;
+  completeDraftVersionId: string;
+};
+
 export type UnitaryProductionCostPublishResponse = {
   published: true;
   alreadyPublished: boolean;
   productId: string;
+  /** DRAFT unitário candidato (parcial) — não é necessariamente a versão PUBLISHED. */
   draftVersionId: string;
+  /** Versão oficial PUBLISHED (snapshot completo após materialização). */
   versionId: string;
   code: string;
   revision: number;
@@ -272,6 +285,8 @@ export type UnitaryProductionCostPublishResponse = {
   calculationHash: string | null;
   previousPublishedVersionId: string | null;
   previousUnitCost: number | null;
+  /** Presente quando a publicação materializou/publicou snapshot completo. */
+  snapshot?: UnitaryProductionCostPublishSnapshotSummary;
 };
 
 export function parseUnitaryProductionCostPublishRequest(input: {
@@ -377,6 +392,14 @@ export function mapUnitaryPublishBlockReason(
         code: "CONFLICT_STATUS_CHANGED",
         message: fallbackMessage || "Status do DRAFT mudou.",
       };
+    case "CONFLICT_STALE_BASE":
+      return {
+        httpStatus: 409,
+        code: "CONFLICT_STALE_BASE",
+        message:
+          fallbackMessage ||
+          "Base oficial mudou durante a publicação. Rematerialize o snapshot completo.",
+      };
     case "PERMISSION":
       return {
         httpStatus: 403,
@@ -417,6 +440,7 @@ export function buildUnitaryProductionCostPublishResponse(input: {
   };
   previousPublishedVersionId: string | null;
   previousUnitCost: number | null;
+  snapshot?: UnitaryProductionCostPublishSnapshotSummary | null;
 }): UnitaryProductionCostPublishResponse {
   const effectiveDate =
     input.version.effectiveDate instanceof Date
@@ -460,5 +484,6 @@ export function buildUnitaryProductionCostPublishResponse(input: {
     calculationHash: input.item.calculationHash,
     previousPublishedVersionId: input.previousPublishedVersionId,
     previousUnitCost: input.previousUnitCost,
+    ...(input.snapshot ? { snapshot: input.snapshot } : {}),
   };
 }

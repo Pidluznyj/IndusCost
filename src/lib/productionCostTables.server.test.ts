@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import { civilDateToLocalDate } from "./financeCivilDate.js";
 import {
   addOrUpdateProductionCostTableDraftItem,
+  archiveObsoleteProductDraftsAfterPublication,
   createProductionCostTableDraft,
   publishProductionCostTableVersion,
   assertProductionCostTableVersionMutable,
@@ -55,9 +56,19 @@ function createMockDb() {
 
   const db = {
     productionCostTableVersion: {
-        findFirst: async ({ where, orderBy }: { where: { code: string }; orderBy: { revision: "desc" } }) => {
-          const rows = [...versions.values()].filter((v) => v.code === where.code);
-          if (orderBy.revision === "desc") {
+        findFirst: async ({
+          where,
+          orderBy,
+        }: {
+          where: { code: string; status?: string };
+          orderBy?: { revision: "desc" } | Array<Record<string, string>>;
+        }) => {
+          let rows = [...versions.values()].filter((v) => v.code === where.code);
+          if (where.status) rows = rows.filter((v) => v.status === where.status);
+          const order = Array.isArray(orderBy) ? orderBy : orderBy ? [orderBy] : [];
+          if (order.length && "revision" in order[0]!) {
+            rows.sort((a, b) => b.revision - a.revision);
+          } else if (!Array.isArray(orderBy) && orderBy?.revision === "desc") {
             rows.sort((a, b) => b.revision - a.revision);
           }
           return rows[0] ?? null;
@@ -65,14 +76,18 @@ function createMockDb() {
         findUnique: async ({ where, select, include }: { where: { id: string }; select?: unknown; include?: unknown }) => {
           const row = versions.get(where.id);
           if (!row) return null;
-          if (select && typeof select === "object" && "notes" in select) {
-            return { notes: row.notes };
+          if (select && typeof select === "object") {
+            const sel = select as Record<string, boolean>;
+            const out: Record<string, unknown> = {};
+            for (const key of Object.keys(sel)) {
+              if (sel[key]) out[key] = (row as Record<string, unknown>)[key];
+            }
+            return out;
           }
           if (include && typeof include === "object" && "items" in include) {
             const versionItems = [...items.values()].filter((i) => i.costTableVersionId === row.id);
             return { ...row, items: versionItems };
           }
-          if (select) return row;
           return row;
         },
         create: async ({ data }: { data: Omit<VersionRow, "id" | "createdAt" | "updatedAt"> }) => {
@@ -105,6 +120,19 @@ function createMockDb() {
             return { ...row, items: versionItems };
           }
           return row;
+        },
+        updateMany: async ({
+          where,
+          data,
+        }: {
+          where: { id: string; status?: string };
+          data: Partial<VersionRow>;
+        }) => {
+          const row = versions.get(where.id);
+          if (!row) return { count: 0 };
+          if (where.status && row.status !== where.status) return { count: 0 };
+          Object.assign(row, data, { updatedAt: new Date() });
+          return { count: 1 };
         },
       },
       productionCostTableItem: {
@@ -205,6 +233,20 @@ function createMockDb() {
             }
           }
           throw new Error("item not found");
+        },
+        count: async ({
+          where,
+        }: {
+          where?: { costTableVersionId?: string; productId?: string };
+        }) => {
+          let rows = [...items.values()];
+          if (where?.costTableVersionId) {
+            rows = rows.filter((row) => row.costTableVersionId === where.costTableVersionId);
+          }
+          if (where?.productId) {
+            rows = rows.filter((row) => row.productId === where.productId);
+          }
+          return rows.length;
         },
       },
     product: {
@@ -419,5 +461,45 @@ describe("productionCostTables.server", () => {
     const remaining = [...items.values()].filter((row) => row.costTableVersionId === mixedDraft.id);
     assert.equal(remaining.length, 1);
     assert.equal(remaining[0]?.productId, "prod-other");
+  });
+
+  it("archiveObsoleteProductDraftsAfterPublication arquiva DRAFT com custo diferente do publicado", async () => {
+    const { db, versions } = createMockDb();
+    const stale = await createProductionCostTableDraft(db as never, {
+      code: "2026-10",
+      name: "rev stale",
+      effectiveDate: civilDateToLocalDate("2026-10-01"),
+    });
+    await addOrUpdateProductionCostTableDraftItem(db as never, stale.id, {
+      productId: "prod-320",
+      productCodeSnapshot: "320.02AA",
+      productNameSnapshot: "320",
+      unitProductionCost: 0.241281,
+    });
+
+    const current = await createProductionCostTableDraft(db as never, {
+      code: "2026-10",
+      name: "rev current",
+      effectiveDate: civilDateToLocalDate("2026-10-01"),
+    });
+    await addOrUpdateProductionCostTableDraftItem(db as never, current.id, {
+      productId: "prod-320",
+      productCodeSnapshot: "320.02AA",
+      productNameSnapshot: "320",
+      unitProductionCost: 0.293861,
+    });
+
+    await publishProductionCostTableVersion(db as never, { versionId: current.id });
+    // Publish path still does NOT archive non-equivalent (bulk semantics preserved)
+    assert.equal(versions.get(stale.id)?.status, "DRAFT");
+
+    const archivedIds = await archiveObsoleteProductDraftsAfterPublication(db as never, {
+      publishedVersionId: current.id,
+      productIds: ["prod-320"],
+    });
+    assert.ok(archivedIds.includes(stale.id));
+    assert.equal(versions.get(stale.id)?.status, "ARCHIVED");
+    assert.equal(versions.get(current.id)?.status, "PUBLISHED");
+    assert.match(versions.get(stale.id)?.notes ?? "", /rascunho anterior/);
   });
 });

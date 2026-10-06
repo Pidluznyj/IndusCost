@@ -69,7 +69,10 @@ async function loadEligibleProduct(
   };
 }
 
-/** DRAFT mais recente do produto (por createdAt do item). */
+/** DRAFT mais recente do produto (por createdAt do item).
+ * Considera apenas status DRAFT — ARCHIVED/SUPERSEDED/PUBLISHED não são candidatos.
+ * Lifecycle: após publicação unitária, DRAFTs anteriores do produto são arquivados no domínio.
+ */
 export async function loadLatestUnitaryFormationDraft(
   db: PrismaClient,
   productId: string

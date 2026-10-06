@@ -96,6 +96,17 @@ describe("productionCostPublicationValidation — publicação parcial", () => {
           }
           return row;
         },
+        findFirst: async ({
+          where,
+        }: {
+          where: { code?: string; status?: string };
+        }) => {
+          let rows = [...versions.values()];
+          if (where.code) rows = rows.filter((v) => v.code === where.code);
+          if (where.status) rows = rows.filter((v) => v.status === where.status);
+          rows.sort((a, b) => (b.revision as number) - (a.revision as number));
+          return rows[0] ?? null;
+        },
         update: async ({
           where,
           data,
@@ -114,6 +125,19 @@ describe("productionCostPublicationValidation — publicação parcial", () => {
             };
           }
           return row;
+        },
+        updateMany: async ({
+          where,
+          data,
+        }: {
+          where: { id: string; status?: string };
+          data: Record<string, unknown>;
+        }) => {
+          const row = versions.get(where.id);
+          if (!row) return { count: 0 };
+          if (where.status && row.status !== where.status) return { count: 0 };
+          Object.assign(row, data);
+          return { count: 1 };
         },
       },
       productionCostTableItem: {
