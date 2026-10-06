@@ -22,6 +22,22 @@ const CONFIG_CODES = new Set([
   "WAREHOUSE_INACTIVE",
 ]);
 
+/**
+ * Problema do SETOR do QR (não do aparelho nem do almoxarifado): slug que não
+ * existe, setor inativo ou setor configurável mal configurado. Vira erro com
+ * frase própria — nunca "não autorizado", nunca "configure o almoxarifado".
+ */
+const SECTOR_MESSAGES: Record<string, string> = {
+  COLLECTOR_INVALID_SECTOR: "Setor não encontrado. Confira o QR com o supervisor de estoque.",
+  COLLECTOR_SECTOR_INACTIVE: "Este setor está inativo. Acione o supervisor de estoque.",
+  COLLECTOR_SECTOR_WAREHOUSE_INACTIVE:
+    "O almoxarifado deste setor está inativo. Acione o supervisor de estoque.",
+  COLLECTOR_SECTOR_MISCONFIGURED:
+    "Setor com configuração incompleta. Acione o supervisor de estoque.",
+  COLLECTOR_SECTOR_STRATEGY_UNSUPPORTED:
+    "Setor com configuração incompleta. Acione o supervisor de estoque.",
+};
+
 const UNAUTH_CODES = new Set([
   "COLLECTOR_DEVICE_UNAUTHORIZED",
   "NOT_AUTHORIZED",
@@ -46,6 +62,10 @@ export function mapCollectorBootError(input: {
 
   const status = input.status;
   const code = (input.code ?? "").trim();
+
+  if (SECTOR_MESSAGES[code]) {
+    return { phase: "error", message: SECTOR_MESSAGES[code] };
+  }
 
   if (
     status === 401 ||

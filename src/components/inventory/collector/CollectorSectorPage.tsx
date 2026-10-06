@@ -35,6 +35,12 @@ import {
   productSectorOperationalMessage,
 } from "./collectorProductSectorMessages";
 import {
+  collectorOperationErrorMessage,
+  collectorSectorRequestKey,
+  formatCollectorQuantity,
+  standardSectorFromContext,
+} from "./collectorSectorMessages";
+import {
   COLLECTOR_SECTORS,
   parseCollectorSector,
 } from "@/src/lib/inventory/collector/collectorSectorContract";
@@ -65,6 +71,12 @@ function sectorLabelFromSlug(slug: string): string {
 
 function operationalMessage(context: CollectorSectorContext): string | null {
   const state = context.operationalState;
+  // Setor configurável: o almoxarifado é fixo; só pode faltar item.
+  if (standardSectorFromContext(context.sector)) {
+    return state === "NO_ELIGIBLE_ITEMS"
+      ? "Este setor ainda não tem itens ativos neste almoxarifado. Cadastre os itens no IndusCost."
+      : null;
+  }
   // Componentes / Produto acabado têm mensagens próprias; as de MP seguem abaixo.
   if (context.sector && isProductCollectorSectorCode(context.sector.code)) {
     return productSectorOperationalMessage({
@@ -94,7 +106,14 @@ type Screen =
   // Retirada: escolher material → quantidade + nome → comprovante.
   | { name: "withdrawPick" }
   | { name: "withdrawQty"; item: CollectorWithdrawItemDto; operationId: string }
-  | { name: "withdrawDone"; item: CollectorWithdrawItemDto; quantity: number; person: string };
+  | {
+      name: "withdrawDone";
+      item: CollectorWithdrawItemDto;
+      quantity: number;
+      person: string;
+      /** Saldo após a retirada, informado pelo servidor (setor configurável). */
+      remainingQuantity: number | null;
+    };
 
 /**
  * Destino do botão Voltar. null = tela raiz (não mostra o botão).
@@ -145,6 +164,11 @@ export function CollectorSectorPage() {
   const [withdrawItems, setWithdrawItems] = useState<CollectorWithdrawItemDto[]>([]);
   const [withdrawQ, setWithdrawQ] = useState("");
   const [person, setPerson] = useState("");
+  const [destination, setDestination] = useState("");
+  const [notice, setNotice] = useState<string | null>(null);
+  /** Paginação da retirada em setor configurável (busca no servidor). */
+  const [withdrawNextOffset, setWithdrawNextOffset] = useState<number | null>(null);
+  const [withdrawServerSearch, setWithdrawServerSearch] = useState(false);
 
   const sectorParam = sectorSlug;
 
@@ -160,6 +184,7 @@ export function CollectorSectorPage() {
   // mensagem de uma tela para outra.
   const goBack = useCallback(() => {
     setError(null);
+    setNotice(null);
     setScreen((current) => {
       const parent = SCREEN_PARENT[current.name];
       return parent ? ({ name: parent } as Screen) : current;
@@ -244,7 +269,7 @@ export function CollectorSectorPage() {
         return;
       }
       const created = await createCollectorSectorSession({
-        sector: boot.context.sector?.code ?? sectorParam,
+        sector: collectorSectorRequestKey(boot.context.sector, sectorParam),
         warehouseId: warehouseId || undefined,
         operationId: newOperationId(),
       });
@@ -253,7 +278,7 @@ export function CollectorSectorPage() {
       await loadItems(created.session.id);
       setScreen({ name: "list" });
     } catch (e: unknown) {
-      setError(toCollectorApiError(e).message ?? "Erro ao iniciar contagem.");
+      setError(collectorOperationErrorMessage(toCollectorApiError(e), "Erro ao iniciar contagem."));
     } finally {
       setBusy(false);
     }
@@ -265,7 +290,7 @@ export function CollectorSectorPage() {
     try {
       await loadItems(sessionId, filter, q);
     } catch (e: unknown) {
-      setError(toCollectorApiError(e).message ?? "Erro ao carregar itens.");
+      setError(collectorOperationErrorMessage(toCollectorApiError(e), "Erro ao carregar itens."));
     } finally {
       setBusy(false);
     }
@@ -281,6 +306,7 @@ export function CollectorSectorPage() {
   const openCount = (item: CollectorBlindItemDto) => {
     setQtyText(item.countedQuantity != null ? String(item.countedQuantity) : "");
     setError(null);
+    setNotice(null);
     setScreen({ name: "count", item });
   };
 
@@ -304,6 +330,7 @@ export function CollectorSectorPage() {
         operationId: newOperationId(),
       });
       await loadItems(sessionId);
+      setNotice(`Contagem salva: ${screen.item.code}`);
       setScreen({ name: "list" });
     } catch (e: unknown) {
       const err = toCollectorApiError(e);
@@ -312,7 +339,7 @@ export function CollectorSectorPage() {
           "Falha operacional ao registrar a divergência. Recarregue a lista e tente novamente."
         );
       } else {
-        setError(err.message ?? "Erro ao salvar contagem.");
+        setError(collectorOperationErrorMessage(err, "Erro ao salvar contagem."));
       }
       if (err.code === "COUNT_LINE_VERSION_CONFLICT" && sessionId) {
         await loadItems(sessionId);
@@ -326,6 +353,7 @@ export function CollectorSectorPage() {
     if (!sessionId) return;
     setBusy(true);
     setError(null);
+    setNotice(null);
     try {
       const summary = await finalizeCollectorSectorSession(sessionId, {
         allowUncounted,
@@ -338,7 +366,7 @@ export function CollectorSectorPage() {
         progress: summary.progress,
       });
     } catch (e: unknown) {
-      setError(toCollectorApiError(e).message ?? "Erro ao finalizar.");
+      setError(collectorOperationErrorMessage(toCollectorApiError(e), "Erro ao finalizar."));
     } finally {
       setBusy(false);
     }
@@ -355,7 +383,7 @@ export function CollectorSectorPage() {
       });
       setScreen({ name: "done" });
     } catch (e: unknown) {
-      setError(toCollectorApiError(e).message ?? "Erro ao aplicar ajustes.");
+      setError(collectorOperationErrorMessage(toCollectorApiError(e), "Erro ao aplicar ajustes."));
     } finally {
       setBusy(false);
     }
@@ -371,21 +399,53 @@ export function CollectorSectorPage() {
     }
     setBusy(true);
     setError(null);
+    setNotice(null);
     try {
       const data = await fetchCollectorWithdrawItems({
-        sector: boot.context.sector?.code ?? sectorParam,
+        sector: collectorSectorRequestKey(boot.context.sector, sectorParam),
         warehouseId: targetWarehouse,
       });
       setWarehouseId(targetWarehouse);
       setWithdrawItems(data.items);
+      setWithdrawNextOffset(data.nextOffset ?? null);
+      // Setor configurável: o servidor pagina e busca; setor fixo filtra no aparelho.
+      setWithdrawServerSearch(standardSectorFromContext(boot.context.sector) != null);
       setWithdrawQ("");
       setScreen({ name: "withdrawPick" });
     } catch (e: unknown) {
-      setError(toCollectorApiError(e).message ?? "Erro ao listar materiais.");
+      setError(collectorOperationErrorMessage(toCollectorApiError(e), "Erro ao listar itens."));
     } finally {
       setBusy(false);
     }
   }, [boot, warehouseId, sectorParam]);
+
+  /** Busca / próxima página no servidor (setor configurável, catálogo grande). */
+  const searchWithdrawItems = useCallback(
+    async (query: string, offset: number) => {
+      if (boot.phase !== "ready" || !warehouseId) return;
+      try {
+        const data = await fetchCollectorWithdrawItems({
+          sector: collectorSectorRequestKey(boot.context.sector, sectorParam),
+          warehouseId,
+          q: query.trim() || undefined,
+          offset,
+        });
+        setWithdrawItems((current) => (offset > 0 ? [...current, ...data.items] : data.items));
+        setWithdrawNextOffset(data.nextOffset ?? null);
+      } catch (e: unknown) {
+        setError(collectorOperationErrorMessage(toCollectorApiError(e), "Erro ao buscar itens."));
+      }
+    },
+    [boot, warehouseId, sectorParam]
+  );
+
+  // Digitação com pausa: uma ida ao servidor por busca, não por tecla.
+  useEffect(() => {
+    if (screen.name !== "withdrawPick" || !withdrawServerSearch) return;
+    const timer = window.setTimeout(() => void searchWithdrawItems(withdrawQ, 0), 350);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- só a busca digitada dispara
+  }, [withdrawQ]);
 
   /**
    * O operationId nasce aqui, junto com a intenção, e é reenviado no retry —
@@ -394,6 +454,7 @@ export function CollectorSectorPage() {
   const openWithdrawQty = (item: CollectorWithdrawItemDto) => {
     setQtyText("");
     setPerson("");
+    setDestination("");
     setError(null);
     setScreen({ name: "withdrawQty", item, operationId: newOperationId() });
   };
@@ -415,21 +476,27 @@ export function CollectorSectorPage() {
     try {
       const result = await submitCollectorWithdrawal({
         operationId: screen.operationId,
-        sector: boot.context.sector?.code ?? sectorParam,
+        sector: collectorSectorRequestKey(boot.context.sector, sectorParam),
         itemId: screen.item.itemId,
         warehouseId,
         locationId: screen.item.locationId,
         quantity: qty,
         person: who,
+        ...(standardSectorFromContext(boot.context.sector) && destination.trim()
+          ? { destination: destination.trim() }
+          : {}),
       });
       setScreen({
         name: "withdrawDone",
         item: screen.item,
         quantity: result.quantity,
         person: result.withdrawnBy,
+        remainingQuantity: result.remainingQuantity ?? null,
       });
     } catch (e: unknown) {
-      setError(toCollectorApiError(e).message ?? "Erro ao registrar retirada.");
+      setError(
+        collectorOperationErrorMessage(toCollectorApiError(e), "Erro ao registrar retirada.")
+      );
     } finally {
       setBusy(false);
     }
@@ -438,6 +505,8 @@ export function CollectorSectorPage() {
   // Busca local: a lista do setor cabe na memória e filtrar no aparelho
   // evita uma ida ao servidor a cada tecla digitada com luva.
   const visibleWithdrawItems = useMemo(() => {
+    // Setor configurável: a lista já vem filtrada e paginada do servidor.
+    if (withdrawServerSearch) return withdrawItems;
     const term = withdrawQ.trim().toLowerCase();
     if (!term) return withdrawItems;
     return withdrawItems.filter(
@@ -445,7 +514,7 @@ export function CollectorSectorPage() {
         item.code.toLowerCase().includes(term) ||
         item.description.toLowerCase().includes(term)
     );
-  }, [withdrawItems, withdrawQ]);
+  }, [withdrawItems, withdrawQ, withdrawServerSearch]);
 
   const sectorLabel = useMemo(() => {
     if (boot.phase === "ready") {
@@ -520,12 +589,17 @@ export function CollectorSectorPage() {
     boot.context.operationalState === "NEEDS_WAREHOUSE_SELECTION"
       ? operationalMessage(boot.context)
       : null;
+  // Setor configurável: capacidades e almoxarifado vêm do servidor.
+  const standardSector = standardSectorFromContext(boot.context.sector);
 
   return (
     <Shell>
       <header className="mb-4">
         <p className="text-sm uppercase tracking-wide text-emerald-300">Collector</p>
         <h1 className="text-2xl font-bold text-white">{sectorLabel}</h1>
+        {standardSector && warehouses[0] ? (
+          <p className="text-base text-slate-200">{warehouses[0].name}</p>
+        ) : null}
         <p className="text-sm text-slate-300">{boot.context.device?.name}</p>
       </header>
 
@@ -537,7 +611,52 @@ export function CollectorSectorPage() {
         </div>
       ) : null}
 
-      {screen.name === "home" ? (
+      {notice ? (
+        <div
+          className="mb-3 rounded-xl border border-emerald-400 bg-emerald-950/50 p-3 text-emerald-100"
+          role="status"
+        >
+          {notice}
+        </div>
+      ) : null}
+
+      {screen.name === "home" && standardSector ? (
+        <div className="space-y-4">
+          <p className="text-xl font-semibold text-white">O que deseja fazer?</p>
+          {progress ? (
+            <p className="text-base text-slate-200">
+              Conferência ativa {progress.code}: {progress.countedLines}/{progress.totalLines}
+            </p>
+          ) : null}
+          {standardSector.allowsCounting ? (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void startOrContinue()}
+              className="min-h-[88px] w-full rounded-2xl bg-emerald-500 px-4 py-6 text-2xl font-bold uppercase tracking-wide text-slate-950 disabled:opacity-40"
+            >
+              {sessionId ? "Continuar contagem" : "Contagem"}
+            </button>
+          ) : null}
+          {standardSector.allowsWithdrawal ? (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void openWithdraw()}
+              className="min-h-[88px] w-full rounded-2xl bg-sky-500 px-4 py-6 text-2xl font-bold uppercase tracking-wide text-slate-950 disabled:opacity-40"
+            >
+              Retirada
+            </button>
+          ) : null}
+          {!standardSector.allowsCounting && !standardSector.allowsWithdrawal ? (
+            <p className="rounded-xl border border-slate-600 bg-slate-900/80 p-3 text-slate-200">
+              Este setor está sem operações habilitadas. Acione o supervisor de estoque.
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+
+      {screen.name === "home" && !standardSector ? (
         <div className="space-y-4">
           {selectionHint ? (
             <p className="rounded-xl border border-slate-600 bg-slate-900/80 p-3 text-slate-200">
@@ -765,7 +884,9 @@ export function CollectorSectorPage() {
                   <p className="text-sm text-slate-300">{item.description}</p>
                   <p className="mt-1 text-sm text-sky-300">
                     {item.locationCode ? `Endereço ${item.locationCode} · ` : ""}
-                    {item.unit}
+                    {item.availableQuantity != null
+                      ? `Disponível: ${formatCollectorQuantity(item.availableQuantity, item.unit)}`
+                      : item.unit}
                   </p>
                 </button>
               </li>
@@ -773,6 +894,15 @@ export function CollectorSectorPage() {
           </ul>
           {visibleWithdrawItems.length === 0 ? (
             <p className="text-slate-300">Nenhum material encontrado.</p>
+          ) : null}
+          {withdrawServerSearch && withdrawNextOffset != null ? (
+            <button
+              type="button"
+              onClick={() => void searchWithdrawItems(withdrawQ, withdrawNextOffset)}
+              className="min-h-[56px] w-full rounded-xl bg-slate-800 px-4 text-lg font-semibold text-slate-100"
+            >
+              Carregar mais
+            </button>
           ) : null}
         </div>
       ) : null}
@@ -785,6 +915,12 @@ export function CollectorSectorPage() {
             Unidade: {screen.item.unit}
             {screen.item.locationCode ? ` · Endereço ${screen.item.locationCode}` : ""}
           </p>
+          {screen.item.availableQuantity != null ? (
+            <p className="rounded-xl bg-slate-800/80 p-3 text-lg text-slate-100">
+              Saldo disponível:{" "}
+              <strong>{formatCollectorQuantity(screen.item.availableQuantity, screen.item.unit)}</strong>
+            </p>
+          ) : null}
           <label className="block">
             <span className="mb-1 block text-sm text-slate-300">Quantidade a retirar</span>
             <input
@@ -805,6 +941,19 @@ export function CollectorSectorPage() {
               className="w-full rounded-xl border border-slate-600 bg-slate-900 px-4 py-4 text-xl text-white"
             />
           </label>
+          {standardSector ? (
+            <label className="block">
+              <span className="mb-1 block text-sm text-slate-300">Destino / motivo (opcional)</span>
+              <input
+                type="text"
+                value={destination}
+                maxLength={120}
+                onChange={(e) => setDestination(e.target.value)}
+                placeholder="Ex.: Recepção, RH"
+                className="w-full rounded-xl border border-slate-600 bg-slate-900 px-4 py-4 text-xl text-white"
+              />
+            </label>
+          ) : null}
           <button
             type="button"
             disabled={busy}
@@ -823,6 +972,12 @@ export function CollectorSectorPage() {
             {screen.quantity} {screen.item.unit} de {screen.item.code}
           </p>
           <p className="mt-1 text-sm text-slate-300">Retirado por {screen.person}</p>
+          {screen.remainingQuantity != null ? (
+            <p className="mt-3 text-lg text-slate-100">
+              Saldo resultante:{" "}
+              <strong>{formatCollectorQuantity(screen.remainingQuantity, screen.item.unit)}</strong>
+            </p>
+          ) : null}
           <div className="mt-6 space-y-2">
             <button
               type="button"

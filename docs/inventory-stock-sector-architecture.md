@@ -1,6 +1,6 @@
 # Arquitetura genérica de setores de estoque (Stock Collector)
 
-**Status:** auditoria (§1–11) + fundação e motor STANDARD implementados (§12)  
+**Status:** auditoria (§1–11) + feature implementada, pronta para homologação (§12)  
 **Branch de trabalho:** `docs/inventory-stock-sector-architecture`  
 **Baseline HEAD:** `a383d7a8ad1b224df80383131f28b915857c974d`  
 **Data da auditoria:** 2026-10-06  
@@ -408,34 +408,205 @@ Erros **não** são introduzidos por este doc. Amostra em inventory (preexistent
 5. Testes: tabela vazia ≡ comportamento atual; nenhum teste de MP/CP/PA quebrado.  
 6. **Não** ligar STANDARD no Collector ainda (isso é fase 2).
 
-## 12. Fase 2 — motor genérico STANDARD (implementado)
+## 12. Arquitetura final (implementada)
 
-Entrou de forma aditiva; MP/CP/PA seguem nos fluxos próprios e não consultam `InventoryStockSector`.
+As seções 1–11 são a auditoria original. Esta seção descreve o que foi entregue e prevalece onde houver diferença.
+
+### 12.1 Visão geral
+
+```
+Estoque → Setores / Collector (admin)
+   InventoryStockSector  ── configuração: almoxarifado + tipo de item + operações + centro de custo
+        │  QR fixo: <base pública do Collector>/collector/sector/<slug>
+        ▼
+Celular autorizado (Tailscale + Device Registry) lê o QR
+        │  servidor resolve o setor pelo slug e decide a strategy
+        ├─ LEGADO (MP / CP / PA) → fluxos de sempre, sem consultar a tabela de setores
+        └─ STANDARD → motor genérico
+              ├─ CONTAGEM: InventoryCountSession / Line → recordInventoryCount → finalize
+              │            → generateInventoryCountAdjustments → InventoryMovement → InventoryBalance
+              └─ RETIRADA: executeCollectorWithdrawal → createInventoryMovementInTx
+                           (REQUISITION_EXIT) → InventoryBalance
+```
+
+`InventoryMovement` continua sendo o fato; `InventoryBalance` é projeção e só é escrito pelo motor de movimentos. O setor não guarda saldo, não copia itens e não movimenta nada.
 
 | Peça | Arquivo |
 |---|---|
-| Resolução (legado sem banco → `InventoryStockSector` por slug, fail closed) | `collectorSectorResolve.server.ts` |
-| Elegibilidade, população, sessão, contexto, capacidade de contagem por sessão | `collectorStandardSector.server.ts` |
-| Compatibilidade por identidade (`itemType` + `sessionCodePrefix`) | `collectorSessionCompatibility.server.ts` |
-| Retirada STANDARD (mesmo núcleo e mesmo motor da retirada de MP) | `collectorWithdrawal.server.ts` |
-| Dispatch LEGACY × STANDARD decidido no servidor | `collectorRoutes.server.ts` |
-| Testes | `collectorStandardSector.test.ts` |
+| Regras de domínio do cadastro | `inventoryStockSectorDomain.ts`, `inventoryStockSectorValidation.ts` |
+| Service do cadastro (CRUD, almoxarifado novo, prévia, opções) | `inventoryStockSectorService.server.ts` |
+| Rotas admin | `inventoryRoutes.ts` (`/api/inventory/stock-sectors*`, `/api/inventory/collector/sector-qr`) |
+| Tela admin | `InventoryStockSectorsTab.tsx`, `InventoryStockSectorFormSheet.tsx`, `InventoryStockSectorQrDialog.tsx`, `inventoryStockSectorForm.ts` |
+| Resolução do setor (legado sem banco → tabela por slug) | `collector/collectorSectorResolve.server.ts` |
+| Elegibilidade (regra única) | `collector/collectorStandardEligibility.ts` |
+| População, sessão, contexto, capacidade por sessão, centro de custo | `collector/collectorStandardSector.server.ts` |
+| Retirada STANDARD | `collector/collectorStandardWithdrawal.server.ts` (núcleo em `collectorWithdrawal.server.ts`) |
+| Compatibilidade de sessão | `collector/collectorSessionCompatibility.server.ts` |
+| Rotas do aparelho | `collector/collectorRoutes.server.ts` |
+| Tela do celular | `CollectorSectorPage.tsx`, `collectorSectorMessages.ts`, `collectorClient.ts` |
 
-Decisões que divergem das seções anteriores:
+### 12.2 STANDARD × legado
 
-- **Prefixo de sessão: 2 a 4 letras** (§4.4 dizia exatamente 2). O caso real usa `ADM`; os legados continuam com 2. Com linhas, só prefixo de outro setor **conhecido** (legado ou outro `InventoryStockSector`) contradiz a sessão — prefixo desconhecido (`CF-` manual) segue valendo pelas linhas, como antes.
-- **Sem feature flag** (§7 previa uma): tabela vazia ≡ legado intacto, e `status=INACTIVE` desliga o setor.
-- **Almoxarifado fixo no setor**: `warehouseId` do cliente é opcional e só é aceito se coincidir.
-- **Capacidades no servidor**: `allowsCounting=false` bloqueia abrir/consultar sessão e também contar/finalizar/aplicar em sessão já aberta (reconhecida pelo prefixo); `allowsWithdrawal=false` bloqueia lista e retirada.
+| | Legado (MP / CP / PA) | STANDARD |
+|---|---|---|
+| Onde é definido | Código (`collectorSectorContract.ts`) | Tabela `InventoryStockSector`, pela tela |
+| Identidade do item | `materialId` / `productId` | O próprio `InventoryItem` (sem `materialId`/`productId`) |
+| Almoxarifado | Por presença do item (pode haver vários) | Um, fixo no setor |
+| Preparação | Cold-start de MP / diagnóstico de produto | Nenhuma: só lê itens existentes |
+| Retirada | Só Matéria-prima, sem saldo na tela | Se `allowsWithdrawal`; saldo do servidor na tela |
+| Depende da tabela de setores | Não | Sim |
 
-### 12.1 Centro de custo (pendência de regra, não contornada)
+Os tipos `RAW_MATERIAL`, `COMPONENT` e `FINISHED_PRODUCT`, os slugs `raw-material` / `componentes` / `produto-acabado` e os prefixos `MP` / `CP` / `PA` são reservados: o cadastro recusa e o resolvedor falha fechado.
 
-O motor de movimentos exige `costCenterId` em saídas de `ADMINISTRATIVE_SUPPLY`, `MAINTENANCE`, `PPE`, `PRODUCTION_SUPPLY` e `OTHER` — inclusive `NEGATIVE_ADJUSTMENT`.
+### 12.3 Regras do setor STANDARD
 
-- **Retirada STANDARD**: a rota aceita `costCenterId` opcional (validado: existe e está ativo) e o repassa ao motor. Sem ele, setores desses tipos recebem `COST_CENTER_REQUIRED`. A tela do Collector ainda não coleta centro de custo.
-- **Ajuste de contagem negativo** nesses tipos: `apply-adjustments` falha com `COST_CENTER_REQUIRED` (a conferência não informa centro de custo — vale também para a conferência manual). Implantação por contagem a partir de saldo zero (só ajustes positivos) funciona.
+- **Elegibilidade:** `status = ACTIVE` + `controlsStock = true` + `itemType = setor.itemType`.
+- **Pertencimento:** `defaultWarehouseId = almoxarifado do setor` **ou** saldo já existente nesse almoxarifado. Como o tipo também é exigido, saldo de outro tipo no mesmo almoxarifado não entra.
+- **Sessão:** identidade = `itemType` + `sessionCodePrefix` (2 a 4 letras). Código `<PREFIXO>-AAAAMMDD-NNN`, ex.: `ADM-20261006-001`. Uma conferência em contagem por almoxarifado; sessão incompatível responde 409 e nunca é escondida.
+- **População:** 1 `count` + 2 leituras em lote + `createMany` em blocos de 1.000. Item sem saldo entra com `systemQuantity = 0`. Não cria saldo nem movimento. Idempotente.
+- **Primeira contagem = implantação:** itens com saldo zero são contados; ao aplicar, o motor gera `POSITIVE_ADJUSTMENT` e o saldo passa a existir. Não há rotina de saldo inicial própria.
+- **Capacidades (servidor):** `allowsCounting = false` bloqueia abrir/consultar sessão e também contar/finalizar/aplicar em sessão já aberta; `allowsWithdrawal = false` bloqueia lista e retirada.
+- **Centro de custo:** o motor de movimentos exige centro de custo em saídas de `ADMINISTRATIVE_SUPPLY`, `MAINTENANCE`, `PPE`, `PRODUCTION_SUPPLY` e `OTHER` (inclusive ajuste negativo). O setor tem `defaultCostCenterId`, obrigatório para esses tipos; a retirada e o ajuste negativo de contagem (pelo celular e pela tela de Conferência) usam o do setor. O cliente não escolhe centro de custo.
+- **Saldo na retirada:** a lista mostra o disponível e a confirmação devolve o saldo resultante, ambos do servidor — **exceto** enquanto houver conferência em contagem no almoxarifado do setor (a contagem é cega; o saldo fica oculto até ela terminar).
+- **Edição com conferência aberta:** almoxarifado, tipo de item e prefixo não mudam enquanto houver conferência em contagem do setor (`STOCK_SECTOR_HAS_ACTIVE_SESSION`).
 
-Enquanto a regra não for decidida, o setor ADMINISTRATIVO opera contagem de implantação; contagem com divergência negativa e retirada pelo tablet dependem dessa decisão.
+### 12.4 Como criar um novo setor
+
+1. Estoque → **Setores / Collector** → **Novo setor** (permissão de gestão de almoxarifados).
+2. Nome (código, slug e prefixo são sugeridos e podem ser editados).
+3. Tipo de item.
+4. Almoxarifado: **usar existente** ou **criar novo** (código + nome). O novo é criado na mesma transação do setor; se o setor falhar, o almoxarifado não fica.
+5. Conferir "Itens que este setor irá enxergar: N" (COUNT no servidor). Zero = aviso: defina o almoxarifado como padrão dos itens em Estoque → Itens.
+6. Operações (contagem / retirada) e centro de custo das saídas (obrigatório para os tipos acima).
+7. Salvar → na lista, botão de QR → visualizar, imprimir, baixar imagem ou copiar link.
+
+Setor não é apagado: use **Inativar**. Inativo some do Collector; o histórico permanece.
+
+### 12.5 QR
+
+- Conteúdo: `<INVENTORY_COLLECTOR_PUBLIC_BASE_URL>/collector/sector/<slug>`, montado só no servidor (`GET /api/inventory/collector/sector-qr?sector=<slug>`, permissão de gestão de conferências).
+- Sem base pública válida o servidor recusa (`COLLECTOR_PUBLIC_BASE_URL_REQUIRED` / `_INVALID`) e a tela mostra erro de configuração — nenhuma URL é inventada.
+- O QR é fixo por setor. Mudar o slug invalida QRs impressos. O QR de item (etiqueta) e o QR dos setores fixos não mudaram.
+
+### 12.6 Celular
+
+`/collector/sector/<slug>` → nome do setor e almoxarifado → **O que deseja fazer?** → `CONTAGEM` / `RETIRADA` (só as operações habilitadas).
+
+- **Contagem:** continua a conferência compatível ou abre uma nova; lista cega com busca por código/descrição e filtro; quantidade em teclado numérico; "Contagem salva: CÓDIGO" a cada item; finalizar → divergências → aplicar.
+- **Retirada:** busca no servidor (páginas de 50, "Carregar mais"); item mostra o disponível; quantidade, quem retira e destino/motivo opcional; comprovante com saldo resultante.
+- **Erros:** frases próprias para saldo insuficiente, item fora do setor/inativo, almoxarifado errado, setor inativo, operação não permitida, sessão incompatível, versão conflitante, operação repetida e aparelho não autorizado. Erro inesperado nunca mostra detalhe técnico.
+
+### 12.7 Segurança e autoridade do servidor
+
+| Campo | Quem decide |
+|---|---|
+| Aparelho / ator | Peer Tailscale + Device Registry; identidade no corpo é recusada (`COLLECTOR_IDENTITY_FIELD_REJECTED`) |
+| Strategy, tipo de item | Linha do setor no banco |
+| Almoxarifado | Setor; `warehouseId` do cliente só é aceito se coincidir |
+| Tipo de movimento | Constante `REQUISITION_EXIT` no serviço |
+| Centro de custo | Setor |
+| Item | Validado na transação contra o predicado do setor |
+| Capacidades | Setor, a cada rota |
+
+Cadastro: listar exige visão de estoque; criar/editar/inativar, opções e prévia exigem gestão de almoxarifados (também conferida no service). Corpo do cadastro é normalizado campo a campo (sem mass assignment); `code` é imutável.
+
+### 12.8 Idempotência e concorrência
+
+- Abrir sessão: `pg_advisory_xact_lock` por almoxarifado → dois toques não abrem duas conferências.
+- Contar: `expectedVersion` (CAS) + `operationId` → sem lost update, replay sem segunda observação.
+- Aplicar ajustes: `generatedMovementId` único por linha + sessão `ADJUSTED` → reaplicar não gera segundo movimento.
+- Retirar: `operationId` único (`InventoryCollectorWithdrawal`) na mesma transação do movimento → segundo envio devolve o resultado do primeiro; saldo insuficiente é barrado pelo motor, sob o lock de saldo do motor.
+- Os mecanismos são os mesmos dos fluxos legados (núcleo compartilhado), cobertos pelos DB gates existentes. Não há DB gate específico do STANDARD (ver 12.12).
+
+### 12.9 Performance
+
+| Operação | Consultas |
+|---|---|
+| Resolver setor | 0 (legado) / 1 (STANDARD) |
+| Lista de setores | 2 (página + total) |
+| Prévia de população | 1 `COUNT` |
+| População da contagem | 3 + 1 `createMany` por 1.000 linhas |
+| Abrir sessão | Constante (igual para 1 ou 500 itens — testado) |
+| Lista de retirada | 3 por página de 50 (testado com 1.200 itens) |
+| Retirada | Constante |
+
+Índices usados: `InventoryItem(itemType)`, `(status)`, `(defaultWarehouseId)`, `(controlsStock)`; `InventoryBalance(warehouseId)`; `InventoryStockSector(slug)` e `(sessionCodePrefix)` únicos.
+
+### 12.10 Migrations
+
+| Migration | Conteúdo |
+|---|---|
+| `20261006180000_inventory_stock_sector` | Cria enums, tabela, índices, unique parcial (1 setor STANDARD ativo por tipo × almoxarifado), FK para almoxarifado |
+| `20261006190000_inventory_stock_sector_cost_center` | Coluna `defaultCostCenterId` (nullable) + índice + FK para `CostCenter` |
+
+Ambas aditivas; nada muda em `InventoryBalance`, `InventoryMovement`, `InventoryItem`, `InventoryWarehouse`, `Product`, `Material` ou Nomus. **Ordem:** migrations antes do código. Não aplicar em produção sem homologação.
+
+### 12.11 Homologação
+
+1. Aplicar as duas migrations em homologação e publicar o código.
+2. Conferir `INVENTORY_COLLECTOR_PUBLIC_BASE_URL`.
+3. Estoque → Setores / Collector → Novo setor: `ADMINISTRATIVO` / Estoque Administrativo / `administrativo` / `ADM` / Suprimento administrativo / almoxarifado existente `ADMINISTRATIVO` / contagem e retirada / centro de custo. A prévia deve mostrar 311.
+4. Emitir o QR e abrir `/collector/sector/administrativo` no celular autorizado.
+5. Contagem: contar alguns itens, finalizar com pendentes, aplicar. Conferir movimentos `POSITIVE_ADJUSTMENT` e saldos.
+6. Retirada: retirar parte de um item contado; conferir saldo resultante, `REQUISITION_EXIT` com centro de custo e o registro em `InventoryCollectorWithdrawal`.
+7. Regressão: abrir os QRs de Matéria-prima, Componentes e Produto acabado e iniciar uma contagem em cada.
+
+Consultas de conferência (somente leitura):
+
+```sql
+SELECT code, slug, status, strategy, "itemType", "sessionCodePrefix",
+       "allowsCounting", "allowsWithdrawal", "warehouseId", "defaultCostCenterId"
+  FROM "InventoryStockSector";
+
+SELECT count(*) FROM "InventoryItem" i
+ WHERE i.status = 'ACTIVE' AND i."controlsStock" AND i."itemType" = 'ADMINISTRATIVE_SUPPLY'
+   AND (i."defaultWarehouseId" = (SELECT id FROM "InventoryWarehouse" WHERE code = 'ADMINISTRATIVO')
+        OR EXISTS (SELECT 1 FROM "InventoryBalance" b
+                    WHERE b."itemId" = i.id
+                      AND b."warehouseId" = (SELECT id FROM "InventoryWarehouse" WHERE code = 'ADMINISTRATIVO')));
+
+SELECT code, status, "startedAt", "finishedAt" FROM "InventoryCountSession"
+ WHERE code LIKE 'ADM-%' ORDER BY "createdAt" DESC LIMIT 10;
+
+SELECT m."movementType", m.quantity, m."costCenterId", m."originType", m."createdAt"
+  FROM "InventoryMovement" m JOIN "InventoryItem" i ON i.id = m."itemId"
+ WHERE i."itemType" = 'ADMINISTRATIVE_SUPPLY' ORDER BY m."createdAt" DESC LIMIT 20;
+
+SELECT w."operationId", w.sector, w.quantity, w."withdrawnBy", w."movementId", w."createdAt"
+  FROM "InventoryCollectorWithdrawal" w ORDER BY w."createdAt" DESC LIMIT 20;
+
+SELECT "entityType", action, "userName", "createdAt" FROM "InventoryAuditLog"
+ WHERE "entityType" IN ('InventoryStockSector', 'InventoryWarehouse')
+ ORDER BY "createdAt" DESC LIMIT 20;
+```
+
+### 12.12 Troubleshooting
+
+| Sintoma | Causa provável |
+|---|---|
+| Celular: "Setor não encontrado" | Slug do QR não existe (slug alterado depois de imprimir) |
+| Celular: "Setor com configuração incompleta" | Setor sem centro de custo exigido pelo tipo, ou tipo/prefixo reservado |
+| Celular: "Este setor ainda não tem itens ativos" | Nenhum item do tipo com o almoxarifado como padrão ou saldo nele |
+| 409 ao iniciar contagem | Outra conferência em contagem no mesmo almoxarifado; conclua ou cancele |
+| Retirada sem saldo na tela | Conferência em contagem aberta no almoxarifado (saldo oculto de propósito) |
+| QR: erro de configuração | `INVENTORY_COLLECTOR_PUBLIC_BASE_URL` ausente ou inválida |
+| Edição recusada (`STOCK_SECTOR_HAS_ACTIVE_SESSION`) | Há conferência em contagem do setor |
+
+### 12.13 Rollback
+
+| Camada | Ação |
+|---|---|
+| Um setor | Inativar na tela: some do Collector imediatamente |
+| Código | Reverter o deploy; MP/CP/PA não dependem da tabela |
+| Migrations | Só se as tabelas/coluna não tiverem uso: `ALTER TABLE "InventoryStockSector" DROP COLUMN "defaultCostCenterId"` e `DROP TABLE "InventoryStockSector"` + os dois enums |
+| Movimentos e saldos já gerados | Permanecem (são fatos); corrigir por estorno/ajuste pelo motor, nunca por SQL |
+
+### 12.14 Riscos residuais
+
+- **Concorrência real não exercitada para o STANDARD:** os testes rodam em Prisma em memória. Locks e unicidade são os mesmos dos fluxos legados (já cobertos por DB gates), mas não há DB gate próprio do STANDARD.
+- **Consultas não executadas em PostgreSQL real** neste ambiente (formato igual ao dos fluxos de produto).
+- **Centro de custo desativado depois:** o setor continua usando-o até ser editado.
+- **Um setor por almoxarifado em contagem:** dois setores no mesmo almoxarifado não contam ao mesmo tempo (409), por desenho.
 
 ---
 

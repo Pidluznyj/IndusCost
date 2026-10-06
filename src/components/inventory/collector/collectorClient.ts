@@ -32,7 +32,19 @@ export type CollectorSessionProgressDto = {
 };
 
 export type CollectorSectorContext = CollectorContext & {
-  sector?: { code: string; label: string };
+  /**
+   * Setores fixos mandam só code/label. Setor configurável (strategy STANDARD)
+   * manda também as capacidades decididas pelo servidor.
+   */
+  sector?: {
+    code: string;
+    label: string;
+    slug?: string;
+    strategy?: string;
+    itemType?: string;
+    allowsCounting?: boolean;
+    allowsWithdrawal?: boolean;
+  };
   warehouses?: CollectorWarehouseDto[];
   activeSession?: CollectorSessionProgressDto | null;
   operationalState?:
@@ -298,6 +310,11 @@ export type CollectorWithdrawItemDto = {
   locationId: string | null;
   locationCode: string | null;
   locationName: string | null;
+  /**
+   * Só em setor configurável: disponível informado pelo servidor. null/ausente
+   * = oculto (setor fixo, ou conferência em contagem no almoxarifado).
+   */
+  availableQuantity?: number | null;
 };
 
 export type CollectorWithdrawResult = {
@@ -306,19 +323,32 @@ export type CollectorWithdrawResult = {
   item: { code: string; description: string; unit: string };
   quantity: number;
   withdrawnBy: string;
+  /** Só em setor configurável: saldo disponível após a retirada, do servidor. */
+  remainingQuantity?: number | null;
+};
+
+export type CollectorWithdrawItemsPage = {
+  items: CollectorWithdrawItemDto[];
+  /** Presentes só em setor configurável (busca paginada no servidor). */
+  balanceVisible?: boolean;
+  hasMore?: boolean;
+  nextOffset?: number | null;
 };
 
 export async function fetchCollectorWithdrawItems(input: {
   sector: string;
   warehouseId: string;
   q?: string;
-}): Promise<{ items: CollectorWithdrawItemDto[] }> {
+  /** Paginação — usada só por setor configurável. */
+  offset?: number;
+}): Promise<CollectorWithdrawItemsPage> {
   const params = new URLSearchParams({
     sector: input.sector,
     warehouseId: input.warehouseId,
   });
   if (input.q) params.set("q", input.q);
-  return fetchJsonOk<{ items: CollectorWithdrawItemDto[] }>(
+  if (input.offset) params.set("offset", String(input.offset));
+  return fetchJsonOk<CollectorWithdrawItemsPage>(
     `/api/inventory/collector/withdraw/items?${params.toString()}`,
     { suppressAuthEvent: true }
   );
@@ -336,6 +366,8 @@ export async function submitCollectorWithdrawal(input: {
   locationId: string | null;
   quantity: number;
   person: string;
+  /** Destino / motivo — aceito só em setor configurável. */
+  destination?: string;
 }): Promise<CollectorWithdrawResult> {
   return fetchJsonOk<CollectorWithdrawResult>("/api/inventory/collector/withdraw", {
     method: "POST",
