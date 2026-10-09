@@ -17,6 +17,27 @@ import { extractSalesOrderNfesFromNomusPayload } from "./salesOrderNomusNfeExtra
 
 export const INVOICE_COVERAGE_TOLERANCE_ABSOLUTE = 1;
 export const INVOICE_COVERAGE_TOLERANCE_PERCENT = 0.01;
+/** Tolerância (pontos percentuais) para tratar o progresso operacional como 100%. */
+export const OPERATIONAL_INVOICED_PROGRESS_FULL_TOLERANCE = 0.01;
+
+/**
+ * Base usada na cobertura de faturamento do pedido:
+ * - `nfe_header_value`: soma do cabeçalho das NF válidas × valor líquido do pedido.
+ *   Só é atribuível ao pedido quando a NF pertence apenas a ele.
+ * - `operational_item_quantity`: quantidade faturada por item do motor operacional
+ *   (`SalesOrderFlowSnapshot.progressInvoiced`). Usada quando o cabeçalho não é
+ *   atribuível (NF/Documento de Saída com itens de vários pedidos, ou cabeçalho
+ *   acima do valor do pedido).
+ */
+export type SalesOrderInvoiceCoverageBasis =
+  | "nfe_header_value"
+  | "operational_item_quantity";
+
+/** Faturamento por item já consolidado pelo motor operacional (SalesOrderFlow). */
+export type SalesOrderOperationalInvoicingInput = {
+  /** `SalesOrderFlowSnapshot.progressInvoiced` (0–100, ponderado pela obrigação ativa). */
+  progressInvoicedPercent: number | null | undefined;
+};
 
 export type SalesOrderLinkedNfeLinkInput = {
   id: string;
@@ -78,6 +99,10 @@ export type SalesOrderLinkedNfeContext = {
   /** Soma de impostos destacados (vNF − produtos) das NF válidas, quando ambos existem. */
   nfeHighlightedTaxesValue: number;
   invoiceCoveragePercent: number | null;
+  /** Base da cobertura acima; ausente = `nfe_header_value`. */
+  invoiceCoverageBasis?: SalesOrderInvoiceCoverageBasis;
+  /** Alguma NF válida deste pedido também está vinculada a outro pedido. */
+  hasNfeSharedAcrossOrders?: boolean;
   isFullyInvoiced: boolean;
   isPartiallyInvoiced: boolean;
   isNotInvoiced: boolean;
@@ -170,6 +195,41 @@ export function computeInvoiceCoveragePercent(
   return (nfeTotalValue / totalNetValue) * 100;
 }
 
+/**
+ * Progresso faturado do motor operacional quando ele é utilizável como base de
+ * cobertura: finito e positivo. Zero/ausente = sem rateio operacional
+ * (mantém a regra do cabeçalho da NF).
+ */
+export function resolveOperationalInvoicedProgressPercent(
+  operationalInvoicing: SalesOrderOperationalInvoicingInput | null | undefined
+): number | null {
+  const raw = operationalInvoicing?.progressInvoicedPercent;
+  if (raw == null) return null;
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value <= 0) return null;
+  return Math.min(100, value);
+}
+
+/**
+ * NF (externalId) vinculadas a mais de um pedido.
+ * Puro — recebe os pares de vínculo ativo (pedido × NF).
+ */
+export function resolveSharedNfeExternalIds(
+  pairs: Iterable<{ salesOrderId: string; nfeExternalId: number }>
+): Set<number> {
+  const ordersByNfe = new Map<number, Set<string>>();
+  for (const pair of pairs) {
+    const orders = ordersByNfe.get(pair.nfeExternalId) ?? new Set<string>();
+    orders.add(pair.salesOrderId);
+    ordersByNfe.set(pair.nfeExternalId, orders);
+  }
+  const shared = new Set<number>();
+  for (const [nfeExternalId, orders] of ordersByNfe) {
+    if (orders.size > 1) shared.add(nfeExternalId);
+  }
+  return shared;
+}
+
 function sortDates(dates: Date[]): Date[] {
   return [...dates].sort((a, b) => a.getTime() - b.getTime());
 }
@@ -192,6 +252,8 @@ function buildContextFromExtractedRows(input: {
   issueDate?: Date | null;
   expectedDeliveryDate?: Date | null;
   referenceDate?: Date;
+  sharedNfeExternalIds?: ReadonlySet<number>;
+  operationalInvoicing?: SalesOrderOperationalInvoicingInput | null;
 }): SalesOrderLinkedNfeContext {
   const reviewReasons: string[] = [];
   const referenceDate = startOfLocalDay(input.referenceDate ?? new Date());
@@ -228,21 +290,47 @@ function buildContextFromExtractedRows(input: {
     0
   );
   const totalNet = input.totalNetValue != null ? Number(input.totalNetValue) : null;
-  const invoiceCoveragePercent = computeInvoiceCoveragePercent(nfeTotalValue, totalNet);
-  const isFullyInvoiced = isInvoiceCoverageComplete(nfeTotalValue, totalNet);
+  let invoiceCoveragePercent = computeInvoiceCoveragePercent(nfeTotalValue, totalNet);
+  let isFullyInvoiced = isInvoiceCoverageComplete(nfeTotalValue, totalNet);
   const hasValidInvoice = billingRows.length > 0 && processingDates.length > 0;
   const hasCanceledInvoice = canceledRows.length > 0;
   // hasNfe para faturamento = possui NF válida; cancelada sozinha não fatura.
   const hasNfe = hasValidInvoice;
-  const isPartiallyInvoiced = hasNfe && !isFullyInvoiced && nfeTotalValue > 0;
+  let isPartiallyInvoiced = hasNfe && !isFullyInvoiced && nfeTotalValue > 0;
   const isNotInvoiced = !hasNfe;
   if (hasCanceledInvoice) {
     reviewReasons.push("NF cancelada vinculada ao pedido (não compõe faturamento válido).");
   }
-  const hasValueDivergence =
+  const headerExceedsOrderValue =
     totalNet != null &&
     totalNet > 0 &&
     nfeTotalValue > totalNet + Math.max(INVOICE_COVERAGE_TOLERANCE_ABSOLUTE, totalNet * INVOICE_COVERAGE_TOLERANCE_PERCENT);
+  const hasNfeSharedAcrossOrders = billingRows.some(
+    (row) => input.sharedNfeExternalIds?.has(row.extracted.nfeExternalId) === true
+  );
+
+  // Uma NF/Documento de Saída pode conter itens de vários pedidos: o cabeçalho
+  // (xmlVNF) não é a parcela deste pedido. Nesses casos — e quando o cabeçalho
+  // supera o valor do pedido — a cobertura vem da quantidade faturada por item
+  // já consolidada pelo motor operacional, sem novo rateio aqui.
+  let invoiceCoverageBasis: SalesOrderInvoiceCoverageBasis = "nfe_header_value";
+  const operationalProgress = resolveOperationalInvoicedProgressPercent(
+    input.operationalInvoicing
+  );
+  if (
+    hasNfe &&
+    operationalProgress != null &&
+    (hasNfeSharedAcrossOrders || headerExceedsOrderValue)
+  ) {
+    invoiceCoverageBasis = "operational_item_quantity";
+    invoiceCoveragePercent = operationalProgress;
+    isFullyInvoiced =
+      operationalProgress >= 100 - OPERATIONAL_INVOICED_PROGRESS_FULL_TOLERANCE;
+    isPartiallyInvoiced = !isFullyInvoiced;
+  }
+
+  // Cabeçalho acima do pedido só é divergência quando a NF é exclusiva dele.
+  const hasValueDivergence = headerExceedsOrderValue && !hasNfeSharedAcrossOrders;
 
   if (hasValueDivergence) {
     reviewReasons.push("Valor faturado excede o valor líquido do pedido além da tolerância.");
@@ -333,6 +421,8 @@ function buildContextFromExtractedRows(input: {
     nfeProductsValue,
     nfeHighlightedTaxesValue,
     invoiceCoveragePercent,
+    invoiceCoverageBasis,
+    hasNfeSharedAcrossOrders,
     isFullyInvoiced,
     isPartiallyInvoiced,
     isNotInvoiced,
@@ -358,6 +448,10 @@ export function buildSalesOrderLinkedNfeContext(input: {
   expectedDeliveryDate?: Date | string | null;
   referenceDate?: Date;
   nomusRawResponse?: unknown;
+  /** NF (externalId) vinculadas a mais de um pedido — cabeçalho não atribuível. */
+  sharedNfeExternalIds?: ReadonlySet<number>;
+  /** Faturamento por item do motor operacional (SalesOrderFlowSnapshot). */
+  operationalInvoicing?: SalesOrderOperationalInvoicingInput | null;
 }): SalesOrderLinkedNfeContext {
   const activeLinks = input.links.filter((link) => link.presentInLastPayload !== false);
   const nomusMap = input.nomusNfesByExternalId ?? new Map<number, SalesOrderLinkedNomusNfeInput>();
@@ -410,6 +504,8 @@ export function buildSalesOrderLinkedNfeContext(input: {
             ? new Date(input.expectedDeliveryDate)
             : null,
       referenceDate: input.referenceDate,
+      sharedNfeExternalIds: input.sharedNfeExternalIds,
+      operationalInvoicing: input.operationalInvoicing,
     });
   }
 
@@ -446,6 +542,8 @@ export function buildSalesOrderLinkedNfeContext(input: {
           ? new Date(input.expectedDeliveryDate)
           : null,
     referenceDate: input.referenceDate,
+    sharedNfeExternalIds: input.sharedNfeExternalIds,
+    operationalInvoicing: input.operationalInvoicing,
   });
 }
 
@@ -520,6 +618,26 @@ export async function loadSalesOrderLinkedNfeContextMap(
     linksByOrderId.set(link.salesOrderId, list);
   }
 
+  // NF compartilhada: considera vínculos ativos de qualquer pedido (inclusive
+  // fora desta página), pois o cabeçalho da NF soma itens de todos eles.
+  const [nfeOrderPairs, flowSnapshots] =
+    externalIds.length > 0
+      ? await Promise.all([
+          prisma.salesOrderNfeLink.findMany({
+            where: { nfeExternalId: { in: externalIds }, presentInLastPayload: true },
+            select: { salesOrderId: true, nfeExternalId: true },
+          }),
+          prisma.salesOrderFlowSnapshot.findMany({
+            where: { salesOrderId: { in: [...linksByOrderId.keys()] } },
+            select: { salesOrderId: true, progressInvoiced: true },
+          }),
+        ])
+      : [[], []];
+  const sharedNfeExternalIds = resolveSharedNfeExternalIds(nfeOrderPairs);
+  const progressInvoicedByOrderId = new Map(
+    flowSnapshots.map((row) => [row.salesOrderId, decimalToNumber(row.progressInvoiced)])
+  );
+
   const result = new Map<string, SalesOrderLinkedNfeContext>();
   for (const order of orders) {
     result.set(
@@ -532,6 +650,10 @@ export async function loadSalesOrderLinkedNfeContextMap(
         expectedDeliveryDate: order.expectedDeliveryDate,
         referenceDate,
         nomusRawResponse: order.nomusRawResponse,
+        sharedNfeExternalIds,
+        operationalInvoicing: progressInvoicedByOrderId.has(order.id)
+          ? { progressInvoicedPercent: progressInvoicedByOrderId.get(order.id) }
+          : null,
       })
     );
   }

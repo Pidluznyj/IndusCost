@@ -138,7 +138,7 @@
     "test:nomus:sales-orders-sync": "tsx --test src/lib/salesOrderNomusSync.test.ts src/lib/salesOrderNomusSyncCost.test.ts src/lib/salesOrderNomusSeller.test.ts src/lib/nomusSalesOrdersSyncWindow.test.ts src/lib/nomusSalesOrdersPaginationCursor.test.ts src/lib/nomusSalesOrdersClient.test.ts src/lib/audit/nomusSalesOrderOrphanAudit.test.ts src/lib/nomus/nomusSalesOrderSourceReconciliation.test.ts",
     "backfill:sales-order-nfe-links:dry": "tsx scripts/backfill-sales-order-nfe-links.ts --dry-run",
     "backfill:sales-order-nfe-links:apply": "tsx scripts/backfill-sales-order-nfe-links.ts --apply",
-    "test:sales-orders-nfe-links": "tsx --test src/lib/salesOrderNfeLink.test.ts src/lib/salesOrderLinkedNfeMotor.test.ts",
+    "test:sales-orders-nfe-links": "tsx --test src/lib/salesOrderNfeLink.test.ts src/lib/salesOrderLinkedNfeMotor.test.ts src/lib/salesOrderLinkedNfeSharedInvoice.test.ts",
     "test:sales-orders-charts-cache": "tsx --test src/lib/sales/salesOrderResultChartsCache.test.ts",
     "test:sales-orders-fulfillment": "tsx --test src/lib/salesOrderManagementFulfillment.test.ts",
     "test:sales-orders-delay": "tsx --test src/lib/salesOrderDeliveryDelay.test.ts src/lib/salesOrderManagementDelayParity.test.ts",

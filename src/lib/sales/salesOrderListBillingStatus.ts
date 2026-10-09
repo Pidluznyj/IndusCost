@@ -17,6 +17,11 @@
  *   - Propostas.
  *   - `status = "SENT_TO_NOMUS"` (é status operacional, não é sinal de NF).
  *
+ * Cobertura (2026-10): o cabeçalho da NF só mede a cobertura quando a NF é
+ * exclusiva do pedido. NF / Documento de Saída com itens de vários pedidos (ou
+ * cabeçalho acima do valor do pedido) usa a quantidade faturada por item do
+ * motor operacional (`SalesOrderFlowSnapshot.progressInvoiced`).
+ *
  * O motor oficial que consolida a NF vinculada é
  * `loadSalesOrderLinkedNfeContextMap` (`src/lib/salesOrderLinkedNfe.ts`) —
  * usado por Auditoria 360º, Pedido → Caixa e pela listagem operacional.
@@ -134,10 +139,10 @@ export type SalesOrderBillingStatusInput = {
  *   3. `isPartiallyInvoiced`      → `PARTIALLY_INVOICED`.
  *   4. Caso contrário             → `INVOICED`.
  *
- * Observação: `isFullyInvoiced` e `isPartiallyInvoiced` são derivados por
- * `computeInvoiceCoveragePercent` (com `INVOICE_COVERAGE_TOLERANCE_*`), então
- * itens cancelados/cortados já são respeitados na fonte — este helper apenas
- * consome os flags sem recalcular.
+ * Observação: `isFullyInvoiced` e `isPartiallyInvoiced` são derivados em
+ * `salesOrderLinkedNfe.ts` (valor do cabeçalho com `INVOICE_COVERAGE_TOLERANCE_*`
+ * ou progresso operacional quando a NF não é exclusiva do pedido) — este
+ * helper apenas consome os flags sem recalcular.
  */
 export function resolveSalesOrderBillingStatus(
   input: SalesOrderBillingStatusInput
