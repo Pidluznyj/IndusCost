@@ -651,6 +651,7 @@ export async function loadSalesOrderLinkedNfeContextMap(
               currentStage: true,
               orderedQuantity: true,
               shipTargetQuantity: true,
+              activeRemainingQuantity: true,
               invoicedQuantity: true,
               computedAt: true,
             },
@@ -675,6 +676,7 @@ export async function loadSalesOrderLinkedNfeContextMap(
       currentStage: row.currentStage,
       orderedQuantity: decimalToNumber(row.orderedQuantity),
       shipTargetQuantity: decimalToNumber(row.shipTargetQuantity),
+      activeRemainingQuantity: decimalToNumber(row.activeRemainingQuantity),
       invoicedQuantity: decimalToNumber(row.invoicedQuantity),
       computedAt: row.computedAt,
     });

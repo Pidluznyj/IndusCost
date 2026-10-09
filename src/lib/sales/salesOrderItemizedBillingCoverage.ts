@@ -7,8 +7,9 @@
  *
  * B é respondida aqui, sobre os fatos por item do motor operacional
  * (`SalesOrderItemFlowSnapshot`): `shipTargetQuantity` é a obrigação ativa
- * (pedido − corte − cancelado) e `invoicedQuantity` a quantidade faturada por
- * NF válida. O cabeçalho da NF (`xmlVNF`) não entra: ele inclui frete/IPI e,
+ * normalizada pelo motor (pedido − corte − cancelado) e `invoicedQuantity` a
+ * quantidade faturada por NF válida. Item sem obrigação ativa (corte) não
+ * gera pendência; se tem quantidade faturada, conta como resolvido com cobertura. O cabeçalho da NF (`xmlVNF`) não entra: ele inclui frete/IPI e,
  * em NF de vários pedidos, itens de outros pedidos.
  *
  * Conservador: qualquer dado ausente ou inconsistente devolve `UNKNOWN`, e o
@@ -23,6 +24,7 @@ export type ItemizedBillingCoverageReason =
   | "ACTIVE_ITEMS_FULLY_INVOICED"
   | "ACTIVE_ITEMS_PARTIALLY_INVOICED"
   | "ACTIVE_ITEMS_NOT_INVOICED"
+  | "NO_ACTIVE_OBLIGATION_WITH_INVOICE_COVERAGE"
   | "NO_ITEM_SNAPSHOT"
   | "ITEM_SNAPSHOT_INCOMPLETE"
   | "ITEM_SNAPSHOT_INCONSISTENT"
@@ -39,6 +41,8 @@ export type ItemizedBillingItemInput = {
   orderedQuantity: number | null | undefined;
   /** Obrigação ativa: pedido − corte − cancelado. */
   shipTargetQuantity: number | null | undefined;
+  /** Saldo ativo normalizado pelo motor: obrigação ativa − atendido. */
+  activeRemainingQuantity: number | null | undefined;
   invoicedQuantity: number | null | undefined;
   /** `SalesOrderItemFlowSnapshot.computedAt` — quando o resultado foi gravado. */
   computedAt: Date | null | undefined;
@@ -49,6 +53,8 @@ export type ItemizedBillingCoverageResult = {
   reason: ItemizedBillingCoverageReason;
   /** Itens com obrigação ativa > 0. */
   activeItems: number;
+  /** Itens sem obrigação ativa (resolvidos por corte) com quantidade faturada. */
+  resolvedItemsWithInvoice: number;
   fullyInvoicedItems: number;
   partiallyInvoicedItems: number;
   notInvoicedItems: number;
@@ -64,6 +70,7 @@ function unknown(
     coverage: "UNKNOWN",
     reason,
     activeItems: 0,
+    resolvedItemsWithInvoice: 0,
     fullyInvoicedItems: 0,
     partiallyInvoicedItems: 0,
     notInvoicedItems: 0,
@@ -121,6 +128,7 @@ export function resolveItemizedBillingCoverage(input: {
   if (oldestComputedTime < fiscalEvidenceTime) return unknown("ITEM_SNAPSHOT_STALE");
 
   let activeItems = 0;
+  let resolvedItemsWithInvoice = 0;
   let fullyInvoicedItems = 0;
   let partiallyInvoicedItems = 0;
   let notInvoicedItems = 0;
@@ -138,8 +146,21 @@ export function resolveItemizedBillingCoverage(input: {
     ) {
       return unknown("ITEM_SNAPSHOT_INCONSISTENT");
     }
-    // Item totalmente cortado: corte não é saldo.
-    if (shipTargetQuantity <= ITEMIZED_BILLING_QUANTITY_EPSILON) continue;
+    // Sem obrigação ativa: o corte pode cobrir o pedido inteiro mesmo quando
+    // parte foi faturada (cutQuantity se sobrepõe à quantidade faturada), então
+    // não se compara faturado × pedido nem se soma faturado + corte. Corte não é
+    // saldo; se houve faturamento, o item está resolvido com cobertura.
+    if (shipTargetQuantity <= ITEMIZED_BILLING_QUANTITY_EPSILON) {
+      const { activeRemainingQuantity } = item;
+      if (
+        !isValidQuantity(activeRemainingQuantity) ||
+        activeRemainingQuantity > ITEMIZED_BILLING_QUANTITY_EPSILON
+      ) {
+        return unknown("ITEM_SNAPSHOT_INCONSISTENT");
+      }
+      if (invoicedQuantity > ITEMIZED_BILLING_QUANTITY_EPSILON) resolvedItemsWithInvoice += 1;
+      continue;
+    }
 
     activeItems += 1;
     if (invoicedQuantity >= shipTargetQuantity - ITEMIZED_BILLING_QUANTITY_EPSILON) {
@@ -151,12 +172,29 @@ export function resolveItemizedBillingCoverage(input: {
     }
   }
 
-  const counts = { activeItems, fullyInvoicedItems, partiallyInvoicedItems, notInvoicedItems };
-  if (activeItems === 0) return { ...unknown("NO_ACTIVE_OBLIGATION") };
+  const counts = {
+    activeItems,
+    resolvedItemsWithInvoice,
+    fullyInvoicedItems,
+    partiallyInvoicedItems,
+    notInvoicedItems,
+  };
+  if (activeItems === 0) {
+    // Nenhum item com obrigação ativa: faturado só se houve quantidade
+    // faturada atribuída; item apenas cortado/cancelado não inventa faturamento.
+    if (resolvedItemsWithInvoice > 0) {
+      return {
+        coverage: "FULL",
+        reason: "NO_ACTIVE_OBLIGATION_WITH_INVOICE_COVERAGE",
+        ...counts,
+      };
+    }
+    return unknown("NO_ACTIVE_OBLIGATION");
+  }
   if (fullyInvoicedItems === activeItems) {
     return { coverage: "FULL", reason: "ACTIVE_ITEMS_FULLY_INVOICED", ...counts };
   }
-  if (fullyInvoicedItems + partiallyInvoicedItems > 0) {
+  if (fullyInvoicedItems + partiallyInvoicedItems + resolvedItemsWithInvoice > 0) {
     return { coverage: "PARTIAL", reason: "ACTIVE_ITEMS_PARTIALLY_INVOICED", ...counts };
   }
   return { coverage: "NONE", reason: "ACTIVE_ITEMS_NOT_INVOICED", ...counts };

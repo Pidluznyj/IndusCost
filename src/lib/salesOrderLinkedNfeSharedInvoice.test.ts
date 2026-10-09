@@ -49,7 +49,13 @@ type ItemFixture = {
   cut?: number;
   /** Item cancelado no Nomus. */
   canceled?: boolean;
+  /** Saldo ativo do motor; padrão = obrigação ativa − faturado. */
+  activeRemaining?: number | null;
 };
+
+function shipTarget(item: ItemFixture): number {
+  return item.canceled ? 0 : Math.max(0, item.ordered - (item.cut ?? 0));
+}
 
 function itemSnapshots(
   items: ItemFixture[],
@@ -61,7 +67,11 @@ function itemSnapshots(
     isActiveForKanban: !item.canceled,
     currentStage: item.canceled ? "CANCELED" : "SHIPPED_COMPLETED",
     orderedQuantity: item.ordered,
-    shipTargetQuantity: item.canceled ? 0 : item.ordered - (item.cut ?? 0),
+    shipTargetQuantity: shipTarget(item),
+    activeRemainingQuantity:
+      item.activeRemaining === undefined
+        ? Math.max(0, shipTarget(item) - item.invoiced)
+        : item.activeRemaining,
     invoicedQuantity: item.invoiced,
   }));
 }
@@ -280,6 +290,7 @@ describe("status de faturamento — NF válida × cobertura por item", () => {
       isActiveForKanban: true,
       currentStage: "INVOICED",
       computedAt: SNAPSHOT_COMPUTED_AT,
+      activeRemainingQuantity: 0,
     };
     const inconsistent: ItemizedBillingItemInput[][] = [
       [{ ...base, orderedQuantity: null, shipTargetQuantity: 10, invoicedQuantity: 10 }],
@@ -613,6 +624,149 @@ describe("frescor do snapshot e NONE — quando a cobertura por item é autorida
     const unknown = context({ ...valueCloses });
     assert.notEqual(none.billingDecisionReason, unknown.billingDecisionReason);
     assert.equal(unknown.billingDecisionReason, "ITEMIZED_UNKNOWN_FALLBACK_VALUE");
+  });
+});
+
+describe("itens sem obrigação ativa (FULFILLED_WITH_CUT) — PD 02809, 02120, 02068, 02231", () => {
+  function coverage(items: ItemFixture[]) {
+    return resolveItemizedBillingCoverage({
+      latestFiscalEvidenceAt: LINK_SEEN_AT,
+      items: itemSnapshots(items),
+      expectedItemCount: items.length,
+    });
+  }
+
+  it("A. pedido 4, saldo ativo 0, faturado 4, corte 4 = FULL", () => {
+    const result = coverage([{ ordered: 4, invoiced: 4, cut: 4 }]);
+    assert.equal(result.coverage, "FULL");
+    assert.equal(result.reason, "NO_ACTIVE_OBLIGATION_WITH_INVOICE_COVERAGE");
+    assert.equal(result.activeItems, 0);
+    assert.equal(result.resolvedItemsWithInvoice, 1);
+  });
+
+  it("B. PD 02231: pedido 50.000, saldo ativo 0, faturado 26.000, corte 50.000 = FULL", () => {
+    const items = [{ ordered: 50_000, invoiced: 26_000, cut: 50_000 }];
+    const result = coverage(items);
+    assert.equal(result.coverage, "FULL");
+    assert.equal(result.reason, "NO_ACTIVE_OBLIGATION_WITH_INVOICE_COVERAGE");
+
+    // Valor da NF (26.000 un.) fica abaixo do pedido original: legado diria parcial.
+    const ctx = context({
+      totalNetValue: 50_000,
+      nfes: [{ externalId: 1, headerValue: 26_000 }],
+      items,
+    });
+    assert.equal(ctx.legacyIsPartiallyInvoiced, true);
+    assert.equal(ctx.itemizedBillingCoverageReason, "NO_ACTIVE_OBLIGATION_WITH_INVOICE_COVERAGE");
+    assert.equal(ctx.billingDecisionReason, "ITEMIZED_FULL");
+    assert.equal(billingStatus(ctx), "INVOICED");
+  });
+
+  it("C. saldo ativo 0, faturado 0, item apenas cortado = não é FULL; fallback por valor", () => {
+    const items = [{ ordered: 100, invoiced: 0, cut: 100 }];
+    const result = coverage(items);
+    assert.equal(result.coverage, "UNKNOWN");
+    assert.equal(result.reason, "NO_ACTIVE_OBLIGATION");
+
+    const ctx = context({
+      totalNetValue: 1000,
+      nfes: [{ externalId: 1, headerValue: 400 }],
+      items,
+    });
+    assert.equal(ctx.billingUsedLegacyFallback, true);
+    assert.equal(billingStatus(ctx), "PARTIALLY_INVOICED");
+  });
+
+  it("D. saldo ativo 0, faturado 0, item cancelado = não inventa faturamento", () => {
+    const canceledOnly = coverage([{ ordered: 100, invoiced: 0, canceled: true }]);
+    assert.equal(canceledOnly.coverage, "UNKNOWN");
+    assert.equal(canceledOnly.reason, "NO_ACTIVE_OBLIGATION");
+
+    const canceledAndCut = coverage([
+      { ordered: 100, invoiced: 0, canceled: true },
+      { ordered: 50, invoiced: 0, cut: 50 },
+    ]);
+    assert.equal(canceledAndCut.coverage, "UNKNOWN");
+    assert.equal(canceledAndCut.resolvedItemsWithInvoice, 0);
+  });
+
+  it("E. item resolvido com faturamento + item com obrigação ativa pendente = PARTIAL", () => {
+    const pendingNotInvoiced = coverage([
+      { ordered: 4, invoiced: 4, cut: 4 },
+      { ordered: 100, invoiced: 0 },
+    ]);
+    const pendingPartiallyInvoiced = coverage([
+      { ordered: 50_000, invoiced: 26_000, cut: 50_000 },
+      { ordered: 100, invoiced: 30 },
+    ]);
+    for (const result of [pendingNotInvoiced, pendingPartiallyInvoiced]) {
+      assert.equal(result.coverage, "PARTIAL");
+      assert.equal(result.reason, "ACTIVE_ITEMS_PARTIALLY_INVOICED");
+    }
+  });
+
+  it("F. todos os itens resolvidos, sem obrigação ativa e com cobertura faturada = FULL", () => {
+    const allResolved = coverage([
+      { ordered: 4, invoiced: 4, cut: 4 },
+      { ordered: 50_000, invoiced: 26_000, cut: 50_000 },
+      { ordered: 10, invoiced: 10, cut: 10 },
+    ]);
+    assert.equal(allResolved.coverage, "FULL");
+    assert.equal(allResolved.resolvedItemsWithInvoice, 3);
+
+    // Item apenas cortado ou cancelado ao lado não muda a conclusão.
+    const withCutAndCanceled = coverage([
+      { ordered: 4, invoiced: 4, cut: 4 },
+      { ordered: 20, invoiced: 0, cut: 20 },
+      { ordered: 30, invoiced: 0, canceled: true },
+    ]);
+    assert.equal(withCutAndCanceled.coverage, "FULL");
+
+    // Item com obrigação ativa coberta + item resolvido por corte.
+    const mixedFull = coverage([
+      { ordered: 100, invoiced: 100 },
+      { ordered: 4, invoiced: 4, cut: 4 },
+    ]);
+    assert.equal(mixedFull.coverage, "FULL");
+    assert.equal(mixedFull.reason, "ACTIVE_ITEMS_FULLY_INVOICED");
+  });
+
+  it("sem NF válida, snapshot resolvido com faturamento não torna o pedido faturado", () => {
+    const ctx = context({
+      totalNetValue: 1000,
+      nfes: [{ externalId: 1, headerValue: 1000, status: NFE_STATUS_CANCELED }],
+      items: [{ ordered: 4, invoiced: 4, cut: 4 }],
+    });
+    assert.equal(ctx.hasNfe, false);
+    assert.equal(billingStatus(ctx), "NOT_INVOICED");
+  });
+
+  it("pedido cancelado continua CANCELED", () => {
+    const ctx = context({
+      totalNetValue: 1000,
+      nfes: [{ externalId: 1, headerValue: 400 }],
+      items: [{ ordered: 4, invoiced: 4, cut: 4 }],
+    });
+    assert.equal(billingStatus(ctx, "CANCELLED"), "CANCELED");
+  });
+
+  it("snapshot defasado continua UNKNOWN (checagem de frescor preservada)", () => {
+    const ctx = context({
+      totalNetValue: 1000,
+      nfes: [{ externalId: 1, headerValue: 400 }],
+      items: [{ ordered: 4, invoiced: 4, cut: 4 }],
+      snapshotComputedAt: new Date(LINK_SEEN_AT.getTime() - 60_000),
+    });
+    assert.equal(ctx.itemizedBillingCoverageReason, "ITEM_SNAPSHOT_STALE");
+    assert.equal(billingStatus(ctx), "PARTIALLY_INVOICED");
+  });
+
+  it("obrigação ativa zero com saldo ativo positivo ou ausente = inconsistente", () => {
+    for (const activeRemaining of [5, null]) {
+      const result = coverage([{ ordered: 4, invoiced: 4, cut: 4, activeRemaining }]);
+      assert.equal(result.coverage, "UNKNOWN");
+      assert.equal(result.reason, "ITEM_SNAPSHOT_INCONSISTENT");
+    }
   });
 });
 

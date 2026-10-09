@@ -86,7 +86,7 @@ Duas perguntas separadas:
 
 | Cobertura por item | Status |
 |---|---|
-| `FULL` — todo item ativo com obrigação coberta | Faturado |
+| `FULL` — todo item com obrigação ativa coberto; ou nenhum item com obrigação ativa e ao menos um com quantidade faturada | Faturado |
 | `PARTIAL` — algum item faturado, não todos cobertos | Parcialmente faturado |
 | `NONE` — NF válida, nenhuma quantidade atribuída aos itens | regra por valor (`ITEMIZED_NONE_FALLBACK_VALUE`) |
 | `UNKNOWN` — sem snapshot, incompleto, inconsistente ou defasado | regra por valor (`ITEMIZED_UNKNOWN_FALLBACK_VALUE`) |
@@ -98,8 +98,28 @@ motivo distinto de `UNKNOWN`.
 
 `UNKNOWN` cobre: nenhum snapshot de item; contagem de snapshots diferente
 da de `SalesOrderItem`; quantidade nula, negativa ou obrigação maior que o
-pedido; `computedAt` ausente; pedido sem nenhuma obrigação ativa; e
+pedido; `computedAt` ausente; pedido sem obrigação ativa e sem nenhuma
+quantidade faturada (só corte/cancelamento); e
 snapshot defasado (abaixo).
+
+### Item sem obrigação ativa (corte)
+
+Em `FULFILLED_WITH_CUT` o motor pode gravar `cutQuantity` igual à quantidade
+pedida mesmo quando parte foi faturada (PD 02231: pedido 50.000, faturado
+26.000, corte 50.000, saldo ativo 0). Por isso a regra não exige
+`invoicedQuantity == orderedQuantity` nem soma faturado + corte: usa a
+obrigação ativa normalizada pelo motor (`shipTargetQuantity` e
+`activeRemainingQuantity`).
+
+- Item com obrigação ativa > 0: faturado × obrigação ativa.
+- Item com obrigação ativa 0 e saldo ativo 0: não gera pendência; com
+  quantidade faturada conta como resolvido com cobertura.
+- Nenhum item com obrigação ativa e ao menos um resolvido com cobertura →
+  `FULL` (`NO_ACTIVE_OBLIGATION_WITH_INVOICE_COVERAGE`).
+- Só itens cortados/cancelados sem quantidade faturada → `UNKNOWN`
+  (`NO_ACTIVE_OBLIGATION`), regra por valor.
+- Item resolvido com cobertura + item com obrigação ativa pendente → `PARTIAL`.
+- Obrigação ativa 0 com saldo ativo positivo ou ausente → inconsistente.
 
 ### Frescor do snapshot
 
