@@ -63,6 +63,14 @@ type AuditRow = {
   itemizedCoverage: string;
   /** Motivo da cobertura por item (ex.: ITEM_SNAPSHOT_STALE, ITEM_SNAPSHOT_INCOMPLETE). */
   itemizedCoverageReason: string;
+  /** Última mudança do snapshot (item mais antigo). */
+  snapshotComputedAt: string | null;
+  /** Última verificação do snapshot (item mais antigo); null = algum item legado. */
+  snapshotVerifiedAt: string | null;
+  /** Maior firstSeenAt / data de processamento das NF válidas. */
+  fiscalEvidenceAt: string | null;
+  /** VERIFIED_AT | COMPUTED_AT_LEGACY — instante usado na checagem de frescor. */
+  freshnessSource: string | null;
   finalStatus: SalesOrderBillingStatus;
   decisionReason: string;
   usedFallback: boolean;
@@ -204,6 +212,12 @@ async function main(): Promise<void> {
         legacyStatus,
         itemizedCoverage: ctx?.itemizedBillingCoverage ?? "UNKNOWN",
         itemizedCoverageReason: ctx?.itemizedBillingCoverageReason ?? "NO_ITEM_SNAPSHOT",
+        snapshotComputedAt:
+          ctx?.itemizedBillingFreshness?.snapshotComputedAt?.toISOString() ?? null,
+        snapshotVerifiedAt:
+          ctx?.itemizedBillingFreshness?.snapshotVerifiedAt?.toISOString() ?? null,
+        fiscalEvidenceAt: ctx?.itemizedBillingFreshness?.fiscalEvidenceAt?.toISOString() ?? null,
+        freshnessSource: ctx?.itemizedBillingFreshness?.freshnessSource ?? null,
         finalStatus,
         decisionReason: isOrderCanceled(order.status)
           ? "ORDER_CANCELED"
@@ -230,6 +244,14 @@ async function main(): Promise<void> {
       (row) => `${row.legacyStatus} -> ${row.finalStatus}`
     ),
     decisionReason: countBy(rows, (row) => row.decisionReason),
+    freshnessSource: countBy(
+      rows.filter((row) => row.freshnessSource != null),
+      (row) => row.freshnessSource ?? ""
+    ),
+    staleByFreshnessSource: countBy(
+      rows.filter((row) => row.itemizedCoverageReason === "ITEM_SNAPSHOT_STALE"),
+      (row) => row.freshnessSource ?? ""
+    ),
     itemizedCoverageReason: countBy(
       rows.filter((row) => row.hasValidNfe),
       (row) => row.itemizedCoverageReason
@@ -260,6 +282,10 @@ async function main(): Promise<void> {
       usedFallback: row.usedFallback,
       decisionReason: row.decisionReason,
       itemizedCoverageReason: row.itemizedCoverageReason,
+      snapshotComputedAt: row.snapshotComputedAt,
+      snapshotVerifiedAt: row.snapshotVerifiedAt,
+      fiscalEvidenceAt: row.fiscalEvidenceAt,
+      freshnessSource: row.freshnessSource,
       liquido: row.totalNetValue,
       nfCabecalho: row.nfeHeaderTotalValue,
       nfCompartilhada: row.hasNfeSharedAcrossOrders,

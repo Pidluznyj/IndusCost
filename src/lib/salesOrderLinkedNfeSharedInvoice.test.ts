@@ -59,10 +59,12 @@ function shipTarget(item: ItemFixture): number {
 
 function itemSnapshots(
   items: ItemFixture[],
-  computedAt: Date | null = SNAPSHOT_COMPUTED_AT
+  computedAt: Date | null = SNAPSHOT_COMPUTED_AT,
+  verifiedAt: Date | null = null
 ): ItemizedBillingItemInput[] {
   return items.map((item, index) => ({
     computedAt,
+    verifiedAt,
     salesOrderItemId: `item-${index + 1}`,
     isActiveForKanban: !item.canceled,
     currentStage: item.canceled ? "CANCELED" : "SHIPPED_COMPLETED",
@@ -86,6 +88,8 @@ function context(input: {
   expectedItemCount?: number;
   /** `computedAt` dos snapshots; padrão = depois do vínculo da NF. */
   snapshotComputedAt?: Date | null;
+  /** `verifiedAt` dos snapshots; padrão = ausente (snapshot legado). */
+  snapshotVerifiedAt?: Date | null;
 }) {
   const processedAt = NFE_PROCESSED_AT;
   return buildSalesOrderLinkedNfeContext({
@@ -127,7 +131,8 @@ function context(input: {
       ? {
           items: itemSnapshots(
             input.items,
-            input.snapshotComputedAt === undefined ? SNAPSHOT_COMPUTED_AT : input.snapshotComputedAt
+            input.snapshotComputedAt === undefined ? SNAPSHOT_COMPUTED_AT : input.snapshotComputedAt,
+            input.snapshotVerifiedAt ?? null
           ),
           expectedItemCount: input.expectedItemCount ?? input.items.length,
         }
@@ -766,6 +771,118 @@ describe("itens sem obrigação ativa (FULFILLED_WITH_CUT) — PD 02809, 02120, 
       const result = coverage([{ ordered: 4, invoiced: 4, cut: 4, activeRemaining }]);
       assert.equal(result.coverage, "UNKNOWN");
       assert.equal(result.reason, "ITEM_SNAPSHOT_INCONSISTENT");
+    }
+  });
+});
+
+describe("frescor por verifiedAt (última verificação) com fallback para computedAt", () => {
+  const valueDoesNotClose = { totalNetValue: 1000, nfes: [{ externalId: 1, headerValue: 400 }] };
+  const beforeLink = new Date(LINK_SEEN_AT.getTime() - 86_400_000);
+  const afterLink = new Date(LINK_SEEN_AT.getTime() + 3_600_000);
+
+  it("verifiedAt posterior à NF = snapshot confiável, mesmo com computedAt anterior", () => {
+    // Snapshot já estava correto antes de o vínculo da NF existir; o recompute
+    // seguinte não mudou nada (computedAt antigo), mas registrou a verificação.
+    const ctx = context({
+      ...valueDoesNotClose,
+      items: [{ ordered: 100, invoiced: 100 }],
+      snapshotComputedAt: beforeLink,
+      snapshotVerifiedAt: afterLink,
+    });
+    assert.equal(ctx.itemizedBillingCoverage, "FULL");
+    assert.equal(ctx.itemizedBillingFreshness?.freshnessSource, "VERIFIED_AT");
+    assert.equal(ctx.itemizedBillingFreshness?.snapshotVerifiedAt?.getTime(), afterLink.getTime());
+    assert.equal(ctx.itemizedBillingFreshness?.snapshotComputedAt?.getTime(), beforeLink.getTime());
+    assert.equal(ctx.itemizedBillingFreshness?.fiscalEvidenceAt?.getTime(), LINK_SEEN_AT.getTime());
+    assert.equal(billingStatus(ctx), "INVOICED");
+  });
+
+  it("verifiedAt anterior à NF = stale, mesmo com computedAt posterior", () => {
+    const ctx = context({
+      ...valueDoesNotClose,
+      items: [{ ordered: 100, invoiced: 100 }],
+      snapshotComputedAt: afterLink,
+      snapshotVerifiedAt: beforeLink,
+    });
+    assert.equal(ctx.itemizedBillingCoverageReason, "ITEM_SNAPSHOT_STALE");
+    assert.equal(ctx.itemizedBillingFreshness?.freshnessSource, "VERIFIED_AT");
+    assert.equal(ctx.billingUsedLegacyFallback, true);
+    assert.equal(billingStatus(ctx), "PARTIALLY_INVOICED");
+  });
+
+  it("verifiedAt ausente (legado) = usa computedAt, com a regra anterior", () => {
+    const fresh = context({
+      ...valueDoesNotClose,
+      items: [{ ordered: 100, invoiced: 100 }],
+      snapshotComputedAt: afterLink,
+    });
+    const stale = context({
+      ...valueDoesNotClose,
+      items: [{ ordered: 100, invoiced: 100 }],
+      snapshotComputedAt: beforeLink,
+    });
+    for (const ctx of [fresh, stale]) {
+      assert.equal(ctx.itemizedBillingFreshness?.freshnessSource, "COMPUTED_AT_LEGACY");
+      assert.equal(ctx.itemizedBillingFreshness?.snapshotVerifiedAt, null);
+    }
+    assert.equal(billingStatus(fresh), "INVOICED");
+    assert.equal(stale.itemizedBillingCoverageReason, "ITEM_SNAPSHOT_STALE");
+    assert.equal(billingStatus(stale), "PARTIALLY_INVOICED");
+  });
+
+  it("itens mistos: cada item usa verifiedAt quando tem, computedAt quando não", () => {
+    const items: ItemizedBillingItemInput[] = [
+      ...itemSnapshots([{ ordered: 100, invoiced: 100 }], beforeLink, afterLink),
+      {
+        ...itemSnapshots([{ ordered: 50, invoiced: 50 }], beforeLink, null)[0]!,
+        salesOrderItemId: "item-legado",
+      },
+    ];
+    const result = resolveItemizedBillingCoverage({
+      latestFiscalEvidenceAt: LINK_SEEN_AT,
+      items,
+      expectedItemCount: 2,
+    });
+    assert.equal(result.freshnessSource, "COMPUTED_AT_LEGACY");
+    assert.equal(result.reason, "ITEM_SNAPSHOT_STALE");
+  });
+
+  it("verifiedAt confiável não altera FULL / PARTIAL / NONE", () => {
+    const base = { snapshotComputedAt: beforeLink, snapshotVerifiedAt: afterLink };
+    const valueCloses = { totalNetValue: 1000, nfes: [{ externalId: 1, headerValue: 1000 }] };
+    const full = context({ ...valueDoesNotClose, ...base, items: [{ ordered: 100, invoiced: 100 }] });
+    const partial = context({ ...valueCloses, ...base, items: [{ ordered: 100, invoiced: 40 }] });
+    const none = context({ ...valueCloses, ...base, items: [{ ordered: 100, invoiced: 0 }] });
+    assert.equal(full.billingDecisionReason, "ITEMIZED_FULL");
+    assert.equal(billingStatus(full), "INVOICED");
+    assert.equal(partial.billingDecisionReason, "ITEMIZED_PARTIAL");
+    assert.equal(billingStatus(partial), "PARTIALLY_INVOICED");
+    assert.equal(none.billingDecisionReason, "ITEMIZED_NONE_FALLBACK_VALUE");
+    assert.equal(billingStatus(none), "INVOICED");
+  });
+
+  it("os quatro casos sem obrigação ativa seguem FULL com verifiedAt e em legado", () => {
+    const cases: ItemFixture[][] = [
+      [{ ordered: 4, invoiced: 4, cut: 4 }],
+      [{ ordered: 120, invoiced: 120, cut: 120 }],
+      [{ ordered: 10, invoiced: 10, cut: 10 }],
+      [{ ordered: 50_000, invoiced: 26_000, cut: 50_000 }],
+    ];
+    for (const items of cases) {
+      const verified = context({
+        ...valueDoesNotClose,
+        items,
+        snapshotComputedAt: beforeLink,
+        snapshotVerifiedAt: afterLink,
+      });
+      const legacy = context({ ...valueDoesNotClose, items });
+      for (const ctx of [verified, legacy]) {
+        assert.equal(
+          ctx.itemizedBillingCoverageReason,
+          "NO_ACTIVE_OBLIGATION_WITH_INVOICE_COVERAGE"
+        );
+        assert.equal(billingStatus(ctx), "INVOICED");
+      }
     }
   });
 });

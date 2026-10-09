@@ -7,6 +7,7 @@ import {
   resolveSalesOrderBillingDecision,
   type ItemizedBillingCoverage,
   type ItemizedBillingCoverageReason,
+  type ItemizedBillingFreshnessSource,
   type ItemizedBillingItemInput,
   type SalesOrderBillingDecisionReason,
 } from "./sales/salesOrderItemizedBillingCoverage.js";
@@ -107,6 +108,13 @@ export type SalesOrderLinkedNfeContext = {
   itemizedBillingCoverage?: ItemizedBillingCoverage;
   /** Por que a cobertura por item tem esse valor (ex.: snapshot defasado). */
   itemizedBillingCoverageReason?: ItemizedBillingCoverageReason;
+  /** Instantes usados na checagem de frescor do snapshot (auditoria). */
+  itemizedBillingFreshness?: {
+    snapshotComputedAt: Date | null;
+    snapshotVerifiedAt: Date | null;
+    fiscalEvidenceAt: Date | null;
+    freshnessSource: ItemizedBillingFreshnessSource | null;
+  };
   /** Por que `isFullyInvoiced` / `isPartiallyInvoiced` têm o valor final. */
   billingDecisionReason?: SalesOrderBillingDecisionReason;
   /** Os flags finais vieram da regra legada por valor. */
@@ -431,6 +439,12 @@ function buildContextFromExtractedRows(input: {
     legacyIsPartiallyInvoiced,
     itemizedBillingCoverage: itemized.coverage,
     itemizedBillingCoverageReason: itemized.reason,
+    itemizedBillingFreshness: {
+      snapshotComputedAt: itemized.snapshotComputedAt,
+      snapshotVerifiedAt: itemized.snapshotVerifiedAt,
+      fiscalEvidenceAt: itemized.fiscalEvidenceAt,
+      freshnessSource: itemized.freshnessSource,
+    },
     billingDecisionReason: billingDecision.reason,
     billingUsedLegacyFallback: billingDecision.usedLegacyFallback,
     isFullyInvoiced,
@@ -654,6 +668,7 @@ export async function loadSalesOrderLinkedNfeContextMap(
               activeRemainingQuantity: true,
               invoicedQuantity: true,
               computedAt: true,
+              verifiedAt: true,
             },
           }),
           prisma.salesOrderItem.groupBy({
@@ -679,6 +694,7 @@ export async function loadSalesOrderLinkedNfeContextMap(
       activeRemainingQuantity: decimalToNumber(row.activeRemainingQuantity),
       invoicedQuantity: decimalToNumber(row.invoicedQuantity),
       computedAt: row.computedAt,
+      verifiedAt: row.verifiedAt,
     });
     itemizedItemsByOrderId.set(row.salesOrderId, list);
   }

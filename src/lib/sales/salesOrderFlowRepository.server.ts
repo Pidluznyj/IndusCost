@@ -85,7 +85,10 @@ export type SalesOrderItemFlowSnapshotWrite = {
   isActiveForKanban?: boolean;
   fingerprint: string;
   computationVersion: string;
+  /** Última mudança de conteúdo. */
   computedAt: Date;
+  /** Última verificação (recompute concluído). Padrão: `computedAt`. */
+  verifiedAt?: Date;
 };
 
 function mapItemSnapshotCreateData(
@@ -125,6 +128,7 @@ function mapItemSnapshotCreateData(
     fingerprint: row.fingerprint,
     computationVersion: row.computationVersion,
     computedAt: row.computedAt,
+    verifiedAt: row.verifiedAt ?? row.computedAt,
   };
 }
 
@@ -298,7 +302,10 @@ export type SalesOrderFlowSnapshotWrite = {
   badgesJson?: Prisma.InputJsonValue | null;
   fingerprint: string;
   computationVersion: string;
+  /** Última mudança de conteúdo. */
   computedAt: Date;
+  /** Última verificação (recompute concluído). Padrão: `computedAt`. */
+  verifiedAt?: Date;
 };
 
 function mapOrderSnapshotCreateData(
@@ -340,6 +347,7 @@ function mapOrderSnapshotCreateData(
     fingerprint: row.fingerprint,
     computationVersion: row.computationVersion,
     computedAt: row.computedAt,
+    verifiedAt: row.verifiedAt ?? row.computedAt,
   };
 }
 
@@ -422,6 +430,29 @@ export async function upsertSalesOrderFlowSnapshot(
     select: { id: true },
   });
   return { action: "update", id: updated.id };
+}
+
+/**
+ * Marca os snapshots do pedido (itens + pedido) como verificados em
+ * `verifiedAt`, sem tocar em `computedAt` nem no conteúdo. Usado quando o
+ * recompute conclui com fingerprint igual. Exige `tx` para atomicidade.
+ */
+export async function markSalesOrderFlowSnapshotsVerified(
+  tx: SalesOrderFlowTx,
+  salesOrderId: string,
+  verifiedAt: Date
+): Promise<{ items: number; orders: number }> {
+  const [items, orders] = [
+    await tx.salesOrderItemFlowSnapshot.updateMany({
+      where: { salesOrderId },
+      data: { verifiedAt },
+    }),
+    await tx.salesOrderFlowSnapshot.updateMany({
+      where: { salesOrderId },
+      data: { verifiedAt },
+    }),
+  ];
+  return { items: items.count, orders: orders.count };
 }
 
 // ---------------------------------------------------------------------------

@@ -44,9 +44,22 @@ export type ItemizedBillingItemInput = {
   /** Saldo ativo normalizado pelo motor: obrigação ativa − atendido. */
   activeRemainingQuantity: number | null | undefined;
   invoicedQuantity: number | null | undefined;
-  /** `SalesOrderItemFlowSnapshot.computedAt` — quando o resultado foi gravado. */
+  /** `SalesOrderItemFlowSnapshot.computedAt` — última MUDANÇA do resultado. */
   computedAt: Date | null | undefined;
+  /**
+   * `SalesOrderItemFlowSnapshot.verifiedAt` — última VERIFICAÇÃO (todo recompute
+   * concluído). Ausente em snapshot ainda não reprocessado desde a criação do campo.
+   */
+  verifiedAt?: Date | null;
 };
+
+/**
+ * De onde veio o instante usado na checagem de frescor:
+ * - `VERIFIED_AT`: todos os itens têm `verifiedAt`.
+ * - `COMPUTED_AT_LEGACY`: algum item sem `verifiedAt` (snapshot legado) — usa
+ *   `computedAt`, que só prova a última mudança e pode acusar defasagem falsa.
+ */
+export type ItemizedBillingFreshnessSource = "VERIFIED_AT" | "COMPUTED_AT_LEGACY";
 
 export type ItemizedBillingCoverageResult = {
   coverage: ItemizedBillingCoverage;
@@ -58,13 +71,31 @@ export type ItemizedBillingCoverageResult = {
   fullyInvoicedItems: number;
   partiallyInvoicedItems: number;
   notInvoicedItems: number;
+  /** Instantes da checagem de frescor (auditoria); null quando não avaliados. */
+  snapshotComputedAt: Date | null;
+  snapshotVerifiedAt: Date | null;
+  fiscalEvidenceAt: Date | null;
+  freshnessSource: ItemizedBillingFreshnessSource | null;
+};
+
+type ItemizedBillingFreshness = Pick<
+  ItemizedBillingCoverageResult,
+  "snapshotComputedAt" | "snapshotVerifiedAt" | "fiscalEvidenceAt" | "freshnessSource"
+>;
+
+const NO_FRESHNESS: ItemizedBillingFreshness = {
+  snapshotComputedAt: null,
+  snapshotVerifiedAt: null,
+  fiscalEvidenceAt: null,
+  freshnessSource: null,
 };
 
 /** Precisão das quantidades persistidas (`Decimal(20, 6)`). */
 export const ITEMIZED_BILLING_QUANTITY_EPSILON = 0.000001;
 
 function unknown(
-  reason: ItemizedBillingCoverageReason
+  reason: ItemizedBillingCoverageReason,
+  freshness: ItemizedBillingFreshness = NO_FRESHNESS
 ): ItemizedBillingCoverageResult {
   return {
     coverage: "UNKNOWN",
@@ -74,6 +105,7 @@ function unknown(
     fullyInvoicedItems: 0,
     partiallyInvoicedItems: 0,
     notInvoicedItems: 0,
+    ...freshness,
   };
 }
 
@@ -99,10 +131,10 @@ function validTime(value: Date | null | undefined): number | null {
  * NF: `ITEM_SNAPSHOT_STALE`. Sem esse instante não há como atestar o frescor:
  * `ITEM_SNAPSHOT_FRESHNESS_UNVERIFIABLE`.
  *
- * Limite conhecido: o recompute só regrava o snapshot quando o resultado muda,
- * então `computedAt` é "última mudança", não "última verificação". A checagem
- * nunca aceita snapshot anterior à NF, mas pode recusar um snapshot que já
- * continha a quantidade (ex.: Documento de Saída sincronizado antes do vínculo).
+ * O instante do snapshot é `verifiedAt` (atualizado em todo recompute
+ * concluído). Snapshot legado sem `verifiedAt` usa `computedAt`, que marca só a
+ * última mudança: nunca aceita snapshot anterior à NF, mas pode recusar um que
+ * já continha a quantidade — até o pedido ser reprocessado.
  */
 export function resolveItemizedBillingCoverage(input: {
   items: readonly ItemizedBillingItemInput[] | null | undefined;
@@ -122,10 +154,23 @@ export function resolveItemizedBillingCoverage(input: {
   if (computedTimes.some((time) => time == null)) {
     return unknown("ITEM_SNAPSHOT_INCONSISTENT");
   }
+  const verifiedTimes = items.map((item) => validTime(item.verifiedAt));
+  const allVerified = verifiedTimes.every((time) => time != null);
   const fiscalEvidenceTime = validTime(input.latestFiscalEvidenceAt);
-  if (fiscalEvidenceTime == null) return unknown("ITEM_SNAPSHOT_FRESHNESS_UNVERIFIABLE");
-  const oldestComputedTime = Math.min(...(computedTimes as number[]));
-  if (oldestComputedTime < fiscalEvidenceTime) return unknown("ITEM_SNAPSHOT_STALE");
+  const freshness: ItemizedBillingFreshness = {
+    snapshotComputedAt: new Date(Math.min(...(computedTimes as number[]))),
+    snapshotVerifiedAt: allVerified ? new Date(Math.min(...(verifiedTimes as number[]))) : null,
+    fiscalEvidenceAt: fiscalEvidenceTime == null ? null : new Date(fiscalEvidenceTime),
+    freshnessSource: allVerified ? "VERIFIED_AT" : "COMPUTED_AT_LEGACY",
+  };
+  if (fiscalEvidenceTime == null) {
+    return unknown("ITEM_SNAPSHOT_FRESHNESS_UNVERIFIABLE", freshness);
+  }
+  // Por item: verifiedAt quando existe; computedAt só para snapshot legado.
+  const oldestSnapshotTime = Math.min(
+    ...items.map((_, index) => verifiedTimes[index] ?? (computedTimes[index] as number))
+  );
+  if (oldestSnapshotTime < fiscalEvidenceTime) return unknown("ITEM_SNAPSHOT_STALE", freshness);
 
   let activeItems = 0;
   let resolvedItemsWithInvoice = 0;
@@ -144,7 +189,7 @@ export function resolveItemizedBillingCoverage(input: {
       !isValidQuantity(invoicedQuantity) ||
       shipTargetQuantity > orderedQuantity + ITEMIZED_BILLING_QUANTITY_EPSILON
     ) {
-      return unknown("ITEM_SNAPSHOT_INCONSISTENT");
+      return unknown("ITEM_SNAPSHOT_INCONSISTENT", freshness);
     }
     // Sem obrigação ativa: o corte pode cobrir o pedido inteiro mesmo quando
     // parte foi faturada (cutQuantity se sobrepõe à quantidade faturada), então
@@ -156,7 +201,7 @@ export function resolveItemizedBillingCoverage(input: {
         !isValidQuantity(activeRemainingQuantity) ||
         activeRemainingQuantity > ITEMIZED_BILLING_QUANTITY_EPSILON
       ) {
-        return unknown("ITEM_SNAPSHOT_INCONSISTENT");
+        return unknown("ITEM_SNAPSHOT_INCONSISTENT", freshness);
       }
       if (invoicedQuantity > ITEMIZED_BILLING_QUANTITY_EPSILON) resolvedItemsWithInvoice += 1;
       continue;
@@ -178,6 +223,7 @@ export function resolveItemizedBillingCoverage(input: {
     fullyInvoicedItems,
     partiallyInvoicedItems,
     notInvoicedItems,
+    ...freshness,
   };
   if (activeItems === 0) {
     // Nenhum item com obrigação ativa: faturado só se houve quantidade
@@ -189,7 +235,7 @@ export function resolveItemizedBillingCoverage(input: {
         ...counts,
       };
     }
-    return unknown("NO_ACTIVE_OBLIGATION");
+    return unknown("NO_ACTIVE_OBLIGATION", freshness);
   }
   if (fullyInvoicedItems === activeItems) {
     return { coverage: "FULL", reason: "ACTIVE_ITEMS_FULLY_INVOICED", ...counts };

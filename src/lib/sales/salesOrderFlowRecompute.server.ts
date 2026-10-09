@@ -7,7 +7,9 @@
  * 3) fingerprint + comparar snapshot atual
  * 4) se mudou: persistir itens + pedido + eventos em uma tx curta
  *
- * Idempotente: fingerprint igual → sem escrita (computedAt preservado).
+ * Idempotente: fingerprint igual → conteúdo e computedAt preservados; só
+ * `verifiedAt` é atualizado, para registrar que o snapshot foi conferido
+ * contra a evidência atual (consumido pela regra de frescor do faturamento).
  */
 
 import type { PrismaClient } from "@prisma/client";
@@ -30,6 +32,7 @@ import {
   appendSalesOrderFlowEvent,
   findSalesOrderFlowSnapshotByOrderId,
   findSalesOrderItemFlowSnapshotsByOrderId,
+  markSalesOrderFlowSnapshotsVerified,
   replaceSalesOrderItemFlowSnapshotsForOrder,
   upsertSalesOrderFlowSnapshot,
   type SalesOrderFlowRepositoryDb,
@@ -85,8 +88,10 @@ export type RecomputeSalesOrderFlowResult = {
   orderFingerprint: string;
   previousOrderStage: string | null;
   currentOrderStage: string;
-  /** Só preenchido quando houve escrita. */
+  /** Só preenchido quando o conteúdo do snapshot foi regravado. */
   computedAt: string | null;
+  /** Instante gravado em `verifiedAt`; null em dryRun. */
+  verifiedAt?: string | null;
   items: {
     total: number;
     upserted: number;
@@ -99,6 +104,7 @@ export type RecomputeSalesOrderFlowResult = {
     created: number;
     duplicates: number;
   };
+  /** true = conteúdo do snapshot não foi regravado (`verifiedAt` pode ter sido). */
   skippedWrite: boolean;
   /** Métricas/log sanitizado do pedido (OP-74). */
   observability: SalesOrderFlowRecomputeObservabilityLog;
@@ -149,6 +155,15 @@ export async function recomputeSalesOrderFlow(
       throw new SalesOrderFlowOrderNotFoundError(salesOrderId);
     }
     orderCode = pack.order.orderCode?.trim() || null;
+
+    // O snapshot reflete a evidência como ela estava ao ser carregada; com
+    // pack pré-carregado (pós-sync em lote) isso é anterior a `startedAt`.
+    const evidenceLoadedAt = new Date(pack.meta.loadedAt);
+    const verifiedAt =
+      !Number.isNaN(evidenceLoadedAt.getTime()) &&
+      evidenceLoadedAt.getTime() < startedAt.getTime()
+        ? evidenceLoadedAt
+        : startedAt;
 
     const [existingOrderRow, existingItemRows] = await Promise.all([
       findSalesOrderFlowSnapshotByOrderId(db, salesOrderId),
@@ -259,6 +274,7 @@ export async function recomputeSalesOrderFlow(
       existingItems,
       existingOrder,
       computedAt,
+      verifiedAt,
       computationVersion: SALES_ORDER_FLOW_COMPUTATION_VERSION,
       evidenceTimes: {
         itemOccurredAt,
@@ -316,11 +332,17 @@ export async function recomputeSalesOrderFlow(
     };
 
     if (plan.action === "unchanged") {
+      if (!options.dryRun) {
+        await db.$transaction((tx) =>
+          markSalesOrderFlowSnapshotsVerified(tx, salesOrderId, verifiedAt)
+        );
+      }
       return finish({
         ...baseResult,
         action: "unchanged",
         reason: "fingerprint_match",
         computedAt: null,
+        verifiedAt: options.dryRun ? null : verifiedAt.toISOString(),
         items: {
           total: draft.itemWrites.length,
           upserted: 0,
@@ -339,6 +361,7 @@ export async function recomputeSalesOrderFlow(
         action: plan.reason === "first_run" ? "created" : "updated",
         reason: plan.reason,
         computedAt: null,
+        verifiedAt: null,
         items: {
           total: draft.itemWrites.length,
           upserted: draft.itemWrites.length,
@@ -391,6 +414,7 @@ export async function recomputeSalesOrderFlow(
       action: plan.reason === "first_run" ? "created" : "updated",
       reason: plan.reason,
       computedAt: computedAt.toISOString(),
+      verifiedAt: verifiedAt.toISOString(),
       items: {
         total: draft.itemWrites.length,
         upserted: persistResult.replace.upserted.length,

@@ -124,12 +124,29 @@ obrigação ativa normalizada pelo motor (`shipTargetQuantity` e
 ### Frescor do snapshot
 
 A cobertura por item só é autoridade quando todos os snapshots do pedido
-foram gravados depois da evidência fiscal mais recente:
+foram verificados depois da evidência fiscal mais recente:
 
 ```
-min(SalesOrderItemFlowSnapshot.computedAt)
+min( verifiedAt ?? computedAt  de cada SalesOrderItemFlowSnapshot )
   >= max(SalesOrderNfeLink.firstSeenAt, data de processamento) das NF válidas
 ```
+
+Dois instantes no snapshot (item e pedido):
+
+- `computedAt` — última **mudança** de conteúdo. O recompute só regrava o
+  snapshot quando o resultado muda (fingerprint diferente).
+- `verifiedAt` — última **verificação**. Gravado em todo recompute concluído,
+  mesmo sem mudança (migration `20261007120000`). Vale o instante em que a
+  evidência foi carregada, que no pós-sync em lote é anterior ao início do
+  recompute do pedido.
+
+`freshnessSource` (script de auditoria e contexto):
+
+- `VERIFIED_AT` — todos os itens do pedido têm `verifiedAt`.
+- `COMPUTED_AT_LEGACY` — algum item sem `verifiedAt`; para esse item vale
+  `computedAt`.
+
+Evidência fiscal:
 
 - `firstSeenAt` é gravado uma única vez, quando o vínculo pedido × NF é
   criado. `lastSeenAt` / `updatedAt` do vínculo e `syncedAt` / `updatedAt`
@@ -137,20 +154,21 @@ min(SalesOrderItemFlowSnapshot.computedAt)
 - Snapshot anterior → `ITEM_SNAPSHOT_STALE`; vínculo sem `firstSeenAt` →
   `ITEM_SNAPSHOT_FRESHNESS_UNVERIFIABLE`. Ambos caem na regra por valor.
 
-Limitações conhecidas (sem migration):
+Sem backfill de `verifiedAt`: não se sabe quando os snapshots existentes
+foram conferidos, então a coluna nasce `NULL` e eles continuam em
+`COMPUTED_AT_LEGACY`. Nesse modo `computedAt` nunca aceita snapshot anterior
+à NF, mas pode recusar um que já continha a quantidade (Documento de Saída
+sincronizado antes do vínculo, vínculos criados por backfill). Cada pedido
+sai do modo legado no primeiro recompute depois do deploy — pós-sync, botão
+de recomputar ou rebuild do fluxo.
 
-- O recompute só regrava o snapshot quando o resultado muda (fingerprint);
-  `computedAt` é "última mudança", não "última verificação". A checagem
-  nunca aceita snapshot anterior à NF, mas pode recusar um snapshot que já
-  continha a quantidade — por exemplo, Documento de Saída sincronizado
-  antes de o vínculo da NF ser criado, ou vínculos criados por backfill.
-  Esses pedidos ficam na regra por valor.
-- Não há timestamp confiável para mudança de status da NF (cancelamento)
-  nem para falha do recompute após o sync. NF cancelada sai da evidência
-  fiscal pelo status, mas um snapshot que ainda conta a quantidade dela não
-  é detectável só pelos dados lidos.
-- Um campo `verifiedAt` no snapshot, atualizado a cada recompute, resolveria
-  os dois pontos; exige migration e ficou fora desta entrega.
+Ordem de rollout: aplicar a migration **antes** do código. O loader do
+faturamento e o recompute leem/gravam `verifiedAt`; sem a coluna, as
+consultas falham.
+
+Limitação que permanece: cancelamento de NF não tem timestamp confiável. A
+NF cancelada sai da evidência fiscal pelo status, mas um snapshot que ainda
+conta a quantidade dela só é corrigido quando o recompute do pedido roda.
 
 A regra por valor continua existindo como fallback e como métrica:
 `invoiceCoveragePercent`, `nfeTotalValue`, `nfeProductsValue` e

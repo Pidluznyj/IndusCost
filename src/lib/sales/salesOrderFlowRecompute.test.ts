@@ -260,6 +260,18 @@ function createMemoryRecomputeDb(options?: { failOnOrderUpsert?: boolean }) {
           items.set(args.where.salesOrderItemId, next);
           return args.select?.id ? { id: next.id } : { ...next };
         },
+        updateMany: async (args: {
+          where: { salesOrderId: string };
+          data: Record<string, unknown>;
+        }) => {
+          let count = 0;
+          for (const [key, row] of [...items.entries()]) {
+            if (row.salesOrderId !== args.where.salesOrderId) continue;
+            items.set(key, { ...row, ...args.data } as ItemRow);
+            count += 1;
+          }
+          return { count };
+        },
         deleteMany: async (args: {
           where: { salesOrderId: string; salesOrderItemId?: { notIn: string[] } };
         }) => {
@@ -283,6 +295,15 @@ function createMemoryRecomputeDb(options?: { failOnOrderUpsert?: boolean }) {
           return row ? pick(row, args.select) : null;
         },
         findMany: async () => [...orders.values()].map((r) => ({ ...r })),
+        updateMany: async (args: {
+          where: { salesOrderId: string };
+          data: Record<string, unknown>;
+        }) => {
+          const existing = orders.get(args.where.salesOrderId);
+          if (!existing) return { count: 0 };
+          orders.set(args.where.salesOrderId, { ...existing, ...args.data } as OrderRow);
+          return { count: 1 };
+        },
         create: async (args: { data: Record<string, unknown>; select?: { id: boolean } }) => {
           if (options?.failOnOrderUpsert) {
             throw new Error("TRANSACIONAL_FAIL order create");
@@ -455,7 +476,94 @@ describe("recomputeSalesOrderFlow (OP-54)", () => {
     assert.ok(page.items.some((e) => e.eventType === "SNAPSHOT_CREATED"));
   });
 
-  it("segunda execução idêntica não escreve (idempotente)", async () => {
+  /** Pack com evidência carregada em `at` (o instante que vira verifiedAt). */
+  const packLoadedAt = (at: Date): SalesOrderFlowEvidencePack => {
+    const pack = buildPack();
+    return { ...pack, meta: { ...pack.meta, loadedAt: at.toISOString() } };
+  };
+
+  it("recompute com mudança grava computedAt e verifiedAt no mesmo instante", async () => {
+    const { db, items, orders } = createMemoryRecomputeDb();
+    const result = await recomputeSalesOrderFlow(db as never, ORDER_ID, {
+      evidencePack: packLoadedAt(FIXED_NOW),
+      now: () => FIXED_NOW,
+      emitObservabilityLog: false,
+    });
+    assert.equal(result.skippedWrite, false);
+    assert.equal(result.computedAt, FIXED_NOW.toISOString());
+    assert.equal(result.verifiedAt, FIXED_NOW.toISOString());
+    for (const row of [items.get(ITEM_A)!, items.get(ITEM_B)!, orders.get(ORDER_ID)!]) {
+      assert.equal(row.computedAt.toISOString(), FIXED_NOW.toISOString());
+      assert.equal((row.verifiedAt as Date).toISOString(), FIXED_NOW.toISOString());
+    }
+  });
+
+  it("recompute sem mudança preserva computedAt e atualiza verifiedAt", async () => {
+    const { db, items, orders, events } = createMemoryRecomputeDb();
+    const opts = { emitObservabilityLog: false };
+    const later = new Date("2026-07-20T09:30:00.000Z");
+
+    await recomputeSalesOrderFlow(db as never, ORDER_ID, {
+      ...opts,
+      evidencePack: packLoadedAt(FIXED_NOW),
+      now: () => FIXED_NOW,
+    });
+    const fingerprintBefore = items.get(ITEM_A)!.fingerprint;
+    const eventCountBefore = events.size;
+
+    const second = await recomputeSalesOrderFlow(db as never, ORDER_ID, {
+      ...opts,
+      evidencePack: packLoadedAt(later),
+      now: () => later,
+    });
+
+    assert.equal(second.action, "unchanged");
+    assert.equal(second.skippedWrite, true);
+    assert.equal(second.computedAt, null);
+    assert.equal(second.verifiedAt, later.toISOString());
+    for (const row of [items.get(ITEM_A)!, items.get(ITEM_B)!, orders.get(ORDER_ID)!]) {
+      assert.equal(row.computedAt.toISOString(), FIXED_NOW.toISOString());
+      assert.equal((row.verifiedAt as Date).toISOString(), later.toISOString());
+    }
+    assert.equal(items.get(ITEM_A)!.fingerprint, fingerprintBefore);
+    assert.equal(events.size, eventCountBefore);
+  });
+
+  it("verifiedAt usa o instante de carga da evidência quando anterior ao início", async () => {
+    const { db, items } = createMemoryRecomputeDb();
+    const loadedAt = new Date("2026-07-17T14:55:00.000Z");
+    const pack = buildPack();
+    const preloaded = { ...pack, meta: { ...pack.meta, loadedAt: loadedAt.toISOString() } };
+    const result = await recomputeSalesOrderFlow(db as never, ORDER_ID, {
+      evidencePack: preloaded,
+      now: () => FIXED_NOW,
+      emitObservabilityLog: false,
+    });
+    assert.equal(result.computedAt, FIXED_NOW.toISOString());
+    assert.equal(result.verifiedAt, loadedAt.toISOString());
+    assert.equal((items.get(ITEM_A)!.verifiedAt as Date).toISOString(), loadedAt.toISOString());
+  });
+
+  it("dryRun sem mudança não grava verifiedAt", async () => {
+    const { db, items } = createMemoryRecomputeDb();
+    const opts = { emitObservabilityLog: false };
+    await recomputeSalesOrderFlow(db as never, ORDER_ID, {
+      ...opts,
+      evidencePack: packLoadedAt(FIXED_NOW),
+      now: () => FIXED_NOW,
+    });
+    const second = await recomputeSalesOrderFlow(db as never, ORDER_ID, {
+      ...opts,
+      evidencePack: packLoadedAt(new Date("2026-07-20T09:30:00.000Z")),
+      now: () => new Date("2026-07-20T09:30:00.000Z"),
+      dryRun: true,
+    });
+    assert.equal(second.action, "unchanged");
+    assert.equal(second.verifiedAt, null);
+    assert.equal((items.get(ITEM_A)!.verifiedAt as Date).toISOString(), FIXED_NOW.toISOString());
+  });
+
+  it("segunda execução idêntica não regrava o conteúdo (idempotente)", async () => {
     const { db, items, orders, events } = createMemoryRecomputeDb();
     const pack = buildPack();
     const opts = {

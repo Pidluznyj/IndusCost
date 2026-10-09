@@ -125,10 +125,13 @@ export function buildSalesOrderFlowRecomputeDraft(input: {
   existingItems: readonly ExistingItemFlowSnapshotRef[];
   existingOrder?: ExistingOrderFlowSnapshotRef;
   computedAt?: Date;
+  /** Instante da verificação (evidência carregada). Padrão: `computedAt`. */
+  verifiedAt?: Date;
   computationVersion?: string;
   evidenceTimes?: SalesOrderFlowTimelineEvidenceTimes;
 }): SalesOrderFlowRecomputeDraft {
   const computedAt = input.computedAt ?? new Date();
+  const verifiedAt = input.verifiedAt ?? computedAt;
   const computationVersion =
     input.computationVersion ?? SALES_ORDER_FLOW_COMPUTATION_VERSION;
   const existingByItem = new Map(
@@ -195,6 +198,7 @@ export function buildSalesOrderFlowRecomputeDraft(input: {
       fingerprint,
       computationVersion,
       computedAt,
+      verifiedAt,
     });
 
     events.push(
@@ -251,6 +255,7 @@ export function buildSalesOrderFlowRecomputeDraft(input: {
     fingerprint: orderFingerprint,
     computationVersion,
     computedAt,
+    verifiedAt,
   };
 
   const previousOrder: SalesOrderFlowTimelineOrderState | null = input.existingOrder

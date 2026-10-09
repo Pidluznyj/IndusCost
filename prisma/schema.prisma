@@ -9062,7 +9062,11 @@ model SalesOrderItemFlowSnapshot {
   /// Hash do input/evidence para idempotência de materialização.
   fingerprint        String
   computationVersion String
+  /// Última MUDANÇA de conteúdo do snapshot (fingerprint diferente).
   computedAt         DateTime @db.Timestamptz(6)
+  /// Última VERIFICAÇÃO: atualizado em todo recompute concluído, mesmo sem
+  /// mudança. Null = snapshot ainda não reprocessado desde a criação do campo.
+  verifiedAt         DateTime? @db.Timestamptz(6)
 
   createdAt DateTime @default(now()) @db.Timestamptz(6)
   updatedAt DateTime @default(now()) @updatedAt @db.Timestamptz(6)
@@ -9131,7 +9135,11 @@ model SalesOrderFlowSnapshot {
 
   fingerprint        String
   computationVersion String
+  /// Última MUDANÇA de conteúdo do snapshot (fingerprint diferente).
   computedAt         DateTime @db.Timestamptz(6)
+  /// Última VERIFICAÇÃO: atualizado em todo recompute concluído, mesmo sem
+  /// mudança. Null = snapshot ainda não reprocessado desde a criação do campo.
+  verifiedAt         DateTime? @db.Timestamptz(6)
 
   createdAt DateTime @default(now()) @db.Timestamptz(6)
   updatedAt DateTime @default(now()) @updatedAt @db.Timestamptz(6)
