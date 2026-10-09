@@ -38,9 +38,12 @@
 import type { PrismaClient } from "@prisma/client";
 import {
   resolveSalesOrderBillingStatus,
+  resolveSalesOrderBillingStatusFromContext,
   salesOrderBillingStatusLabel,
+  type SalesOrderBillingContextFlags,
   type SalesOrderBillingStatus,
 } from "../sales/salesOrderListBillingStatus.js";
+import { loadSalesOrderLinkedNfeContextMap } from "../salesOrderLinkedNfe.js";
 import { formatNomusItemStatusNormalized } from "../finance/orderToCashAuditLabels.js";
 import { getOrderFullAudit } from "../finance/orderFullAuditService.js";
 import {
@@ -107,16 +110,48 @@ function safeText(value: string | null | undefined): string | null {
 // Mapeamentos (audit payload → detail DTO)
 // ---------------------------------------------------------------------------
 
-function mapHeader(audit: OrderFullAuditPayload): SalesOrderDetailHeader {
+/**
+ * Contexto oficial da NF vinculada do pedido — mesma fonte da grade, PDF e
+ * XLSX. Fail-soft: se o enriquecimento falhar, o detalhe ainda abre.
+ */
+async function loadDetailBillingContext(
+  prismaClient: PrismaClient,
+  salesOrderId: string
+): Promise<SalesOrderBillingContextFlags | null> {
+  try {
+    const order = await prismaClient.salesOrder.findUnique({
+      where: { id: salesOrderId },
+      select: { id: true, totalNetValue: true, issueDate: true, expectedDeliveryDate: true },
+    });
+    if (!order) return null;
+    const contextMap = await loadSalesOrderLinkedNfeContextMap([order], new Date(), {
+      omitLinkRawPayload: true,
+    });
+    return contextMap.get(order.id) ?? null;
+  } catch (error) {
+    console.error("getSalesOrderDetail linked-nfe enrichment failed", error);
+    return null;
+  }
+}
+
+export function mapSalesOrderDetailBillingStatus(
+  audit: Pick<OrderFullAuditPayload, "nfes"> & { salesOrder: { status?: string | null } },
+  billingContext: SalesOrderBillingContextFlags | null
+): SalesOrderBillingStatus {
+  const status = audit.salesOrder.status ?? "";
+  if (billingContext) return resolveSalesOrderBillingStatusFromContext(status, billingContext);
+  // Sem contexto oficial (falha de enriquecimento): comportamento anterior.
+  return resolveSalesOrderBillingStatus({ status, hasNfe: audit.nfes.length > 0 });
+}
+
+function mapHeader(
+  audit: OrderFullAuditPayload,
+  billingContext: SalesOrderBillingContextFlags | null
+): SalesOrderDetailHeader {
   const summary = audit.summary;
   const salesOrder = audit.salesOrder;
   const status = salesOrder.status ?? "";
-  const billingStatus: SalesOrderBillingStatus = resolveSalesOrderBillingStatus({
-    status,
-    hasNfe: audit.nfes.length > 0,
-    isPartiallyInvoiced: undefined,
-    isFullyInvoiced: undefined,
-  });
+  const billingStatus = mapSalesOrderDetailBillingStatus(audit, billingContext);
   const billingStatusLabel = salesOrderBillingStatusLabel(billingStatus);
   return {
     orderCode: salesOrder.orderCode ?? audit.orderCode ?? "",
@@ -507,7 +542,8 @@ export async function getSalesOrderDetail(
     };
   }
 
-  const header = mapHeader(audit);
+  const billingContext = await loadDetailBillingContext(prismaClient, salesOrderId);
+  const header = mapHeader(audit, billingContext);
   const summary = mapSummary(audit);
   const invoices = mapInvoices(audit.nfes);
   const marginByItemId = new Map<

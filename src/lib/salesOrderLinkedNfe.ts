@@ -3,6 +3,13 @@ import { decimalToNumber } from "./executiveDashboardHelpers.js";
 import { isNomusNfeCancelled } from "./finance/nfeStatus.js";
 import { prisma } from "./prisma.js";
 import {
+  resolveItemizedBillingCoverage,
+  resolveSalesOrderBillingDecision,
+  type ItemizedBillingCoverage,
+  type ItemizedBillingItemInput,
+  type SalesOrderBillingDecisionReason,
+} from "./sales/salesOrderItemizedBillingCoverage.js";
+import {
   buildLinkedNfeFiscalAmounts,
   resolveNfeComparableBillingValue,
 } from "./sales/orderFiscalFinancialMetrics.js";
@@ -17,26 +24,15 @@ import { extractSalesOrderNfesFromNomusPayload } from "./salesOrderNomusNfeExtra
 
 export const INVOICE_COVERAGE_TOLERANCE_ABSOLUTE = 1;
 export const INVOICE_COVERAGE_TOLERANCE_PERCENT = 0.01;
-/** Tolerância (pontos percentuais) para tratar o progresso operacional como 100%. */
-export const OPERATIONAL_INVOICED_PROGRESS_FULL_TOLERANCE = 0.01;
 
 /**
- * Base usada na cobertura de faturamento do pedido:
- * - `nfe_header_value`: soma do cabeçalho das NF válidas × valor líquido do pedido.
- *   Só é atribuível ao pedido quando a NF pertence apenas a ele.
- * - `operational_item_quantity`: quantidade faturada por item do motor operacional
- *   (`SalesOrderFlowSnapshot.progressInvoiced`). Usada quando o cabeçalho não é
- *   atribuível (NF/Documento de Saída com itens de vários pedidos, ou cabeçalho
- *   acima do valor do pedido).
+ * Fatos por item do motor operacional (`SalesOrderItemFlowSnapshot`) usados
+ * para decidir a cobertura da obrigação ativa do pedido.
  */
-export type SalesOrderInvoiceCoverageBasis =
-  | "nfe_header_value"
-  | "operational_item_quantity";
-
-/** Faturamento por item já consolidado pelo motor operacional (SalesOrderFlow). */
-export type SalesOrderOperationalInvoicingInput = {
-  /** `SalesOrderFlowSnapshot.progressInvoiced` (0–100, ponderado pela obrigação ativa). */
-  progressInvoicedPercent: number | null | undefined;
+export type SalesOrderItemizedBillingInput = {
+  items: readonly ItemizedBillingItemInput[];
+  /** Quantidade de `SalesOrderItem` do pedido (completude do snapshot). */
+  expectedItemCount: number | null;
 };
 
 export type SalesOrderLinkedNfeLinkInput = {
@@ -99,10 +95,17 @@ export type SalesOrderLinkedNfeContext = {
   /** Soma de impostos destacados (vNF − produtos) das NF válidas, quando ambos existem. */
   nfeHighlightedTaxesValue: number;
   invoiceCoveragePercent: number | null;
-  /** Base da cobertura acima; ausente = `nfe_header_value`. */
-  invoiceCoverageBasis?: SalesOrderInvoiceCoverageBasis;
   /** Alguma NF válida deste pedido também está vinculada a outro pedido. */
   hasNfeSharedAcrossOrders?: boolean;
+  /** Regra legada por valor (cabeçalho da NF × valor líquido) — auditoria/fallback. */
+  legacyIsFullyInvoiced?: boolean;
+  legacyIsPartiallyInvoiced?: boolean;
+  /** Cobertura da obrigação ativa por item; ausente = `UNKNOWN`. */
+  itemizedBillingCoverage?: ItemizedBillingCoverage;
+  /** Por que `isFullyInvoiced` / `isPartiallyInvoiced` têm o valor final. */
+  billingDecisionReason?: SalesOrderBillingDecisionReason;
+  /** Os flags finais vieram da regra legada por valor. */
+  billingUsedLegacyFallback?: boolean;
   isFullyInvoiced: boolean;
   isPartiallyInvoiced: boolean;
   isNotInvoiced: boolean;
@@ -196,21 +199,6 @@ export function computeInvoiceCoveragePercent(
 }
 
 /**
- * Progresso faturado do motor operacional quando ele é utilizável como base de
- * cobertura: finito e positivo. Zero/ausente = sem rateio operacional
- * (mantém a regra do cabeçalho da NF).
- */
-export function resolveOperationalInvoicedProgressPercent(
-  operationalInvoicing: SalesOrderOperationalInvoicingInput | null | undefined
-): number | null {
-  const raw = operationalInvoicing?.progressInvoicedPercent;
-  if (raw == null) return null;
-  const value = Number(raw);
-  if (!Number.isFinite(value) || value <= 0) return null;
-  return Math.min(100, value);
-}
-
-/**
  * NF (externalId) vinculadas a mais de um pedido.
  * Puro — recebe os pares de vínculo ativo (pedido × NF).
  */
@@ -253,7 +241,7 @@ function buildContextFromExtractedRows(input: {
   expectedDeliveryDate?: Date | null;
   referenceDate?: Date;
   sharedNfeExternalIds?: ReadonlySet<number>;
-  operationalInvoicing?: SalesOrderOperationalInvoicingInput | null;
+  itemizedBilling?: SalesOrderItemizedBillingInput | null;
 }): SalesOrderLinkedNfeContext {
   const reviewReasons: string[] = [];
   const referenceDate = startOfLocalDay(input.referenceDate ?? new Date());
@@ -290,13 +278,15 @@ function buildContextFromExtractedRows(input: {
     0
   );
   const totalNet = input.totalNetValue != null ? Number(input.totalNetValue) : null;
-  let invoiceCoveragePercent = computeInvoiceCoveragePercent(nfeTotalValue, totalNet);
-  let isFullyInvoiced = isInvoiceCoverageComplete(nfeTotalValue, totalNet);
+  // Métrica de VALOR (cabeçalho da NF × valor líquido do pedido) — não decide
+  // sozinha o status: inclui frete/IPI e ignora itens cancelados.
+  const invoiceCoveragePercent = computeInvoiceCoveragePercent(nfeTotalValue, totalNet);
+  const legacyIsFullyInvoiced = isInvoiceCoverageComplete(nfeTotalValue, totalNet);
   const hasValidInvoice = billingRows.length > 0 && processingDates.length > 0;
   const hasCanceledInvoice = canceledRows.length > 0;
   // hasNfe para faturamento = possui NF válida; cancelada sozinha não fatura.
   const hasNfe = hasValidInvoice;
-  let isPartiallyInvoiced = hasNfe && !isFullyInvoiced && nfeTotalValue > 0;
+  const legacyIsPartiallyInvoiced = hasNfe && !legacyIsFullyInvoiced && nfeTotalValue > 0;
   const isNotInvoiced = !hasNfe;
   if (hasCanceledInvoice) {
     reviewReasons.push("NF cancelada vinculada ao pedido (não compõe faturamento válido).");
@@ -309,25 +299,21 @@ function buildContextFromExtractedRows(input: {
     (row) => input.sharedNfeExternalIds?.has(row.extracted.nfeExternalId) === true
   );
 
-  // Uma NF/Documento de Saída pode conter itens de vários pedidos: o cabeçalho
-  // (xmlVNF) não é a parcela deste pedido. Nesses casos — e quando o cabeçalho
-  // supera o valor do pedido — a cobertura vem da quantidade faturada por item
-  // já consolidada pelo motor operacional, sem novo rateio aqui.
-  let invoiceCoverageBasis: SalesOrderInvoiceCoverageBasis = "nfe_header_value";
-  const operationalProgress = resolveOperationalInvoicedProgressPercent(
-    input.operationalInvoicing
-  );
-  if (
-    hasNfe &&
-    operationalProgress != null &&
-    (hasNfeSharedAcrossOrders || headerExceedsOrderValue)
-  ) {
-    invoiceCoverageBasis = "operational_item_quantity";
-    invoiceCoveragePercent = operationalProgress;
-    isFullyInvoiced =
-      operationalProgress >= 100 - OPERATIONAL_INVOICED_PROGRESS_FULL_TOLERANCE;
-    isPartiallyInvoiced = !isFullyInvoiced;
-  }
+  // A NF prova que houve faturamento; quanto da obrigação ativa do pedido foi
+  // faturado vem dos itens (pedido − corte − cancelado × quantidade faturada).
+  // Sem cobertura por item confiável, vale a regra legada por valor.
+  const itemized = resolveItemizedBillingCoverage({
+    items: input.itemizedBilling?.items,
+    expectedItemCount: input.itemizedBilling?.expectedItemCount,
+  });
+  const billingDecision = resolveSalesOrderBillingDecision({
+    hasValidNfe: hasNfe,
+    legacyIsFullyInvoiced,
+    legacyIsPartiallyInvoiced,
+    hasNfeSharedAcrossOrders,
+    itemizedCoverage: itemized.coverage,
+  });
+  const { isFullyInvoiced, isPartiallyInvoiced } = billingDecision;
 
   // Cabeçalho acima do pedido só é divergência quando a NF é exclusiva dele.
   const hasValueDivergence = headerExceedsOrderValue && !hasNfeSharedAcrossOrders;
@@ -421,8 +407,12 @@ function buildContextFromExtractedRows(input: {
     nfeProductsValue,
     nfeHighlightedTaxesValue,
     invoiceCoveragePercent,
-    invoiceCoverageBasis,
     hasNfeSharedAcrossOrders,
+    legacyIsFullyInvoiced,
+    legacyIsPartiallyInvoiced,
+    itemizedBillingCoverage: itemized.coverage,
+    billingDecisionReason: billingDecision.reason,
+    billingUsedLegacyFallback: billingDecision.usedLegacyFallback,
     isFullyInvoiced,
     isPartiallyInvoiced,
     isNotInvoiced,
@@ -450,8 +440,8 @@ export function buildSalesOrderLinkedNfeContext(input: {
   nomusRawResponse?: unknown;
   /** NF (externalId) vinculadas a mais de um pedido — cabeçalho não atribuível. */
   sharedNfeExternalIds?: ReadonlySet<number>;
-  /** Faturamento por item do motor operacional (SalesOrderFlowSnapshot). */
-  operationalInvoicing?: SalesOrderOperationalInvoicingInput | null;
+  /** Fatos por item do motor operacional (SalesOrderItemFlowSnapshot). */
+  itemizedBilling?: SalesOrderItemizedBillingInput | null;
 }): SalesOrderLinkedNfeContext {
   const activeLinks = input.links.filter((link) => link.presentInLastPayload !== false);
   const nomusMap = input.nomusNfesByExternalId ?? new Map<number, SalesOrderLinkedNomusNfeInput>();
@@ -505,7 +495,7 @@ export function buildSalesOrderLinkedNfeContext(input: {
             : null,
       referenceDate: input.referenceDate,
       sharedNfeExternalIds: input.sharedNfeExternalIds,
-      operationalInvoicing: input.operationalInvoicing,
+      itemizedBilling: input.itemizedBilling,
     });
   }
 
@@ -543,7 +533,7 @@ export function buildSalesOrderLinkedNfeContext(input: {
           : null,
     referenceDate: input.referenceDate,
     sharedNfeExternalIds: input.sharedNfeExternalIds,
-    operationalInvoicing: input.operationalInvoicing,
+    itemizedBilling: input.itemizedBilling,
   });
 }
 
@@ -620,23 +610,52 @@ export async function loadSalesOrderLinkedNfeContextMap(
 
   // NF compartilhada: considera vínculos ativos de qualquer pedido (inclusive
   // fora desta página), pois o cabeçalho da NF soma itens de todos eles.
-  const [nfeOrderPairs, flowSnapshots] =
+  // Cobertura por item: só para pedidos com vínculo de NF (sem NF não fatura),
+  // em lote — um snapshot por item + contagem de itens para checar completude.
+  const linkedOrderIds = [...linksByOrderId.keys()];
+  const [nfeOrderPairs, itemSnapshots, itemCounts] =
     externalIds.length > 0
       ? await Promise.all([
           prisma.salesOrderNfeLink.findMany({
             where: { nfeExternalId: { in: externalIds }, presentInLastPayload: true },
             select: { salesOrderId: true, nfeExternalId: true },
           }),
-          prisma.salesOrderFlowSnapshot.findMany({
-            where: { salesOrderId: { in: [...linksByOrderId.keys()] } },
-            select: { salesOrderId: true, progressInvoiced: true },
+          prisma.salesOrderItemFlowSnapshot.findMany({
+            where: { salesOrderId: { in: linkedOrderIds } },
+            select: {
+              salesOrderId: true,
+              salesOrderItemId: true,
+              isActiveForKanban: true,
+              currentStage: true,
+              orderedQuantity: true,
+              shipTargetQuantity: true,
+              invoicedQuantity: true,
+            },
+          }),
+          prisma.salesOrderItem.groupBy({
+            by: ["salesOrderId"],
+            where: { salesOrderId: { in: linkedOrderIds } },
+            _count: { _all: true },
           }),
         ])
-      : [[], []];
+      : [[], [], []];
   const sharedNfeExternalIds = resolveSharedNfeExternalIds(nfeOrderPairs);
-  const progressInvoicedByOrderId = new Map(
-    flowSnapshots.map((row) => [row.salesOrderId, decimalToNumber(row.progressInvoiced)])
+  const itemCountByOrderId = new Map(
+    itemCounts.map((row) => [row.salesOrderId, row._count._all])
   );
+  const itemizedItemsByOrderId = new Map<string, ItemizedBillingItemInput[]>();
+  for (const row of itemSnapshots) {
+    const list = itemizedItemsByOrderId.get(row.salesOrderId) ?? [];
+    list.push({
+      salesOrderItemId: row.salesOrderItemId,
+      isActiveForKanban: row.isActiveForKanban,
+      currentStage: row.currentStage,
+      orderedQuantity: decimalToNumber(row.orderedQuantity),
+      shipTargetQuantity: decimalToNumber(row.shipTargetQuantity),
+      invoicedQuantity: decimalToNumber(row.invoicedQuantity),
+    });
+    itemizedItemsByOrderId.set(row.salesOrderId, list);
+  }
 
   const result = new Map<string, SalesOrderLinkedNfeContext>();
   for (const order of orders) {
@@ -651,8 +670,11 @@ export async function loadSalesOrderLinkedNfeContextMap(
         referenceDate,
         nomusRawResponse: order.nomusRawResponse,
         sharedNfeExternalIds,
-        operationalInvoicing: progressInvoicedByOrderId.has(order.id)
-          ? { progressInvoicedPercent: progressInvoicedByOrderId.get(order.id) }
+        itemizedBilling: itemizedItemsByOrderId.has(order.id)
+          ? {
+              items: itemizedItemsByOrderId.get(order.id) ?? [],
+              expectedItemCount: itemCountByOrderId.get(order.id) ?? null,
+            }
           : null,
       })
     );

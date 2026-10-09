@@ -17,10 +17,12 @@
  *   - Propostas.
  *   - `status = "SENT_TO_NOMUS"` (é status operacional, não é sinal de NF).
  *
- * Cobertura (2026-10): o cabeçalho da NF só mede a cobertura quando a NF é
- * exclusiva do pedido. NF / Documento de Saída com itens de vários pedidos (ou
- * cabeçalho acima do valor do pedido) usa a quantidade faturada por item do
- * motor operacional (`SalesOrderFlowSnapshot.progressInvoiced`).
+ * Cobertura (2026-10): a NF prova o faturamento; "total × parcial" vem da
+ * obrigação ativa por item (`SalesOrderItemFlowSnapshot`: pedido − corte −
+ * cancelado × quantidade faturada), em `salesOrderItemizedBillingCoverage.ts`.
+ * O cabeçalho da NF (`xmlVNF`) inclui frete/IPI e itens de outros pedidos, e
+ * `totalNetValue` inclui itens cancelados — a comparação por valor fica só
+ * como fallback quando não há cobertura por item confiável.
  *
  * O motor oficial que consolida a NF vinculada é
  * `loadSalesOrderLinkedNfeContextMap` (`src/lib/salesOrderLinkedNfe.ts`) —
@@ -140,9 +142,9 @@ export type SalesOrderBillingStatusInput = {
  *   4. Caso contrário             → `INVOICED`.
  *
  * Observação: `isFullyInvoiced` e `isPartiallyInvoiced` são derivados em
- * `salesOrderLinkedNfe.ts` (valor do cabeçalho com `INVOICE_COVERAGE_TOLERANCE_*`
- * ou progresso operacional quando a NF não é exclusiva do pedido) — este
- * helper apenas consome os flags sem recalcular.
+ * `salesOrderLinkedNfe.ts` (cobertura por item, com fallback para o valor do
+ * cabeçalho e `INVOICE_COVERAGE_TOLERANCE_*`) — este helper apenas consome os
+ * flags sem recalcular.
  */
 export function resolveSalesOrderBillingStatus(
   input: SalesOrderBillingStatusInput
@@ -154,6 +156,32 @@ export function resolveSalesOrderBillingStatus(
   // isFullyInvoiced pode não estar definido em contextos simplificados
   // (ex.: rebuild antigo). Se há NF e não é parcial, considera INVOICED.
   return "INVOICED";
+}
+
+/**
+ * Flags finais do contexto oficial da NF vinculada
+ * (`SalesOrderLinkedNfeContext`), já decididos no backend.
+ */
+export type SalesOrderBillingContextFlags = {
+  hasNfe: boolean;
+  isFullyInvoiced: boolean;
+  isPartiallyInvoiced: boolean;
+};
+
+/**
+ * Status canônico a partir do contexto oficial. Grade, detalhe, PDF, XLSX e
+ * relatórios devem usar este helper para não divergir na passagem dos flags.
+ */
+export function resolveSalesOrderBillingStatusFromContext(
+  status: string | null | undefined,
+  context: SalesOrderBillingContextFlags | null | undefined
+): SalesOrderBillingStatus {
+  return resolveSalesOrderBillingStatus({
+    status,
+    hasNfe: context?.hasNfe ?? false,
+    isFullyInvoiced: context?.isFullyInvoiced ?? false,
+    isPartiallyInvoiced: context?.isPartiallyInvoiced ?? false,
+  });
 }
 
 /** Nome curto para arquivos exportados / filtros. */

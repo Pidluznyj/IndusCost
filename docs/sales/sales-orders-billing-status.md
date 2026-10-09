@@ -7,7 +7,7 @@
 | **Endpoint** | `GET /api/sales-orders` |
 | **QA** | `npx tsx scripts/qaSalesOrdersBillingStatus.ts` |
 | **Diagnóstico** | `npx tsx tmp-audits/inspect-sales-orders-billing-status.ts` |
-| **Atualizado** | 2026-07-14 |
+| **Atualizado** | 2026-10-09 (cobertura por item) |
 
 ## Objetivo
 
@@ -57,16 +57,63 @@ O mesmo motor é usado por:
 
 ## Item cancelado / cortado
 
-A regra oficial delega para o motor (`SalesOrderLinkedNfeContext`) o
-cálculo de cobertura, que já respeita:
+A intenção sempre foi: item cancelado no Nomus não conta como pendente e
+corte respeita o saldo ativo. Um pedido com 2 itens onde item 1 foi
+cancelado e item 2 foi faturado 100% é **Faturado** (não parcial).
 
-- Item cancelado no Nomus não conta como pendente para "parcial"
-- Item com corte respeita o saldo ativo remanescente
-- Coverage percent usa `INVOICE_COVERAGE_TOLERANCE_ABSOLUTE` +
-  `INVOICE_COVERAGE_TOLERANCE_PERCENT` para tolerar arredondamentos
+Até 2026-10 isso não acontecia: a cobertura comparava a soma do cabeçalho
+da NF (`xmlVNF`) com `SalesOrder.totalNetValue` original, o que gerava
+falso "Parcialmente faturado" em três situações reais:
 
-Portanto: um pedido com 2 itens onde item 1 foi cancelado no Nomus e item
-2 foi faturado 100% aparece como **Faturado** (não como parcial).
+| Caso | Pedido | Motivo |
+|---|---|---|
+| NF com itens de vários pedidos | PD 02959 | cabeçalho 272.238 × pedido 107.508 |
+| Itens cancelados | PD 02312, PD 02207 | `totalNetValue` inclui o valor cancelado |
+| Frete / IPI na NF | PD 02123 | `vNF` 3.753,57 × pedido 3.513,57 |
+
+## Cobertura por item (2026-10)
+
+Duas perguntas separadas:
+
+1. **Evidência fiscal** — existe NF-e válida vinculada? Sem mudança:
+   `SalesOrderNfeLink` + `NomusNfe`, NF cancelada excluída. Sem NF válida o
+   pedido nunca é faturado.
+2. **Cobertura da obrigação** — os itens ativos estão integralmente
+   faturados? `resolveItemizedBillingCoverage`
+   (`src/lib/sales/salesOrderItemizedBillingCoverage.ts`) lê os
+   `SalesOrderItemFlowSnapshot` do pedido: obrigação ativa =
+   `shipTargetQuantity` (pedido − corte − cancelado) × `invoicedQuantity`.
+
+| Cobertura por item | Status |
+|---|---|
+| `FULL` — todo item ativo com obrigação coberta | Faturado |
+| `PARTIAL` — algum item faturado, não todos cobertos | Parcialmente faturado (*) |
+| `NONE` — NF válida, nenhuma quantidade atribuída | regra por valor |
+| `UNKNOWN` — sem snapshot, incompleto ou inconsistente | regra por valor |
+
+(*) Se a NF é exclusiva do pedido e o valor fecha, o status por valor
+(Faturado) prevalece e o motivo fica
+`LEGACY_VALUE_FULL_OVER_ITEMIZED_PARTIAL` — o snapshot pode estar defasado.
+
+`UNKNOWN` cobre: nenhum snapshot de item; contagem de snapshots diferente
+da de `SalesOrderItem`; quantidade nula, negativa ou obrigação maior que o
+pedido; pedido sem nenhuma obrigação ativa.
+
+A regra por valor continua existindo como fallback e como métrica:
+`invoiceCoveragePercent`, `nfeTotalValue`, `nfeProductsValue` e
+`nfeHighlightedTaxesValue` não mudaram. O contexto expõe ainda
+`legacyIsFullyInvoiced` / `legacyIsPartiallyInvoiced`,
+`itemizedBillingCoverage`, `billingDecisionReason` e
+`billingUsedLegacyFallback` para auditoria.
+
+O Detalhe do Pedido passou a usar o mesmo contexto da grade (antes exibia
+"Faturado" para qualquer pedido com NF).
+
+Auditoria read-only (legado × por item × final × motivo):
+
+```bash
+npx tsx scripts/audit-sales-order-billing-status-vs-flow.ts --from=2026-01-01 --to=2026-10-31
+```
 
 ## UI
 

@@ -1,14 +1,15 @@
 /**
- * Auditoria READ-ONLY — status de Faturamento da grade × motor operacional.
+ * Auditoria READ-ONLY (shadow mode) — status de Faturamento dos Pedidos de Venda.
  *
  * Compara, por pedido:
- *   - regra anterior: cabeçalho das NF vinculadas × valor líquido do pedido;
- *   - regra atual: `loadSalesOrderLinkedNfeContextMap` (cabeçalho quando a NF é
- *     exclusiva do pedido; progresso operacional quando não é);
- *   - motor operacional: `SalesOrderFlowSnapshot.progressInvoiced`.
+ *   - legacyStatus: regra por valor (cabeçalho das NF válidas × valor líquido);
+ *   - itemizedCoverage: cobertura da obrigação ativa por item
+ *     (`SalesOrderItemFlowSnapshot`): FULL / PARTIAL / NONE / UNKNOWN;
+ *   - finalStatus: status canônico de `loadSalesOrderLinkedNfeContextMap`;
+ *   - decisionReason / usedFallback: por que o status final é esse;
+ *   - progressInvoiced / currentStage do `SalesOrderFlowSnapshot` (referência).
  *
- * Mostra se o caso PD 02959 (NF de vários pedidos) é isolado ou uma classe.
- * Só executa SELECT (findMany). Não grava, não recalcula snapshot.
+ * Só executa SELECT (findMany / groupBy). Não grava, não recalcula snapshot.
  *
  * Uso:
  *   npx tsx scripts/audit-sales-order-billing-status-vs-flow.ts
@@ -19,26 +20,28 @@
  * Opções:
  *   --from / --to   janela de `SalesOrder.issueDate` (padrão: últimos 365 dias)
  *   --order         filtra por trecho do código do pedido (ignora a janela)
- *   --all           lista também pedidos sem divergência
+ *   --all           lista todos os pedidos (padrão: só os que pedem atenção)
  *   --json          saída JSON (resumo + linhas)
+ *
+ * Linhas listadas por padrão: status final diferente do legado, status final
+ * diferente do motor operacional, ou conflito valor × item.
  */
 import "dotenv/config";
 import { decimalToNumber } from "../src/lib/executiveDashboardHelpers.ts";
 import { prisma } from "../src/lib/prisma.ts";
-import {
-  isInvoiceCoverageComplete,
-  loadSalesOrderLinkedNfeContextMap,
-  OPERATIONAL_INVOICED_PROGRESS_FULL_TOLERANCE,
-} from "../src/lib/salesOrderLinkedNfe.ts";
+import { loadSalesOrderLinkedNfeContextMap } from "../src/lib/salesOrderLinkedNfe.ts";
 import {
   resolveSalesOrderBillingStatus,
+  resolveSalesOrderBillingStatusFromContext,
   type SalesOrderBillingStatus,
 } from "../src/lib/sales/salesOrderListBillingStatus.ts";
 
 const BATCH_SIZE = 500;
 const DEFAULT_WINDOW_DAYS = 365;
+/** Progresso agregado do fluxo tratado como 100% (Decimal(10, 2)). */
+const FLOW_PROGRESS_FULL = 99.99;
 
-type DivergenceClass =
+type FlowDivergence =
   | "OK"
   | "NO_FLOW_SNAPSHOT"
   | "GRID_PARTIAL_FLOW_FULL"
@@ -53,18 +56,17 @@ type AuditRow = {
   issueDate: string | null;
   totalNetValue: number | null;
   nfeHeaderTotalValue: number;
-  nfeCount: number;
+  hasValidNfe: boolean;
   hasNfeSharedAcrossOrders: boolean;
-  coverageBasis: string;
-  previousRuleStatus: SalesOrderBillingStatus;
-  currentRuleStatus: SalesOrderBillingStatus;
-  flowStage: string | null;
-  flowProgressInvoiced: number | null;
-  flowStatus: SalesOrderBillingStatus | null;
-  /** Divergência da regra anterior (cabeçalho) contra o motor operacional. */
-  previousRuleDivergence: DivergenceClass;
-  /** Divergência que permanece com a regra atual. */
-  currentRuleDivergence: DivergenceClass;
+  legacyStatus: SalesOrderBillingStatus;
+  itemizedCoverage: string;
+  finalStatus: SalesOrderBillingStatus;
+  decisionReason: string;
+  usedFallback: boolean;
+  progressInvoiced: number | null;
+  currentStage: string | null;
+  legacyVsFlow: FlowDivergence;
+  finalVsFlow: FlowDivergence;
 };
 
 function readArg(name: string): string | null {
@@ -87,21 +89,25 @@ function parseDateArg(name: string): Date | null {
   return date;
 }
 
+function isOrderCanceled(status: string | null): boolean {
+  return (status ?? "").trim().toUpperCase() === "CANCELLED";
+}
+
 function flowStatusFromProgress(
   orderStatus: string | null,
   progressInvoiced: number | null
 ): SalesOrderBillingStatus | null {
-  if ((orderStatus ?? "").trim().toUpperCase() === "CANCELLED") return "CANCELED";
+  if (isOrderCanceled(orderStatus)) return "CANCELED";
   if (progressInvoiced == null) return null;
-  if (progressInvoiced >= 100 - OPERATIONAL_INVOICED_PROGRESS_FULL_TOLERANCE) return "INVOICED";
+  if (progressInvoiced >= FLOW_PROGRESS_FULL) return "INVOICED";
   if (progressInvoiced > 0) return "PARTIALLY_INVOICED";
   return "NOT_INVOICED";
 }
 
-function classify(
+function compareWithFlow(
   gridStatus: SalesOrderBillingStatus,
   flowStatus: SalesOrderBillingStatus | null
-): DivergenceClass {
+): FlowDivergence {
   if (flowStatus == null) return "NO_FLOW_SNAPSHOT";
   if (gridStatus === flowStatus || gridStatus === "CANCELED") return "OK";
   if (gridStatus === "PARTIALLY_INVOICED") {
@@ -122,6 +128,14 @@ function countBy(rows: AuditRow[], pick: (row: AuditRow) => string): Record<stri
     counts[key] = (counts[key] ?? 0) + 1;
   }
   return counts;
+}
+
+function needsAttention(row: AuditRow): boolean {
+  return (
+    row.legacyStatus !== row.finalStatus ||
+    (row.finalVsFlow !== "OK" && row.finalVsFlow !== "NO_FLOW_SNAPSHOT") ||
+    row.decisionReason === "LEGACY_VALUE_FULL_OVER_ITEMIZED_PARTIAL"
+  );
 }
 
 async function main(): Promise<void> {
@@ -164,63 +178,58 @@ async function main(): Promise<void> {
 
     for (const order of orders) {
       const ctx = contextMap.get(order.id);
-      const totalNetValue = decimalToNumber(order.totalNetValue);
-      const hasNfe = ctx?.hasNfe ?? false;
-      const headerTotal = ctx?.nfeTotalValue ?? 0;
-      const headerFull = isInvoiceCoverageComplete(headerTotal, totalNetValue);
-      const previousRuleStatus = resolveSalesOrderBillingStatus({
+      const hasValidNfe = ctx?.hasNfe ?? false;
+      const legacyStatus = resolveSalesOrderBillingStatus({
         status: order.status,
-        hasNfe,
-        isFullyInvoiced: headerFull,
-        isPartiallyInvoiced: hasNfe && !headerFull && headerTotal > 0,
+        hasNfe: hasValidNfe,
+        isFullyInvoiced: ctx?.legacyIsFullyInvoiced ?? false,
+        isPartiallyInvoiced: ctx?.legacyIsPartiallyInvoiced ?? false,
       });
-      const currentRuleStatus = resolveSalesOrderBillingStatus({
-        status: order.status,
-        hasNfe,
-        isFullyInvoiced: ctx?.isFullyInvoiced,
-        isPartiallyInvoiced: ctx?.isPartiallyInvoiced,
-      });
+      const finalStatus = resolveSalesOrderBillingStatusFromContext(order.status, ctx);
       const snapshot = snapshotByOrderId.get(order.id) ?? null;
-      const flowProgressInvoiced = snapshot ? decimalToNumber(snapshot.progressInvoiced) : null;
-      const flowStatus = flowStatusFromProgress(order.status, flowProgressInvoiced);
+      const progressInvoiced = snapshot ? decimalToNumber(snapshot.progressInvoiced) : null;
+      const flowStatus = flowStatusFromProgress(order.status, progressInvoiced);
       rows.push({
         orderCode: order.orderCode,
         salesOrderId: order.id,
         issueDate: order.issueDate ? order.issueDate.toISOString().slice(0, 10) : null,
-        totalNetValue,
-        nfeHeaderTotalValue: headerTotal,
-        nfeCount: ctx?.validInvoiceCount ?? 0,
+        totalNetValue: decimalToNumber(order.totalNetValue),
+        nfeHeaderTotalValue: ctx?.nfeTotalValue ?? 0,
+        hasValidNfe,
         hasNfeSharedAcrossOrders: ctx?.hasNfeSharedAcrossOrders ?? false,
-        coverageBasis: ctx?.invoiceCoverageBasis ?? "nfe_header_value",
-        previousRuleStatus,
-        currentRuleStatus,
-        flowStage: snapshot?.currentStage ?? null,
-        flowProgressInvoiced,
-        flowStatus,
-        previousRuleDivergence: classify(previousRuleStatus, flowStatus),
-        currentRuleDivergence: classify(currentRuleStatus, flowStatus),
+        legacyStatus,
+        itemizedCoverage: ctx?.itemizedBillingCoverage ?? "UNKNOWN",
+        finalStatus,
+        decisionReason: isOrderCanceled(order.status)
+          ? "ORDER_CANCELED"
+          : (ctx?.billingDecisionReason ?? "NO_VALID_NFE"),
+        usedFallback: ctx?.billingUsedLegacyFallback ?? true,
+        progressInvoiced,
+        currentStage: snapshot?.currentStage ?? null,
+        legacyVsFlow: compareWithFlow(legacyStatus, flowStatus),
+        finalVsFlow: compareWithFlow(finalStatus, flowStatus),
       });
     }
     if (orders.length < BATCH_SIZE) break;
   }
 
-  const isDivergent = (row: AuditRow) =>
-    (row.previousRuleDivergence !== "OK" && row.previousRuleDivergence !== "NO_FLOW_SNAPSHOT") ||
-    (row.currentRuleDivergence !== "OK" && row.currentRuleDivergence !== "NO_FLOW_SNAPSHOT");
-  const divergent = rows.filter(isDivergent);
   const summary = {
     scope: orderFilter
       ? { order: orderFilter }
       : { from: from.toISOString().slice(0, 10), to: to.toISOString().slice(0, 10) },
     ordersAudited: rows.length,
     ordersWithSharedNfe: rows.filter((row) => row.hasNfeSharedAcrossOrders).length,
-    previousRuleDivergence: countBy(rows, (row) => row.previousRuleDivergence),
-    currentRuleDivergence: countBy(rows, (row) => row.currentRuleDivergence),
-    statusChangedByCurrentRule: rows.filter(
-      (row) => row.previousRuleStatus !== row.currentRuleStatus
-    ).length,
+    statusChangedFromLegacy: rows.filter((row) => row.legacyStatus !== row.finalStatus).length,
+    statusTransitions: countBy(
+      rows.filter((row) => row.legacyStatus !== row.finalStatus),
+      (row) => `${row.legacyStatus} -> ${row.finalStatus}`
+    ),
+    decisionReason: countBy(rows, (row) => row.decisionReason),
+    itemizedCoverage: countBy(rows, (row) => row.itemizedCoverage),
+    legacyVsFlow: countBy(rows, (row) => row.legacyVsFlow),
+    finalVsFlow: countBy(rows, (row) => row.finalVsFlow),
   };
-  const listed = hasFlag("all") ? rows : divergent;
+  const listed = hasFlag("all") ? rows : rows.filter(needsAttention);
 
   if (hasFlag("json")) {
     // eslint-disable-next-line no-console
@@ -233,16 +242,18 @@ async function main(): Promise<void> {
   console.table(
     listed.map((row) => ({
       pedido: row.orderCode,
-      emissao: row.issueDate,
+      legacyStatus: row.legacyStatus,
+      itemizedCoverage: row.itemizedCoverage,
+      finalStatus: row.finalStatus,
+      progressInvoiced: row.progressInvoiced,
+      currentStage: row.currentStage,
+      hasValidNfe: row.hasValidNfe,
+      usedFallback: row.usedFallback,
+      decisionReason: row.decisionReason,
       liquido: row.totalNetValue,
       nfCabecalho: row.nfeHeaderTotalValue,
       nfCompartilhada: row.hasNfeSharedAcrossOrders,
-      regraAnterior: row.previousRuleStatus,
-      regraAtual: row.currentRuleStatus,
-      fluxoFaturado: row.flowProgressInvoiced,
-      fluxoEstagio: row.flowStage,
-      divergenciaAnterior: row.previousRuleDivergence,
-      divergenciaAtual: row.currentRuleDivergence,
+      finalVsFlow: row.finalVsFlow,
     }))
   );
 }
