@@ -24,7 +24,7 @@
  *   --json          saída JSON (resumo + linhas)
  *
  * Linhas listadas por padrão: status final diferente do legado, status final
- * diferente do motor operacional, ou conflito valor × item.
+ * diferente do motor operacional, ou NF válida sem quantidade atribuída aos itens.
  */
 import "dotenv/config";
 import { decimalToNumber } from "../src/lib/executiveDashboardHelpers.ts";
@@ -134,7 +134,7 @@ function needsAttention(row: AuditRow): boolean {
   return (
     row.legacyStatus !== row.finalStatus ||
     (row.finalVsFlow !== "OK" && row.finalVsFlow !== "NO_FLOW_SNAPSHOT") ||
-    row.decisionReason === "LEGACY_VALUE_FULL_OVER_ITEMIZED_PARTIAL"
+    row.decisionReason === "ITEMIZED_NONE_WITH_VALID_NFE"
   );
 }
 

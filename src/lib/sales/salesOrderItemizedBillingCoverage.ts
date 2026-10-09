@@ -136,8 +136,7 @@ export type SalesOrderBillingDecisionReason =
   | "ITEMIZED_FULL"
   | "SHARED_NFE_ITEMIZED_FULL"
   | "ITEMIZED_PARTIAL"
-  | "LEGACY_VALUE_FULL_OVER_ITEMIZED_PARTIAL"
-  | "ITEMIZED_NONE_FALLBACK_VALUE"
+  | "ITEMIZED_NONE_WITH_VALID_NFE"
   | "ITEMIZED_UNKNOWN_FALLBACK_VALUE";
 
 export type SalesOrderBillingDecision = {
@@ -151,12 +150,15 @@ export type SalesOrderBillingDecision = {
 /**
  * Decide os flags finais de faturamento.
  *
+ * A regra por valor nunca sobrepõe uma conclusão por item confiável; ela só
+ * vale quando a cobertura é `UNKNOWN`.
+ *
  * - Sem NF válida: nunca fatura (a cobertura por item não substitui a NF).
- * - Cobertura por item `FULL`: faturado, qualquer que seja o cabeçalho da NF.
- * - `PARTIAL`: parcial — exceto quando a NF é exclusiva do pedido e o valor
- *   fecha; aí as duas evidências se contradizem e prevalece a regra em vigor
- *   (snapshot pode estar defasado), com motivo próprio para auditoria.
- * - `NONE` / `UNKNOWN`: regra legada por valor.
+ * - `FULL`: faturado, qualquer que seja o cabeçalho da NF.
+ * - `PARTIAL`: parcial, mesmo que o valor da NF feche com o pedido.
+ * - `NONE`: há NF válida, mas nenhuma quantidade atribuída aos itens ativos —
+ *   parcial (existe faturamento, a obrigação não está coberta); nunca faturado.
+ * - `UNKNOWN`: regra legada por valor.
  */
 export function resolveSalesOrderBillingDecision(input: {
   hasValidNfe: boolean;
@@ -181,9 +183,6 @@ export function resolveSalesOrderBillingDecision(input: {
         reason: input.hasNfeSharedAcrossOrders ? "SHARED_NFE_ITEMIZED_FULL" : "ITEMIZED_FULL",
       };
     case "PARTIAL":
-      if (input.legacyIsFullyInvoiced && !input.hasNfeSharedAcrossOrders) {
-        return { ...legacy, reason: "LEGACY_VALUE_FULL_OVER_ITEMIZED_PARTIAL" };
-      }
       return {
         isFullyInvoiced: false,
         isPartiallyInvoiced: true,
@@ -191,7 +190,12 @@ export function resolveSalesOrderBillingDecision(input: {
         reason: "ITEMIZED_PARTIAL",
       };
     case "NONE":
-      return { ...legacy, reason: "ITEMIZED_NONE_FALLBACK_VALUE" };
+      return {
+        isFullyInvoiced: false,
+        isPartiallyInvoiced: true,
+        usedLegacyFallback: false,
+        reason: "ITEMIZED_NONE_WITH_VALID_NFE",
+      };
     default:
       return { ...legacy, reason: "ITEMIZED_UNKNOWN_FALLBACK_VALUE" };
   }

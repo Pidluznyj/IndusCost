@@ -342,27 +342,25 @@ describe("status de faturamento — NF válida × cobertura por item", () => {
     assert.equal(billingStatus(ctx), "INVOICED");
   });
 
-  it("NF exclusiva com valor fechado e itens parciais: mantém INVOICED e registra o conflito", () => {
-    const ctx = context({
-      totalNetValue: 1000,
-      nfes: [{ externalId: 1, headerValue: 1000 }],
-      items: [{ ordered: 100, invoiced: 40 }],
-    });
-    assert.equal(billingStatus(ctx), "INVOICED");
-    assert.equal(ctx.billingDecisionReason, "LEGACY_VALUE_FULL_OVER_ITEMIZED_PARTIAL");
-    assert.equal(ctx.billingUsedLegacyFallback, true);
-  });
-
-  it("NF válida sem quantidade atribuída aos itens: mantém a regra por valor", () => {
-    const ctx = context({
+  it("NF válida sem quantidade atribuída aos itens: parcial, nunca faturado pelo valor", () => {
+    const valueDoesNotClose = context({
       totalNetValue: 1000,
       nfes: [{ externalId: 1, headerValue: 3000 }],
       sharedNfeExternalIds: [1],
       items: [{ ordered: 100, invoiced: 0 }],
     });
-    assert.equal(ctx.itemizedBillingCoverage, "NONE");
-    assert.equal(ctx.billingDecisionReason, "ITEMIZED_NONE_FALLBACK_VALUE");
-    assert.equal(billingStatus(ctx), "PARTIALLY_INVOICED");
+    const valueCloses = context({
+      totalNetValue: 1000,
+      nfes: [{ externalId: 1, headerValue: 1000 }],
+      items: [{ ordered: 100, invoiced: 0 }],
+    });
+    assert.equal(valueCloses.legacyIsFullyInvoiced, true);
+    for (const ctx of [valueDoesNotClose, valueCloses]) {
+      assert.equal(ctx.itemizedBillingCoverage, "NONE");
+      assert.equal(ctx.billingDecisionReason, "ITEMIZED_NONE_WITH_VALID_NFE");
+      assert.equal(ctx.billingUsedLegacyFallback, false);
+      assert.equal(billingStatus(ctx), "PARTIALLY_INVOICED");
+    }
   });
 
   it("pedido só com itens cancelados: sem obrigação ativa, usa a regra por valor", () => {
@@ -380,6 +378,84 @@ describe("status de faturamento — NF válida × cobertura por item", () => {
       expectedItemCount: 1,
     });
     assert.equal(result.coverage, "FULL");
+  });
+});
+
+describe("conclusão por item confiável vence a regra por valor; UNKNOWN cai no legado", () => {
+  const valueCloses = { totalNetValue: 1000, nfes: [{ externalId: 1, headerValue: 1000 }] };
+  const valueDoesNotClose = { totalNetValue: 1000, nfes: [{ externalId: 1, headerValue: 400 }] };
+
+  it("1. valor fecha + itemizado confiável PARTIAL = PARTIALLY_INVOICED", () => {
+    const ctx = context({ ...valueCloses, items: [{ ordered: 100, invoiced: 40 }] });
+    assert.equal(ctx.legacyIsFullyInvoiced, true);
+    assert.equal(ctx.itemizedBillingCoverage, "PARTIAL");
+    assert.equal(ctx.billingDecisionReason, "ITEMIZED_PARTIAL");
+    assert.equal(ctx.billingUsedLegacyFallback, false);
+    assert.equal(billingStatus(ctx), "PARTIALLY_INVOICED");
+  });
+
+  it("2. valor fecha + snapshots incompletos = UNKNOWN -> legado -> INVOICED", () => {
+    const ctx = context({
+      ...valueCloses,
+      items: [{ ordered: 100, invoiced: 40 }],
+      expectedItemCount: 2,
+    });
+    assert.equal(ctx.itemizedBillingCoverage, "UNKNOWN");
+    assert.equal(ctx.billingDecisionReason, "ITEMIZED_UNKNOWN_FALLBACK_VALUE");
+    assert.equal(ctx.billingUsedLegacyFallback, true);
+    assert.equal(billingStatus(ctx), "INVOICED");
+  });
+
+  it("3. valor não fecha + snapshots incompletos = UNKNOWN -> legado -> PARTIALLY_INVOICED", () => {
+    const ctx = context({
+      ...valueDoesNotClose,
+      items: [{ ordered: 100, invoiced: 100 }],
+      expectedItemCount: 2,
+    });
+    assert.equal(ctx.itemizedBillingCoverage, "UNKNOWN");
+    assert.equal(ctx.billingUsedLegacyFallback, true);
+    assert.equal(billingStatus(ctx), "PARTIALLY_INVOICED");
+  });
+
+  it("4. menos snapshots que itens esperados = UNKNOWN (também com mais, ou sem contagem)", () => {
+    const items = itemSnapshots([
+      { ordered: 100, invoiced: 100 },
+      { ordered: 50, invoiced: 50 },
+    ]);
+    for (const expectedItemCount of [3, 1, null, undefined]) {
+      const result = resolveItemizedBillingCoverage({ items, expectedItemCount });
+      assert.equal(result.coverage, "UNKNOWN");
+      assert.equal(result.reason, "ITEM_SNAPSHOT_INCOMPLETE");
+    }
+  });
+
+  it("5. todos os snapshots completos + um item realmente parcial = PARTIAL", () => {
+    const result = resolveItemizedBillingCoverage({
+      items: itemSnapshots([
+        { ordered: 100, invoiced: 100 },
+        { ordered: 50, invoiced: 20 },
+        { ordered: 10, invoiced: 0, canceled: true },
+      ]),
+      expectedItemCount: 3,
+    });
+    assert.equal(result.coverage, "PARTIAL");
+    assert.equal(result.activeItems, 2);
+    assert.equal(result.fullyInvoicedItems, 1);
+    assert.equal(result.partiallyInvoicedItems, 1);
+  });
+
+  it("6. todos completos + obrigação ativa integralmente coberta = FULL", () => {
+    const result = resolveItemizedBillingCoverage({
+      items: itemSnapshots([
+        { ordered: 100, invoiced: 100 },
+        { ordered: 50, invoiced: 30, cut: 20 },
+        { ordered: 10, invoiced: 0, canceled: true },
+      ]),
+      expectedItemCount: 3,
+    });
+    assert.equal(result.coverage, "FULL");
+    assert.equal(result.reason, "ACTIVE_ITEMS_FULLY_INVOICED");
+    assert.equal(result.activeItems, 2);
   });
 });
 
@@ -434,12 +510,31 @@ describe("resolveSalesOrderBillingDecision", () => {
     });
   });
 
-  it("UNKNOWN e NONE devolvem exatamente os flags legados", () => {
-    for (const itemizedCoverage of ["UNKNOWN", "NONE"] as const) {
-      const decision = resolveSalesOrderBillingDecision({ ...base, itemizedCoverage });
+  it("só UNKNOWN devolve os flags legados", () => {
+    for (const legacyIsFullyInvoiced of [true, false]) {
+      const decision = resolveSalesOrderBillingDecision({
+        ...base,
+        legacyIsFullyInvoiced,
+        legacyIsPartiallyInvoiced: !legacyIsFullyInvoiced,
+        itemizedCoverage: "UNKNOWN",
+      });
+      assert.equal(decision.isFullyInvoiced, legacyIsFullyInvoiced);
+      assert.equal(decision.isPartiallyInvoiced, !legacyIsFullyInvoiced);
+      assert.equal(decision.usedLegacyFallback, true);
+    }
+  });
+
+  it("valor fechado nunca sobrepõe PARTIAL ou NONE por item", () => {
+    for (const itemizedCoverage of ["PARTIAL", "NONE"] as const) {
+      const decision = resolveSalesOrderBillingDecision({
+        ...base,
+        legacyIsFullyInvoiced: true,
+        legacyIsPartiallyInvoiced: false,
+        itemizedCoverage,
+      });
       assert.equal(decision.isFullyInvoiced, false);
       assert.equal(decision.isPartiallyInvoiced, true);
-      assert.equal(decision.usedLegacyFallback, true);
+      assert.equal(decision.usedLegacyFallback, false);
     }
   });
 });

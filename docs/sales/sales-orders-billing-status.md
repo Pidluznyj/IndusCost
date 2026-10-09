@@ -87,13 +87,13 @@ Duas perguntas separadas:
 | Cobertura por item | Status |
 |---|---|
 | `FULL` — todo item ativo com obrigação coberta | Faturado |
-| `PARTIAL` — algum item faturado, não todos cobertos | Parcialmente faturado (*) |
-| `NONE` — NF válida, nenhuma quantidade atribuída | regra por valor |
+| `PARTIAL` — algum item faturado, não todos cobertos | Parcialmente faturado |
+| `NONE` — NF válida, nenhuma quantidade atribuída aos itens | Parcialmente faturado |
 | `UNKNOWN` — sem snapshot, incompleto ou inconsistente | regra por valor |
 
-(*) Se a NF é exclusiva do pedido e o valor fecha, o status por valor
-(Faturado) prevalece e o motivo fica
-`LEGACY_VALUE_FULL_OVER_ITEMIZED_PARTIAL` — o snapshot pode estar defasado.
+A regra por valor nunca sobrepõe uma conclusão por item confiável: ela só
+decide quando a cobertura é `UNKNOWN`. Um `PARTIAL` ou `NONE` vale mesmo que
+o valor da NF feche com o pedido.
 
 `UNKNOWN` cobre: nenhum snapshot de item; contagem de snapshots diferente
 da de `SalesOrderItem`; quantidade nula, negativa ou obrigação maior que o
