@@ -28,12 +28,18 @@ import { mapSalesOrderDetailBillingStatus } from "./sales-orders/salesOrderDetai
 const REF = new Date(2026, 8, 30);
 const NFE_STATUS_AUTHORIZED = 100;
 const NFE_STATUS_CANCELED = 7;
+/** NF processada e vínculo visto em 10/09; snapshot gravado em 12/09. */
+const NFE_PROCESSED_AT = new Date(2026, 8, 10);
+const LINK_SEEN_AT = new Date(2026, 8, 10, 14, 0, 0);
+const SNAPSHOT_COMPUTED_AT = new Date(2026, 8, 12, 9, 0, 0);
 
 type NfeFixture = {
   externalId: number;
   /** Cabeçalho da NF (xmlVNF). */
   headerValue: number;
   status?: number;
+  /** `SalesOrderNfeLink.firstSeenAt`; null = ausente. */
+  firstSeenAt?: Date | null;
 };
 
 type ItemFixture = {
@@ -45,8 +51,12 @@ type ItemFixture = {
   canceled?: boolean;
 };
 
-function itemSnapshots(items: ItemFixture[]): ItemizedBillingItemInput[] {
+function itemSnapshots(
+  items: ItemFixture[],
+  computedAt: Date | null = SNAPSHOT_COMPUTED_AT
+): ItemizedBillingItemInput[] {
   return items.map((item, index) => ({
+    computedAt,
     salesOrderItemId: `item-${index + 1}`,
     isActiveForKanban: !item.canceled,
     currentStage: item.canceled ? "CANCELED" : "SHIPPED_COMPLETED",
@@ -64,8 +74,10 @@ function context(input: {
   items?: ItemFixture[];
   /** Quantidade de SalesOrderItem do pedido; padrão = itens informados. */
   expectedItemCount?: number;
+  /** `computedAt` dos snapshots; padrão = depois do vínculo da NF. */
+  snapshotComputedAt?: Date | null;
 }) {
-  const processedAt = new Date(2026, 8, 10);
+  const processedAt = NFE_PROCESSED_AT;
   return buildSalesOrderLinkedNfeContext({
     links: input.nfes.map((nfe) => ({
       id: `link-${nfe.externalId}`,
@@ -77,6 +89,7 @@ function context(input: {
       dataProcessamento: processedAt,
       presentInLastPayload: true,
       nomusNfeId: null,
+      firstSeenAt: nfe.firstSeenAt === undefined ? LINK_SEEN_AT : nfe.firstSeenAt,
     })),
     nomusNfesByExternalId: new Map(
       input.nfes.map((nfe) => [
@@ -102,7 +115,10 @@ function context(input: {
     sharedNfeExternalIds: new Set(input.sharedNfeExternalIds ?? []),
     itemizedBilling: input.items
       ? {
-          items: itemSnapshots(input.items),
+          items: itemSnapshots(
+            input.items,
+            input.snapshotComputedAt === undefined ? SNAPSHOT_COMPUTED_AT : input.snapshotComputedAt
+          ),
           expectedItemCount: input.expectedItemCount ?? input.items.length,
         }
       : null,
@@ -259,7 +275,12 @@ describe("status de faturamento — NF válida × cobertura por item", () => {
     assert.equal(missingItem.itemizedBillingCoverage, "UNKNOWN");
     assert.equal(billingStatus(missingItem), "PARTIALLY_INVOICED");
 
-    const base = { salesOrderItemId: "i1", isActiveForKanban: true, currentStage: "INVOICED" };
+    const base = {
+      salesOrderItemId: "i1",
+      isActiveForKanban: true,
+      currentStage: "INVOICED",
+      computedAt: SNAPSHOT_COMPUTED_AT,
+    };
     const inconsistent: ItemizedBillingItemInput[][] = [
       [{ ...base, orderedQuantity: null, shipTargetQuantity: 10, invoicedQuantity: 10 }],
       [{ ...base, orderedQuantity: 10, shipTargetQuantity: 12, invoicedQuantity: 12 }],
@@ -267,16 +288,19 @@ describe("status de faturamento — NF válida × cobertura por item", () => {
       [{ ...base, orderedQuantity: 10, shipTargetQuantity: 10, invoicedQuantity: -1 }],
     ];
     for (const items of inconsistent) {
-      const result = resolveItemizedBillingCoverage({ items, expectedItemCount: 1 });
+      const result = resolveItemizedBillingCoverage({
+      latestFiscalEvidenceAt: LINK_SEEN_AT, items, expectedItemCount: 1 });
       assert.equal(result.coverage, "UNKNOWN");
       assert.equal(result.reason, "ITEM_SNAPSHOT_INCONSISTENT");
     }
     assert.equal(
-      resolveItemizedBillingCoverage({ items: [], expectedItemCount: 0 }).reason,
+      resolveItemizedBillingCoverage({
+      latestFiscalEvidenceAt: LINK_SEEN_AT, items: [], expectedItemCount: 0 }).reason,
       "NO_ITEM_SNAPSHOT"
     );
     assert.equal(
       resolveItemizedBillingCoverage({
+      latestFiscalEvidenceAt: LINK_SEEN_AT,
         items: itemSnapshots([{ ordered: 10, invoiced: 10 }]),
         expectedItemCount: null,
       }).reason,
@@ -342,29 +366,10 @@ describe("status de faturamento — NF válida × cobertura por item", () => {
     assert.equal(billingStatus(ctx), "INVOICED");
   });
 
-  it("NF válida sem quantidade atribuída aos itens: parcial, nunca faturado pelo valor", () => {
-    const valueDoesNotClose = context({
-      totalNetValue: 1000,
-      nfes: [{ externalId: 1, headerValue: 3000 }],
-      sharedNfeExternalIds: [1],
-      items: [{ ordered: 100, invoiced: 0 }],
-    });
-    const valueCloses = context({
-      totalNetValue: 1000,
-      nfes: [{ externalId: 1, headerValue: 1000 }],
-      items: [{ ordered: 100, invoiced: 0 }],
-    });
-    assert.equal(valueCloses.legacyIsFullyInvoiced, true);
-    for (const ctx of [valueDoesNotClose, valueCloses]) {
-      assert.equal(ctx.itemizedBillingCoverage, "NONE");
-      assert.equal(ctx.billingDecisionReason, "ITEMIZED_NONE_WITH_VALID_NFE");
-      assert.equal(ctx.billingUsedLegacyFallback, false);
-      assert.equal(billingStatus(ctx), "PARTIALLY_INVOICED");
-    }
-  });
 
   it("pedido só com itens cancelados: sem obrigação ativa, usa a regra por valor", () => {
     const result = resolveItemizedBillingCoverage({
+      latestFiscalEvidenceAt: LINK_SEEN_AT,
       items: itemSnapshots([{ ordered: 10, invoiced: 0, canceled: true }]),
       expectedItemCount: 1,
     });
@@ -374,6 +379,7 @@ describe("status de faturamento — NF válida × cobertura por item", () => {
 
   it("quantidade faturada acima da obrigação ativa conta como item total", () => {
     const result = resolveItemizedBillingCoverage({
+      latestFiscalEvidenceAt: LINK_SEEN_AT,
       items: itemSnapshots([{ ordered: 100, invoiced: 130 }]),
       expectedItemCount: 1,
     });
@@ -423,7 +429,8 @@ describe("conclusão por item confiável vence a regra por valor; UNKNOWN cai no
       { ordered: 50, invoiced: 50 },
     ]);
     for (const expectedItemCount of [3, 1, null, undefined]) {
-      const result = resolveItemizedBillingCoverage({ items, expectedItemCount });
+      const result = resolveItemizedBillingCoverage({
+      latestFiscalEvidenceAt: LINK_SEEN_AT, items, expectedItemCount });
       assert.equal(result.coverage, "UNKNOWN");
       assert.equal(result.reason, "ITEM_SNAPSHOT_INCOMPLETE");
     }
@@ -431,6 +438,7 @@ describe("conclusão por item confiável vence a regra por valor; UNKNOWN cai no
 
   it("5. todos os snapshots completos + um item realmente parcial = PARTIAL", () => {
     const result = resolveItemizedBillingCoverage({
+      latestFiscalEvidenceAt: LINK_SEEN_AT,
       items: itemSnapshots([
         { ordered: 100, invoiced: 100 },
         { ordered: 50, invoiced: 20 },
@@ -446,6 +454,7 @@ describe("conclusão por item confiável vence a regra por valor; UNKNOWN cai no
 
   it("6. todos completos + obrigação ativa integralmente coberta = FULL", () => {
     const result = resolveItemizedBillingCoverage({
+      latestFiscalEvidenceAt: LINK_SEEN_AT,
       items: itemSnapshots([
         { ordered: 100, invoiced: 100 },
         { ordered: 50, invoiced: 30, cut: 20 },
@@ -456,6 +465,154 @@ describe("conclusão por item confiável vence a regra por valor; UNKNOWN cai no
     assert.equal(result.coverage, "FULL");
     assert.equal(result.reason, "ACTIVE_ITEMS_FULLY_INVOICED");
     assert.equal(result.activeItems, 2);
+  });
+});
+
+describe("frescor do snapshot e NONE — quando a cobertura por item é autoridade", () => {
+  const valueCloses = { totalNetValue: 1000, nfes: [{ externalId: 1, headerValue: 1000 }] };
+  const valueDoesNotClose = { totalNetValue: 1000, nfes: [{ externalId: 1, headerValue: 400 }] };
+  const beforeLink = new Date(LINK_SEEN_AT.getTime() - 60_000);
+
+  it("A. snapshot completo porém anterior à NF mais recente = UNKNOWN -> fallback", () => {
+    // Itens dizem 40%, mas o snapshot é anterior ao vínculo da NF: não é autoridade.
+    const closes = context({
+      ...valueCloses,
+      items: [{ ordered: 100, invoiced: 40 }],
+      snapshotComputedAt: beforeLink,
+    });
+    const doesNotClose = context({
+      ...valueDoesNotClose,
+      items: [{ ordered: 100, invoiced: 100 }],
+      snapshotComputedAt: beforeLink,
+    });
+    for (const ctx of [closes, doesNotClose]) {
+      assert.equal(ctx.itemizedBillingCoverage, "UNKNOWN");
+      assert.equal(ctx.itemizedBillingCoverageReason, "ITEM_SNAPSHOT_STALE");
+      assert.equal(ctx.billingDecisionReason, "ITEMIZED_UNKNOWN_FALLBACK_VALUE");
+      assert.equal(ctx.billingUsedLegacyFallback, true);
+    }
+    assert.equal(billingStatus(closes), "INVOICED");
+    assert.equal(billingStatus(doesNotClose), "PARTIALLY_INVOICED");
+  });
+
+  it("A2. várias NFs: snapshot entre a primeira e a última NF é defasado", () => {
+    const secondLinkSeenAt = new Date(2026, 8, 20, 10, 0, 0);
+    const ctx = context({
+      totalNetValue: 1000,
+      nfes: [
+        { externalId: 1, headerValue: 400 },
+        { externalId: 2, headerValue: 600, firstSeenAt: secondLinkSeenAt },
+      ],
+      items: [{ ordered: 100, invoiced: 40 }],
+    });
+    assert.equal(ctx.itemizedBillingCoverageReason, "ITEM_SNAPSHOT_STALE");
+    assert.equal(billingStatus(ctx), "INVOICED");
+  });
+
+  it("A3. data de processamento da NF posterior ao snapshot também o torna defasado", () => {
+    const ctx = buildSalesOrderLinkedNfeContext({
+      links: [
+        {
+          id: "l1",
+          nfeExternalId: 1,
+          nfeNumber: "1",
+          nfeKey: null,
+          nfeStatus: NFE_STATUS_AUTHORIZED,
+          tipoOperacao: 1,
+          dataProcessamento: new Date(2026, 8, 25),
+          presentInLastPayload: true,
+          nomusNfeId: null,
+          rawPayload: { valor: 400 },
+          firstSeenAt: LINK_SEEN_AT,
+        },
+      ],
+      totalNetValue: 1000,
+      referenceDate: REF,
+      itemizedBilling: {
+        items: itemSnapshots([{ ordered: 100, invoiced: 100 }]),
+        expectedItemCount: 1,
+      },
+    });
+    assert.equal(ctx.itemizedBillingCoverageReason, "ITEM_SNAPSHOT_STALE");
+  });
+
+  it("B. snapshot completo e posterior à NF = autoridade por item", () => {
+    const atSameInstant = context({
+      ...valueDoesNotClose,
+      items: [{ ordered: 100, invoiced: 100 }],
+      snapshotComputedAt: LINK_SEEN_AT,
+    });
+    const later = context({ ...valueDoesNotClose, items: [{ ordered: 100, invoiced: 100 }] });
+    for (const ctx of [atSameInstant, later]) {
+      assert.equal(ctx.itemizedBillingCoverage, "FULL");
+      assert.equal(ctx.billingUsedLegacyFallback, false);
+      assert.equal(billingStatus(ctx), "INVOICED");
+    }
+  });
+
+  it("vínculo sem firstSeenAt ou snapshot sem computedAt: frescor não atestável = UNKNOWN", () => {
+    const withoutFirstSeen = context({
+      totalNetValue: 1000,
+      nfes: [{ externalId: 1, headerValue: 400, firstSeenAt: null }],
+      items: [{ ordered: 100, invoiced: 100 }],
+    });
+    assert.equal(
+      withoutFirstSeen.itemizedBillingCoverageReason,
+      "ITEM_SNAPSHOT_FRESHNESS_UNVERIFIABLE"
+    );
+    assert.equal(billingStatus(withoutFirstSeen), "PARTIALLY_INVOICED");
+
+    const withoutComputedAt = context({
+      ...valueDoesNotClose,
+      items: [{ ordered: 100, invoiced: 100 }],
+      snapshotComputedAt: null,
+    });
+    assert.equal(withoutComputedAt.itemizedBillingCoverageReason, "ITEM_SNAPSHOT_INCONSISTENT");
+    assert.equal(billingStatus(withoutComputedAt), "PARTIALLY_INVOICED");
+  });
+
+  it("C. NONE + valor fecha = fallback legado -> INVOICED", () => {
+    const ctx = context({ ...valueCloses, items: [{ ordered: 100, invoiced: 0 }] });
+    assert.equal(ctx.itemizedBillingCoverage, "NONE");
+    assert.equal(ctx.itemizedBillingCoverageReason, "ACTIVE_ITEMS_NOT_INVOICED");
+    assert.equal(ctx.billingDecisionReason, "ITEMIZED_NONE_FALLBACK_VALUE");
+    assert.equal(ctx.billingUsedLegacyFallback, true);
+    assert.equal(billingStatus(ctx), "INVOICED");
+  });
+
+  it("D. NONE + valor não fecha = fallback legado -> PARTIALLY_INVOICED", () => {
+    const ctx = context({ ...valueDoesNotClose, items: [{ ordered: 100, invoiced: 0 }] });
+    assert.equal(ctx.itemizedBillingCoverage, "NONE");
+    assert.equal(ctx.billingDecisionReason, "ITEMIZED_NONE_FALLBACK_VALUE");
+    assert.equal(billingStatus(ctx), "PARTIALLY_INVOICED");
+  });
+
+  it("E. PARTIAL confiável + valor fecha = continua PARTIALLY_INVOICED", () => {
+    const ctx = context({ ...valueCloses, items: [{ ordered: 100, invoiced: 40 }] });
+    assert.equal(ctx.legacyIsFullyInvoiced, true);
+    assert.equal(ctx.billingDecisionReason, "ITEMIZED_PARTIAL");
+    assert.equal(billingStatus(ctx), "PARTIALLY_INVOICED");
+  });
+
+  it("F. FULL confiável + valor diverge = continua INVOICED", () => {
+    const below = context({ ...valueDoesNotClose, items: [{ ordered: 100, invoiced: 100 }] });
+    const above = context({
+      totalNetValue: 1000,
+      nfes: [{ externalId: 1, headerValue: 1900 }],
+      items: [{ ordered: 100, invoiced: 100 }],
+    });
+    for (const ctx of [below, above]) {
+      assert.equal(ctx.legacyIsFullyInvoiced, false);
+      assert.equal(ctx.billingDecisionReason, "ITEMIZED_FULL");
+      assert.equal(billingStatus(ctx), "INVOICED");
+    }
+  });
+
+  it("decisionReason distingue NONE de UNKNOWN", () => {
+    const none = context({ ...valueCloses, items: [{ ordered: 100, invoiced: 0 }] });
+    const unknown = context({ ...valueCloses });
+    assert.notEqual(none.billingDecisionReason, unknown.billingDecisionReason);
+    assert.equal(unknown.billingDecisionReason, "ITEMIZED_UNKNOWN_FALLBACK_VALUE");
   });
 });
 
@@ -524,17 +681,29 @@ describe("resolveSalesOrderBillingDecision", () => {
     }
   });
 
-  it("valor fechado nunca sobrepõe PARTIAL ou NONE por item", () => {
-    for (const itemizedCoverage of ["PARTIAL", "NONE"] as const) {
+  it("valor fechado nunca sobrepõe PARTIAL por item", () => {
+    const decision = resolveSalesOrderBillingDecision({
+      ...base,
+      legacyIsFullyInvoiced: true,
+      legacyIsPartiallyInvoiced: false,
+      itemizedCoverage: "PARTIAL",
+    });
+    assert.equal(decision.isFullyInvoiced, false);
+    assert.equal(decision.isPartiallyInvoiced, true);
+    assert.equal(decision.usedLegacyFallback, false);
+  });
+
+  it("NONE devolve os flags legados com motivo próprio", () => {
+    for (const legacyIsFullyInvoiced of [true, false]) {
       const decision = resolveSalesOrderBillingDecision({
         ...base,
-        legacyIsFullyInvoiced: true,
-        legacyIsPartiallyInvoiced: false,
-        itemizedCoverage,
+        legacyIsFullyInvoiced,
+        legacyIsPartiallyInvoiced: !legacyIsFullyInvoiced,
+        itemizedCoverage: "NONE",
       });
-      assert.equal(decision.isFullyInvoiced, false);
-      assert.equal(decision.isPartiallyInvoiced, true);
-      assert.equal(decision.usedLegacyFallback, false);
+      assert.equal(decision.isFullyInvoiced, legacyIsFullyInvoiced);
+      assert.equal(decision.usedLegacyFallback, true);
+      assert.equal(decision.reason, "ITEMIZED_NONE_FALLBACK_VALUE");
     }
   });
 });

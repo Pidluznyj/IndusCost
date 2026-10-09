@@ -24,7 +24,8 @@
  *   --json          saída JSON (resumo + linhas)
  *
  * Linhas listadas por padrão: status final diferente do legado, status final
- * diferente do motor operacional, ou NF válida sem quantidade atribuída aos itens.
+ * diferente do motor operacional, NF válida sem quantidade atribuída aos itens
+ * (NONE) ou snapshot anterior à NF mais recente (ITEM_SNAPSHOT_STALE).
  */
 import "dotenv/config";
 import { decimalToNumber } from "../src/lib/executiveDashboardHelpers.ts";
@@ -60,6 +61,8 @@ type AuditRow = {
   hasNfeSharedAcrossOrders: boolean;
   legacyStatus: SalesOrderBillingStatus;
   itemizedCoverage: string;
+  /** Motivo da cobertura por item (ex.: ITEM_SNAPSHOT_STALE, ITEM_SNAPSHOT_INCOMPLETE). */
+  itemizedCoverageReason: string;
   finalStatus: SalesOrderBillingStatus;
   decisionReason: string;
   usedFallback: boolean;
@@ -134,7 +137,8 @@ function needsAttention(row: AuditRow): boolean {
   return (
     row.legacyStatus !== row.finalStatus ||
     (row.finalVsFlow !== "OK" && row.finalVsFlow !== "NO_FLOW_SNAPSHOT") ||
-    row.decisionReason === "ITEMIZED_NONE_WITH_VALID_NFE"
+    row.decisionReason === "ITEMIZED_NONE_FALLBACK_VALUE" ||
+    row.itemizedCoverageReason === "ITEM_SNAPSHOT_STALE"
   );
 }
 
@@ -199,6 +203,7 @@ async function main(): Promise<void> {
         hasNfeSharedAcrossOrders: ctx?.hasNfeSharedAcrossOrders ?? false,
         legacyStatus,
         itemizedCoverage: ctx?.itemizedBillingCoverage ?? "UNKNOWN",
+        itemizedCoverageReason: ctx?.itemizedBillingCoverageReason ?? "NO_ITEM_SNAPSHOT",
         finalStatus,
         decisionReason: isOrderCanceled(order.status)
           ? "ORDER_CANCELED"
@@ -225,6 +230,10 @@ async function main(): Promise<void> {
       (row) => `${row.legacyStatus} -> ${row.finalStatus}`
     ),
     decisionReason: countBy(rows, (row) => row.decisionReason),
+    itemizedCoverageReason: countBy(
+      rows.filter((row) => row.hasValidNfe),
+      (row) => row.itemizedCoverageReason
+    ),
     itemizedCoverage: countBy(rows, (row) => row.itemizedCoverage),
     legacyVsFlow: countBy(rows, (row) => row.legacyVsFlow),
     finalVsFlow: countBy(rows, (row) => row.finalVsFlow),
@@ -250,6 +259,7 @@ async function main(): Promise<void> {
       hasValidNfe: row.hasValidNfe,
       usedFallback: row.usedFallback,
       decisionReason: row.decisionReason,
+      itemizedCoverageReason: row.itemizedCoverageReason,
       liquido: row.totalNetValue,
       nfCabecalho: row.nfeHeaderTotalValue,
       nfCompartilhada: row.hasNfeSharedAcrossOrders,

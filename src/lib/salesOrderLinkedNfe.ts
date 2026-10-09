@@ -6,6 +6,7 @@ import {
   resolveItemizedBillingCoverage,
   resolveSalesOrderBillingDecision,
   type ItemizedBillingCoverage,
+  type ItemizedBillingCoverageReason,
   type ItemizedBillingItemInput,
   type SalesOrderBillingDecisionReason,
 } from "./sales/salesOrderItemizedBillingCoverage.js";
@@ -46,6 +47,8 @@ export type SalesOrderLinkedNfeLinkInput = {
   presentInLastPayload: boolean;
   nomusNfeId: string | null;
   rawPayload?: unknown;
+  /** `SalesOrderNfeLink.firstSeenAt` — gravado uma vez, na criação do vínculo. */
+  firstSeenAt?: Date | null;
 };
 
 export type SalesOrderLinkedNomusNfeInput = {
@@ -102,6 +105,8 @@ export type SalesOrderLinkedNfeContext = {
   legacyIsPartiallyInvoiced?: boolean;
   /** Cobertura da obrigação ativa por item; ausente = `UNKNOWN`. */
   itemizedBillingCoverage?: ItemizedBillingCoverage;
+  /** Por que a cobertura por item tem esse valor (ex.: snapshot defasado). */
+  itemizedBillingCoverageReason?: ItemizedBillingCoverageReason;
   /** Por que `isFullyInvoiced` / `isPartiallyInvoiced` têm o valor final. */
   billingDecisionReason?: SalesOrderBillingDecisionReason;
   /** Os flags finais vieram da regra legada por valor. */
@@ -234,6 +239,8 @@ function buildContextFromExtractedRows(input: {
     nomusNfeId: string | null;
     /** Status oficial preferencial (NomusNfe.status). */
     officialStatus?: number | null;
+    /** Quando o IndusCost viu o vínculo pedido × NF pela primeira vez. */
+    firstSeenAt?: Date | null;
   }>;
   source: SalesOrderLinkedNfeContext["source"];
   totalNetValue: number | null | undefined;
@@ -302,9 +309,21 @@ function buildContextFromExtractedRows(input: {
   // A NF prova que houve faturamento; quanto da obrigação ativa do pedido foi
   // faturado vem dos itens (pedido − corte − cancelado × quantidade faturada).
   // Sem cobertura por item confiável, vale a regra legada por valor.
+  // O snapshot só é autoridade se foi gravado depois de toda NF válida ser
+  // conhecida; NF sem `firstSeenAt` impede atestar o frescor.
+  const fiscalEvidenceTimes = billingRows.map((row) =>
+    row.firstSeenAt instanceof Date && !Number.isNaN(row.firstSeenAt.getTime())
+      ? Math.max(row.firstSeenAt.getTime(), row.processingDate?.getTime() ?? 0)
+      : null
+  );
+  const latestFiscalEvidenceAt =
+    fiscalEvidenceTimes.length > 0 && fiscalEvidenceTimes.every((time) => time != null)
+      ? new Date(Math.max(...(fiscalEvidenceTimes as number[])))
+      : null;
   const itemized = resolveItemizedBillingCoverage({
     items: input.itemizedBilling?.items,
     expectedItemCount: input.itemizedBilling?.expectedItemCount,
+    latestFiscalEvidenceAt,
   });
   const billingDecision = resolveSalesOrderBillingDecision({
     hasValidNfe: hasNfe,
@@ -411,6 +430,7 @@ function buildContextFromExtractedRows(input: {
     legacyIsFullyInvoiced,
     legacyIsPartiallyInvoiced,
     itemizedBillingCoverage: itemized.coverage,
+    itemizedBillingCoverageReason: itemized.reason,
     billingDecisionReason: billingDecision.reason,
     billingUsedLegacyFallback: billingDecision.usedLegacyFallback,
     isFullyInvoiced,
@@ -479,6 +499,7 @@ export function buildSalesOrderLinkedNfeContext(input: {
         highlightedTaxesValue: fiscal.highlightedTaxesValue ?? 0,
         nomusNfeId: nomusNfe?.id ?? link.nomusNfeId,
         officialStatus: nomusNfe?.status ?? link.nfeStatus ?? null,
+        firstSeenAt: link.firstSeenAt ?? null,
       };
     });
 
@@ -571,6 +592,7 @@ export async function loadSalesOrderLinkedNfeContextMap(
       dataProcessamento: true,
       presentInLastPayload: true,
       nomusNfeId: true,
+      firstSeenAt: true,
       ...(omitLinkRawPayload ? {} : { rawPayload: true }),
     },
   });
@@ -630,6 +652,7 @@ export async function loadSalesOrderLinkedNfeContextMap(
               orderedQuantity: true,
               shipTargetQuantity: true,
               invoicedQuantity: true,
+              computedAt: true,
             },
           }),
           prisma.salesOrderItem.groupBy({
@@ -653,6 +676,7 @@ export async function loadSalesOrderLinkedNfeContextMap(
       orderedQuantity: decimalToNumber(row.orderedQuantity),
       shipTargetQuantity: decimalToNumber(row.shipTargetQuantity),
       invoicedQuantity: decimalToNumber(row.invoicedQuantity),
+      computedAt: row.computedAt,
     });
     itemizedItemsByOrderId.set(row.salesOrderId, list);
   }

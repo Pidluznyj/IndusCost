@@ -26,6 +26,8 @@ export type ItemizedBillingCoverageReason =
   | "NO_ITEM_SNAPSHOT"
   | "ITEM_SNAPSHOT_INCOMPLETE"
   | "ITEM_SNAPSHOT_INCONSISTENT"
+  | "ITEM_SNAPSHOT_STALE"
+  | "ITEM_SNAPSHOT_FRESHNESS_UNVERIFIABLE"
   | "NO_ACTIVE_OBLIGATION";
 
 /** Fatos de um `SalesOrderItemFlowSnapshot` usados na cobertura. */
@@ -38,6 +40,8 @@ export type ItemizedBillingItemInput = {
   /** Obrigação ativa: pedido − corte − cancelado. */
   shipTargetQuantity: number | null | undefined;
   invoicedQuantity: number | null | undefined;
+  /** `SalesOrderItemFlowSnapshot.computedAt` — quando o resultado foi gravado. */
+  computedAt: Date | null | undefined;
 };
 
 export type ItemizedBillingCoverageResult = {
@@ -70,15 +74,33 @@ function isValidQuantity(value: number | null | undefined): value is number {
   return typeof value === "number" && Number.isFinite(value) && value >= 0;
 }
 
+function validTime(value: Date | null | undefined): number | null {
+  if (!(value instanceof Date)) return null;
+  const time = value.getTime();
+  return Number.isNaN(time) ? null : time;
+}
+
 /**
  * Classifica a cobertura da obrigação ativa do pedido.
  *
  * `expectedItemCount` é a quantidade de `SalesOrderItem` do pedido: o motor
  * grava um snapshot por item, então contagem diferente = snapshot incompleto.
+ *
+ * `latestFiscalEvidenceAt` é o instante mais recente em que uma NF válida do
+ * pedido passou a existir para o IndusCost (`SalesOrderNfeLink.firstSeenAt` /
+ * data de processamento). Snapshot gravado antes disso não pode refletir essa
+ * NF: `ITEM_SNAPSHOT_STALE`. Sem esse instante não há como atestar o frescor:
+ * `ITEM_SNAPSHOT_FRESHNESS_UNVERIFIABLE`.
+ *
+ * Limite conhecido: o recompute só regrava o snapshot quando o resultado muda,
+ * então `computedAt` é "última mudança", não "última verificação". A checagem
+ * nunca aceita snapshot anterior à NF, mas pode recusar um snapshot que já
+ * continha a quantidade (ex.: Documento de Saída sincronizado antes do vínculo).
  */
 export function resolveItemizedBillingCoverage(input: {
   items: readonly ItemizedBillingItemInput[] | null | undefined;
   expectedItemCount?: number | null;
+  latestFiscalEvidenceAt?: Date | null;
 }): ItemizedBillingCoverageResult {
   const items = input.items ?? [];
   if (items.length === 0) return unknown("NO_ITEM_SNAPSHOT");
@@ -88,6 +110,15 @@ export function resolveItemizedBillingCoverage(input: {
   if (new Set(items.map((item) => item.salesOrderItemId)).size !== items.length) {
     return unknown("ITEM_SNAPSHOT_INCONSISTENT");
   }
+
+  const computedTimes = items.map((item) => validTime(item.computedAt));
+  if (computedTimes.some((time) => time == null)) {
+    return unknown("ITEM_SNAPSHOT_INCONSISTENT");
+  }
+  const fiscalEvidenceTime = validTime(input.latestFiscalEvidenceAt);
+  if (fiscalEvidenceTime == null) return unknown("ITEM_SNAPSHOT_FRESHNESS_UNVERIFIABLE");
+  const oldestComputedTime = Math.min(...(computedTimes as number[]));
+  if (oldestComputedTime < fiscalEvidenceTime) return unknown("ITEM_SNAPSHOT_STALE");
 
   let activeItems = 0;
   let fullyInvoicedItems = 0;
@@ -136,7 +167,7 @@ export type SalesOrderBillingDecisionReason =
   | "ITEMIZED_FULL"
   | "SHARED_NFE_ITEMIZED_FULL"
   | "ITEMIZED_PARTIAL"
-  | "ITEMIZED_NONE_WITH_VALID_NFE"
+  | "ITEMIZED_NONE_FALLBACK_VALUE"
   | "ITEMIZED_UNKNOWN_FALLBACK_VALUE";
 
 export type SalesOrderBillingDecision = {
@@ -150,14 +181,14 @@ export type SalesOrderBillingDecision = {
 /**
  * Decide os flags finais de faturamento.
  *
- * A regra por valor nunca sobrepõe uma conclusão por item confiável; ela só
- * vale quando a cobertura é `UNKNOWN`.
+ * A regra por valor nunca sobrepõe `FULL` nem `PARTIAL` por item.
  *
  * - Sem NF válida: nunca fatura (a cobertura por item não substitui a NF).
  * - `FULL`: faturado, qualquer que seja o cabeçalho da NF.
  * - `PARTIAL`: parcial, mesmo que o valor da NF feche com o pedido.
- * - `NONE`: há NF válida, mas nenhuma quantidade atribuída aos itens ativos —
- *   parcial (existe faturamento, a obrigação não está coberta); nunca faturado.
+ * - `NONE`: há NF válida, mas nenhuma quantidade atribuída aos itens ativos.
+ *   "Parcial" exige alguma cobertura (> 0), então é inconclusivo para o
+ *   status: regra legada por valor, com motivo próprio.
  * - `UNKNOWN`: regra legada por valor.
  */
 export function resolveSalesOrderBillingDecision(input: {
@@ -190,12 +221,7 @@ export function resolveSalesOrderBillingDecision(input: {
         reason: "ITEMIZED_PARTIAL",
       };
     case "NONE":
-      return {
-        isFullyInvoiced: false,
-        isPartiallyInvoiced: true,
-        usedLegacyFallback: false,
-        reason: "ITEMIZED_NONE_WITH_VALID_NFE",
-      };
+      return { ...legacy, reason: "ITEMIZED_NONE_FALLBACK_VALUE" };
     default:
       return { ...legacy, reason: "ITEMIZED_UNKNOWN_FALLBACK_VALUE" };
   }

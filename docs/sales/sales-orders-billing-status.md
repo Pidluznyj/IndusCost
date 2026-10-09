@@ -88,16 +88,49 @@ Duas perguntas separadas:
 |---|---|
 | `FULL` — todo item ativo com obrigação coberta | Faturado |
 | `PARTIAL` — algum item faturado, não todos cobertos | Parcialmente faturado |
-| `NONE` — NF válida, nenhuma quantidade atribuída aos itens | Parcialmente faturado |
-| `UNKNOWN` — sem snapshot, incompleto ou inconsistente | regra por valor |
+| `NONE` — NF válida, nenhuma quantidade atribuída aos itens | regra por valor (`ITEMIZED_NONE_FALLBACK_VALUE`) |
+| `UNKNOWN` — sem snapshot, incompleto, inconsistente ou defasado | regra por valor (`ITEMIZED_UNKNOWN_FALLBACK_VALUE`) |
 
-A regra por valor nunca sobrepõe uma conclusão por item confiável: ela só
-decide quando a cobertura é `UNKNOWN`. Um `PARTIAL` ou `NONE` vale mesmo que
-o valor da NF feche com o pedido.
+A regra por valor nunca sobrepõe `FULL` nem `PARTIAL`: um `PARTIAL` vale
+mesmo que o valor da NF feche com o pedido. `NONE` é inconclusivo para o
+status ("parcial" exige alguma cobertura > 0) e usa a regra por valor, com
+motivo distinto de `UNKNOWN`.
 
 `UNKNOWN` cobre: nenhum snapshot de item; contagem de snapshots diferente
 da de `SalesOrderItem`; quantidade nula, negativa ou obrigação maior que o
-pedido; pedido sem nenhuma obrigação ativa.
+pedido; `computedAt` ausente; pedido sem nenhuma obrigação ativa; e
+snapshot defasado (abaixo).
+
+### Frescor do snapshot
+
+A cobertura por item só é autoridade quando todos os snapshots do pedido
+foram gravados depois da evidência fiscal mais recente:
+
+```
+min(SalesOrderItemFlowSnapshot.computedAt)
+  >= max(SalesOrderNfeLink.firstSeenAt, data de processamento) das NF válidas
+```
+
+- `firstSeenAt` é gravado uma única vez, quando o vínculo pedido × NF é
+  criado. `lastSeenAt` / `updatedAt` do vínculo e `syncedAt` / `updatedAt`
+  de `NomusNfe` são reescritos a cada sync e não servem para frescor.
+- Snapshot anterior → `ITEM_SNAPSHOT_STALE`; vínculo sem `firstSeenAt` →
+  `ITEM_SNAPSHOT_FRESHNESS_UNVERIFIABLE`. Ambos caem na regra por valor.
+
+Limitações conhecidas (sem migration):
+
+- O recompute só regrava o snapshot quando o resultado muda (fingerprint);
+  `computedAt` é "última mudança", não "última verificação". A checagem
+  nunca aceita snapshot anterior à NF, mas pode recusar um snapshot que já
+  continha a quantidade — por exemplo, Documento de Saída sincronizado
+  antes de o vínculo da NF ser criado, ou vínculos criados por backfill.
+  Esses pedidos ficam na regra por valor.
+- Não há timestamp confiável para mudança de status da NF (cancelamento)
+  nem para falha do recompute após o sync. NF cancelada sai da evidência
+  fiscal pelo status, mas um snapshot que ainda conta a quantidade dela não
+  é detectável só pelos dados lidos.
+- Um campo `verifiedAt` no snapshot, atualizado a cada recompute, resolveria
+  os dois pontos; exige migration e ficou fora desta entrega.
 
 A regra por valor continua existindo como fallback e como métrica:
 `invoiceCoveragePercent`, `nfeTotalValue`, `nfeProductsValue` e
