@@ -92,7 +92,91 @@ function json(value: unknown): Prisma.InputJsonValue | typeof Prisma.JsonNull {
   return value as Prisma.InputJsonValue;
 }
 
-export function createPrismaExposureRepository(prisma: PrismaClient): LegalExposureRepository {
+/**
+ * Limites da transação de `persist`, e só dela (o padrão global do Prisma não muda).
+ *
+ * `persist` regrava o estado inteiro do Exposure em uma transação interativa, um upsert
+ * por vez. Com o volume de produção (~1.200 linhas) isso passou dos 5 s padrão do Prisma e
+ * a transação era encerrada no meio ("Transaction already closed"), sem gravar nada.
+ *
+ * - timeout 30 s: tempo máximo da transação aberta. Pela falha observada (estouro de 5 s já
+ *   no último bloco, o de auditoria), a gravação completa leva de 5 a 7 s; 30 s dão folga de
+ *   4x ou mais. É um valor inicial: o volume cresce a cada execução.
+ * - maxWait 10 s: espera por uma conexão livre do pool antes de começar (padrão 2 s). O
+ *   sincronizador roda sozinho sob flock; 10 s cobrem uma disputa passageira sem mascarar
+ *   um pool esgotado.
+ */
+export const LEGAL_EXPOSURE_PERSIST_TRANSACTION_OPTIONS = { timeout: 30_000, maxWait: 10_000 } as const;
+
+/** Métrica agregada de uma gravação: duração e contagens. Nunca conteúdo jurídico ou credencial. */
+export type ExposurePersistMetrics = {
+  ok: boolean;
+  durationMs: number;
+  timeoutMs: number;
+  /** Passou de metade do limite: sinal para rever o limite ou a estratégia de escrita. */
+  nearTimeout: boolean;
+  rows: number;
+  byCollection: Record<string, number>;
+  /** Código do Prisma (ex.: P2028) ou nome do erro. Sem a mensagem, que pode citar dados. */
+  errorCode: string | null;
+};
+
+export type PrismaExposureRepositoryOptions = {
+  onPersistMetrics?: (metrics: ExposurePersistMetrics) => void;
+  now?: () => number;
+};
+
+function countPersistRows(next: LegalExposureMemory): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const [key, value] of Object.entries(next)) {
+    if (Array.isArray(value)) out[key] = value.length;
+  }
+  return out;
+}
+
+function persistErrorCode(error: unknown): string {
+  const code = (error as { code?: unknown } | null)?.code;
+  if (typeof code === "string" && /^[A-Z0-9_]{1,32}$/.test(code)) return code;
+  return error instanceof Error ? error.name : "UNKNOWN";
+}
+
+/** stderr, para não se misturar ao JSON de resultado que a linha de comando escreve em stdout. */
+function logPersistMetrics(metrics: ExposurePersistMetrics): void {
+  process.stderr.write(`[legal-exposure] persist ${JSON.stringify(metrics)}\n`);
+}
+
+export function createPrismaExposureRepository(
+  prisma: PrismaClient,
+  options: PrismaExposureRepositoryOptions = {}
+): LegalExposureRepository {
+  const now = options.now ?? Date.now;
+  const reportPersist = options.onPersistMetrics ?? logPersistMetrics;
+
+  /** Mede a gravação e informa o resultado. A falha segue adiante, sem virar sucesso. */
+  async function withPersistMetrics(next: LegalExposureMemory, write: () => Promise<unknown>): Promise<void> {
+    const startedAt = now();
+    const byCollection = countPersistRows(next);
+    const metrics = (ok: boolean, errorCode: string | null): ExposurePersistMetrics => {
+      const durationMs = Math.max(0, now() - startedAt);
+      return {
+        ok,
+        durationMs,
+        timeoutMs: LEGAL_EXPOSURE_PERSIST_TRANSACTION_OPTIONS.timeout,
+        nearTimeout: durationMs > LEGAL_EXPOSURE_PERSIST_TRANSACTION_OPTIONS.timeout / 2,
+        rows: Object.values(byCollection).reduce((sum, count) => sum + count, 0),
+        byCollection,
+        errorCode,
+      };
+    };
+    try {
+      await write();
+    } catch (error) {
+      reportPersist(metrics(false, persistErrorCode(error)));
+      throw error;
+    }
+    reportPersist(metrics(true, null));
+  }
+
   return {
     async load() {
       const [
@@ -249,7 +333,7 @@ export function createPrismaExposureRepository(prisma: PrismaClient): LegalExpos
       };
     },
     async persist(next) {
-      await prisma.$transaction(async (tx) => {
+      await withPersistMetrics(next, () => prisma.$transaction(async (tx) => {
         for (const row of next.entities) {
           const data = {
             cnpj: row.cnpj,
@@ -566,7 +650,7 @@ export function createPrismaExposureRepository(prisma: PrismaClient): LegalExpos
             update: {},
           });
         }
-      });
+      }, LEGAL_EXPOSURE_PERSIST_TRANSACTION_OPTIONS));
     },
     async appendAudit(record) {
       await prisma.legalExposureAuditLog.create({
