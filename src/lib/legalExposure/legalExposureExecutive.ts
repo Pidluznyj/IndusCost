@@ -788,23 +788,37 @@ export function buildExposureProcessDossier(
       attorneys: item.attorneys,
     },
     timeline: timeline.items,
-    communications: communications.map((row) => ({
-      id: row.id,
-      processNumber: row.processNumber,
-      communicationType: row.communicationType,
-      subject: row.subject,
-      tribunal: row.tribunal,
-      courtUnit: row.courtUnit,
-      availableAt: row.availableAt,
-      detectedAt: row.detectedAt,
-      normalizedStatus: row.normalizedStatus,
-      sourceStatus: row.sourceStatus,
-      source: row.source,
-      caseId: row.caseId,
-      officialText: row.officialText ?? null,
-      officialHash: row.officialHash ?? null,
-      officialLink: row.officialLink ?? null,
-    })),
+    communications: communications.map((row) => {
+      const recipient = memory.entities.find((entity) => entity.id === row.entityId);
+      return {
+        id: row.id,
+        processNumber: row.processNumber,
+        communicationType: row.communicationType,
+        subject: row.subject,
+        tribunal: row.tribunal,
+        courtUnit: row.courtUnit,
+        availableAt: row.availableAt,
+        detectedAt: row.detectedAt,
+        normalizedStatus: row.normalizedStatus,
+        sourceStatus: row.sourceStatus,
+        source: row.source,
+        caseId: row.caseId,
+        officialText: row.officialText ?? null,
+        officialHash: row.officialHash ?? null,
+        officialLink: row.officialLink ?? null,
+        // Comunicação é por destinatário: empresas do mesmo processo não compartilham ciência.
+        recipient: recipient ? { entityId: recipient.id, legalName: recipient.legalName, cnpj: formatCnpj(recipient.cnpj) } : null,
+        scienceDeadlineAt: row.scienceDeadlineAt,
+        sourceScienceAt: row.sourceScienceAt,
+        officialReference: row.sourceCommunicationId,
+        lastSeenAt: row.lastSeenAt,
+        // Mudanças de situação observadas na fonte (eventos append-only).
+        history: memory.events
+          .filter((event) => event.communicationId === row.id)
+          .sort((a, b) => Date.parse(a.detectedAt) - Date.parse(b.detectedAt))
+          .map((event) => ({ eventType: event.eventType, detectedAt: event.detectedAt })),
+      };
+    }),
     discovery: {
       firstSeenAt: item.firstSeenAt,
       primarySource: item.primarySource,

@@ -33,6 +33,7 @@ import {
 import {
   COMMUNICATION_STATUS_LABELS,
   communicationTypeLabel,
+  eventTypeLabel,
   exposureTimelineKindLabel,
   movementComplementsText,
 } from "@/src/lib/legalExposure/legalExposureFeedUi";
@@ -85,6 +86,12 @@ export type ExposureDossier = ExposureCaseListItem & {
     officialText?: string | null;
     officialHash?: string | null;
     officialLink?: string | null;
+    recipient?: { entityId: string; legalName: string; cnpj: string } | null;
+    scienceDeadlineAt?: string | null;
+    sourceScienceAt?: string | null;
+    officialReference?: string | null;
+    lastSeenAt?: string | null;
+    history?: Array<{ eventType: string; detectedAt: string }>;
   }>;
   discovery?: { firstSeenAt: string; primarySource: LegalExposureSource; evidenceSources: LegalExposureSource[] };
   stageReason?: string;
@@ -638,15 +645,55 @@ export function ExposureCaseDossier({
                 <p className="text-sm text-muted-foreground">Nenhuma comunicação vinculada a este processo.</p>
               ) : null}
               {(dossier.communications ?? []).map((row) => (
-                <article key={row.id} className="rounded-xl border border-border p-4 text-sm">
-                  <p className="font-medium">{communicationTypeLabel(row.communicationType)}</p>
+                <article
+                  key={row.id}
+                  className="rounded-xl border border-border p-4 text-sm"
+                  data-testid="exposure-communication"
+                  data-source={row.source}
+                >
+                  <p className="font-medium">
+                    {communicationTypeLabel(row.communicationType)}
+                    <span className="ml-2 text-xs font-normal text-muted-foreground">
+                      Fonte: {SOURCE_LABELS[row.source] ?? row.source}
+                    </span>
+                  </p>
                   {row.subject ? <p>{row.subject}</p> : null}
                   <p className="text-muted-foreground">{[row.tribunal, row.courtUnit].filter(Boolean).join(" · ") || "Órgão não informado"}</p>
+                  {row.recipient ? (
+                    <p>
+                      Destinatária {row.recipient.legalName} · {row.recipient.cnpj}
+                    </p>
+                  ) : null}
                   <p>Disponibilização {formatExposureDateTime(row.availableAt) ?? "não informada"}</p>
                   <p>
-                    Status{" "}
+                    {row.source === "DOMICILIO" ? "Situação oficial" : "Status"}{" "}
                     {COMMUNICATION_STATUS_LABELS[row.normalizedStatus as keyof typeof COMMUNICATION_STATUS_LABELS] ?? row.normalizedStatus}
                   </p>
+                  {row.source === "DOMICILIO" ? (
+                    <>
+                      {row.scienceDeadlineAt ? (
+                        <p>Prazo para ciência {formatExposureDateTime(row.scienceDeadlineAt)}</p>
+                      ) : null}
+                      {row.sourceScienceAt ? <p>Ciência registrada em {formatExposureDateTime(row.sourceScienceAt)}</p> : null}
+                      <p className="text-muted-foreground">
+                        Coletada em {formatExposureDateTime(row.detectedAt)}
+                        {row.lastSeenAt ? ` · última leitura ${formatExposureDateTime(row.lastSeenAt)}` : ""}
+                        {row.officialReference ? ` · referência ${row.officialReference}` : ""}
+                      </p>
+                      {(row.history ?? []).length > 1 ? (
+                        <p className="text-muted-foreground">
+                          Histórico observado:{" "}
+                          {(row.history ?? [])
+                            .map((item) => `${eventTypeLabel(item.eventType)} (${formatExposureDateTime(item.detectedAt)})`)
+                            .join(" → ")}
+                        </p>
+                      ) : null}
+                      <p className="mt-1 rounded-lg bg-amber-50 p-2 text-xs text-amber-900">
+                        A situação acima é a do CNJ. Marcar alertas como revisados no IndusCost não registra ciência; a
+                        ciência só ocorre no portal do Domicílio, ao abrir o teor da comunicação.
+                      </p>
+                    </>
+                  ) : null}
                   {row.officialText ? (
                     <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap rounded-lg bg-muted/40 p-3 text-xs">
                       {row.officialText}
@@ -658,9 +705,11 @@ export function ExposureCaseDossier({
                         Ver comunicação oficial
                       </a>
                     ) : null}
-                    <a className="underline" href={OFFICIAL_COMMUNICATIONS_PORTAL_URL} target="_blank" rel="noreferrer">
-                      Abrir portal oficial
-                    </a>
+                    {row.source === "DOMICILIO" ? null : (
+                      <a className="underline" href={OFFICIAL_COMMUNICATIONS_PORTAL_URL} target="_blank" rel="noreferrer">
+                        Abrir portal oficial
+                      </a>
+                    )}
                   </div>
                 </article>
               ))}

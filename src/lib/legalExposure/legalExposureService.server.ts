@@ -12,6 +12,7 @@ import type { LegalAliasType, LegalExposureSource, NormalizedSourceBatch } from 
 import { LEGAL_ALIAS_TYPES } from "./legalExposureContracts.js";
 import { publicSourceConfiguration, escavadorRefreshHours, isEscavadorEnabled, isJusbrasilEnabled, jusbrasilConfigured } from "./legalExposureFeatureFlags.js";
 import { SOURCE_FRESHNESS_POLICY } from "./legalExposureHealth.js";
+import { domicilioMaxConcurrency } from "./sources/domicilio/domicilioAccounts.js";
 import {
   matchExposureGroupCompanies,
   OUTSIDE_GROUP_COMPANY_MESSAGE,
@@ -72,8 +73,16 @@ export class ExposureServiceError extends Error {
   }
 }
 
+export type DomicilioRunnerInput = {
+  entity: { cnpj: string };
+  checkpoint?: string | null;
+  reconcileProcessNumbers?: string[];
+  numeroProcesso?: string;
+};
+
 export type ExposureRunners = {
-  domicilio: () => Promise<NormalizedSourceBatch>;
+  /** Uma chamada por empresa, com a credencial do CNPJ dela. Sem `entity` não há consulta. */
+  domicilio: (input?: DomicilioRunnerInput) => Promise<NormalizedSourceBatch>;
   datajud: (input?: { processNumber?: string; tribunalAlias?: string }) => Promise<NormalizedSourceBatch>;
   djen: (input?: { nomeParte?: string; numeroProcesso?: string }) => Promise<NormalizedSourceBatch>;
   escavador?: (input?: { processNumber?: string }) => Promise<NormalizedSourceBatch>;
@@ -140,6 +149,8 @@ const TARGET: Record<string, string> = {
 };
 
 const sourceJobLocks = new Set<string>();
+/** Coleta do Domicílio em andamento neste processo, seja pelo job DOMICILIO ou pelo ALL. */
+let domicilioCollectionRunning = false;
 
 function disabledRunner(source: LegalExposureSource): NormalizedSourceBatch {
   return {
@@ -161,7 +172,7 @@ export async function defaultRunners(): Promise<ExposureRunners> {
   const { runDjenSync } = await import("./sources/djen/djenSyncRunner.server.js");
   const { runEscavadorSync } = await import("./sources/escavador/escavadorSyncRunner.server.js");
   return {
-    domicilio: () => runDomicilioSync({}),
+    domicilio: (input) => runDomicilioSync(input ?? {}),
     datajud: (input) =>
       runDatajudSync({
         mode: "known-process",
@@ -185,6 +196,70 @@ function failClosedBatch(source: LegalExposureSource, message: string): Normaliz
     communications: [],
     candidates: [],
   };
+}
+
+/** Entrada do Domicílio para uma empresa: checkpoint dela e processos com comunicação pendente. */
+function domicilioRunnerInput(
+  memory: LegalExposureMemory,
+  entity: ExposureEntityRecord,
+  scopedProcessNumber: string
+): DomicilioRunnerInput {
+  const connection = memory.connections.find((row) => row.entityId === entity.id && row.source === "DOMICILIO");
+  // Do menos recentemente relido para o mais recente: com mais pendências do que o teto
+  // por execução, a releitura percorre todas em rodízio em vez de repetir as mesmas.
+  const pending = memory.communications
+    .filter(
+      (row) =>
+        row.entityId === entity.id &&
+        row.source === "DOMICILIO" &&
+        row.processNumber &&
+        (row.normalizedStatus === "PENDING" || row.normalizedStatus === "UNKNOWN")
+    )
+    .sort((a, b) => Date.parse(a.lastSeenAt) - Date.parse(b.lastSeenAt))
+    .map((row) => row.processNumber as string);
+  return {
+    entity: { cnpj: entity.cnpj },
+    checkpoint: connection?.lastFullSyncAt ?? null,
+    reconcileProcessNumbers: [...new Set(pending)],
+    numeroProcesso: scopedProcessNumber || undefined,
+  };
+}
+
+/**
+ * Consulta o Domicílio de várias empresas ao mesmo tempo, com concorrência limitada.
+ * Cada empresa tem resultado próprio: a falha de uma não interrompe as outras.
+ */
+async function collectDomicilioBatches(input: {
+  memory: LegalExposureMemory;
+  entities: ExposureEntityRecord[];
+  runner: ExposureRunners["domicilio"];
+  scopedProcessNumber: string;
+  maxConcurrency: number;
+}): Promise<Map<string, NormalizedSourceBatch>> {
+  const out = new Map<string, NormalizedSourceBatch>();
+  const queue = input.entities.filter((entity) => entity.monitorDomicilio);
+  async function worker(): Promise<void> {
+    for (let entity = queue.shift(); entity; entity = queue.shift()) {
+      try {
+        out.set(entity.id, await input.runner(domicilioRunnerInput(input.memory, entity, input.scopedProcessNumber)));
+      } catch {
+        out.set(entity.id, {
+          source: "DOMICILIO",
+          outcome: "SOURCE_ERROR",
+          errorCode: "SOURCE_ERROR",
+          errorMessageSanitized: "Falha inesperada na coleta do Domicílio desta empresa.",
+          retryAfterSeconds: null,
+          externalCall: true,
+          cases: [],
+          communications: [],
+          candidates: [],
+        });
+      }
+    }
+  }
+  const workers = Math.max(1, Math.min(input.maxConcurrency, queue.length));
+  await Promise.all(Array.from({ length: workers }, () => worker()));
+  return out;
 }
 
 function shouldApplyBatch(batch: NormalizedSourceBatch): boolean {
@@ -680,6 +755,7 @@ export function createLegalExposureService(deps: ExposureServiceDeps) {
         throw new ExposureServiceError("Execução já em andamento.", "CONFLICT");
       }
       sourceJobLocks.add(jobKey);
+      let ownsDomicilioCollection = false;
       const startedAt = now();
       const liveRun = await deps.beginIntegrationRun?.({
         target: runningTarget,
@@ -693,7 +769,16 @@ export function createLegalExposureService(deps: ExposureServiceDeps) {
       const pipelineAll = !input.source || input.source === "ALL";
       const wantsDjen = pipelineAll || input.source === "DJEN";
       const wantsDatajud = pipelineAll || input.source === "DATAJUD";
-      const wantsDomicilio = pipelineAll || input.source === "DOMICILIO";
+      // ALL e DOMICILIO têm travas de job diferentes: sem esta, as duas coletas poderiam
+      // correr juntas e a que terminasse por último regravaria checkpoint e situação defasados.
+      if (input.source === "DOMICILIO" && domicilioCollectionRunning) {
+        throw new ExposureServiceError("Execução já em andamento.", "CONFLICT");
+      }
+      const wantsDomicilio = (pipelineAll || input.source === "DOMICILIO") && !domicilioCollectionRunning;
+      if (wantsDomicilio) {
+        domicilioCollectionRunning = true;
+        ownsDomicilioCollection = true;
+      }
       const wantsEscavador = pipelineAll || input.source === "ESCAVADOR";
       const wantsTribunal = input.source === "TRIBUNAL_PUBLIC";
       const wantsJusbrasil = input.source === "JUSBRASIL";
@@ -711,6 +796,16 @@ export function createLegalExposureService(deps: ExposureServiceDeps) {
 
       const batches: NormalizedSourceBatch[] = [];
       const summaryEntities: Array<EntitySyncCounters & { entityId: string; legalName: string }> = [];
+      const domicilioBatches = wantsDomicilio
+        ? await collectDomicilioBatches({
+            memory,
+            entities,
+            runner: runners.domicilio,
+            scopedProcessNumber,
+            maxConcurrency: domicilioMaxConcurrency(process.env),
+          })
+        : new Map<string, NormalizedSourceBatch>();
+      const domicilioByEntity: Array<Record<string, unknown>> = [];
       const datajudHttpCache = new Map<string, NormalizedSourceBatch>();
       const escavadorHttpCache = new Map<string, NormalizedSourceBatch>();
 
@@ -835,10 +930,34 @@ export function createLegalExposureService(deps: ExposureServiceDeps) {
           }
         }
 
-        if (wantsDomicilio) {
-          const domicilio = await runners.domicilio();
+        const domicilio = domicilioBatches.get(entity.id);
+        if (domicilio) {
+          const before = { communications: memory.communications.length };
           owned.push(domicilio);
           applyOwned(entity.id, domicilio);
+          const connection = memory.connections.find(
+            (row) => row.entityId === entity.id && row.source === "DOMICILIO"
+          );
+          domicilioByEntity.push({
+            entityId: entity.id,
+            cnpj: entity.cnpj,
+            account: domicilio.domicilio?.accountKey ?? null,
+            outcome: domicilio.outcome,
+            errorCode: domicilio.errorCode,
+            pagesFetched: domicilio.domicilio?.pagesFetched ?? 0,
+            received: domicilio.domicilio?.received ?? 0,
+            accepted: domicilio.communications.length,
+            newCommunications: Math.max(0, memory.communications.length - before.communications),
+            rejectedRecipient: domicilio.domicilio?.rejectedRecipient ?? 0,
+            invalid: domicilio.domicilio?.invalid ?? 0,
+            rejections: domicilio.domicilio?.rejections ?? [],
+            reconciledProcesses: domicilio.domicilio?.reconciledProcesses ?? 0,
+            pendingReconciliation: memory.communications.filter(
+              (row) => row.entityId === entity.id && row.source === "DOMICILIO" && !row.caseId
+            ).length,
+            windowComplete: domicilio.coverage?.complete ?? null,
+            checkpoint: connection?.lastFullSyncAt ?? null,
+          });
         }
 
         if (wantsEscavador && runners.escavador) {
@@ -982,6 +1101,7 @@ export function createLegalExposureService(deps: ExposureServiceDeps) {
           entitiesProcessed: summaryEntities.length,
           errorCode: worst?.errorCode ?? null,
           sanitizedError: worst?.errorMessageSanitized ?? null,
+          ...(source === "DOMICILIO" ? { domicilioEntities: domicilioByEntity } : {}),
         };
         if (liveRun && source === jobKey) {
           await deps.finishIntegrationRun?.({
@@ -1055,6 +1175,7 @@ export function createLegalExposureService(deps: ExposureServiceDeps) {
         throw error;
       } finally {
         sourceJobLocks.delete(jobKey);
+        if (ownsDomicilioCollection) domicilioCollectionRunning = false;
       }
     },
     async testConnection(source: LegalExposureSource, input?: { entityId?: string }) {
@@ -1147,7 +1268,21 @@ export function createLegalExposureService(deps: ExposureServiceDeps) {
           connectivityTest: "RUN",
         };
       }
-      const batch = source === "DOMICILIO" ? await runners.domicilio() : disabledRunner(source);
+      // Domicílio: testa a credencial da empresa indicada, sem alterar checkpoint nem gravar nada.
+      const domicilioEntity =
+        source === "DOMICILIO"
+          ? input?.entityId
+            ? memory.entities.find((row) => row.id === input.entityId && row.active)
+            : memory.entities.find((row) => row.active && row.monitorDomicilio)
+          : undefined;
+      const batch =
+        source === "DOMICILIO" && domicilioEntity
+          ? await runners.domicilio({
+              entity: { cnpj: domicilioEntity.cnpj },
+              checkpoint: now().toISOString(),
+              reconcileProcessNumbers: [],
+            })
+          : disabledRunner(source);
       return {
         source,
         success: batch.outcome === "SUCCESS" || batch.outcome === "NO_RESULTS",

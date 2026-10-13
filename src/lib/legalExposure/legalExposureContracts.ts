@@ -568,8 +568,19 @@ export function normalizeCommunicationStatus(
 ): LegalCommunicationNormalizedStatus {
   const folded = foldText(sourceStatus ?? "").replace(/\s+/g, "_");
   if (!folded) return "UNKNOWN";
-  const pending = new Set(["N", "NAO", "PENDENTE", "PENDING", "AGUARDANDO", "NAO_CIENTE", "FALSE", "0"]);
-  const acknowledged = new Set(["S", "SIM", "CIENTE", "ACKNOWLEDGED", "LIDA", "TRUE", "1"]);
+  // EM_CURSO, INTEIRO_TEOR_OBTIDO e CIENCIA_AUTOMATICA são o enum oficial do Domicílio.
+  const pending = new Set(["N", "NAO", "PENDENTE", "PENDING", "AGUARDANDO", "NAO_CIENTE", "FALSE", "0", "EM_CURSO"]);
+  const acknowledged = new Set([
+    "S",
+    "SIM",
+    "CIENTE",
+    "ACKNOWLEDGED",
+    "LIDA",
+    "TRUE",
+    "1",
+    "INTEIRO_TEOR_OBTIDO",
+    "CIENCIA_AUTOMATICA",
+  ]);
   const expired = new Set(["EXPIRADA", "EXPIRADO", "EXPIRED", "VENCIDA"]);
   const canceled = new Set(["CANCELADA", "CANCELADO", "CANCELED", "CANCELLED"]);
   if (pending.has(folded)) return "PENDING";
@@ -723,6 +734,44 @@ export type DjenPaginationMeta = {
   truncated: boolean;
 };
 
+/** Janela que a coleta cobriu. Só `complete` avança o checkpoint da conexão. */
+export type SourceSyncCoverage = {
+  windowStart: string | null;
+  windowEnd: string;
+  complete: boolean;
+};
+
+export const DOMICILIO_REJECTION_REASONS = [
+  "RECIPIENT_MISMATCH",
+  "RECIPIENT_MISSING",
+  "RECIPIENT_MALFORMED",
+  "MISSING_IDENTIFIER",
+] as const;
+
+/**
+ * Registro devolvido pelo CNJ que não foi gravado. Sanitizado: sem o documento do
+ * destinatário (pode ser CPF de terceiro), só o tipo e se a raiz do CNPJ coincide.
+ */
+export type DomicilioRejection = {
+  reason: (typeof DOMICILIO_REJECTION_REASONS)[number];
+  communicationRef: string | null;
+  recipientKind: "CNPJ" | "CPF" | "OTHER" | "NONE";
+  sameRoot: boolean;
+};
+
+/** Contadores da coleta do Domicílio de uma empresa. Sem segredo: a chave da conta é um rótulo. */
+export type DomicilioSyncStats = {
+  accountKey: string | null;
+  tenantId: string | null;
+  pagesFetched: number;
+  received: number;
+  rejectedRecipient: number;
+  invalid: number;
+  reconciledProcesses: number;
+  /** Amostra limitada das recusas, para análise. */
+  rejections: DomicilioRejection[];
+};
+
 export type NormalizedSourceBatch = {
   source: LegalExposureSource;
   outcome: LegalQueryOutcome;
@@ -734,6 +783,8 @@ export type NormalizedSourceBatch = {
   communications: NormalizedCommunicationObservation[];
   candidates: NormalizedCandidateObservation[];
   pagination?: DjenPaginationMeta;
+  coverage?: SourceSyncCoverage;
+  domicilio?: DomicilioSyncStats;
 };
 
 export type SourcePublicStatus = {

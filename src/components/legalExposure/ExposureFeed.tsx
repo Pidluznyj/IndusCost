@@ -14,6 +14,7 @@ import {
   NO_TIMELINE_EVENTS_COPY,
   OFFICIAL_COMMUNICATIONS_PORTAL_URL,
   SOURCE_LABELS,
+  SOURCE_STATUS_LABELS,
   type LegalCertificateResult,
   type LegalCertificateType,
   type LegalCommunicationNormalizedStatus,
@@ -877,6 +878,22 @@ export type ExposureSourceOperationItem = {
     movementsPct: number | null;
     processCount: number;
   } | null;
+  companies?: Array<{
+    entityId: string;
+    legalName: string;
+    cnpj: string;
+    accountConfigured: boolean;
+    status: string;
+    lastAttemptAt: string | null;
+    lastSuccessfulAt: string | null;
+    checkpoint: string | null;
+    stale: boolean;
+    lastErrorCode: string | null;
+    lastErrorMessage: string | null;
+    communications: number;
+    pendingScience: number;
+    pendingReconciliation: number;
+  }>;
 };
 
 function formatDuration(ms: number | null | undefined): string {
@@ -1021,6 +1038,30 @@ export function ExposureSourcesTab({
                 {source.lastRun?.sanitizedError ? <Fact label="Último erro" value={source.lastRun.sanitizedError} /> : null}
                 {source.missingEnvVars.length > 0 ? (
                   <Fact label="Falta" value={source.missingEnvVars.join(", ")} />
+                ) : null}
+                {source.companies && source.companies.length > 0 ? (
+                  <div className="mt-2 space-y-2" data-testid="exposure-domicilio-companies">
+                    {source.companies.map((company) => (
+                      <div key={company.entityId} className="rounded-lg border border-border p-2 text-xs">
+                        <p className="font-medium">{company.legalName}</p>
+                        <p className="text-muted-foreground">
+                          {company.accountConfigured ? "Credencial configurada" : "Sem credencial para este CNPJ"} ·{" "}
+                          {SOURCE_STATUS_LABELS[company.status as keyof typeof SOURCE_STATUS_LABELS] ?? company.status}
+                        </p>
+                        <p>
+                          Última coleta completa {formatExposureDateTime(company.checkpoint) ?? "nunca"} · {company.communications}{" "}
+                          comunicações · {company.pendingScience} pendentes de ciência · {company.pendingReconciliation} sem
+                          processo vinculado
+                        </p>
+                        {company.lastErrorMessage ? <p className="text-red-700">Último erro: {company.lastErrorMessage}</p> : null}
+                        {source.enabled && company.accountConfigured && company.stale ? (
+                          <p className="text-amber-800">
+                            Coleta incompleta ou defasada: a ausência de comunicações não está confirmada.
+                          </p>
+                        ) : null}
+                      </div>
+                    ))}
+                  </div>
                 ) : null}
                 {source.coverage ? (
                   <p className="pt-1 text-xs text-muted-foreground">

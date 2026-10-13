@@ -5,6 +5,11 @@
 
 import type { LegalExposureSource } from "./legalExposureContracts.js";
 import {
+  domicilioAccountKeys,
+  domicilioEndpoints,
+  loadDomicilioAccounts,
+} from "./sources/domicilio/domicilioAccounts.js";
+import {
   DATAJUD_PUBLIC_BASE_URL,
   DJEN_PUBLIC_BASE_URL,
   datajudConfigured,
@@ -235,13 +240,16 @@ export function sourceReadinessOf(
       missingEnvVars: configured
         ? []
         : [
-            LEGAL_EXPOSURE_ENV.domicilioBaseUrl,
-            LEGAL_EXPOSURE_ENV.domicilioTokenUrl,
-            LEGAL_EXPOSURE_ENV.domicilioClientId,
-            LEGAL_EXPOSURE_ENV.domicilioClientSecret,
-            LEGAL_EXPOSURE_ENV.domicilioOnBehalfOf,
+            ...(domicilioEndpoints(env)
+              ? []
+              : [LEGAL_EXPOSURE_ENV.domicilioBaseUrl, LEGAL_EXPOSURE_ENV.domicilioTokenUrl]),
+            ...(domicilioAccountKeys(env).length === 0 ? [LEGAL_EXPOSURE_ENV.domicilioAccounts] : []),
+            ...loadDomicilioAccounts(env).problems.flatMap((problem) => problem.missing),
           ],
-      hint: "Desligado por política. Nunca registra ciência automaticamente.",
+      hint:
+        enabled && configured
+          ? "Somente leitura, uma credencial por CNPJ. Nunca registra ciência automaticamente."
+          : "Desligado por política. Nunca registra ciência automaticamente.",
     };
   }
   if (source === "TRIBUNAL_PUBLIC") {

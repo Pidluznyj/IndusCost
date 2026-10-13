@@ -39,6 +39,10 @@ Executar só depois da revisão do diff, no servidor autorizado, uma fase por ve
 
 Não executar neste ciclo. Produção só depois de homologação aceita e autorização explícita. Repetir os gates de homologação contra o banco e o host de produção, com janela e rollback de código — a migration é aditiva e não deve ser revertida com DROP.
 
+## Domicílio Judicial Eletrônico
+
+Configuração de credenciais, roteiro de homologação, ativação e rollback: `domicilio-multiempresa.md`. Sem migration. Nasce desligado (`PDPJ_DOMICILIO_ENABLED=0`).
+
 ## Frequência recomendada
 
 Não instalada.
