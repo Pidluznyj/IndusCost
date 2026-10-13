@@ -7,7 +7,15 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { CommercialAnnouncementArt } from "@/src/components/commercial/announcements/CommercialAnnouncementArt";
 import { canAccessModule, MODULE_LABELS, resolveModuleIdFromPath } from "@/src/lib/modulePermissions";
 import { getModulePath, NAVIGATION_GROUP_DEFINITIONS } from "@/src/lib/navigationGroups";
-import { canViewSidebarModuleFromDto } from "@/src/lib/sidebarEffectiveAccess";
+import { PERMISSION_CATALOG } from "@/src/lib/permissionCatalog";
+import { FRONTEND_PERMISSION_RESOURCES } from "@/src/lib/permissionsClient";
+import { PERMISSION_CONTRACT_RESOURCES } from "@/src/lib/security/permissionContract/resources";
+import { getDualWriteAliasIndex } from "@/src/lib/security/permissionDualWrite/aliasIndex";
+import {
+  canViewSidebarModuleFromDto,
+  projectSidebarContractKeysFromLegacyBag,
+  resolveSidebarEffectiveAccessDto,
+} from "@/src/lib/sidebarEffectiveAccess";
 import {
   ANNOUNCEMENT_FORMATS,
   announcementFileName,
@@ -20,7 +28,9 @@ import {
 } from "./commercialAnnouncement";
 import {
   canUseCommercialAnnouncementGenerator,
+  COMMERCIAL_ANNOUNCEMENTS_RESOURCE_KEY,
   COMMERCIAL_ANNOUNCEMENTS_ROUTE_PATH,
+  COMMERCIAL_ANNOUNCEMENTS_VIEW_PERMISSION,
 } from "./commercialAnnouncementAccess";
 
 function read(path: string): string {
@@ -31,62 +41,105 @@ const NOW = new Date(2026, 9, 13);
 const base = (patch: Partial<AnnouncementData> = {}): AnnouncementData => ({ ...createDefaultAnnouncement(NOW), ...patch });
 const PIXEL = "data:image/png;base64,iVBORw0KGgo=";
 
-function checker(role: string, accessProfileName: string | null) {
+const VIEW = "commercial.announcements.view";
+
+function checker(role: string, permissions: string[]) {
+  const held = new Set(permissions);
   return {
-    hasPermission: () => true,
-    hasAnyPermission: () => true,
-    authUser: { role: role as never, effectivePermissions: [], accessProfileName },
+    hasPermission: (key: string) => held.has(key),
+    hasAnyPermission: (keys: string[]) => keys.some((key) => held.has(key)),
+    authUser: { role: role as never, effectivePermissions: permissions },
   };
 }
 
-function dto(role: string, profileName: string | null, isSuperAdmin = false) {
+function dto(role: string, allowedResources: string[], isSuperAdmin = false) {
   return {
     permissionsVersion: 1,
     role,
     isSuperAdmin,
-    allowedResources: ["commercial.sales_orders", "commercial.proposals", "commercial.crm.seller", "commercial.customers"],
-    actionsByResource: {},
+    allowedResources,
+    actionsByResource: Object.fromEntries(allowedResources.map((key) => [key, ["view"]])),
     navigationReveal: [],
     capabilities: {},
-    appliedProfile: profileName ? { id: "p1", name: profileName } : null,
+    appliedProfile: null,
     compatibility: {},
   } as never;
 }
 
 describe("gerador de comunicados — acesso", () => {
-  it("só Super administrador e o perfil de supervisor de vendas", () => {
-    assert.equal(canUseCommercialAnnouncementGenerator({ role: "SUPER_ADMIN", accessProfileName: null }), true);
-    for (const name of ["Supervisor de Vendas", "supervisor de vendas", "  SUPERVISOR   DE VENDAS ", "Supervisor Comercial"]) {
-      assert.equal(canUseCommercialAnnouncementGenerator({ role: "SELLER", accessProfileName: name }), true, name);
+  it("Super administrador entra sempre; os demais só com a permissão marcada", () => {
+    assert.equal(canUseCommercialAnnouncementGenerator(checker("SUPER_ADMIN", [])), true);
+    assert.equal(canUseCommercialAnnouncementGenerator(checker("SELLER", [VIEW])), true);
+    assert.equal(canUseCommercialAnnouncementGenerator(checker("COMMERCIAL_MANAGER", [VIEW])), true);
+    // Outras permissões comerciais, por mais amplas, não abrem o gerador.
+    const otherCommercial = ["customers.view", "proposals.view", "sales_orders.view", "crm.view", "pricing.view", "price_table.view"];
+    for (const role of ["ADMIN", "COMMERCIAL_MANAGER", "SELLER", "VIEWER"]) {
+      assert.equal(canUseCommercialAnnouncementGenerator(checker(role, otherCommercial)), false, role);
+      assert.equal(canUseCommercialAnnouncementGenerator(checker(role, [])), false, role);
     }
-    const denied: Array<[string, string | null]> = [
-      ["ADMIN", null],
-      ["ADMIN", "Administrador"],
-      ["COMMERCIAL_MANAGER", null],
-      ["COMMERCIAL_MANAGER", "Gestor comercial"],
-      ["SELLER", "Vendedor"],
-      ["SELLER", "Supervisor de vendas júnior"],
-      ["SELLER", "Supervisor"],
-      ["VIEWER", ""],
-    ];
-    for (const [role, accessProfileName] of denied) {
-      assert.equal(canUseCommercialAnnouncementGenerator({ role, accessProfileName }), false, `${role}/${accessProfileName}`);
-    }
-    assert.equal(canUseCommercialAnnouncementGenerator(null), false);
   });
 
-  it("menu e rota seguem a mesma regra, mesmo para quem tem todas as permissões", () => {
-    assert.equal(canAccessModule("commercial-announcements", checker("SUPER_ADMIN", null)), true);
-    assert.equal(canAccessModule("commercial-announcements", checker("SELLER", "Supervisor de vendas")), true);
-    assert.equal(canAccessModule("commercial-announcements", checker("ADMIN", "Administrador")), false);
-    assert.equal(canAccessModule("commercial-announcements", checker("COMMERCIAL_MANAGER", "Gestor comercial")), false);
-    assert.equal(canAccessModule("commercial-announcements", checker("SELLER", "Vendedor")), false);
+  it("menu e rota seguem a mesma permissão (bag legado e DTO)", () => {
+    assert.equal(canAccessModule("commercial-announcements", checker("SUPER_ADMIN", [])), true);
+    assert.equal(canAccessModule("commercial-announcements", checker("SELLER", [VIEW])), true);
+    assert.equal(canAccessModule("commercial-announcements", checker("ADMIN", ["customers.view", "sales_orders.view"])), false);
 
-    assert.equal(canViewSidebarModuleFromDto(dto("SUPER_ADMIN", null, true), "commercial-announcements"), true);
-    assert.equal(canViewSidebarModuleFromDto(dto("SELLER", "Supervisor de vendas"), "commercial-announcements"), true);
-    assert.equal(canViewSidebarModuleFromDto(dto("ADMIN", "Administrador"), "commercial-announcements"), false);
-    assert.equal(canViewSidebarModuleFromDto(dto("COMMERCIAL_MANAGER", "Gestor comercial"), "commercial-announcements"), false);
-    assert.equal(canViewSidebarModuleFromDto(dto("SELLER", null), "commercial-announcements"), false);
+    assert.equal(canViewSidebarModuleFromDto(dto("SUPER_ADMIN", [], true), "commercial-announcements"), true);
+    assert.equal(canViewSidebarModuleFromDto(dto("SELLER", ["commercial.announcements"]), "commercial-announcements"), true);
+    assert.equal(
+      canViewSidebarModuleFromDto(
+        dto("COMMERCIAL_MANAGER", ["commercial.customers", "commercial.sales_orders", "commercial.proposals", "commercial.crm.seller"]),
+        "commercial-announcements"
+      ),
+      false
+    );
+    assert.equal(canViewSidebarModuleFromDto(dto("SELLER", []), "commercial-announcements"), false);
+  });
+
+  it("a permissão existe no catálogo, na matriz de perfis e no contrato, e aparece sob Comercial", () => {
+    const catalog = PERMISSION_CATALOG.find((row) => row.key === VIEW);
+    assert.ok(catalog, "chave no catálogo");
+    assert.equal(catalog!.label, "Gerador de Comunicados");
+    assert.equal(catalog!.type, "menu");
+
+    const resource = FRONTEND_PERMISSION_RESOURCES.find((row) => row.key === COMMERCIAL_ANNOUNCEMENTS_RESOURCE_KEY);
+    assert.ok(resource, "recurso na matriz de perfis");
+    assert.equal(resource!.label, "Gerador de Comunicados");
+    // Mesmo pai do recurso "Satisfação": o nó Comercial da matriz de perfis.
+    const sibling = FRONTEND_PERMISSION_RESOURCES.find((row) => row.key === "commercial.satisfaction");
+    assert.equal(resource!.parentKey, sibling!.parentKey);
+    assert.deepEqual(resource!.legacyAliasKeys, [VIEW]);
+
+    const contract = PERMISSION_CONTRACT_RESOURCES.find((row) => row.resourceKey === COMMERCIAL_ANNOUNCEMENTS_RESOURCE_KEY);
+    assert.ok(contract, "recurso no contrato");
+    assert.equal(contract!.appearsInSidebar, true);
+    assert.equal(contract!.moduleId, "commercial-announcements");
+    assert.equal(contract!.parentKey, "commercial");
+    assert.deepEqual(contract!.actions.map((a) => [a.action, a.legacyPermissionKeys]), [["view", [VIEW]]]);
+    assert.equal(COMMERCIAL_ANNOUNCEMENTS_VIEW_PERMISSION, VIEW);
+  });
+
+  it("marcar 'ver' na matriz do perfil grava a chave, e a chave gravada abre o menu", () => {
+    // Matriz → chave gravada: o recurso tem exatamente uma chave, no eixo ver.
+    const index = getDualWriteAliasIndex();
+    assert.deepEqual(index.oneToOneByResource.get(COMMERCIAL_ANNOUNCEMENTS_RESOURCE_KEY), [
+      { resourceKey: COMMERCIAL_ANNOUNCEMENTS_RESOURCE_KEY, legacyKey: VIEW, axis: "view" },
+    ]);
+    assert.equal(index.canonicalByLegacy.get(VIEW)?.resourceKey, COMMERCIAL_ANNOUNCEMENTS_RESOURCE_KEY);
+    assert.equal(index.parentByResource.get(COMMERCIAL_ANNOUNCEMENTS_RESOURCE_KEY), "commercial");
+
+    // Chave gravada → menu: usuário comum só com essa chave vê o item; sem ela, não.
+    assert.ok([...projectSidebarContractKeysFromLegacyBag([VIEW])].includes(COMMERCIAL_ANNOUNCEMENTS_RESOURCE_KEY));
+    const user = (effectivePermissions: string[]) =>
+      ({ id: "u1", role: "SELLER", isActive: true, permissions: effectivePermissions, effectivePermissions }) as never;
+    const withKey = resolveSidebarEffectiveAccessDto({ user: user([VIEW]) });
+    const withoutKey = resolveSidebarEffectiveAccessDto({ user: user(["customers.view", "sales_orders.view"]) });
+    assert.equal(canViewSidebarModuleFromDto(withKey, "commercial-announcements"), true);
+    assert.equal(canViewSidebarModuleFromDto(withoutKey, "commercial-announcements"), false);
+    // A chave do gerador não abre nenhum outro item do Comercial.
+    for (const other of ["customers", "proposals", "sales-orders", "pricing", "crm-commercial", "commissions"] as const) {
+      assert.equal(canViewSidebarModuleFromDto(withKey, other), false, other);
+    }
   });
 
   it("fica no grupo Comercial, com rota e rótulo próprios", () => {
@@ -98,7 +151,7 @@ describe("gerador de comunicados — acesso", () => {
     const app = read("src/App.tsx");
     assert.match(app, /path="commercial\/announcements"/);
     const page = read("src/components/commercial/announcements/CommercialAnnouncementGenerator.tsx");
-    assert.match(page, /canUseCommercialAnnouncementGenerator\(auth\.authUser\)/);
+    assert.match(page, /canViewModule\("commercial-announcements"\)/);
     assert.match(page, /<AccessDenied/);
     // Ferramenta local: sem chamada à API e sem endereço externo.
     assert.equal(/fetch\(|fetchJsonOk|https?:\/\//.test(page), false);

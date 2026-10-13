@@ -20,6 +20,7 @@ export const SIDEBAR_MODULE_RESOURCE_KEYS: Partial<Record<AppModuleId, string>> 
   "output-documents": ResourceKeys.COMERCIAL_DOCUMENTOS_SAIDA,
   commissions: ResourceKeys.COMISSOES,
   satisfaction: ResourceKeys.COMERCIAL_SATISFACAO,
+  "commercial-announcements": ResourceKeys.COMERCIAL_COMUNICADOS,
   materials: ResourceKeys.SUPRIMENTOS,
   settings: ResourceKeys.CONFIGURACOES,
   customers: ResourceKeys.COMERCIAL_CLIENTES,

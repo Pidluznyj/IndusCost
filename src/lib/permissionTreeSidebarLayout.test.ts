@@ -144,6 +144,7 @@ describe("permissionTreeSidebarLayout", () => {
       "commercial.customers",
       "commercial.proposals",
       "commercial.price_table",
+      "commercial.announcements",
       "commercial.sales_orders",
       "commercial.sales_orders.flow",
       "commercial.output_documents",

@@ -191,6 +191,7 @@ describe("sidebarNavigation — grupos oficiais", () => {
       "customers",
       "proposals",
       "commercial-price-table",
+      "commercial-announcements",
       "sales-orders",
       "sales-order-flow",
       "output-documents",

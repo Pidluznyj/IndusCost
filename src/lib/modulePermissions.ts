@@ -58,7 +58,6 @@ export type PermissionChecker = {
   authUser?: {
     effectivePermissions?: string[];
     role?: import("@prisma/client").AppUserRole;
-    accessProfileName?: string | null;
   } | null;
 };
 
@@ -159,11 +158,7 @@ export function canAccessModule(moduleId: AppModuleId, check: PermissionChecker)
           ?.mustAcceptCommercialPolicy,
       });
     case "commercial-announcements":
-      // Gate por papel/perfil (Super admin + supervisor de vendas), como a Política Comercial.
-      return canUseCommercialAnnouncementGenerator({
-        role: check.authUser?.role ?? null,
-        accessProfileName: check.authUser?.accessProfileName ?? null,
-      });
+      return canUseCommercialAnnouncementGenerator(check);
     case "employees":
       return check.hasPermission("employees.view");
     case "employees-dashboard":
