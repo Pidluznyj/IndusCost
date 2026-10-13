@@ -295,7 +295,9 @@
       "groupId": "comercial",
       "groupLabel": "Comercial",
       "isDirect": false,
-      "requiredPermissions": []
+      "requiredPermissions": [
+        "commercial.announcements.view"
+      ]
     },
     {
       "order": 25,
@@ -649,7 +651,9 @@
       "settings.price_tables.view"
     ],
     "commercial-policy": [],
-    "commercial-announcements": [],
+    "commercial-announcements": [
+      "commercial.announcements.view"
+    ],
     "employees": [
       "employees.view"
     ],

@@ -99,6 +99,7 @@ export const ResourceKeys = {
   COMERCIAL_PROPOSTAS_INDICADORES: "commercial.proposals.indicators",
   COMERCIAL_TABELA_COMERCIAL: "commercial.price_table",
   COMERCIAL_FORMACAO_PRECO: "commercial.pricing",
+  COMERCIAL_COMUNICADOS: "commercial.announcements",
   COMERCIAL_SATISFACAO: "commercial.satisfaction",
   COMERCIAL_SATISFACAO_RESPOSTAS: "commercial.satisfaction.responses",
   ENGENHARIA: "engineering",
@@ -373,6 +374,13 @@ export const FRONTEND_PERMISSION_RESOURCES: readonly FrontendPermissionResource[
     type: "TAB",
     parentKey: ResourceKeys.COMERCIAL_CRM,
     legacyAliasKeys: ["crm.reports.view"],
+  },
+  {
+    key: ResourceKeys.COMERCIAL_COMUNICADOS,
+    label: "Gerador de Comunicados",
+    type: "SUBMENU",
+    parentKey: ResourceKeys.COMERCIAL,
+    legacyAliasKeys: ["commercial.announcements.view"],
   },
   {
     key: ResourceKeys.COMERCIAL_SATISFACAO,

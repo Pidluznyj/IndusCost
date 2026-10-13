@@ -3,7 +3,7 @@ import { toJpeg } from "html-to-image";
 import { Download, ImagePlus, RotateCcw } from "lucide-react";
 import { AccessDenied } from "@/src/components/AccessDenied";
 import { CommercialAnnouncementArt } from "@/src/components/commercial/announcements/CommercialAnnouncementArt";
-import { useAuth } from "@/src/contexts/AuthContext";
+import { usePermissions } from "@/src/hooks/usePermissions";
 import {
   ANNOUNCEMENT_FITS,
   ANNOUNCEMENT_FORMATS,
@@ -17,7 +17,6 @@ import {
   restoreAnnouncement,
   type AnnouncementData,
 } from "@/src/lib/commercial/commercialAnnouncement";
-import { canUseCommercialAnnouncementGenerator } from "@/src/lib/commercial/commercialAnnouncementAccess";
 import { cn } from "@/src/lib/utils";
 import logoDarkUrl from "@/src/components/commercial/announcements/assets/lazarios-logo-dark.png";
 import logoLightUrl from "@/src/components/commercial/announcements/assets/lazarios-logo-light.png";
@@ -146,12 +145,12 @@ function Choice<T extends string>({
 const entries = <K extends string, V>(record: Record<K, V>) => Object.entries(record) as Array<[K, V]>;
 
 /**
- * Gerador de Comunicados (Comercial). Restrito ao Super administrador e ao supervisor de vendas.
+ * Gerador de Comunicados (Comercial). Restrito a quem tem a permissão "Gerador de Comunicados".
  * Edição e exportação acontecem no navegador; o rascunho fica no próprio navegador.
  */
 export function CommercialAnnouncementGenerator() {
-  const auth = useAuth();
-  const allowed = canUseCommercialAnnouncementGenerator(auth.authUser);
+  const permissions = usePermissions();
+  const allowed = permissions.canViewModule("commercial-announcements");
 
   const [data, setData] = useState<AnnouncementData>(loadDraft);
   const [exporting, setExporting] = useState(false);

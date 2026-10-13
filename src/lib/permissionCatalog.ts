@@ -41,6 +41,7 @@ const FLT = "Gestão de Frota";
 const INV = "Estoque";
 const CM = "Comissões";
 const SAT = "Satisfação";
+const ANN = "Comunicados";
 
 const FIN = "Financeiro";
 
@@ -101,6 +102,9 @@ export const PERMISSION_CATALOG: PermissionCatalogEntry[] = [
   perm({ key: "goals.create", label: "Metas — criar", group: G, module: "goals", description: "Criar objetivos e key results.", type: "action", parentKey: "goals.view", requires: ["goals.view"] }),
   perm({ key: "goals.update", label: "Metas — editar", group: G, module: "goals", description: "Editar metas e lançar valor realizado.", type: "action", parentKey: "goals.view", requires: ["goals.view"] }),
   perm({ key: "goals.manage", label: "Metas — gerenciar", group: G, module: "goals", description: "Excluir/arquivar objetivos e key results.", type: "action", parentKey: "goals.view", requires: ["goals.view"] }),
+
+  // —— Comercial > Gerador de Comunicados ——
+  perm({ key: "commercial.announcements.view", label: "Gerador de Comunicados", group: ANN, module: "commercial-announcements", description: "Acessar o gerador de comunicados e exportar a arte em JPEG.", type: "menu" }),
 
   // —— Comercial > Satisfação — docs/commercial/customer-satisfaction-module.md ——
   perm({ key: "commercial.satisfaction.view", label: "Satisfação", group: SAT, module: "satisfaction", description: "Acessar o dashboard e as pesquisas de satisfação de clientes.", type: "menu" }),

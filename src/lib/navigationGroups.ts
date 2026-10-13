@@ -110,8 +110,7 @@ export const MODULE_MENU_PERMISSION_KEYS: Record<AppModuleId, readonly string[]>
   "commercial-price-table": [...COMMERCIAL_PRICE_TABLE_VIEW_PERMISSIONS],
   /** Gate principal por papel comercial (canConsultCommercialPolicy); lista vazia = sem OR de permissões. */
   "commercial-policy": [],
-  /** Gate por papel/perfil (canUseCommercialAnnouncementGenerator); lista vazia = sem OR de permissões. */
-  "commercial-announcements": [],
+  "commercial-announcements": ["commercial.announcements.view"],
   employees: ["employees.view"],
   "employees-dashboard": ["employees.dashboard.view", "employees.edit"],
   "org-chart": ["employees.view"],

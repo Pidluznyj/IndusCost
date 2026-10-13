@@ -1,7 +1,7 @@
 /**
  * Quem pode abrir o Gerador de Comunicados (Comercial).
- * Super administrador e o perfil de acesso do supervisor de vendas.
- * Mesmo critério de customerListReportExportAccess: papel SUPER_ADMIN ou nome do perfil.
+ * Super administrador e quem tiver a permissão "Gerador de Comunicados", marcada no
+ * perfil de acesso ou no usuário (Comercial › Gerador de Comunicados na matriz de permissões).
  * Sem API própria: a ferramenta roda no navegador e nada é enviado ao servidor.
  */
 
@@ -10,31 +10,14 @@ export const COMMERCIAL_ANNOUNCEMENTS_PAGE_TITLE = "Gerador de Comunicados";
 export const COMMERCIAL_ANNOUNCEMENTS_PAGE_SUBTITLE =
   "Monte comunicados com a identidade da Lazarios e exporte em JPEG para e-mail e WhatsApp.";
 
-export type CommercialAnnouncementAccess = {
-  role?: string | null;
-  accessProfileName?: string | null;
-};
+/** Chave da permissão de menu (catálogo) e recurso correspondente no contrato. */
+export const COMMERCIAL_ANNOUNCEMENTS_VIEW_PERMISSION = "commercial.announcements.view";
+export const COMMERCIAL_ANNOUNCEMENTS_RESOURCE_KEY = "commercial.announcements";
 
-/** "Supervisor comercial" é o nome que o perfil já tem em outras regras do sistema. */
-const SUPERVISOR_PROFILE_NAMES = new Set(["supervisor de vendas", "supervisor comercial"]);
-
-function normalizeProfileName(value: string | null | undefined): string {
-  return (value ?? "")
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .replace(/\s+/g, " ")
-    .trim()
-    .toLowerCase();
-}
-
-export function isSalesSupervisorProfileName(value: string | null | undefined): boolean {
-  return SUPERVISOR_PROFILE_NAMES.has(normalizeProfileName(value));
-}
-
-export function canUseCommercialAnnouncementGenerator(
-  auth: CommercialAnnouncementAccess | null | undefined
-): boolean {
-  if (!auth) return false;
-  if ((auth.role ?? "").trim().toUpperCase() === "SUPER_ADMIN") return true;
-  return isSalesSupervisorProfileName(auth.accessProfileName);
+export function canUseCommercialAnnouncementGenerator(check: {
+  hasPermission: (permission: string) => boolean;
+  authUser?: { role?: string | null } | null;
+}): boolean {
+  if ((check.authUser?.role ?? "").trim().toUpperCase() === "SUPER_ADMIN") return true;
+  return check.hasPermission(COMMERCIAL_ANNOUNCEMENTS_VIEW_PERMISSION);
 }

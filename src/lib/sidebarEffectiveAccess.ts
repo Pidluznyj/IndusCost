@@ -1,7 +1,6 @@
 import {
   isCommercialPolicyConsultRole,
 } from "@/src/lib/commercialPolicy/commercialPolicyConsultAccess.js";
-import { isSalesSupervisorProfileName } from "@/src/lib/commercial/commercialAnnouncementAccess.js";
 import type { SidebarAccessibleNavigation, SidebarMenuItemDef } from "@/src/lib/sidebarNavigation.js";
 import { projectInternalContractKeysFromLegacyBag } from "@/src/lib/internalSurfaceAccess.js";
 import {
@@ -84,12 +83,7 @@ export const SIDEBAR_MODULE_CONTRACT_KEYS: Record<AppModuleId, readonly string[]
     "commercial.crm.seller",
     "commercial.proposals",
   ],
-  /**
-   * Gerador de Comunicados. O gate é por perfil em canViewSidebarModuleFromDto
-   * (Super admin + supervisor de vendas); a chave abaixo só mantém o item no mapa
-   * e sozinha não abre o menu.
-   */
-  "commercial-announcements": ["commercial.customers"],
+  "commercial-announcements": ["commercial.announcements"],
   proposals: ["commercial.proposals"],
   "sales-orders": ["commercial.sales_orders"],
   "sales-order-flow": ["commercial.sales_orders.flow"],
@@ -297,10 +291,6 @@ export function canViewSidebarModuleFromDto(
     // Consulta institucional: papéis comerciais (e SUPER_ADMIN via isSuperAdmin acima).
     // Sem fallthrough por sales_orders — evita VIEWER com pedidos ver a política.
     return isCommercialPolicyConsultRole(dto.role);
-  }
-  if (moduleId === "commercial-announcements") {
-    // SUPER_ADMIN já retornou acima; fora isso, só o perfil de supervisor de vendas.
-    return isSalesSupervisorProfileName(dto.appliedProfile?.name);
   }
   if (moduleId === "crm-commercial") {
     const general = dtoAllowsView(dto, "commercial.crm.general");

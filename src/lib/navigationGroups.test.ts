@@ -194,8 +194,7 @@ describe("navigationGroups — permissões preservadas", () => {
     for (const moduleId of SIDEBAR_MODULE_ORDER) {
       const keys = MODULE_MENU_PERMISSION_KEYS[moduleId];
       // commercial-policy: gate por papel (canConsultCommercialPolicy), sem chave de bag.
-      // commercial-announcements: gate por perfil (canUseCommercialAnnouncementGenerator).
-      if (moduleId === "commercial-policy" || moduleId === "commercial-announcements") {
+      if (moduleId === "commercial-policy") {
         assert.ok(Array.isArray(keys), moduleId);
         continue;
       }
