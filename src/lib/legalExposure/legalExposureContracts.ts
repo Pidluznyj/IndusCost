@@ -155,6 +155,8 @@ export const CNDT_DOES_NOT_MEAN_NO_CASES_COPY =
 export const LIKELY_REVIEW_COPY = "Possível ocorrência — revisão necessária";
 
 export const OFFICIAL_COMMUNICATIONS_PORTAL_URL = "https://comunica.pje.jus.br/";
+/** Página inicial do portal do Domicílio Judicial Eletrônico. Nunca o endereço de uma comunicação. */
+export const DOMICILIO_PORTAL_URL = "https://domicilio-eletronico.pdpj.jus.br/";
 
 export const LEGAL_EXPOSURE_PAGE_SIZE_DEFAULT = 20;
 export const LEGAL_EXPOSURE_PAGE_SIZE_MAX = 50;

@@ -40,6 +40,36 @@ export function formatExposureDateTime(iso: string | null | undefined): string |
   });
 }
 
+/**
+ * Data final de ciência do Domicílio.
+ *
+ * O CNJ informa esse prazo como data civil (`dataFinalCiencia`, tipo `date` no contrato):
+ * ela chega sem hora e fica gravada como meia-noite UTC. Converter para Brasília
+ * mostraria a véspera às 21:00. Meia-noite UTC exata é exibida como a própria data, sem hora.
+ * Qualquer outro horário não é coberto pelo contrato como data civil e segue como
+ * instante real, convertido para Brasília.
+ */
+export function formatDomicilioScienceDeadline(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return null;
+  const isCivilDate =
+    date.getUTCHours() === 0 &&
+    date.getUTCMinutes() === 0 &&
+    date.getUTCSeconds() === 0 &&
+    date.getUTCMilliseconds() === 0;
+  if (!isCivilDate) return formatExposureDateTime(iso);
+  return date.toLocaleDateString("pt-BR", { timeZone: "UTC", day: "2-digit", month: "2-digit", year: "numeric" });
+}
+
+/** Prazo de ciência conforme a fonte: data civil só no Domicílio; as demais seguem como data e hora. */
+export function formatCommunicationScienceDeadline(
+  source: string | null | undefined,
+  iso: string | null | undefined
+): string | null {
+  return source === "DOMICILIO" ? formatDomicilioScienceDeadline(iso) : formatExposureDateTime(iso);
+}
+
 export function casePoleLabel(pole: string | null | undefined): string {
   if (pole === "PASSIVE") return CASE_POLE_PASSIVE_COPY;
   if (pole === "ACTIVE") return CASE_POLE_ACTIVE_COPY;
