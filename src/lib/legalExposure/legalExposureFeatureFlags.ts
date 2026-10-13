@@ -3,6 +3,8 @@
  * Permissão não liga a flag.
  */
 
+import { domicilioEndpoints, loadDomicilioAccounts } from "./sources/domicilio/domicilioAccounts.js";
+
 export const DJEN_PUBLIC_BASE_URL = "https://comunicaapi.pje.jus.br";
 export const DATAJUD_PUBLIC_BASE_URL = "https://api-publica.datajud.cnj.jus.br";
 
@@ -11,11 +13,7 @@ export const LEGAL_EXPOSURE_ENV = {
   domicilio: "PDPJ_DOMICILIO_ENABLED",
   domicilioBaseUrl: "PDPJ_DOMICILIO_BASE_URL",
   domicilioTokenUrl: "PDPJ_DOMICILIO_TOKEN_URL",
-  domicilioClientId: "PDPJ_DOMICILIO_CLIENT_ID",
-  domicilioClientSecret: "PDPJ_DOMICILIO_CLIENT_SECRET",
-  domicilioOnBehalfOf: "PDPJ_DOMICILIO_ON_BEHALF_OF_CPF",
-  domicilioIdentityPath: "PDPJ_DOMICILIO_IDENTITY_PATH",
-  domicilioCommunicationsPath: "PDPJ_DOMICILIO_COMMUNICATIONS_PATH",
+  domicilioAccounts: "PDPJ_DOMICILIO_ACCOUNTS",
   datajud: "DATAJUD_ENABLED",
   datajudCnpjDiscovery: "DATAJUD_CNPJ_DISCOVERY_ENABLED",
   datajudBaseUrl: "DATAJUD_BASE_URL",
@@ -109,16 +107,9 @@ function filled(env: LegalExposureEnv, name: string): boolean {
   return Boolean(env[name]?.trim());
 }
 
+/** Endereços oficiais válidos e ao menos uma conta institucional completa (uma por CNPJ). */
 export function domicilioConfigured(env: LegalExposureEnv = process.env): boolean {
-  return (
-    filled(env, LEGAL_EXPOSURE_ENV.domicilioBaseUrl) &&
-    filled(env, LEGAL_EXPOSURE_ENV.domicilioTokenUrl) &&
-    filled(env, LEGAL_EXPOSURE_ENV.domicilioClientId) &&
-    filled(env, LEGAL_EXPOSURE_ENV.domicilioClientSecret) &&
-    filled(env, LEGAL_EXPOSURE_ENV.domicilioOnBehalfOf) &&
-    filled(env, LEGAL_EXPOSURE_ENV.domicilioIdentityPath) &&
-    filled(env, LEGAL_EXPOSURE_ENV.domicilioCommunicationsPath)
-  );
+  return domicilioEndpoints(env) != null && loadDomicilioAccounts(env).accounts.length > 0;
 }
 
 export function datajudConfigured(env: LegalExposureEnv = process.env): boolean {

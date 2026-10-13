@@ -11,7 +11,7 @@ import {
   stableHash,
 } from "./legalExposureNormalization.js";
 import { createEmptyExposureMemory } from "./legalExposureStore.js";
-import { mapDomicilioCommunicationList } from "./sources/domicilio/domicilioMapper.js";
+import { mapDomicilioCommunicationPage } from "./sources/domicilio/domicilioMapper.js";
 import { mapDatajudSearch } from "./sources/datajud/datajudMapper.js";
 import { mapDjenPublications } from "./sources/djen/djenMapper.js";
 import { matchDjenHit } from "./sources/djen/djenMatchEngine.js";
@@ -594,23 +594,30 @@ describe("exposure freshness", () => {
 
 describe("exposure mappers", () => {
   it("mapeia fixture de Domicílio sem tratar lista vazia como erro", () => {
-    const empty = mapDomicilioCommunicationList({ content: [] });
-    assert.equal(empty.outcome, "NO_RESULTS");
-    const mapped = mapDomicilioCommunicationList({
-      content: [
-        {
-          id: "comm-1",
-          numeroProcesso: PROCESS,
-          tipoComunicacao: "CITACAO",
-          assunto: "Citação fictícia",
-          statusCiente: "N",
-          dataDisponibilizacao: "2026-09-29T19:00:00.000Z",
-          tribunal: "TRT9",
-        },
-      ],
-    });
-    assert.equal(mapped.outcome, "SUCCESS");
+    const context = { accountCnpj: "11222333000181", tenantId: "tenant-1" };
+    const empty = mapDomicilioCommunicationPage({ page: { pageNumber: 0, totalPages: 0, count: 0 }, data: [] }, context);
+    assert.deepEqual(empty.page, { pageNumber: 0, totalPages: 0, count: 0 });
+    assert.equal(empty.communications.length, 0);
+    const mapped = mapDomicilioCommunicationPage(
+      {
+        page: { pageNumber: 0, totalPages: 1, count: 1 },
+        data: [
+          {
+            numeroComunicacao: "comm-1",
+            numeroProcesso: PROCESS,
+            documentoDestinatario: "11222333000181",
+            tipoComunicacao: "CITACAO",
+            assunto: "Citação fictícia",
+            status: "EM_CURSO",
+            dataComunicacao: "2026-09-29T19:00:00.000Z",
+            tribunalOrigem: "TRT9",
+          },
+        ],
+      },
+      context
+    );
     assert.equal(mapped.communications[0]?.sourceCommunicationId, "comm-1");
+    assert.equal(mapped.communications[0]?.tenantId, "tenant-1");
     assert.equal(mapped.communications.length, 1);
   });
 

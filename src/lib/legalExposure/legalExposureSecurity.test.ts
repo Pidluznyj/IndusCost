@@ -13,7 +13,7 @@ import { runDomicilioSync } from "./sources/domicilio/domicilioSyncRunner.server
 import { runDatajudSync } from "./sources/datajud/datajudSyncRunner.server.js";
 import { searchDjen } from "./sources/djen/djenClient.server.js";
 import { createDjenThrottle } from "./sources/djen/djenThrottle.js";
-import { listDomicilioCommunications } from "./sources/domicilio/domicilioMonitoringClient.server.js";
+import { clearDomicilioThrottleForTests } from "./sources/domicilio/domicilioHttp.server.js";
 
 function auth(permissions: string[]): AuthPermissionInput {
   return {
@@ -106,7 +106,9 @@ describe("exposure science and secrets", () => {
 
   it("429 não entra em loop e não vaza segredo", async () => {
     clearDomicilioTokenCacheForTests();
+    clearDomicilioThrottleForTests();
     let calls = 0;
+    const waits: number[] = [];
     const fetchImpl: typeof fetch = async () => {
       calls += 1;
       if (calls === 1) {
@@ -115,20 +117,29 @@ describe("exposure science and secrets", () => {
       return new Response("{}", { status: 429, headers: { "retry-after": "12" } });
     };
     const env = {
-      PDPJ_DOMICILIO_BASE_URL: "https://fixture.invalid",
-      PDPJ_DOMICILIO_TOKEN_URL: "https://fixture.invalid/token",
-      PDPJ_DOMICILIO_CLIENT_ID: "client",
-      PDPJ_DOMICILIO_CLIENT_SECRET: "super-secret-value",
-      PDPJ_DOMICILIO_ON_BEHALF_OF_CPF: "12345678909",
-      PDPJ_DOMICILIO_COMMUNICATIONS_PATH: "/api/v1/comunicacoes",
+      LEGAL_EXPOSURE_ENABLED: "1",
+      PDPJ_DOMICILIO_ENABLED: "1",
+      PDPJ_DOMICILIO_BASE_URL: "https://gateway.fixture.pje.jus.br/domicilio",
+      PDPJ_DOMICILIO_TOKEN_URL: "https://sso.fixture.pje.jus.br/token",
+      PDPJ_DOMICILIO_ACCOUNTS: "ALFA",
+      PDPJ_DOMICILIO_ALFA_CNPJ: "11222333000181",
+      PDPJ_DOMICILIO_ALFA_CLIENT_ID: "client",
+      PDPJ_DOMICILIO_ALFA_CLIENT_SECRET: "super-secret-value",
+      PDPJ_DOMICILIO_ALFA_ON_BEHALF_OF_CPF: "12345678909",
     };
-    const batch = await listDomicilioCommunications(
-      { env, fetchImpl },
-      { dataInicio: "2026-09-27T00:00:00.000Z", dataFim: "2026-09-29T00:00:00.000Z" }
-    );
+    const batch = await runDomicilioSync({
+      env,
+      fetchImpl,
+      entity: { cnpj: "11222333000181" },
+      sleep: async (ms) => {
+        waits.push(ms);
+      },
+    });
     assert.equal(batch.outcome, "RATE_LIMITED");
     assert.equal(batch.retryAfterSeconds, 12);
-    assert.equal(calls, 2);
+    // Token, a consulta limitada e uma única nova tentativa depois do Retry-After.
+    assert.equal(calls, 3);
+    assert.deepEqual(waits.filter((ms) => ms === 12_000), [12_000]);
     const serialized = JSON.stringify(batch);
     assert.equal(serialized.includes("super-secret-value"), false);
     assert.equal(serialized.includes("tok-secreto"), false);
@@ -138,7 +149,8 @@ describe("exposure science and secrets", () => {
   it("configuração pública não devolve segredo", () => {
     const rows = publicSourceConfiguration({
       LEGAL_EXPOSURE_ENABLED: "0",
-      PDPJ_DOMICILIO_CLIENT_SECRET: "super-secret-value",
+      PDPJ_DOMICILIO_ACCOUNTS: "ALFA",
+      PDPJ_DOMICILIO_ALFA_CLIENT_SECRET: "super-secret-value",
       DATAJUD_API_KEY: "super-secret-value",
     });
     const serialized = JSON.stringify(rows);

@@ -4,15 +4,17 @@ Cada fonte segue RAW → mapper → DTO interno. Serviço e UI não leem o JSON 
 
 ## Domicílio
 
-Variáveis: base, token, client id, client secret, CPF On-behalf-Of e os paths de identidade e de listagem. Os paths não são inventados; ficam vazios até o operador informar o contrato vigente.
+Detalhe completo, credenciais e roteiro de homologação em `domicilio-multiempresa.md`.
 
-Auth: `client_credentials` e header `On-behalf-Of`. O token fica em memória, com folga de 15 segundos. Não vai para PostgreSQL nem para log.
+Contrato conferido no OpenAPI oficial de homologação do CNJ. Operações usadas, com método e caminho fixos no código: `POST <token>`, `GET /api/v1/eu`, `GET /api/v1/comunicacoes`. Qualquer outra é recusada antes do `fetch`.
 
-Listagem read-only, janela sobreposta de 2 dias, não de 15 minutos. Idempotência: `DOMICILIO:<tenantId>:<sourceCommunicationId>`.
+Uma conta por CNPJ (`PDPJ_DOMICILIO_ACCOUNTS` + `PDPJ_DOMICILIO_<CHAVE>_*`): client id, client secret, CPF On-behalf-Of e tenant próprios. Base e token vêm do ambiente e só são aceitos em `https` nos domínios oficiais.
 
-Proibido: PUT de ciência, inteiro teor, mark as read, acknowledge.
+Auth: `client_credentials`; `On-behalf-Of` em todas as requisições; `tenantId` na listagem. O token fica em memória, por conta, com folga de 15 segundos. Não vai para PostgreSQL nem para log.
 
-O mapper de teste aceita uma fixture sanitizada (`content[]` com `id`, `numeroProcesso`, `tipoComunicacao`, `statusCiente`). Isso não é o contrato oficial.
+Listagem read-only paginada, janelas de até 7 dias desde o checkpoint com 2 dias de sobreposição. Idempotência: `DOMICILIO:<tenantId>:<numeroComunicacao>`. Checkpoint em `LegalSourceConnection.lastFullSyncAt`, só avançado com cobertura completa.
+
+Proibido: `PUT /api/v1/processos/{n}/comunicacoes/{n}` (inteiro teor → ciência), logs, ticket e qualquer escrita. Os links de inteiro teor devolvidos na listagem não são guardados nem seguidos.
 
 ## DataJud
 
@@ -39,7 +41,7 @@ CNPJ de 14 dígitos com dígitos verificadores. Número CNJ de 20 dígitos. Hash
 ## Limitações conhecidas
 
 - Payload real de parte/polo do DataJud ainda não observado.
-- Paths oficiais do Domicílio ainda não fixados no ambiente.
-- Credencial e tenant reais não foram usados.
+- Endereços de produção do Domicílio não constam na documentação pública do CNJ.
+- Credencial e tenant reais não foram usados; nenhuma chamada real ao Domicílio foi feita.
 - Certidão TRT e CNDT são registro manual. CNDT negativa não significa ausência de processo.
 - A linha do tempo de um processo pagina a junção recente de movimentos, comunicações e eventos.

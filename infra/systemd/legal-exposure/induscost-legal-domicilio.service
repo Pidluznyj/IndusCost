@@ -1,0 +1,12 @@
+[Unit]
+Description=IndusCost Exposure — Domicílio Judicial Eletrônico (somente leitura, uma credencial por CNPJ)
+Documentation=file:README.md
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/induscost
+EnvironmentFile=-/opt/induscost/.env
+# Segredos do Domicílio em arquivo próprio (600 root:root). Ver docs/legal-exposure/domicilio-multiempresa.md.
+EnvironmentFile=-/etc/induscost/domicilio.env
+ExecStart=/usr/bin/flock -n /run/induscost-legal-domicilio.lock /usr/bin/npm run legal:exposure:domicilio:apply --prefix /opt/induscost
+Nice=10

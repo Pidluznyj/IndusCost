@@ -167,6 +167,8 @@ function upsertConnection(
   base.enabled = monitoringEnabled(memory, input.entityId, input.batch.source);
   if (successful) {
     base.lastSuccessfulAt = now;
+    // Checkpoint: só anda quando a fonte informa que cobriu a janela inteira.
+    if (input.batch.coverage?.complete) base.lastFullSyncAt = input.batch.coverage.windowEnd;
     if (input.batch.outcome !== "PARTIAL") {
       base.lastErrorAt = null;
       base.lastErrorCode = null;
@@ -985,6 +987,10 @@ export function applyBatchToMemory(
   );
   entity.lastSuccessfulSyncAt = input.now;
   entity.updatedAt = input.now;
+  // Tenant confirmado pelo CNJ para o CNPJ desta empresa (fica na trilha da entidade).
+  if (input.batch.source === "DOMICILIO" && input.batch.domicilio?.tenantId) {
+    entity.domicilioTenantId = input.batch.domicilio.tenantId;
+  }
 
   if (input.batch.outcome === "NO_RESULTS") return memory;
 

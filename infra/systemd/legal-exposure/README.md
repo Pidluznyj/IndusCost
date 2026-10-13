@@ -10,7 +10,10 @@ Agenda oficial: `src/lib/legalExposure/legalExposureSourceSchedule.ts` (`America
 | Escavador | 03:20 (só se configurado) | `induscost-legal-escavador.timer` | `/run/induscost-legal-escavador.lock` |
 | Jusbrasil | 04:10 (só se configurado) | `induscost-legal-jusbrasil.timer` | `/run/induscost-legal-jusbrasil.lock` |
 
-Domicílio: **não** há timer. Permanece desligado por política.
+Domicílio: há modelo de unit (`induscost-legal-domicilio.service` / `.timer`, de hora em hora das 07h às 19h),
+mas **não habilitar**: a fonte permanece desligada por política até a aprovação de ativação descrita em
+`docs/legal-exposure/domicilio-multiempresa.md`. Os comandos de instalação abaixo copiam os arquivos; nenhum
+deles habilita o timer do Domicílio. A agenda oficial em `legalExposureSourceSchedule.ts` segue sem horários para ele.
 
 Folga entre DJEN e DataJud: 30 min. Se `durationMs` histórico de DJEN ≥ 25 min, não habilitar DataJud no mesmo ciclo até recalcular horários.
 

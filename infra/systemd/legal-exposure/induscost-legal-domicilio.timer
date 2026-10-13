@@ -1,0 +1,11 @@
+[Unit]
+Description=IndusCost Exposure — Domicílio timer (NÃO habilitar antes da aprovação de ativação)
+
+[Timer]
+OnCalendar=*-*-* 07..19:00:00 America/Sao_Paulo
+Persistent=true
+AccuracySec=1min
+Unit=induscost-legal-domicilio.service
+
+[Install]
+WantedBy=timers.target

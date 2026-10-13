@@ -10,6 +10,8 @@ import {
 } from "./legalExposureContracts.js";
 import { listCanonicalCases } from "./legalExposureExecutive.js";
 import type { LegalExposureEnv } from "./legalExposureFeatureFlags.js";
+import { SOURCE_FRESHNESS_POLICY } from "./legalExposureHealth.js";
+import { loadDomicilioAccounts } from "./sources/domicilio/domicilioAccounts.js";
 import {
   LEGAL_EXPOSURE_HEALTH_INTERVAL_MINUTES,
   LEGAL_EXPOSURE_SOURCE_SCHEDULE,
@@ -49,6 +51,65 @@ export type ExposureSourceCoverage = {
   processCount: number;
 };
 
+/** Estado do Domicílio de uma empresa monitorada: credencial, última coleta e checkpoint próprios. */
+export type ExposureDomicilioCompanyState = {
+  entityId: string;
+  legalName: string;
+  cnpj: string;
+  /** Há credencial completa para o CNPJ. Nunca o valor da credencial. */
+  accountConfigured: boolean;
+  status: string;
+  lastAttemptAt: string | null;
+  lastSuccessfulAt: string | null;
+  /** Fim da última janela lida por inteiro. */
+  checkpoint: string | null;
+  /** Sem checkpoint recente a ausência de comunicações não está confirmada. */
+  stale: boolean;
+  lastErrorCode: string | null;
+  lastErrorMessage: string | null;
+  communications: number;
+  pendingScience: number;
+  pendingReconciliation: number;
+};
+
+export function buildDomicilioCompanyStates(input: {
+  memory: LegalExposureMemory;
+  now: Date;
+  env: LegalExposureEnv;
+}): ExposureDomicilioCompanyState[] {
+  const accounts = new Set(loadDomicilioAccounts(input.env).accounts.map((account) => account.cnpj));
+  const staleAfterMs = SOURCE_FRESHNESS_POLICY.DOMICILIO.staleAfterMs;
+  return input.memory.entities
+    .filter((entity) => entity.active && entity.monitorDomicilio)
+    .map((entity) => {
+      const connection = input.memory.connections.find(
+        (row) => row.entityId === entity.id && row.source === "DOMICILIO"
+      );
+      const communications = input.memory.communications.filter(
+        (row) => row.entityId === entity.id && row.source === "DOMICILIO"
+      );
+      const checkpoint = connection?.lastFullSyncAt ?? null;
+      const age = checkpoint ? input.now.getTime() - Date.parse(checkpoint) : Number.POSITIVE_INFINITY;
+      return {
+        entityId: entity.id,
+        legalName: entity.legalName,
+        cnpj: entity.cnpj,
+        accountConfigured: accounts.has(entity.cnpj),
+        status: connection?.status ?? "NOT_CONFIGURED",
+        lastAttemptAt: connection?.lastAttemptAt ?? null,
+        lastSuccessfulAt: connection?.lastSuccessfulAt ?? null,
+        checkpoint,
+        stale: !(age <= staleAfterMs),
+        lastErrorCode: connection?.lastErrorCode ?? null,
+        lastErrorMessage: connection?.lastErrorMessageSanitized ?? null,
+        communications: communications.length,
+        pendingScience: communications.filter((row) => row.normalizedStatus === "PENDING").length,
+        pendingReconciliation: communications.filter((row) => !row.caseId).length,
+      };
+    })
+    .sort((a, b) => a.legalName.localeCompare(b.legalName, "pt-BR"));
+}
+
 export type ExposureSourceOperation = {
   source: LegalExposureSource;
   label: string;
@@ -68,6 +129,8 @@ export type ExposureSourceOperation = {
   coverage: ExposureSourceCoverage | null;
   healthCheckExternalCall: false;
   healthIntervalMinutes: number;
+  /** Só no Domicílio: uma linha por empresa, com credencial e checkpoint independentes. */
+  companies?: ExposureDomicilioCompanyState[];
 };
 
 function pct(part: number, total: number): number | null {
@@ -163,6 +226,9 @@ export function buildSourceOperations(input: {
       coverage: coverageForSource(input.memory, source),
       healthCheckExternalCall: false,
       healthIntervalMinutes: LEGAL_EXPOSURE_HEALTH_INTERVAL_MINUTES,
+      ...(source === "DOMICILIO"
+        ? { companies: buildDomicilioCompanyStates({ memory: input.memory, now, env }) }
+        : {}),
     };
   });
 }

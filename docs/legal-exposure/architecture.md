@@ -63,6 +63,10 @@ Citação pendente ou expirada é crítica. Processo confirmado no polo passivo 
 
 Não existe score jurídico.
 
+## Domicílio por empresa
+
+O Domicílio é consultado com uma credencial por CNPJ, em paralelo e com resultado próprio por empresa: token, paginação, checkpoint (`lastFullSyncAt`), status e erro não são compartilhados. A comunicação pertence à empresa destinatária; um processo comum a duas empresas continua único, com uma comunicação por destinatária.
+
 ## Saúde das fontes
 
 A política está em `legalExposureHealth.ts`. Para o Domicílio: até 30 minutos saudável, acima disso degradado, acima de 1 hora desatualizado.
@@ -73,4 +77,4 @@ A política está em `legalExposureHealth.ts`. Para o Domicílio: até 30 minuto
 
 O automático pode autenticar, listar metadados e consultar processo. Não abre inteiro teor, não dá ciência, não confirma citação ou intimação e não marca comunicação como lida.
 
-Não há cliente, endpoint ou botão de ciência. O caminho HTTP que pareça ciência é recusado antes do `fetch`. Os campos `officialContentOpenedAt` existem só para evolução futura e o sync não os preenche.
+Não há cliente, endpoint ou botão de ciência. O caminho HTTP que pareça ciência é recusado antes do `fetch`. No Domicílio a regra é mais estrita: só três operações (token, identificação e listagem) estão em uma allowlist de método e caminho; ver `domicilio-multiempresa.md`. Os campos `officialContentOpenedAt` existem só para evolução futura e o sync não os preenche.
