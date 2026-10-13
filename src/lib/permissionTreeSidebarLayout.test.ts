@@ -91,7 +91,9 @@ describe("permissionTreeSidebarLayout", () => {
     const after = collectResourceKeys(layout.nodes).sort();
     assert.deepEqual(after, before);
     assert.equal(new Set(after).size, after.length);
-    assert.deepEqual(layout.unresolvedModuleIds, []);
+    // Política Comercial é liberada por papel (canConsultCommercialPolicy) e não tem permissão
+    // marcável: é o único item do menu sem recurso na árvore. Qualquer outro aqui é falha de registro.
+    assert.deepEqual(layout.unresolvedModuleIds, ["commercial-policy"]);
     assert.deepEqual(layout.orphanResourceKeys, []);
   });
 
