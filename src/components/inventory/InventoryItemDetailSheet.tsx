@@ -120,6 +120,8 @@ function InventoryItemFormFields({
   readOnly,
   hideRawMaterialType,
   codeHint,
+  familyHint,
+  families,
 }: {
   form: InventoryItemFormState;
   setForm: React.Dispatch<React.SetStateAction<InventoryItemFormState>>;
@@ -127,6 +129,8 @@ function InventoryItemFormFields({
   readOnly?: boolean;
   hideRawMaterialType?: boolean;
   codeHint?: React.ReactNode;
+  familyHint?: React.ReactNode;
+  families?: readonly string[];
 }) {
   const inputClass = cn(
     "w-full rounded-lg border border-slate-200 px-2.5 py-2 text-sm outline-none focus:ring-2 focus:ring-slate-300/60",
@@ -154,6 +158,27 @@ function InventoryItemFormFields({
             </option>
           ))}
         </select>
+      </FieldLabel>
+      <FieldLabel label="Família" hint={familyHint}>
+        <input
+          className={inputClass}
+          list="inventory-family-suggestions"
+          value={form.family}
+          disabled={readOnly}
+          data-testid="inventory-item-form-family"
+          onChange={(e) => setForm((f) => ({ ...f, family: e.target.value }))}
+          onBlur={() => {
+            // Mesma família com outra grafia ("papelaria") assume a grafia já cadastrada.
+            const typed = form.family.trim().toLowerCase();
+            const known = (families ?? []).find((name) => name.toLowerCase() === typed);
+            if (known && known !== form.family) setForm((f) => ({ ...f, family: known }));
+          }}
+        />
+        <datalist id="inventory-family-suggestions">
+          {(families ?? []).map((name) => (
+            <option key={name} value={name} />
+          ))}
+        </datalist>
       </FieldLabel>
       <FieldLabel label="Código interno" required error={errors.code} hint={codeHint}>
         <input
@@ -198,14 +223,6 @@ function InventoryItemFormFields({
           <option value="ACTIVE">Ativo</option>
           <option value="INACTIVE">Inativo</option>
         </select>
-      </FieldLabel>
-      <FieldLabel label="Família">
-        <input
-          className={inputClass}
-          value={form.family}
-          disabled={readOnly}
-          onChange={(e) => setForm((f) => ({ ...f, family: e.target.value }))}
-        />
       </FieldLabel>
       <FieldLabel label="Grupo">
         <input
@@ -338,6 +355,7 @@ export function InventoryItemDetailSheet({
   const [editing, setEditing] = useState(isCreate);
   const [nextCode, setNextCode] = useState<NextCodeSuggestion | null>(null);
   const [nextCodeRefresh, setNextCodeRefresh] = useState(0);
+  const [families, setFamilies] = useState<string[]>([]);
   /** Último código preenchido automaticamente; digitação manual nunca é sobrescrita. */
   const autoFilledCodeRef = useRef("");
 
@@ -375,14 +393,38 @@ export function InventoryItemDetailSheet({
     void load();
   }, [isCreate, load]);
 
+  useEffect(() => {
+    let cancelled = false;
+    fetchJsonOk<{ families?: string[] }>("/api/inventory/items/families")
+      .then((res) => {
+        if (!cancelled) setFamilies(Array.isArray(res.families) ? res.families : []);
+      })
+      .catch(() => {
+        if (!cancelled) setFamilies([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const createItemType = isCreate && canManage ? form.itemType : "";
+  const createFamily = form.family.trim();
+  // Família é digitável: espera a digitação parar antes de recalcular o código.
+  const [debouncedFamily, setDebouncedFamily] = useState(createFamily);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedFamily(createFamily), 300);
+    return () => window.clearTimeout(timer);
+  }, [createFamily]);
+
   useEffect(() => {
     if (!createItemType) {
       setNextCode(null);
       return;
     }
     let cancelled = false;
-    fetchJsonOk<NextCodeSuggestion>(`/api/inventory/items/next-code?itemType=${createItemType}`)
+    const query = new URLSearchParams({ itemType: createItemType });
+    if (debouncedFamily) query.set("family", debouncedFamily);
+    fetchJsonOk<NextCodeSuggestion>(`/api/inventory/items/next-code?${query.toString()}`)
       .then((suggestion) => {
         if (cancelled) return;
         const previousAuto = autoFilledCodeRef.current;
@@ -399,12 +441,18 @@ export function InventoryItemDetailSheet({
     return () => {
       cancelled = true;
     };
-  }, [createItemType, nextCodeRefresh]);
+  }, [createItemType, debouncedFamily, nextCodeRefresh]);
 
-  const codeHint = !createItemType || !nextCode ? null : !nextCode.code ? (
-    "Este tipo ainda não tem sequência numérica — informe o código."
-  ) : form.code.trim() === nextCode.code ? (
-    `Próximo da sequência (último cadastrado: ${nextCode.lastCode}).`
+  const familyHint = isCreate
+    ? "Define a sigla do código. Ex.: Informática → ADM-INF-0001."
+    : null;
+
+  const codeHint = !createItemType || !nextCode?.code ? null : form.code.trim() === nextCode.code ? (
+    nextCode.lastCode ? (
+      `Próximo da sequência (último cadastrado: ${nextCode.lastCode}).`
+    ) : (
+      "Primeiro código desta sequência."
+    )
   ) : (
     <>
       Próximo da sequência: {nextCode.code}.{" "}
@@ -537,6 +585,8 @@ export function InventoryItemDetailSheet({
                 readOnly={!editing || !canManage}
                 hideRawMaterialType={isCreate}
                 codeHint={codeHint}
+                familyHint={familyHint}
+                families={families}
               />
             </div>
           )}

@@ -3,7 +3,10 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import {
+  abbreviateInventoryFamily,
+  proposeInventoryItemCode,
   resolveInventoryItemCodeSequence,
+  resolveInventoryItemTypeCodePrefix,
   suggestNextInventoryItemCode,
 } from "./inventoryItemCodeSequence.js";
 import {
@@ -50,6 +53,64 @@ describe("inventoryItemCodeSequence", () => {
     assert.equal(suggestNextInventoryItemCode([]), null);
     assert.equal(suggestNextInventoryItemCode(["AVULSO", "PARAFUSO-M8-A"]), null);
     assert.equal(resolveInventoryItemCodeSequence(["7891234567890"]), null);
+  });
+});
+
+describe("inventoryItemCodeSequence — tipo + família", () => {
+  const adm = [
+    { code: "ADM-0001", family: null },
+    { code: "ADM-0002", family: null },
+    { code: "ADM-INF-0001", family: "Informática" },
+    { code: "ADM-INF-0002", family: "Informática" },
+    { code: "ADM-0003", family: "Limpeza" },
+  ];
+  const propose = (family: string | null, typeItems = adm, extraCodes: string[] = []) =>
+    proposeInventoryItemCode({
+      itemType: "ADMINISTRATIVE_SUPPLY",
+      family,
+      typeItems,
+      allCodes: [...typeItems.map((i) => i.code), ...extraCodes],
+    });
+
+  it("sigla da família: 3 primeiras letras, sem acento", () => {
+    assert.equal(abbreviateInventoryFamily("Papelaria"), "PAP");
+    assert.equal(abbreviateInventoryFamily(" informática "), "INF");
+    assert.equal(abbreviateInventoryFamily("Água e café"), "AGU");
+    assert.equal(abbreviateInventoryFamily("  "), "");
+  });
+
+  it("família com série própria continua a sequência dela (sem diferenciar caixa)", () => {
+    const p = propose("informática");
+    assert.equal(p.code, "ADM-INF-0003");
+    assert.equal(p.lastCode, "ADM-INF-0002");
+  });
+
+  it("família nova inaugura TIPO-FAM-0001 com a sigla do tipo já em uso", () => {
+    const p = propose("Papelaria");
+    assert.equal(p.code, "ADM-PAP-0001");
+    assert.equal(p.lastCode, null);
+  });
+
+  it("família com itens só no padrão antigo (TIPO-NNNN) passa a usar TIPO-FAM-NNNN", () => {
+    assert.equal(propose("Limpeza").code, "ADM-LIM-0001");
+  });
+
+  it("sem família segue a série TIPO-NNNN, ignorando as séries por família", () => {
+    const p = propose(null);
+    assert.equal(p.code, "ADM-0004");
+    assert.equal(p.lastCode, "ADM-0003");
+  });
+
+  it("tipo sem nenhum código usa a sigla padrão do tipo", () => {
+    assert.equal(propose("Papelaria", []).code, "ADM-PAP-0001");
+    assert.equal(propose(null, []).code, "ADM-0001");
+    assert.equal(resolveInventoryItemTypeCodePrefix("PPE", []), "EPI");
+    assert.equal(resolveInventoryItemTypeCodePrefix("PPE", ["SEG-001", "SEG-002", "X-1"]), "SEG");
+  });
+
+  it("sigla já usada por outra família/tipo continua a mesma numeração, sem duplicar código", () => {
+    const p = propose("Papéis especiais", adm, ["ADM-PAP-0001", "adm-pap-0002"]);
+    assert.equal(p.code, "adm-pap-0003");
   });
 });
 
@@ -100,6 +161,8 @@ describe("inventory items — ordenação da listagem", () => {
     const byId = routes.indexOf('app.get("/api/inventory/items/:id"');
     assert.ok(nextCode > 0, "rota next-code ausente");
     assert.ok(nextCode < byId, "next-code deve vir antes de /items/:id");
+    const families = routes.indexOf('app.get("/api/inventory/items/families", ...view');
+    assert.ok(families > 0 && families < byId, "families deve vir antes de /items/:id");
   });
 
   it("grid envia a ordenação e a ficha consulta o próximo código ao escolher o tipo", () => {
@@ -107,6 +170,8 @@ describe("inventory items — ordenação da listagem", () => {
     assert.match(tab, /q\.set\("sortBy", sortBy\)/);
     assert.match(tab, /aria-sort/);
     const sheet = read("src/components/inventory/InventoryItemDetailSheet.tsx");
-    assert.match(sheet, /\/api\/inventory\/items\/next-code\?itemType=/);
+    assert.match(sheet, /\/api\/inventory\/items\/next-code\?/);
+    assert.match(sheet, /query\.set\("family", debouncedFamily\)/);
+    assert.match(sheet, /\/api\/inventory\/items\/families/);
   });
 });
