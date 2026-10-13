@@ -103,10 +103,13 @@ import {
 } from "@/src/lib/inventory/inventoryCountService.server.js";
 import { calculateInventoryStatus } from "@/src/lib/inventory/inventoryStatus.js";
 import { buildInventoryDashboard } from "@/src/lib/inventory/inventoryDashboard.server.js";
+import { suggestNextInventoryItemCode } from "@/src/lib/inventory/inventoryItemCodeSequence.js";
 import {
+  buildInventoryItemsOrderBy,
   parseInventoryBalancesListQuery,
   parseInventoryItemsListQuery,
   parseInventoryMovementsListQuery,
+  sortInventoryItemsByTypeLabel,
   type InventoryMovementsListQuery,
 } from "@/src/lib/inventory/inventoryListQuery.js";
 import {
@@ -471,12 +474,37 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
       };
 
       const needsStockFilter = q.belowMinimum || q.belowReorderPoint;
+      const orderBy = buildInventoryItemsOrderBy(q.sortBy, q.sortDir);
+      const sortByTypeLabel = q.sortBy === "itemType";
+
+      if (!needsStockFilter && sortByTypeLabel) {
+        // Tipo é enum: pagina pelo rótulo exibido, não pela ordem de declaração.
+        const keys = sortInventoryItemsByTypeLabel(
+          await prisma.inventoryItem.findMany({
+            where,
+            orderBy,
+            select: { id: true, itemType: true },
+          }),
+          q.sortDir
+        );
+        const pageIds = keys.slice(q.skip, q.skip + q.pageSize).map((k) => k.id);
+        const pageItems = await prisma.inventoryItem.findMany({ where: { id: { in: pageIds } } });
+        const byId = new Map(pageItems.map((item) => [item.id, item]));
+        const rows = pageIds.flatMap((id) => byId.get(id) ?? []);
+        return res.json({
+          rows: rows.map(serializeInventoryItem),
+          total: keys.length,
+          page: q.page,
+          pageSize: q.pageSize,
+          totalPages: Math.max(1, Math.ceil(keys.length / q.pageSize)),
+        });
+      }
 
       if (!needsStockFilter) {
         const [rows, total] = await Promise.all([
           prisma.inventoryItem.findMany({
             where,
-            orderBy: { code: "asc" },
+            orderBy,
             skip: q.skip,
             take: q.pageSize,
           }),
@@ -491,7 +519,8 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
         });
       }
 
-      const all = await prisma.inventoryItem.findMany({ where, orderBy: { code: "asc" } });
+      const allByOrder = await prisma.inventoryItem.findMany({ where, orderBy });
+      const all = sortByTypeLabel ? sortInventoryItemsByTypeLabel(allByOrder, q.sortDir) : allByOrder;
       const filtered = [];
       for (const item of all) {
         const available = await sumAvailableForItem(item.id);
@@ -515,6 +544,40 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
     } catch (e: unknown) {
       console.error("GET /api/inventory/items", e);
       res.status(500).json(inventoryApiError("Erro ao listar itens de estoque."));
+    }
+  });
+
+  // Próximo código interno da sequência do tipo (somente sugestão; a unicidade é do banco).
+  app.get("/api/inventory/items/next-code", ...itemManage, async (req, res) => {
+    try {
+      const { itemType } = parseInventoryItemsListQuery(req.query as Record<string, unknown>);
+      if (!itemType) return res.status(400).json(inventoryApiError("Tipo de item inválido."));
+
+      const typeItems = await prisma.inventoryItem.findMany({
+        where: { itemType },
+        select: { code: true },
+      });
+      const typeCodes = typeItems.map((item) => item.code);
+      const sequence = suggestNextInventoryItemCode(typeCodes);
+      if (!sequence) return res.json({ itemType, code: null, lastCode: null });
+
+      // O código é único no cadastro inteiro: desvia de colisões com outros tipos.
+      const samePrefix = await prisma.inventoryItem.findMany({
+        where: { code: { startsWith: sequence.prefix, mode: "insensitive" } },
+        select: { code: true },
+      });
+      const suggestion = suggestNextInventoryItemCode(
+        typeCodes,
+        samePrefix.map((item) => item.code)
+      );
+      res.json({
+        itemType,
+        code: suggestion?.code ?? null,
+        lastCode: suggestion?.lastCode ?? null,
+      });
+    } catch (e: unknown) {
+      console.error("GET /api/inventory/items/next-code", e);
+      res.status(500).json(inventoryApiError("Erro ao calcular o próximo código do item."));
     }
   });
 
