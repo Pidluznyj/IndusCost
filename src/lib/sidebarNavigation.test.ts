@@ -227,10 +227,10 @@ describe("sidebarNavigation — grupos oficiais", () => {
     ]);
   });
 
-  it("Administração contém Configurações e Guia (Objetivos e Metas saiu para o topo)", () => {
+  it("Administração contém Configurações, Guia e Exposure (Objetivos e Metas saiu para o topo)", () => {
     const nav = buildAccessibleSidebarNavigation(fullAccessChecker());
     const group = nav.groups.find((g) => g.id === "administracao");
-    assert.deepEqual(group?.items.map((i) => i.itemId), ["settings", "guide"]);
+    assert.deepEqual(group?.items.map((i) => i.itemId), ["settings", "guide", "exposure"]);
     // OKR agora é item direto ao lado do Dashboard — gestão, não configuração.
     assert.ok(nav.directItems.map((i) => i.itemId).includes("goals"));
   });
@@ -369,10 +369,15 @@ describe("Sidebar.tsx — renderização agrupada", () => {
     const sidebar = read("src/components/layout/Sidebar.tsx");
     assert.match(sidebar, /to=\{path\}/);
     assert.doesNotMatch(sidebar, /to=\{`\/\$\{/);
+    // Política Comercial é liberada por papel, não por permissão: o checker precisa de um papel
+    // que a enxergue para o item existir na navegação (mesmo critério do navigationGroupingAudit).
+    const nav = buildAccessibleSidebarNavigation({
+      ...fullAccessChecker(),
+      authUser: { role: "SUPER_ADMIN", effectivePermissions: [] },
+    });
     for (const moduleId of SIDEBAR_MODULE_ORDER) {
-      const nav = buildAccessibleSidebarNavigation(fullAccessChecker());
       const flat = nav.flatAccessibleItems.find((item) => item.id === moduleId);
-      assert.equal(flat?.path, getModulePath(moduleId));
+      assert.equal(flat?.path, getModulePath(moduleId), moduleId);
     }
   });
 
