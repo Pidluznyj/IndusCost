@@ -8,6 +8,12 @@ import { Prisma, type InventoryMovement, type InventoryMovementType } from "@pri
 import type { AppAuthContext } from "@/src/lib/appAuth.js";
 import { prisma } from "@/src/lib/prisma.js";
 import { loadInventoryPositionReport } from "@/src/lib/inventory/inventoryPositionReport.server.js";
+import { inventoryBalanceReportFilename } from "@/src/lib/inventory/inventoryBalanceReport.js";
+import {
+  buildInventoryBalancesWhere,
+  loadInventoryBalanceReport,
+} from "@/src/lib/inventory/inventoryBalanceReport.server.js";
+import { buildInventoryBalanceReportXlsx } from "@/src/lib/inventory/inventoryBalanceReportXlsx.js";
 import {
   buildInventoryPositionReportXlsx,
   inventoryPositionReportFilename,
@@ -103,7 +109,7 @@ import {
 } from "@/src/lib/inventory/inventoryCountService.server.js";
 import { calculateInventoryStatus } from "@/src/lib/inventory/inventoryStatus.js";
 import { buildInventoryDashboard } from "@/src/lib/inventory/inventoryDashboard.server.js";
-import { suggestNextInventoryItemCode } from "@/src/lib/inventory/inventoryItemCodeSequence.js";
+import { proposeInventoryItemCode } from "@/src/lib/inventory/inventoryItemCodeSequence.js";
 import {
   buildInventoryItemsOrderBy,
   parseInventoryBalancesListQuery,
@@ -547,34 +553,45 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
     }
   });
 
-  // Próximo código interno da sequência do tipo (somente sugestão; a unicidade é do banco).
+  // Famílias já usadas no cadastro (sugestões da ficha do item).
+  app.get("/api/inventory/items/families", ...view, async (_req, res) => {
+    try {
+      const rows = await prisma.inventoryItem.findMany({
+        where: { family: { not: null } },
+        select: { family: true },
+        distinct: ["family"],
+        orderBy: { family: "asc" },
+      });
+      const byKey = new Map<string, string>();
+      for (const row of rows) {
+        const family = (row.family ?? "").trim();
+        if (family && !byKey.has(family.toUpperCase())) byKey.set(family.toUpperCase(), family);
+      }
+      const families = [...byKey.values()].sort((a, b) => a.localeCompare(b, "pt-BR"));
+      res.json({ families });
+    } catch (e: unknown) {
+      console.error("GET /api/inventory/items/families", e);
+      res.status(500).json(inventoryApiError("Erro ao listar famílias de itens."));
+    }
+  });
+
+  // Próximo código interno do tipo/família (somente sugestão; a unicidade é do banco).
   app.get("/api/inventory/items/next-code", ...itemManage, async (req, res) => {
     try {
-      const { itemType } = parseInventoryItemsListQuery(req.query as Record<string, unknown>);
+      const { itemType, family } = parseInventoryItemsListQuery(req.query as Record<string, unknown>);
       if (!itemType) return res.status(400).json(inventoryApiError("Tipo de item inválido."));
 
-      const typeItems = await prisma.inventoryItem.findMany({
-        where: { itemType },
-        select: { code: true },
+      // O código é único no cadastro inteiro: a sugestão desvia de códigos de outros tipos.
+      const items = await prisma.inventoryItem.findMany({
+        select: { code: true, itemType: true, family: true },
       });
-      const typeCodes = typeItems.map((item) => item.code);
-      const sequence = suggestNextInventoryItemCode(typeCodes);
-      if (!sequence) return res.json({ itemType, code: null, lastCode: null });
-
-      // O código é único no cadastro inteiro: desvia de colisões com outros tipos.
-      const samePrefix = await prisma.inventoryItem.findMany({
-        where: { code: { startsWith: sequence.prefix, mode: "insensitive" } },
-        select: { code: true },
-      });
-      const suggestion = suggestNextInventoryItemCode(
-        typeCodes,
-        samePrefix.map((item) => item.code)
-      );
-      res.json({
+      const proposal = proposeInventoryItemCode({
         itemType,
-        code: suggestion?.code ?? null,
-        lastCode: suggestion?.lastCode ?? null,
+        family,
+        typeItems: items.filter((item) => item.itemType === itemType),
+        allCodes: items.map((item) => item.code),
       });
+      res.json({ itemType, family, code: proposal.code, lastCode: proposal.lastCode });
     } catch (e: unknown) {
       console.error("GET /api/inventory/items/next-code", e);
       res.status(500).json(inventoryApiError("Erro ao calcular o próximo código do item."));
@@ -1342,36 +1359,7 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
   app.get("/api/inventory/balances", ...view, async (req, res) => {
     try {
       const q = parseInventoryBalancesListQuery(req.query as Record<string, unknown>);
-
-      const itemWhere: Prisma.InventoryItemWhereInput = {
-        ...(q.itemType ? { itemType: q.itemType } : {}),
-        ...(q.status ? { status: q.status } : {}),
-        ...(q.family ? { family: { contains: q.family, mode: "insensitive" } } : {}),
-        ...(q.group ? { group: { contains: q.group, mode: "insensitive" } } : {}),
-        ...(q.search
-          ? {
-              OR: [
-                { code: { contains: q.search, mode: "insensitive" } },
-                { description: { contains: q.search, mode: "insensitive" } },
-              ],
-            }
-          : {}),
-      };
-
-      const where: Prisma.InventoryBalanceWhereInput = {
-        ...(q.itemId ? { itemId: q.itemId } : {}),
-        ...(q.warehouseId ? { warehouseId: q.warehouseId } : {}),
-        ...(q.locationId ? { locationId: q.locationId } : {}),
-        ...(q.hasReservation ? { reservedQuantity: { gt: 0 } } : {}),
-        ...(q.hasBlocked ? { blockedQuantity: { gt: 0 } } : {}),
-        ...(q.hasQuarantine ? { quarantineQuantity: { gt: 0 } } : {}),
-        ...(q.negativeStock
-          ? {
-              OR: [{ physicalQuantity: { lt: 0 } }, { availableQuantity: { lt: 0 } }],
-            }
-          : {}),
-        ...(Object.keys(itemWhere).length ? { item: itemWhere } : {}),
-      };
+      const where = buildInventoryBalancesWhere(q);
 
       const rows = await prisma.inventoryBalance.findMany({
         where,
@@ -1427,6 +1415,31 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
     } catch (e: unknown) {
       console.error("GET /api/inventory/balances", e);
       res.status(500).json(inventoryApiError("Erro ao consultar saldos."));
+    }
+  });
+
+  // Relatório de saldos para análise de compra (mesmos filtros da consulta; somente leitura).
+  app.get("/api/inventory/balances/report", ...view, async (req, res) => {
+    try {
+      const q = parseInventoryBalancesListQuery(req.query as Record<string, unknown>);
+      res.json(await loadInventoryBalanceReport(prisma, q, new Date()));
+    } catch (e: unknown) {
+      console.error("GET /api/inventory/balances/report", e);
+      res.status(500).json(inventoryApiError("Erro ao montar o relatório de saldos."));
+    }
+  });
+
+  app.get("/api/inventory/balances/report.xlsx", ...view, async (req, res) => {
+    try {
+      const q = parseInventoryBalancesListQuery(req.query as Record<string, unknown>);
+      const report = await loadInventoryBalanceReport(prisma, q, new Date());
+      const filename = inventoryBalanceReportFilename(report.generatedAt);
+      res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+      res.send(await buildInventoryBalanceReportXlsx(report));
+    } catch (e: unknown) {
+      console.error("GET /api/inventory/balances/report.xlsx", e);
+      res.status(500).json(inventoryApiError("Erro ao exportar o relatório de saldos."));
     }
   });
 
