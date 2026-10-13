@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Eye, Plus, Search } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, Eye, Plus, Search } from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
 import { cn } from "@/src/lib/utils";
 import { InventoryItemDetailSheet } from "@/src/components/inventory/InventoryItemDetailSheet";
@@ -25,7 +25,20 @@ import {
   inventoryFilterInputClass,
   inventoryTableClassName,
 } from "@/src/components/inventory/inventoryUi";
+import type {
+  InventoryItemsSortField,
+  InventorySortDirection,
+} from "@/src/lib/inventory/inventoryListQuery.js";
 import type { InventoryItemRow } from "@/src/types/inventory";
+
+const SORTABLE_COLUMNS: { field: InventoryItemsSortField; label: string }[] = [
+  { field: "code", label: "Código" },
+  { field: "description", label: "Descrição" },
+  { field: "itemType", label: "Tipo" },
+  { field: "unit", label: "Unidade" },
+  { field: "family", label: "Família" },
+  { field: "status", label: "Status" },
+];
 
 type SheetState =
   | { mode: "closed" }
@@ -49,7 +62,19 @@ export function InventoryItemsTab() {
   const [belowMinimum, setBelowMinimum] = useState(false);
   const [belowReorderPoint, setBelowReorderPoint] = useState(false);
 
+  const [sortBy, setSortBy] = useState<InventoryItemsSortField>("code");
+  const [sortDir, setSortDir] = useState<InventorySortDirection>("asc");
+
   const [sheet, setSheet] = useState<SheetState>({ mode: "closed" });
+
+  const toggleSort = (field: InventoryItemsSortField) => {
+    if (field === sortBy) {
+      setSortDir((dir) => (dir === "asc" ? "desc" : "asc"));
+      return;
+    }
+    setSortBy(field);
+    setSortDir("asc");
+  };
 
   const filterActiveCount = useMemo(
     () =>
@@ -72,6 +97,8 @@ export function InventoryItemsTab() {
       appendQueryIfPresent(q, "family", family);
       if (belowMinimum) q.set("belowMinimum", "true");
       if (belowReorderPoint) q.set("belowReorderPoint", "true");
+      q.set("sortBy", sortBy);
+      q.set("sortDir", sortDir);
 
       const raw = await fetchJsonOk<unknown>(`/api/inventory/items?${q.toString()}`);
       const data = normalizeInventoryItemListResponse(raw);
@@ -84,11 +111,11 @@ export function InventoryItemsTab() {
     } finally {
       setLoading(false);
     }
-  }, [page, search, itemType, status, family, belowMinimum, belowReorderPoint]);
+  }, [page, search, itemType, status, family, belowMinimum, belowReorderPoint, sortBy, sortDir]);
 
   useEffect(() => {
     setPage(1);
-  }, [search, itemType, status, family, belowMinimum, belowReorderPoint]);
+  }, [search, itemType, status, family, belowMinimum, belowReorderPoint, sortBy, sortDir]);
 
   useEffect(() => {
     void load();
@@ -236,12 +263,31 @@ export function InventoryItemsTab() {
           <table className={inventoryTableClassName()} data-testid="inventory-items-table">
             <thead>
               <tr>
-                <th scope="col">Código</th>
-                <th scope="col">Descrição</th>
-                <th scope="col">Tipo</th>
-                <th scope="col">Unidade</th>
-                <th scope="col">Família</th>
-                <th scope="col">Status</th>
+                {SORTABLE_COLUMNS.map(({ field, label }) => {
+                  const active = sortBy === field;
+                  const SortIcon = !active ? ArrowUpDown : sortDir === "asc" ? ArrowUp : ArrowDown;
+                  return (
+                    <th
+                      key={field}
+                      scope="col"
+                      aria-sort={!active ? "none" : sortDir === "asc" ? "ascending" : "descending"}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => toggleSort(field)}
+                        title={`Ordenar por ${label.toLowerCase()}`}
+                        className={cn(
+                          "inline-flex items-center gap-1 uppercase tracking-wide hover:text-slate-900",
+                          active && "text-slate-900"
+                        )}
+                        data-testid={`inventory-items-sort-${field}`}
+                      >
+                        {label}
+                        <SortIcon className={cn("h-3.5 w-3.5", !active && "text-slate-300")} aria-hidden />
+                      </button>
+                    </th>
+                  );
+                })}
                 <th scope="col" className="w-16">
                   <span className="sr-only">Ações</span>
                 </th>

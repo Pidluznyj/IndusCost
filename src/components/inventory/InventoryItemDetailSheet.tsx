@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { AlertTriangle, Loader2, X } from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
 import { cn } from "@/src/lib/utils";
@@ -39,15 +39,19 @@ type Props = {
   canManage: boolean;
 };
 
+type NextCodeSuggestion = { code: string | null; lastCode: string | null };
+
 function FieldLabel({
   label,
   required,
   error,
+  hint,
   children,
 }: {
   label: string;
   required?: boolean;
   error?: string;
+  hint?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
@@ -57,6 +61,7 @@ function FieldLabel({
         {required ? <span className="text-red-600"> *</span> : null}
       </span>
       <div className="mt-1">{children}</div>
+      {hint ? <span className="mt-0.5 block text-xs text-slate-500">{hint}</span> : null}
       {error ? <span className="mt-0.5 block text-xs text-red-600">{error}</span> : null}
     </label>
   );
@@ -114,12 +119,14 @@ function InventoryItemFormFields({
   errors,
   readOnly,
   hideRawMaterialType,
+  codeHint,
 }: {
   form: InventoryItemFormState;
   setForm: React.Dispatch<React.SetStateAction<InventoryItemFormState>>;
   errors: ReturnType<typeof validateInventoryItemForm>;
   readOnly?: boolean;
   hideRawMaterialType?: boolean;
+  codeHint?: React.ReactNode;
 }) {
   const inputClass = cn(
     "w-full rounded-lg border border-slate-200 px-2.5 py-2 text-sm outline-none focus:ring-2 focus:ring-slate-300/60",
@@ -128,11 +135,32 @@ function InventoryItemFormFields({
 
   return (
     <div className="grid gap-3 sm:grid-cols-2" data-testid="inventory-item-form">
-      <FieldLabel label="Código interno" required error={errors.code}>
+      <FieldLabel label="Tipo do item" required error={errors.itemType}>
+        <select
+          className={inputClass}
+          value={form.itemType}
+          disabled={readOnly}
+          data-testid="inventory-item-form-type"
+          onChange={(e) =>
+            setForm((f) => ({ ...f, itemType: e.target.value as InventoryItemFormState["itemType"] }))
+          }
+        >
+          <option value="">Selecione…</option>
+          {INVENTORY_ITEM_TYPE_OPTIONS.filter(
+            (opt) => !hideRawMaterialType || opt.value !== "RAW_MATERIAL"
+          ).map((opt) => (
+            <option key={opt.value} value={opt.value}>
+              {opt.label}
+            </option>
+          ))}
+        </select>
+      </FieldLabel>
+      <FieldLabel label="Código interno" required error={errors.code} hint={codeHint}>
         <input
           className={inputClass}
           value={form.code}
           disabled={readOnly}
+          data-testid="inventory-item-form-code"
           onChange={(e) => setForm((f) => ({ ...f, code: e.target.value }))}
         />
       </FieldLabel>
@@ -157,25 +185,6 @@ function InventoryItemFormFields({
           disabled={readOnly}
           onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
         />
-      </FieldLabel>
-      <FieldLabel label="Tipo do item" required error={errors.itemType}>
-        <select
-          className={inputClass}
-          value={form.itemType}
-          disabled={readOnly}
-          onChange={(e) =>
-            setForm((f) => ({ ...f, itemType: e.target.value as InventoryItemFormState["itemType"] }))
-          }
-        >
-          <option value="">Selecione…</option>
-          {INVENTORY_ITEM_TYPE_OPTIONS.filter(
-            (opt) => !hideRawMaterialType || opt.value !== "RAW_MATERIAL"
-          ).map((opt) => (
-            <option key={opt.value} value={opt.value}>
-              {opt.label}
-            </option>
-          ))}
-        </select>
       </FieldLabel>
       <FieldLabel label="Status">
         <select
@@ -327,6 +336,10 @@ export function InventoryItemDetailSheet({
   const [item, setItem] = useState<InventoryItemRow | null>(null);
   const [balanceSummary, setBalanceSummary] = useState<InventoryItemBalanceSummary | null>(null);
   const [editing, setEditing] = useState(isCreate);
+  const [nextCode, setNextCode] = useState<NextCodeSuggestion | null>(null);
+  const [nextCodeRefresh, setNextCodeRefresh] = useState(0);
+  /** Último código preenchido automaticamente; digitação manual nunca é sobrescrita. */
+  const autoFilledCodeRef = useRef("");
 
   const load = useCallback(async () => {
     if (!itemId) return;
@@ -362,6 +375,52 @@ export function InventoryItemDetailSheet({
     void load();
   }, [isCreate, load]);
 
+  const createItemType = isCreate && canManage ? form.itemType : "";
+  useEffect(() => {
+    if (!createItemType) {
+      setNextCode(null);
+      return;
+    }
+    let cancelled = false;
+    fetchJsonOk<NextCodeSuggestion>(`/api/inventory/items/next-code?itemType=${createItemType}`)
+      .then((suggestion) => {
+        if (cancelled) return;
+        const previousAuto = autoFilledCodeRef.current;
+        const suggested = suggestion.code ?? "";
+        autoFilledCodeRef.current = suggested;
+        setNextCode(suggestion);
+        setForm((f) =>
+          f.code.trim() && f.code !== previousAuto ? f : { ...f, code: suggested }
+        );
+      })
+      .catch(() => {
+        if (!cancelled) setNextCode(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [createItemType, nextCodeRefresh]);
+
+  const codeHint = !createItemType || !nextCode ? null : !nextCode.code ? (
+    "Este tipo ainda não tem sequência numérica — informe o código."
+  ) : form.code.trim() === nextCode.code ? (
+    `Próximo da sequência (último cadastrado: ${nextCode.lastCode}).`
+  ) : (
+    <>
+      Próximo da sequência: {nextCode.code}.{" "}
+      <button
+        type="button"
+        className="font-medium text-slate-900 underline"
+        onClick={() => {
+          autoFilledCodeRef.current = nextCode.code ?? "";
+          setForm((f) => ({ ...f, code: nextCode.code ?? "" }));
+        }}
+      >
+        Usar
+      </button>
+    </>
+  );
+
   const save = async () => {
     if (!canManage) return;
     const validation = validateInventoryItemForm(form);
@@ -389,6 +448,8 @@ export function InventoryItemDetailSheet({
       onClose();
     } catch (e: unknown) {
       setError(formatInventoryApiError(e, "Erro ao salvar item."));
+      // Código pode ter sido usado por outro cadastro nesse meio-tempo: recalcula a sequência.
+      if (isCreate) setNextCodeRefresh((n) => n + 1);
     } finally {
       setSaving(false);
     }
@@ -475,6 +536,7 @@ export function InventoryItemDetailSheet({
                 errors={errors}
                 readOnly={!editing || !canManage}
                 hideRawMaterialType={isCreate}
+                codeHint={codeHint}
               />
             </div>
           )}

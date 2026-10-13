@@ -3,10 +3,24 @@
  * Usa safeTrim — nunca chama .trim() em undefined.
  */
 import { safeTrim } from "@/src/lib/safeTrim.js";
+import { INVENTORY_ITEM_TYPE_LABELS } from "./inventoryItemTypeLabels.js";
 import {
   INVENTORY_ITEM_TYPES,
   type InventoryItemType,
 } from "./inventoryTypes.js";
+
+/** Colunas ordenáveis do grid de itens (Estoque › Itens). */
+export const INVENTORY_ITEMS_SORT_FIELDS = [
+  "code",
+  "description",
+  "itemType",
+  "unit",
+  "family",
+  "status",
+] as const;
+
+export type InventoryItemsSortField = (typeof INVENTORY_ITEMS_SORT_FIELDS)[number];
+export type InventorySortDirection = "asc" | "desc";
 
 export type InventoryItemsListQuery = {
   page: number;
@@ -20,6 +34,8 @@ export type InventoryItemsListQuery = {
   belowMinimum: boolean;
   belowReorderPoint: boolean;
   activeOnly: boolean;
+  sortBy: InventoryItemsSortField;
+  sortDir: InventorySortDirection;
 };
 
 export type InventoryBalancesListQuery = {
@@ -101,6 +117,50 @@ function parseDate(value: unknown): Date | null {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
+function parseItemsSortField(value: unknown): InventoryItemsSortField {
+  const raw = safeTrim(value);
+  return (INVENTORY_ITEMS_SORT_FIELDS as readonly string[]).includes(raw)
+    ? (raw as InventoryItemsSortField)
+    : "code";
+}
+
+function parseSortDirection(value: unknown): InventorySortDirection {
+  return safeTrim(value).toLowerCase() === "desc" ? "desc" : "asc";
+}
+
+type InventoryItemsOrderByEntry =
+  | Partial<Record<Exclude<InventoryItemsSortField, "family">, InventorySortDirection>>
+  | { family: { sort: InventorySortDirection; nulls: "last" } };
+
+/**
+ * orderBy do Prisma para a listagem de itens; código é o desempate estável.
+ * "Tipo" é enum no banco (ordem de declaração): a ordem pelo rótulo exibido é
+ * aplicada em memória por {@link sortInventoryItemsByTypeLabel}.
+ */
+export function buildInventoryItemsOrderBy(
+  sortBy: InventoryItemsSortField,
+  sortDir: InventorySortDirection
+): InventoryItemsOrderByEntry[] {
+  if (sortBy === "code" || sortBy === "itemType") {
+    return [{ code: sortBy === "code" ? sortDir : "asc" }];
+  }
+  if (sortBy === "family") {
+    return [{ family: { sort: sortDir, nulls: "last" } }, { code: "asc" }];
+  }
+  return [{ [sortBy]: sortDir }, { code: "asc" }];
+}
+
+/** Ordena pelo rótulo pt-BR do tipo; espera a entrada já ordenada por código (desempate). */
+export function sortInventoryItemsByTypeLabel<T extends { itemType: string }>(
+  rows: readonly T[],
+  sortDir: InventorySortDirection
+): T[] {
+  const label = (row: T) =>
+    INVENTORY_ITEM_TYPE_LABELS[row.itemType as InventoryItemType] ?? row.itemType;
+  const factor = sortDir === "desc" ? -1 : 1;
+  return [...rows].sort((a, b) => factor * label(a).localeCompare(label(b), "pt-BR"));
+}
+
 export function parseInventoryItemsListQuery(
   query: Record<string, unknown> = {}
 ): InventoryItemsListQuery {
@@ -118,6 +178,8 @@ export function parseInventoryItemsListQuery(
     belowMinimum: parseBool(query.belowMinimum),
     belowReorderPoint: parseBool(query.belowReorderPoint),
     activeOnly: parseBool(query.activeOnly),
+    sortBy: parseItemsSortField(query.sortBy),
+    sortDir: parseSortDirection(query.sortDir),
   };
 }
 

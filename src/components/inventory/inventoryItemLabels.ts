@@ -1,21 +1,11 @@
 /**
  * Labels de tipos e status de item — frontend puro.
  */
+import { INVENTORY_ITEM_TYPE_LABELS as SHARED_INVENTORY_ITEM_TYPE_LABELS } from "@/src/lib/inventory/inventoryItemTypeLabels.js";
 import type { InventoryItemStatus, InventoryItemType } from "@/src/types/inventory";
 
-export const INVENTORY_ITEM_TYPE_LABELS: Record<InventoryItemType, string> = {
-  FINISHED_PRODUCT: "Produto acabado",
-  SEMI_FINISHED: "Produto semiacabado",
-  COMPONENT: "Componente",
-  RAW_MATERIAL: "Matéria-prima",
-  PACKAGING: "Embalagem",
-  PRODUCTION_SUPPLY: "Suprimento de produção",
-  ADMINISTRATIVE_SUPPLY: "Suprimento administrativo",
-  MAINTENANCE: "Manutenção",
-  PPE: "EPI",
-  TOOLING: "Ferramental",
-  OTHER: "Outros",
-};
+export const INVENTORY_ITEM_TYPE_LABELS: Record<InventoryItemType, string> =
+  SHARED_INVENTORY_ITEM_TYPE_LABELS;
 
 export const INVENTORY_ITEM_TYPE_OPTIONS = (
   Object.entries(INVENTORY_ITEM_TYPE_LABELS) as [InventoryItemType, string][]
