@@ -44,6 +44,7 @@ const EXPECTED_GROUP_BY_MODULE: Record<AppModuleId, string> = {
   proposals: "comercial",
   "commercial-price-table": "comercial",
   "commercial-policy": "comercial",
+  "commercial-announcements": "comercial",
   "sales-orders": "comercial",
   "sales-order-flow": "comercial",
   "output-documents": "comercial",
@@ -87,6 +88,7 @@ const CANONICAL_PATH_OVERRIDES: Partial<Record<AppModuleId, string>> = {
   "sales-order-flow": "/commercial/sales-order-flow",
   "commercial-price-table": "/commercial/price-table",
   "commercial-policy": "/commercial/policy",
+  "commercial-announcements": "/commercial/announcements",
   satisfaction: "/commercial/satisfaction",
   purchases: "/purchases/nomus-orders",
   "sc-purchases": "/supply-chain/purchases",
@@ -192,7 +194,8 @@ describe("navigationGroups — permissões preservadas", () => {
     for (const moduleId of SIDEBAR_MODULE_ORDER) {
       const keys = MODULE_MENU_PERMISSION_KEYS[moduleId];
       // commercial-policy: gate por papel (canConsultCommercialPolicy), sem chave de bag.
-      if (moduleId === "commercial-policy") {
+      // commercial-announcements: gate por perfil (canUseCommercialAnnouncementGenerator).
+      if (moduleId === "commercial-policy" || moduleId === "commercial-announcements") {
         assert.ok(Array.isArray(keys), moduleId);
         continue;
       }

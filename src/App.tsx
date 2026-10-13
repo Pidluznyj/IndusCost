@@ -88,6 +88,11 @@ import { OutputDocumentsModule } from "@/src/components/commercial/OutputDocumen
 import { SalesOrderFlowModule } from "@/src/components/commercial/SalesOrderFlowModule";
 import { CommercialPriceTableModule } from "@/src/components/commercial/CommercialPriceTableModule";
 import { CommercialPolicyConsultModule } from "@/src/components/commercial/CommercialPolicyConsultModule";
+import { CommercialAnnouncementGenerator } from "@/src/components/commercial/announcements/CommercialAnnouncementGenerator";
+import {
+  COMMERCIAL_ANNOUNCEMENTS_PAGE_SUBTITLE,
+  COMMERCIAL_ANNOUNCEMENTS_PAGE_TITLE,
+} from "@/src/lib/commercial/commercialAnnouncementAccess";
 import {
   SALES_ORDER_FLOW_PAGE_SUBTITLE,
   SALES_ORDER_FLOW_PAGE_TITLE,
@@ -1072,6 +1077,17 @@ export default function App() {
           }
         />
         <Route path="commercial/policy" element={<CommercialPolicyConsultModule />} />
+        <Route
+          path="commercial/announcements"
+          element={
+            <ModulePageShell
+              title={COMMERCIAL_ANNOUNCEMENTS_PAGE_TITLE}
+              description={COMMERCIAL_ANNOUNCEMENTS_PAGE_SUBTITLE}
+            >
+              <CommercialAnnouncementGenerator />
+            </ModulePageShell>
+          }
+        />
         <Route
           path="commercial/satisfaction"
           element={

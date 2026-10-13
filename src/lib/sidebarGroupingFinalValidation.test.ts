@@ -86,6 +86,7 @@ const EXPECTED_MENU: Record<
     MODULE_LABELS.proposals,
     MODULE_LABELS["commercial-price-table"],
     MODULE_LABELS["commercial-policy"],
+    MODULE_LABELS["commercial-announcements"],
     MODULE_LABELS["sales-orders"],
     MODULE_LABELS["sales-order-flow"],
     MODULE_LABELS["output-documents"],
@@ -176,6 +177,8 @@ describe("validação final — rotas preservadas", () => {
                 ? "/commercial/price-table"
                 : moduleId === "commercial-policy"
                   ? "/commercial/policy"
+                : moduleId === "commercial-announcements"
+                  ? "/commercial/announcements"
                 : moduleId === "treasury"
                   ? "/finance/treasury"
                   : moduleId === "invested-capital-recovery"
@@ -215,6 +218,11 @@ describe("validação final — rotas preservadas", () => {
       if (moduleId === "commercial-policy") {
         assert.match(appTsx, /path=["']commercial\/policy["']/);
         assert.match(appTsx, /CommercialPolicyConsultModule/);
+        continue;
+      }
+      if (moduleId === "commercial-announcements") {
+        assert.match(appTsx, /path=["']commercial\/announcements["']/);
+        assert.match(appTsx, /CommercialAnnouncementGenerator/);
         continue;
       }
       if (moduleId === "satisfaction") {

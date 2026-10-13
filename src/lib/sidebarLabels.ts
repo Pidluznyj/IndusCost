@@ -52,6 +52,7 @@ export const MODULE_SHORT_LABELS: Record<AppModuleId, string> = {
   pricing: "Preço",
   "commercial-price-table": "Tabela",
   "commercial-policy": "Política",
+  "commercial-announcements": "Comunic.",
   proposals: "Prop.",
   "sales-orders": "Pedidos",
   "sales-order-flow": "Fluxo",
