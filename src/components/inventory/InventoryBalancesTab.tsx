@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Eye, Search } from "lucide-react";
-import { useSearchParams } from "react-router-dom";
+import { Eye, FileSpreadsheet, Printer, Search } from "lucide-react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { fetchJsonOk } from "@/src/lib/http";
 import { cn } from "@/src/lib/utils";
 import { InventoryBalanceItemDetailSheet } from "@/src/components/inventory/InventoryBalanceItemDetailSheet";
@@ -73,6 +73,7 @@ function readBoolParam(params: URLSearchParams, key: string): boolean {
 export function InventoryBalancesTab() {
   const { canCreateMovement } = useInventoryPermissions();
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
   const [rows, setRows] = useState<InventoryBalanceListRow[]>([]);
   const [summary, setSummary] = useState<InventoryBalanceListSummary>(EMPTY_BALANCE_LIST_SUMMARY);
   const [loading, setLoading] = useState(true);
@@ -199,43 +200,25 @@ export function InventoryBalancesTab() {
     };
   }, [warehouseId]);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const q = new URLSearchParams();
-      q.set("page", String(page));
-      q.set("pageSize", "50");
-      appendQueryIfPresent(q, "search", search);
-      if (itemId) q.set("itemId", itemId);
-      if (itemType) q.set("itemType", itemType);
-      appendQueryIfPresent(q, "family", family);
-      appendQueryIfPresent(q, "group", group);
-      if (warehouseId) q.set("warehouseId", warehouseId);
-      if (locationId) q.set("locationId", locationId);
-      if (status) q.set("status", status);
-      if (belowMinimum) q.set("belowMinimum", "true");
-      if (belowReorderPoint) q.set("belowReorderPoint", "true");
-      if (hasReservation) q.set("hasReservation", "true");
-      if (hasBlocked) q.set("hasBlocked", "true");
-      if (hasQuarantine) q.set("hasQuarantine", "true");
-      if (negativeStock) q.set("negativeStock", "true");
-
-      const raw = await fetchJsonOk<unknown>(`/api/inventory/balances?${q.toString()}`);
-      const data = normalizeInventoryBalanceListResponse(raw);
-      setRows(data.rows);
-      setSummary(data.summary);
-      setTotal(data.total);
-      setTotalPages(data.totalPages);
-    } catch (e: unknown) {
-      setError(formatInventoryApiError(e, "Não foi possível consultar os saldos. Tente novamente."));
-      setRows([]);
-      setSummary(EMPTY_BALANCE_LIST_SUMMARY);
-    } finally {
-      setLoading(false);
-    }
+  /** Filtros da tela, sem paginação — a consulta e o relatório usam os mesmos. */
+  const filterQuery = useMemo(() => {
+    const q = new URLSearchParams();
+    appendQueryIfPresent(q, "search", search);
+    if (itemId) q.set("itemId", itemId);
+    if (itemType) q.set("itemType", itemType);
+    appendQueryIfPresent(q, "family", family);
+    appendQueryIfPresent(q, "group", group);
+    if (warehouseId) q.set("warehouseId", warehouseId);
+    if (locationId) q.set("locationId", locationId);
+    if (status) q.set("status", status);
+    if (belowMinimum) q.set("belowMinimum", "true");
+    if (belowReorderPoint) q.set("belowReorderPoint", "true");
+    if (hasReservation) q.set("hasReservation", "true");
+    if (hasBlocked) q.set("hasBlocked", "true");
+    if (hasQuarantine) q.set("hasQuarantine", "true");
+    if (negativeStock) q.set("negativeStock", "true");
+    return q.toString();
   }, [
-    page,
     search,
     itemId,
     itemType,
@@ -251,6 +234,53 @@ export function InventoryBalancesTab() {
     hasQuarantine,
     negativeStock,
   ]);
+
+  const downloadReportXlsx = async () => {
+    setError(null);
+    try {
+      const response = await fetch(`/api/inventory/balances/report.xlsx?${filterQuery}`, {
+        credentials: "include",
+      });
+      if (!response.ok) throw new Error("Não foi possível extrair a planilha de saldos.");
+      const blob = await response.blob();
+      const filename =
+        /filename="([^"]+)"/.exec(response.headers.get("Content-Disposition") ?? "")?.[1] ??
+        "saldos-estoque.xlsx";
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = filename;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (e: unknown) {
+      setError(formatInventoryApiError(e, "Não foi possível extrair a planilha de saldos."));
+    }
+  };
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const q = new URLSearchParams(filterQuery);
+      q.set("page", String(page));
+      q.set("pageSize", "50");
+
+      const raw = await fetchJsonOk<unknown>(`/api/inventory/balances?${q.toString()}`);
+      const data = normalizeInventoryBalanceListResponse(raw);
+      setRows(data.rows);
+      setSummary(data.summary);
+      setTotal(data.total);
+      setTotalPages(data.totalPages);
+    } catch (e: unknown) {
+      setError(formatInventoryApiError(e, "Não foi possível consultar os saldos. Tente novamente."));
+      setRows([]);
+      setSummary(EMPTY_BALANCE_LIST_SUMMARY);
+    } finally {
+      setLoading(false);
+    }
+  }, [page, filterQuery]);
 
   useEffect(() => {
     setPage(1);
@@ -349,6 +379,28 @@ export function InventoryBalancesTab() {
         >
           Exportar CSV
         </a>
+        <button
+          type="button"
+          onClick={() => void downloadReportXlsx()}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+          title="Relatório de saldos por item, do maior para o menor, com os filtros desta tela"
+          data-testid="inventory-balances-report-xlsx"
+        >
+          <FileSpreadsheet className="h-4 w-4" />
+          Extrair XLS
+        </button>
+        <button
+          type="button"
+          onClick={() =>
+            navigate(`/inventory/balances/report/print${filterQuery ? `?${filterQuery}` : ""}`)
+          }
+          className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+          title="Relatório de saldos por item, do maior para o menor, com os filtros desta tela"
+          data-testid="inventory-balances-report-pdf"
+        >
+          <Printer className="h-4 w-4" />
+          Extrair PDF
+        </button>
       </div>
 
       <InventoryCollapsibleFilters

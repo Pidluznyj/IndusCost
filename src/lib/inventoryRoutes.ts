@@ -8,6 +8,12 @@ import { Prisma, type InventoryMovement, type InventoryMovementType } from "@pri
 import type { AppAuthContext } from "@/src/lib/appAuth.js";
 import { prisma } from "@/src/lib/prisma.js";
 import { loadInventoryPositionReport } from "@/src/lib/inventory/inventoryPositionReport.server.js";
+import { inventoryBalanceReportFilename } from "@/src/lib/inventory/inventoryBalanceReport.js";
+import {
+  buildInventoryBalancesWhere,
+  loadInventoryBalanceReport,
+} from "@/src/lib/inventory/inventoryBalanceReport.server.js";
+import { buildInventoryBalanceReportXlsx } from "@/src/lib/inventory/inventoryBalanceReportXlsx.js";
 import {
   buildInventoryPositionReportXlsx,
   inventoryPositionReportFilename,
@@ -1353,36 +1359,7 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
   app.get("/api/inventory/balances", ...view, async (req, res) => {
     try {
       const q = parseInventoryBalancesListQuery(req.query as Record<string, unknown>);
-
-      const itemWhere: Prisma.InventoryItemWhereInput = {
-        ...(q.itemType ? { itemType: q.itemType } : {}),
-        ...(q.status ? { status: q.status } : {}),
-        ...(q.family ? { family: { contains: q.family, mode: "insensitive" } } : {}),
-        ...(q.group ? { group: { contains: q.group, mode: "insensitive" } } : {}),
-        ...(q.search
-          ? {
-              OR: [
-                { code: { contains: q.search, mode: "insensitive" } },
-                { description: { contains: q.search, mode: "insensitive" } },
-              ],
-            }
-          : {}),
-      };
-
-      const where: Prisma.InventoryBalanceWhereInput = {
-        ...(q.itemId ? { itemId: q.itemId } : {}),
-        ...(q.warehouseId ? { warehouseId: q.warehouseId } : {}),
-        ...(q.locationId ? { locationId: q.locationId } : {}),
-        ...(q.hasReservation ? { reservedQuantity: { gt: 0 } } : {}),
-        ...(q.hasBlocked ? { blockedQuantity: { gt: 0 } } : {}),
-        ...(q.hasQuarantine ? { quarantineQuantity: { gt: 0 } } : {}),
-        ...(q.negativeStock
-          ? {
-              OR: [{ physicalQuantity: { lt: 0 } }, { availableQuantity: { lt: 0 } }],
-            }
-          : {}),
-        ...(Object.keys(itemWhere).length ? { item: itemWhere } : {}),
-      };
+      const where = buildInventoryBalancesWhere(q);
 
       const rows = await prisma.inventoryBalance.findMany({
         where,
@@ -1438,6 +1415,31 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
     } catch (e: unknown) {
       console.error("GET /api/inventory/balances", e);
       res.status(500).json(inventoryApiError("Erro ao consultar saldos."));
+    }
+  });
+
+  // Relatório de saldos para análise de compra (mesmos filtros da consulta; somente leitura).
+  app.get("/api/inventory/balances/report", ...view, async (req, res) => {
+    try {
+      const q = parseInventoryBalancesListQuery(req.query as Record<string, unknown>);
+      res.json(await loadInventoryBalanceReport(prisma, q, new Date()));
+    } catch (e: unknown) {
+      console.error("GET /api/inventory/balances/report", e);
+      res.status(500).json(inventoryApiError("Erro ao montar o relatório de saldos."));
+    }
+  });
+
+  app.get("/api/inventory/balances/report.xlsx", ...view, async (req, res) => {
+    try {
+      const q = parseInventoryBalancesListQuery(req.query as Record<string, unknown>);
+      const report = await loadInventoryBalanceReport(prisma, q, new Date());
+      const filename = inventoryBalanceReportFilename(report.generatedAt);
+      res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+      res.send(await buildInventoryBalanceReportXlsx(report));
+    } catch (e: unknown) {
+      console.error("GET /api/inventory/balances/report.xlsx", e);
+      res.status(500).json(inventoryApiError("Erro ao exportar o relatório de saldos."));
     }
   });
 

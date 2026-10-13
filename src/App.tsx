@@ -57,6 +57,7 @@ import { ProjectIntakeFormPage } from "./components/projects/ProjectIntakeFormPa
 import { FleetModule } from "./components/FleetModule";
 import { InventoryModule } from "./components/InventoryModule";
 import { InventoryPositionReportPrintView } from "./components/inventory/InventoryPositionReportPrintView";
+import { InventoryBalanceReportPrintView } from "./components/inventory/InventoryBalanceReportPrintView";
 import { SupplyChainModuleShell } from "./components/supply-chain/SupplyChainModuleShell";
 import { OperationsPerformanceModule } from "./components/operations/OperationsPerformanceModule";
 import { ProductionOrdersModule } from "./components/operations/ProductionOrdersModule";
@@ -219,6 +220,7 @@ export default function App() {
       />
       <Route path="/sales-orders/:id/print" element={<SalesOrderPrintView />} />
       <Route path="/inventory/position-report/print" element={<InventoryPositionReportPrintView />} />
+      <Route path="/inventory/balances/report/print" element={<InventoryBalanceReportPrintView />} />
       <Route
         path="/finance/suppliers/:supplierId/service-terminations/:id/print"
         element={<SupplierServiceTerminationPrintView />}

@@ -98,6 +98,42 @@ body.inventory-position-report-route.inventory-position-report-portrait {
   width: 32mm;
 }
 
+/* Relatório de saldos (Estoque › Saldos): item, saldo e datas, em retrato. */
+.inventory-position-report-table.is-balance col.col-code {
+  width: 30mm;
+}
+
+.inventory-position-report-table.is-balance col.col-unit {
+  width: 12mm;
+}
+
+.inventory-position-report-table.is-balance col.col-qty {
+  width: 24mm;
+}
+
+.inventory-position-report-table.is-balance col.col-date {
+  width: 29mm;
+}
+
+.inventory-position-report-table .col-date {
+  text-align: center;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.inventory-position-report-table thead th.col-date {
+  text-align: center;
+  white-space: normal;
+}
+
+.inventory-position-report-table.is-balance td.col-qty {
+  font-weight: 700;
+}
+
+.inventory-position-report-table td.is-negative {
+  color: #b91c1c;
+}
+
 .inventory-position-report-table .col-code {
   font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
