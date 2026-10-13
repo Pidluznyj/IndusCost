@@ -67,6 +67,97 @@ function FieldLabel({
   );
 }
 
+const OTHER_OPTION = "__other__";
+
+/**
+ * Lista suspensa nativa (mesma aparência de "Tipo do item") com a opção de digitar
+ * um valor que ainda não existe. Valor fora da lista (cadastro antigo) aparece como opção.
+ */
+function SelectWithOther({
+  value,
+  options,
+  onChange,
+  disabled,
+  className,
+  emptyLabel,
+  otherLabel,
+  otherPlaceholder,
+  fallbackValue,
+  testId,
+}: {
+  value: string;
+  options: readonly string[];
+  onChange: (value: string) => void;
+  disabled?: boolean;
+  className: string;
+  /** Rótulo da opção vazia; sem ele o campo não aceita vazio. */
+  emptyLabel?: string;
+  otherLabel: string;
+  otherPlaceholder: string;
+  /** Valor assumido ao voltar para a lista sem ter digitado nada. */
+  fallbackValue?: string;
+  testId: string;
+}) {
+  const [typing, setTyping] = useState(false);
+
+  if (typing && !disabled) {
+    const backToList = () => {
+      const typed = value.trim();
+      // Mesma opção com outra grafia ("papelaria") assume a grafia já cadastrada.
+      const known = options.find((option) => option.toLowerCase() === typed.toLowerCase());
+      onChange(known ?? (typed || fallbackValue || ""));
+      setTyping(false);
+    };
+    return (
+      <div className="flex gap-2">
+        <input
+          autoFocus
+          className={className}
+          value={value}
+          placeholder={otherPlaceholder}
+          data-testid={`${testId}-new`}
+          onChange={(e) => onChange(e.target.value)}
+        />
+        <button
+          type="button"
+          className="shrink-0 rounded-lg border border-slate-200 px-2.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+          onClick={backToList}
+          data-testid={`${testId}-back`}
+        >
+          Voltar à lista
+        </button>
+      </div>
+    );
+  }
+
+  const isListed = options.includes(value);
+  return (
+    <select
+      className={className}
+      value={value}
+      disabled={disabled}
+      data-testid={testId}
+      onChange={(e) => {
+        if (e.target.value === OTHER_OPTION) {
+          setTyping(true);
+          onChange("");
+          return;
+        }
+        onChange(e.target.value);
+      }}
+    >
+      {emptyLabel != null ? <option value="">{emptyLabel}</option> : null}
+      {value && !isListed ? <option value={value}>{value}</option> : null}
+      {options.map((option) => (
+        <option key={option} value={option}>
+          {option}
+        </option>
+      ))}
+      <option value={OTHER_OPTION}>{otherLabel}</option>
+    </select>
+  );
+}
+
 function BalanceSummaryPanel({ summary }: { summary: InventoryItemBalanceSummary }) {
   const items = [
     { label: "Saldo físico", value: summary.physicalQuantity },
@@ -160,25 +251,17 @@ function InventoryItemFormFields({
         </select>
       </FieldLabel>
       <FieldLabel label="Família" hint={familyHint}>
-        <input
+        <SelectWithOther
           className={inputClass}
-          list="inventory-family-suggestions"
           value={form.family}
+          options={families ?? []}
           disabled={readOnly}
-          data-testid="inventory-item-form-family"
-          onChange={(e) => setForm((f) => ({ ...f, family: e.target.value }))}
-          onBlur={() => {
-            // Mesma família com outra grafia ("papelaria") assume a grafia já cadastrada.
-            const typed = form.family.trim().toLowerCase();
-            const known = (families ?? []).find((name) => name.toLowerCase() === typed);
-            if (known && known !== form.family) setForm((f) => ({ ...f, family: known }));
-          }}
+          emptyLabel="Sem família"
+          otherLabel="+ Nova família…"
+          otherPlaceholder="Nome da nova família"
+          testId="inventory-item-form-family"
+          onChange={(family) => setForm((f) => ({ ...f, family }))}
         />
-        <datalist id="inventory-family-suggestions">
-          {(families ?? []).map((name) => (
-            <option key={name} value={name} />
-          ))}
-        </datalist>
       </FieldLabel>
       <FieldLabel label="Código interno" required error={errors.code} hint={codeHint}>
         <input
@@ -190,18 +273,17 @@ function InventoryItemFormFields({
         />
       </FieldLabel>
       <FieldLabel label="Unidade padrão" required error={errors.unit}>
-        <input
+        <SelectWithOther
           className={inputClass}
-          list="inventory-unit-suggestions"
           value={form.unit}
+          options={INVENTORY_UNIT_SUGGESTIONS}
           disabled={readOnly}
-          onChange={(e) => setForm((f) => ({ ...f, unit: e.target.value }))}
+          otherLabel="Outra unidade…"
+          otherPlaceholder="Ex.: PEÇA"
+          fallbackValue="UN"
+          testId="inventory-item-form-unit"
+          onChange={(unit) => setForm((f) => ({ ...f, unit }))}
         />
-        <datalist id="inventory-unit-suggestions">
-          {INVENTORY_UNIT_SUGGESTIONS.map((u) => (
-            <option key={u} value={u} />
-          ))}
-        </datalist>
       </FieldLabel>
       <FieldLabel label="Descrição" required error={errors.description}>
         <input
