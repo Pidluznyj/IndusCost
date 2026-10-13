@@ -28,10 +28,12 @@ import {
   casePoleLabel,
   caseStatusLabel,
   caseVerificationLabel,
+  formatCommunicationScienceDeadline,
   formatExposureDateTime,
 } from "@/src/lib/legalExposure/legalExposureCaseListUi";
 import {
   COMMUNICATION_STATUS_LABELS,
+  communicationPortalLink,
   communicationTypeLabel,
   eventTypeLabel,
   exposureTimelineKindLabel,
@@ -672,7 +674,7 @@ export function ExposureCaseDossier({
                   {row.source === "DOMICILIO" ? (
                     <>
                       {row.scienceDeadlineAt ? (
-                        <p>Prazo para ciência {formatExposureDateTime(row.scienceDeadlineAt)}</p>
+                        <p>Prazo para ciência {formatCommunicationScienceDeadline(row.source, row.scienceDeadlineAt)}</p>
                       ) : null}
                       {row.sourceScienceAt ? <p>Ciência registrada em {formatExposureDateTime(row.sourceScienceAt)}</p> : null}
                       <p className="text-muted-foreground">
@@ -705,11 +707,23 @@ export function ExposureCaseDossier({
                         Ver comunicação oficial
                       </a>
                     ) : null}
-                    {row.source === "DOMICILIO" ? null : (
+                    {row.source !== "DOMICILIO" ? (
                       <a className="underline" href={OFFICIAL_COMMUNICATIONS_PORTAL_URL} target="_blank" rel="noreferrer">
                         Abrir portal oficial
                       </a>
-                    )}
+                    ) : row.normalizedStatus !== "PENDING" ? (
+                      // Comunicação já encerrada: consulta neutra, na página inicial do portal.
+                      // Pendente segue sem atalho: abrir o teor é o que registra ciência.
+                      <a
+                        className="underline"
+                        href={communicationPortalLink(row).href}
+                        target="_blank"
+                        rel="noreferrer"
+                        data-testid="exposure-communication-portal-link"
+                      >
+                        {communicationPortalLink(row).label}
+                      </a>
+                    ) : null}
                   </div>
                 </article>
               ))}

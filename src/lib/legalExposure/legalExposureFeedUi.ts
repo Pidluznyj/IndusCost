@@ -3,7 +3,12 @@
  * do Exposure. Só tradução de código → texto; nenhuma regra jurídica.
  */
 
-import { SOURCE_LABELS, foldText } from "./legalExposureContracts.js";
+import {
+  DOMICILIO_PORTAL_URL,
+  OFFICIAL_COMMUNICATIONS_PORTAL_URL,
+  SOURCE_LABELS,
+  foldText,
+} from "./legalExposureContracts.js";
 import type {
   LegalCertificateResult,
   LegalCertificateType,
@@ -57,6 +62,22 @@ export const COMMUNICATION_STATUS_LABELS: Record<LegalCommunicationNormalizedSta
   CANCELED: "Cancelada pela fonte",
   UNKNOWN: "Situação não informada",
 };
+
+/**
+ * Atalho para o portal oficial de uma comunicação.
+ * Só comunicação pendente convida a dar ciência; ciente, cancelada, expirada ou sem
+ * situação conhecida recebem texto neutro. O destino é sempre a página inicial do portal
+ * da fonte — nunca o endereço de uma comunicação, cuja abertura registraria ciência.
+ */
+export function communicationPortalLink(input: {
+  source: string | null | undefined;
+  normalizedStatus: string | null | undefined;
+}): { href: string; label: string } {
+  return {
+    href: input.source === "DOMICILIO" ? DOMICILIO_PORTAL_URL : OFFICIAL_COMMUNICATIONS_PORTAL_URL,
+    label: input.normalizedStatus === "PENDING" ? "Abrir portal oficial para dar ciência" : "Consultar no portal oficial",
+  };
+}
 
 export const ALERT_STATUS_LABELS: Record<LegalExposureAlertStatus, string> = {
   OPEN: "Em aberto",

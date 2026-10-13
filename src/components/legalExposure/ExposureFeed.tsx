@@ -29,10 +29,17 @@ import {
   COMMUNICATION_STATUS_LABELS,
   SEVERITY_LABELS,
   SOURCE_STATUS_HINTS,
+  communicationPortalLink,
   communicationTypeLabel,
 } from "@/src/lib/legalExposure/legalExposureFeedUi";
 import { alertActionLabel, alertChannelOf, inboxMatchesFilter } from "@/src/lib/legalExposure/legalExposureInbox";
-import { casePoleLabel, caseStatusLabel, formatExposureDate, formatExposureDateTime } from "@/src/lib/legalExposure/legalExposureCaseListUi";
+import {
+  casePoleLabel,
+  caseStatusLabel,
+  formatCommunicationScienceDeadline,
+  formatExposureDate,
+  formatExposureDateTime,
+} from "@/src/lib/legalExposure/legalExposureCaseListUi";
 
 export type ExposureFeedReference = {
   caseId: string | null;
@@ -499,13 +506,22 @@ export function ExposureCommunicationsTab({
             <div className="space-y-1">
               <Fact label="Órgão" value={[item.tribunal, item.courtUnit].filter(Boolean).join(" · ") || "não informado"} />
               <Fact label="Disponibilizada pela fonte" value={formatExposureDateTime(item.availableAt) ?? "não informada pela fonte"} />
-              <Fact label="Prazo de ciência" value={formatExposureDateTime(item.scienceDeadlineAt) ?? "não informado pela fonte"} />
+              <Fact
+                label="Prazo de ciência"
+                value={formatCommunicationScienceDeadline(item.source, item.scienceDeadlineAt) ?? "não informado pela fonte"}
+              />
               <Fact label="Situação na fonte" value={item.sourceStatus || "não informada"} muted />
             </div>
           </div>
           <div className="mt-3 flex flex-wrap gap-3 border-t border-border pt-3">
-            <a className="text-sm font-semibold underline" href={OFFICIAL_COMMUNICATIONS_PORTAL_URL} target="_blank" rel="noreferrer">
-              Abrir portal oficial para dar ciência
+            <a
+              className="text-sm font-semibold underline"
+              href={communicationPortalLink(item).href}
+              target="_blank"
+              rel="noreferrer"
+              data-testid="exposure-communication-portal-link"
+            >
+              {communicationPortalLink(item).label}
             </a>
           </div>
         </article>
