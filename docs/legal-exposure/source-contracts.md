@@ -10,7 +10,7 @@ Contrato conferido no OpenAPI oficial de homologação do CNJ. Operações usada
 
 Uma conta por CNPJ (`PDPJ_DOMICILIO_ACCOUNTS` + `PDPJ_DOMICILIO_<CHAVE>_*`): client id, client secret, CPF On-behalf-Of e tenant próprios. Base e token vêm do ambiente e só são aceitos em `https` nos domínios oficiais.
 
-Auth: `client_credentials`; `On-behalf-Of` em todas as requisições; `tenantId` na listagem. O token fica em memória, por conta, com folga de 15 segundos. Não vai para PostgreSQL nem para log.
+Auth: `client_credentials` no SSO (sem `On-behalf-Of`); `On-behalf-Of` nas requisições à API; `tenantId` na listagem. Destinatário aceito só pelo CNPJ completo da conta. O token fica em memória, por conta, com folga de 15 segundos. Não vai para PostgreSQL nem para log.
 
 Listagem read-only paginada, janelas de até 7 dias desde o checkpoint com 2 dias de sobreposição. Idempotência: `DOMICILIO:<tenantId>:<numeroComunicacao>`. Checkpoint em `LegalSourceConnection.lastFullSyncAt`, só avançado com cobertura completa.
 

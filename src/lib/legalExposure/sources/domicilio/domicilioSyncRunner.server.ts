@@ -19,6 +19,8 @@ import {
   domicilioEndpoints,
   domicilioMaxPages,
   domicilioMinRequestIntervalMs,
+  domicilioOverlapDays,
+  domicilioReconcileMaxProcesses,
   findDomicilioAccountByCnpj,
 } from "./domicilioAccounts.js";
 import { DOMICILIO_PAGE_SIZE, domicilioSyncWindows, type DomicilioCommunicationQuery } from "./domicilioContracts.js";
@@ -29,8 +31,8 @@ import {
   type DomicilioFailure,
 } from "./domicilioMonitoringClient.server.js";
 
-/** Processos com comunicação pendente relidos por execução, para captar mudança de situação. */
-export const DOMICILIO_MAX_RECONCILE_PROCESSES = 25;
+/** Amostra de recusas guardada por execução. */
+const MAX_REJECTION_SAMPLES = 50;
 
 function emptyStats(accountKey: string | null): DomicilioSyncStats {
   return {
@@ -41,6 +43,7 @@ function emptyStats(accountKey: string | null): DomicilioSyncStats {
     rejectedRecipient: 0,
     invalid: 0,
     reconciledProcesses: 0,
+    rejections: [],
   };
 }
 
@@ -101,6 +104,9 @@ async function collectAllPages(
     collected.stats.received += mapped.communications.length + mapped.rejectedRecipient + mapped.invalid;
     collected.stats.rejectedRecipient += mapped.rejectedRecipient;
     collected.stats.invalid += mapped.invalid;
+    for (const rejection of mapped.rejections) {
+      if (collected.stats.rejections.length < MAX_REJECTION_SAMPLES) collected.stats.rejections.push(rejection);
+    }
     for (const row of mapped.communications) collected.communications.set(row.sourceCommunicationId, row);
     for (const row of mapped.cases) {
       const key = normalizeProcessNumber(row.processNumber);
@@ -120,7 +126,7 @@ export type DomicilioSyncInput = {
   entity?: { cnpj: string };
   /** Fim da última janela coberta por inteiro (`lastFullSyncAt` da conexão). */
   checkpoint?: string | null;
-  /** Processos da empresa com comunicação ainda pendente no Domicílio. */
+  /** Processos da empresa com comunicação ainda pendente, do menos recentemente relido para o mais recente. */
   reconcileProcessNumbers?: readonly string[];
   /** Consulta pontual de um processo: não mexe no checkpoint. */
   numeroProcesso?: string;
@@ -175,6 +181,7 @@ export async function runDomicilioSync(input: DomicilioSyncInput): Promise<Norma
         now,
         checkpoint: input.checkpoint ?? null,
         backfillDays: domicilioBackfillDays(env),
+        overlapMs: domicilioOverlapDays(env) * 24 * 60 * 60 * 1000,
       });
 
   let interruption: DomicilioFailure | "TRUNCATED" | null = null;
@@ -185,12 +192,12 @@ export async function runDomicilioSync(input: DomicilioSyncInput): Promise<Norma
     if (interruption) break;
     interruption = await collectAllPages(context, tenantId, window, collected);
   }
-  const windowsComplete = !scopedProcess && interruption == null;
+  const windowsRead = !scopedProcess && interruption == null;
 
   if (!interruption && !scopedProcess) {
     const reconcile = [...new Set((input.reconcileProcessNumbers ?? []).map((row) => normalizeProcessNumber(row)))]
       .filter((row): row is string => Boolean(row))
-      .slice(0, DOMICILIO_MAX_RECONCILE_PROCESSES);
+      .slice(0, domicilioReconcileMaxProcesses(env));
     for (const numeroProcesso of reconcile) {
       interruption = await collectAllPages(context, tenantId, { numeroProcesso }, collected);
       if (interruption) break;
@@ -212,15 +219,29 @@ export async function runDomicilioSync(input: DomicilioSyncInput): Promise<Norma
     );
   }
 
+  // Registro fora do contrato (sem identificador ou sem destinatário válido) não foi gravado:
+  // a janela não conta como coberta e o checkpoint fica onde estava, para o item ser relido.
+  const invalidRecords = collected.stats.invalid > 0;
+  const windowsComplete = windowsRead && !invalidRecords;
+  const partial = Boolean(interruption) || invalidRecords;
+
   return {
     source: "DOMICILIO",
-    outcome: interruption ? "PARTIAL" : communications.length === 0 ? "NO_RESULTS" : "SUCCESS",
-    errorCode: interruption ? (interruption === "TRUNCATED" ? "TRUNCATED" : interruption.outcome) : null,
+    outcome: partial ? "PARTIAL" : communications.length === 0 ? "NO_RESULTS" : "SUCCESS",
+    errorCode: interruption
+      ? interruption === "TRUNCATED"
+        ? "TRUNCATED"
+        : interruption.outcome
+      : invalidRecords
+        ? "INVALID_RECORDS"
+        : null,
     errorMessageSanitized: interruption
       ? interruption === "TRUNCATED"
         ? "Coleta interrompida no limite de páginas; o restante fica para a próxima execução."
         : interruption.errorMessageSanitized
-      : null,
+      : invalidRecords
+        ? `${collected.stats.invalid} registro(s) do Domicílio fora do contrato não foram gravados; o período será relido.`
+        : null,
     retryAfterSeconds: interruption && interruption !== "TRUNCATED" ? interruption.retryAfterSeconds : null,
     externalCall: true,
     cases,

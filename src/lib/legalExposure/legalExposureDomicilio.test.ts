@@ -44,6 +44,21 @@ const PROCESS_A = "00002860620215090021";
 const PROCESS_SHARED = "00011112220235090003";
 const PROCESS_NEW = "00099998820245090004";
 
+/** CNPJ válido de outro estabelecimento da mesma raiz (filial), com dígitos verificadores calculados. */
+function branchCnpj(cnpj: string, branch: string): string {
+  const base = `${cnpj.slice(0, 8)}${branch}`;
+  const digit = (value: string) => {
+    const weights = value.length === 12 ? [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2] : [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
+    const sum = [...value].reduce((total, char, index) => total + Number(char) * weights[index]!, 0);
+    const rest = sum % 11;
+    return rest < 2 ? "0" : String(11 - rest);
+  };
+  const first = digit(base);
+  return `${base}${first}${digit(base + first)}`;
+}
+
+const LAZARIOS_BRANCH = branchCnpj(FINANCE_INTERNAL_GROUP_COMPANIES[0]!.cnpj, "0002");
+
 const ENV = {
   LEGAL_EXPOSURE_ENABLED: "1",
   PDPJ_DOMICILIO_ENABLED: "1",
@@ -101,6 +116,8 @@ type FakeCnj = {
     invalidBodyOf?: "LAZARIOS" | "KOPPETEL";
     pageSize?: number;
     onList?: (account: "LAZARIOS" | "KOPPETEL") => Promise<void> | void;
+    /** Perfis extras devolvidos em /api/v1/eu (ex.: a filial vinculada ao mesmo tenant). */
+    extraProfilesOf?: { account: "LAZARIOS" | "KOPPETEL"; profiles: Array<{ tenantId: string; documento: string; tenantName: string }> };
   };
   tokensIssued: Record<string, number>;
 };
@@ -146,7 +163,10 @@ function createFakeCnj(): FakeCnj {
       const company = account === "LAZARIOS" ? LAZARIOS : KOPPETEL;
       return json({
         pessoa: { cpfCnpj: headers["on-behalf-of"] },
-        perfis: [{ tenantId: TENANT[account], documento: company.cnpj, tenantName: company.name }],
+        perfis: [
+          { tenantId: TENANT[account], documento: company.cnpj, tenantName: company.name },
+          ...(state.behavior.extraProfilesOf?.account === account ? state.behavior.extraProfilesOf.profiles : []),
+        ],
       });
     }
 
@@ -442,14 +462,15 @@ describe("domicílio — mapper do contrato oficial", () => {
         data: [
           communication({ numeroComunicacao: "c-1", status: "CIENTE", dataCiente: "2026-10-12T15:00:00.000Z" }),
           communication({ numeroComunicacao: "c-2", documentoDestinatario: KOPPETEL.cnpj }),
-          communication({ numeroComunicacao: "c-3", documentoDestinatario: `${LAZARIOS.cnpj.slice(0, 8)}000276` }),
+          communication({ numeroComunicacao: "c-3", documentoDestinatario: LAZARIOS_BRANCH }),
           { numeroProcesso: PROCESS_A },
         ],
       },
       { accountCnpj: LAZARIOS.cnpj, tenantId: TENANT.LAZARIOS }
     );
-    assert.deepEqual(mapped.communications.map((row) => row.sourceCommunicationId), ["c-1", "c-3"]);
-    assert.equal(mapped.rejectedRecipient, 1);
+    // Filial (mesma raiz) e outra empresa são recusadas; só o CNPJ completo da conta entra.
+    assert.deepEqual(mapped.communications.map((row) => row.sourceCommunicationId), ["c-1"]);
+    assert.equal(mapped.rejectedRecipient, 2);
     assert.equal(mapped.invalid, 1);
     const first = mapped.communications[0]!;
     assert.equal(first.tenantId, TENANT.LAZARIOS);
@@ -934,6 +955,349 @@ describe("domicílio — coleta multiempresa pelo orquestrador do Exposure", () 
     const requestsBefore = cnj.requests.length;
     await service.sync({ mode: "apply", source: "DJEN" }, USER);
     assert.equal(cnj.requests.length, requestsBefore);
+  });
+});
+
+describe("domicílio — segregação por CNPJ completo", () => {
+  const context = { accountCnpj: LAZARIOS.cnpj, tenantId: TENANT.LAZARIOS };
+  const page = (rows: unknown[]) => ({ page: { count: rows.length, pageNumber: 0, pageSize: 50, totalPages: 1 }, data: rows });
+
+  it("CNPJ exato da conta é aceito, com ou sem máscara", () => {
+    const mapped = mapDomicilioCommunicationPage(
+      page([
+        communication({ numeroComunicacao: "ok-1" }),
+        communication({ numeroComunicacao: "ok-2", documentoDestinatario: LAZARIOS.displayCnpj }),
+      ]),
+      context
+    );
+    assert.deepEqual(mapped.communications.map((row) => row.sourceCommunicationId), ["ok-1", "ok-2"]);
+    assert.equal(mapped.rejections.length, 0);
+    assert.equal(mapped.cases[0]!.explicitCnpj, LAZARIOS.cnpj);
+  });
+
+  it("filial e qualquer CNPJ de mesma raiz não são atribuídos à empresa consultada", () => {
+    assert.equal(LAZARIOS_BRANCH.slice(0, 8), LAZARIOS.cnpj.slice(0, 8));
+    assert.notEqual(LAZARIOS_BRANCH, LAZARIOS.cnpj);
+    const mapped = mapDomicilioCommunicationPage(
+      page([
+        communication({ numeroComunicacao: "filial-1", documentoDestinatario: LAZARIOS_BRANCH }),
+        communication({ numeroComunicacao: "filial-2", documentoDestinatario: branchCnpj(LAZARIOS.cnpj, "0003"), numeroProcesso: PROCESS_NEW }),
+      ]),
+      context
+    );
+    assert.equal(mapped.communications.length, 0);
+    assert.equal(mapped.cases.length, 0, "filial não alimenta a descoberta de processo");
+    assert.equal(mapped.rejectedRecipient, 2);
+    assert.equal(mapped.invalid, 0);
+    assert.deepEqual(mapped.rejections, [
+      { reason: "RECIPIENT_MISMATCH", recipientKind: "CNPJ", sameRoot: true, communicationRef: "filial-1" },
+      { reason: "RECIPIENT_MISMATCH", recipientKind: "CNPJ", sameRoot: true, communicationRef: "filial-2" },
+    ]);
+  });
+
+  it("empresa de raiz diferente e pessoa física são recusadas", () => {
+    const mapped = mapDomicilioCommunicationPage(
+      page([
+        communication({ numeroComunicacao: "outra-1", documentoDestinatario: KOPPETEL.cnpj }),
+        communication({ numeroComunicacao: "pf-1", documentoDestinatario: "11144477735" }),
+      ]),
+      context
+    );
+    assert.equal(mapped.communications.length, 0);
+    assert.deepEqual(mapped.rejections.map((row) => [row.reason, row.recipientKind, row.sameRoot]), [
+      ["RECIPIENT_MISMATCH", "CNPJ", false],
+      ["RECIPIENT_MISMATCH", "CPF", false],
+    ]);
+    // A ocorrência é sanitizada: nenhum documento do destinatário recusado é guardado.
+    const serialized = JSON.stringify(mapped);
+    assert.equal(serialized.includes(KOPPETEL.cnpj), false);
+    assert.equal(serialized.includes("11144477735"), false);
+  });
+
+  it("destinatário ausente ou malformado é registro inválido, nunca aproximado", () => {
+    const malformed = [
+      undefined,
+      null,
+      "",
+      "   ",
+      "abc",
+      `${LAZARIOS.cnpj}x`,
+      LAZARIOS.cnpj.slice(0, 13),
+      `${LAZARIOS.cnpj.slice(0, 12)}00`,
+      `0${LAZARIOS.cnpj}`,
+      { documento: LAZARIOS.cnpj },
+    ];
+    const mapped = mapDomicilioCommunicationPage(
+      page(malformed.map((documentoDestinatario, index) => ({ ...communication({ numeroComunicacao: `m-${index}` }), documentoDestinatario }))),
+      context
+    );
+    assert.equal(mapped.communications.length, 0);
+    assert.equal(mapped.cases.length, 0);
+    assert.equal(mapped.invalid, malformed.length);
+    assert.equal(mapped.rejectedRecipient, 0);
+    assert.deepEqual(
+      [...new Set(mapped.rejections.map((row) => row.reason))].sort(),
+      ["RECIPIENT_MALFORMED", "RECIPIENT_MISSING"]
+    );
+    assert.equal(mapped.rejections.filter((row) => row.reason === "RECIPIENT_MISSING").length, 4);
+  });
+
+  it("a única representação comprovada é o perfil que o CNJ devolve para o CNPJ da conta; perfil da filial no mesmo tenant não abre exceção", async () => {
+    const memory = seedMemory();
+    const cnj = createFakeCnj();
+    // O CNJ também lista a filial como perfil do mesmo tenant: isso não autoriza atribuir a ela.
+    cnj.behavior.extraProfilesOf = {
+      account: "LAZARIOS",
+      profiles: [{ tenantId: TENANT.LAZARIOS, documento: LAZARIOS_BRANCH, tenantName: "Filial" }],
+    };
+    cnj.data.LAZARIOS.push(
+      communication({ numeroComunicacao: "matriz-1" }),
+      communication({ numeroComunicacao: "filial-1", documentoDestinatario: LAZARIOS_BRANCH, numeroProcesso: PROCESS_NEW })
+    );
+    const { service, repository, runs } = createService(memory, cnj);
+    await service.sync({ mode: "apply", source: "DOMICILIO" }, USER);
+    const snapshot = repository.snapshot();
+    assert.deepEqual(snapshot.communications.map((row) => row.sourceCommunicationId), ["matriz-1"]);
+    assert.equal(snapshot.cases.some((row) => row.processNumberNormalized === PROCESS_NEW), false);
+    assert.equal(JSON.stringify(snapshot).includes(LAZARIOS_BRANCH), false, "nada da filial é persistido");
+
+    // A ocorrência fica registrada, sanitizada, na execução; recusa por destinatário não trava o checkpoint.
+    const summary = runs.find((row) => row.target === "LEGAL_EXPOSURE_DOMICILIO")!.summary as {
+      domicilioEntities: Array<{ entityId: string; rejectedRecipient: number; rejections: unknown[]; windowComplete: boolean }>;
+    };
+    const lazarios = summary.domicilioEntities.find((row) => row.entityId === "entity-lazarios")!;
+    assert.equal(lazarios.rejectedRecipient, 1);
+    assert.deepEqual(lazarios.rejections, [
+      { reason: "RECIPIENT_MISMATCH", recipientKind: "CNPJ", sameRoot: true, communicationRef: "filial-1" },
+    ]);
+    assert.equal(lazarios.windowComplete, true);
+    assert.equal(JSON.stringify(runs).includes(LAZARIOS_BRANCH), false);
+    const connection = snapshot.connections.find((row) => row.entityId === "entity-lazarios" && row.source === "DOMICILIO")!;
+    assert.equal(connection.lastFullSyncAt, NOW.toISOString());
+  });
+
+  it("credencial cujo perfil no CNJ é só o da filial não é aceita para a matriz", async () => {
+    const cnj = createFakeCnj();
+    // A conta diz ser a filial, mas o CNJ só devolve o perfil da matriz para essa credencial.
+    const env = { ...ENV, PDPJ_DOMICILIO_ACCOUNTS: "LAZARIOS", PDPJ_DOMICILIO_LAZARIOS_CNPJ: LAZARIOS_BRANCH };
+    const batch = await runDomicilioSync({ env, fetchImpl: cnj.fetchImpl, now: NOW, entity: { cnpj: LAZARIOS_BRANCH }, sleep: async () => {} });
+    assert.equal(batch.outcome, "AUTH_ERROR");
+    assert.equal(cnj.requests.some((row) => row.url.pathname.endsWith("/comunicacoes")), false);
+  });
+});
+
+describe("domicílio — segurança jurídica das requisições", () => {
+  it("o SSO recebe só client_credentials; On-behalf-Of e tenantId vão apenas para a API, e só GET", async () => {
+    const cnj = createFakeCnj();
+    cnj.data.LAZARIOS.push(communication({ numeroComunicacao: "c-1" }));
+    await runDomicilioSync({ env: ENV, fetchImpl: cnj.fetchImpl, now: NOW, entity: { cnpj: LAZARIOS.cnpj }, sleep: async () => {} });
+    const token = cnj.requests.filter((row) => row.url.href === TOKEN_URL);
+    const api = cnj.requests.filter((row) => row.url.href !== TOKEN_URL);
+    assert.equal(token.length, 1);
+    assert.equal(token[0]!.method, "POST");
+    assert.equal("on-behalf-of" in token[0]!.headers, false);
+    assert.equal("tenantid" in token[0]!.headers, false);
+    assert.equal(token[0]!.url.search, "");
+    assert.ok(api.length >= 2);
+    assert.deepEqual([...new Set(api.map((row) => row.method))], ["GET"]);
+    assert.deepEqual(
+      [...new Set(api.map((row) => row.url.pathname.replace("/domicilio", "")))].sort(),
+      ["/api/v1/comunicacoes", "/api/v1/eu"]
+    );
+    for (const request of api) assert.equal(request.headers["on-behalf-of"], "11144477735");
+    assert.equal("tenantid" in api.find((row) => row.url.pathname.endsWith("/eu"))!.headers, false);
+    // A listagem só leva filtros de leitura; nada que identifique ou altere uma comunicação.
+    for (const request of api.filter((row) => row.url.pathname.endsWith("/comunicacoes"))) {
+      assert.deepEqual([...request.url.searchParams.keys()].sort(), ["dataFim", "dataInicio", "page", "size", "statusCiente"]);
+    }
+  });
+});
+
+describe("domicílio — checkpoint e consistência", () => {
+  it("registro fora do contrato não é gravado e não deixa o checkpoint avançar", async () => {
+    const memory = seedMemory();
+    const cnj = createFakeCnj();
+    cnj.data.LAZARIOS.push(
+      communication({ numeroComunicacao: "c-1", numeroProcesso: PROCESS_NEW }),
+      { ...communication({ numeroComunicacao: "c-sem-destinatario", numeroProcesso: PROCESS_NEW }), documentoDestinatario: "" }
+    );
+    const { service, repository, runs } = createService(memory, cnj);
+    const result = await service.sync({ mode: "apply", source: "DOMICILIO" }, USER);
+    const connection = () =>
+      repository.snapshot().connections.find((row) => row.entityId === "entity-lazarios" && row.source === "DOMICILIO")!;
+    const batch = result.batches.find((row) => row.source === "DOMICILIO" && row.communications > 0)!;
+    assert.equal(batch.outcome, "PARTIAL");
+    assert.equal(batch.errorCode, "INVALID_RECORDS");
+    assert.equal(repository.snapshot().communications.length, 1, "o registro válido é gravado");
+    assert.equal(connection().lastFullSyncAt, null);
+    assert.equal(connection().status, "DEGRADED");
+    const summary = runs.find((row) => row.target === "LEGAL_EXPOSURE_DOMICILIO")!.summary as {
+      domicilioEntities: Array<{ entityId: string; invalid: number; windowComplete: boolean; rejections: Array<{ reason: string }> }>;
+    };
+    const lazarios = summary.domicilioEntities.find((row) => row.entityId === "entity-lazarios")!;
+    assert.equal(lazarios.invalid, 1);
+    assert.equal(lazarios.windowComplete, false);
+    assert.equal(lazarios.rejections[0]!.reason, "RECIPIENT_MISSING");
+
+    // Corrigido na fonte, a releitura completa a janela sem duplicar.
+    cnj.data.LAZARIOS[1] = communication({ numeroComunicacao: "c-sem-destinatario", numeroProcesso: PROCESS_NEW });
+    await service.sync({ mode: "apply", source: "DOMICILIO" }, USER);
+    assert.equal(repository.snapshot().communications.length, 2);
+    assert.equal(connection().lastFullSyncAt, NOW.toISOString());
+  });
+
+  it("falha de persistência: nada é gravado, o checkpoint não anda e a nova execução repete a janela sem duplicar", async () => {
+    const memory = seedMemory();
+    const cnj = createFakeCnj();
+    cnj.data.LAZARIOS.push(communication({ numeroComunicacao: "c-1", numeroProcesso: PROCESS_NEW }));
+    const inner = createMemoryExposureRepository(memory);
+    const timeline: string[] = [];
+    let failNextPersist = true;
+    const repository = {
+      ...inner,
+      snapshot: inner.snapshot,
+      async load() {
+        timeline.push("load");
+        return structuredClone(await inner.load());
+      },
+      async persist(next: LegalExposureMemory) {
+        timeline.push("persist");
+        if (failNextPersist) {
+          failNextPersist = false;
+          throw new Error("falha simulada de banco");
+        }
+        await inner.persist(next);
+      },
+    };
+    const inputs: DomicilioRunnerInput[] = [];
+    const service = createLegalExposureService({
+      repository,
+      createId: sequentialIds(),
+      now: () => NOW,
+      runners: {
+        domicilio: async (input) => {
+          if (input) inputs.push(input);
+          const batch = await runDomicilioSync({ ...(input ?? {}), env: ENV, fetchImpl: cnj.fetchImpl, now: NOW, sleep: async () => {} });
+          timeline.push("http-done");
+          return batch;
+        },
+        datajud: async () => emptyBatch("DATAJUD"),
+        djen: async () => emptyBatch("DJEN"),
+      },
+    });
+
+    await assert.rejects(() => service.sync({ mode: "apply", source: "DOMICILIO" }, USER), /falha simulada de banco/);
+    assert.equal(inner.snapshot().communications.length, 0);
+    assert.equal(inner.snapshot().connections.length, 0);
+    // Toda a rede termina antes de a gravação começar: não há HTTP dentro da transação.
+    assert.deepEqual(timeline, ["load", "http-done", "http-done", "persist"]);
+
+    await service.sync({ mode: "apply", source: "DOMICILIO" }, USER);
+    assert.equal(inputs.filter((row) => row.entity.cnpj === LAZARIOS.cnpj).at(-1)!.checkpoint, null, "repete a mesma janela");
+    assert.equal(inner.snapshot().communications.length, 1);
+    await service.sync({ mode: "apply", source: "DOMICILIO" }, USER);
+    assert.equal(inner.snapshot().communications.length, 1);
+    assert.equal(inner.snapshot().events.filter((row) => row.eventType === "NEW_COMMUNICATION").length, 1);
+  });
+
+  it("coletas do Domicílio não correm juntas: DOMICILIO recusa durante o ALL e o ALL não repete a coleta em andamento", async () => {
+    const memory = seedMemory();
+    const cnj = createFakeCnj();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let entered!: () => void;
+    const started = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    cnj.behavior.onList = async () => {
+      entered();
+      await gate;
+    };
+    const { service } = createService(memory, cnj);
+    const all = service.sync({ mode: "apply", source: "ALL" }, USER);
+    await started;
+    await assert.rejects(
+      () => service.sync({ mode: "apply", source: "DOMICILIO" }, USER),
+      (error: Error) => error.message === "Execução já em andamento."
+    );
+    release();
+    await all;
+
+    // Sentido inverso: com o job DOMICILIO em andamento, o DJEN isolado roda e não chama o Domicílio.
+    let release2!: () => void;
+    const gate2 = new Promise<void>((resolve) => {
+      release2 = resolve;
+    });
+    let entered2!: () => void;
+    const started2 = new Promise<void>((resolve) => {
+      entered2 = resolve;
+    });
+    cnj.behavior.onList = async () => {
+      entered2();
+      await gate2;
+    };
+    const domicilio = service.sync({ mode: "apply", source: "DOMICILIO" }, USER);
+    await started2;
+    const before = cnj.requests.length;
+    await service.sync({ mode: "apply", source: "DJEN" }, USER);
+    assert.equal(cnj.requests.length, before);
+    release2();
+    await domicilio;
+    // Depois de liberado, a coleta volta a ser aceita.
+    cnj.behavior.onList = undefined;
+    await service.sync({ mode: "apply", source: "DOMICILIO" }, USER);
+  });
+
+  it("releitura de pendências percorre todos os processos em rodízio, mesmo acima do teto por execução", async () => {
+    const memory = seedMemory();
+    const cnj = createFakeCnj();
+    const processes = ["00000010120245090001", "00000020220245090002", "00000030320245090003"];
+    processes.forEach((numeroProcesso, index) =>
+      cnj.data.LAZARIOS.push(communication({ numeroComunicacao: `p-${index}`, numeroProcesso }))
+    );
+    const env = { ...ENV, PDPJ_DOMICILIO_RECONCILE_MAX_PROCESSES: "1" };
+    let current = NOW;
+    const repository = createMemoryExposureRepository(memory);
+    const service = createLegalExposureService({
+      repository,
+      createId: sequentialIds(),
+      now: () => current,
+      runners: {
+        domicilio: (input) => runDomicilioSync({ ...(input ?? {}), env, fetchImpl: cnj.fetchImpl, now: current, sleep: async () => {} }),
+        datajud: async () => emptyBatch("DATAJUD"),
+        djen: async () => emptyBatch("DJEN"),
+      },
+    });
+    await service.sync({ mode: "apply", source: "DOMICILIO" }, USER);
+    // As comunicações saem da janela de datas: só a releitura por processo as alcança.
+    cnj.data.LAZARIOS.forEach((row) => {
+      row.dataComunicacao = "2026-06-01T10:00:00.000Z";
+    });
+    const reread: string[] = [];
+    for (let run = 1; run <= 3; run += 1) {
+      current = new Date(NOW.getTime() + run * 60 * 60 * 1000);
+      const before = cnj.requests.length;
+      await service.sync({ mode: "apply", source: "DOMICILIO" }, USER);
+      reread.push(
+        ...cnj.requests
+          .slice(before)
+          .filter((row) => row.account === "LAZARIOS" && row.url.searchParams.has("numeroProcesso"))
+          .map((row) => row.url.searchParams.get("numeroProcesso")!)
+      );
+    }
+    assert.deepEqual([...reread].sort(), [...processes].sort(), "um processo por execução, sem repetir até dar a volta");
+  });
+
+  it("sobreposição e carga inicial são configuração, não constante", () => {
+    const checkpoint = "2026-10-13T11:00:00.000Z";
+    const noOverlap = domicilioSyncWindows({ now: NOW, checkpoint, backfillDays: 30, overlapMs: 0 });
+    assert.deepEqual(noOverlap, [{ dataInicio: checkpoint, dataFim: NOW.toISOString() }]);
+    const wide = domicilioSyncWindows({ now: NOW, checkpoint, backfillDays: 30, overlapMs: 10 * 24 * 60 * 60 * 1000 });
+    assert.equal(wide[0]!.dataInicio, "2026-10-03T11:00:00.000Z");
+    assert.equal(wide.length, 2);
+    assert.equal(domicilioSyncWindows({ now: NOW, checkpoint: null, backfillDays: 90 }).length, 13);
   });
 });
 

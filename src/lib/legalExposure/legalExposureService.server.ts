@@ -149,6 +149,8 @@ const TARGET: Record<string, string> = {
 };
 
 const sourceJobLocks = new Set<string>();
+/** Coleta do Domicílio em andamento neste processo, seja pelo job DOMICILIO ou pelo ALL. */
+let domicilioCollectionRunning = false;
 
 function disabledRunner(source: LegalExposureSource): NormalizedSourceBatch {
   return {
@@ -203,6 +205,8 @@ function domicilioRunnerInput(
   scopedProcessNumber: string
 ): DomicilioRunnerInput {
   const connection = memory.connections.find((row) => row.entityId === entity.id && row.source === "DOMICILIO");
+  // Do menos recentemente relido para o mais recente: com mais pendências do que o teto
+  // por execução, a releitura percorre todas em rodízio em vez de repetir as mesmas.
   const pending = memory.communications
     .filter(
       (row) =>
@@ -211,6 +215,7 @@ function domicilioRunnerInput(
         row.processNumber &&
         (row.normalizedStatus === "PENDING" || row.normalizedStatus === "UNKNOWN")
     )
+    .sort((a, b) => Date.parse(a.lastSeenAt) - Date.parse(b.lastSeenAt))
     .map((row) => row.processNumber as string);
   return {
     entity: { cnpj: entity.cnpj },
@@ -750,6 +755,7 @@ export function createLegalExposureService(deps: ExposureServiceDeps) {
         throw new ExposureServiceError("Execução já em andamento.", "CONFLICT");
       }
       sourceJobLocks.add(jobKey);
+      let ownsDomicilioCollection = false;
       const startedAt = now();
       const liveRun = await deps.beginIntegrationRun?.({
         target: runningTarget,
@@ -763,7 +769,16 @@ export function createLegalExposureService(deps: ExposureServiceDeps) {
       const pipelineAll = !input.source || input.source === "ALL";
       const wantsDjen = pipelineAll || input.source === "DJEN";
       const wantsDatajud = pipelineAll || input.source === "DATAJUD";
-      const wantsDomicilio = pipelineAll || input.source === "DOMICILIO";
+      // ALL e DOMICILIO têm travas de job diferentes: sem esta, as duas coletas poderiam
+      // correr juntas e a que terminasse por último regravaria checkpoint e situação defasados.
+      if (input.source === "DOMICILIO" && domicilioCollectionRunning) {
+        throw new ExposureServiceError("Execução já em andamento.", "CONFLICT");
+      }
+      const wantsDomicilio = (pipelineAll || input.source === "DOMICILIO") && !domicilioCollectionRunning;
+      if (wantsDomicilio) {
+        domicilioCollectionRunning = true;
+        ownsDomicilioCollection = true;
+      }
       const wantsEscavador = pipelineAll || input.source === "ESCAVADOR";
       const wantsTribunal = input.source === "TRIBUNAL_PUBLIC";
       const wantsJusbrasil = input.source === "JUSBRASIL";
@@ -935,6 +950,7 @@ export function createLegalExposureService(deps: ExposureServiceDeps) {
             newCommunications: Math.max(0, memory.communications.length - before.communications),
             rejectedRecipient: domicilio.domicilio?.rejectedRecipient ?? 0,
             invalid: domicilio.domicilio?.invalid ?? 0,
+            rejections: domicilio.domicilio?.rejections ?? [],
             reconciledProcesses: domicilio.domicilio?.reconciledProcesses ?? 0,
             pendingReconciliation: memory.communications.filter(
               (row) => row.entityId === entity.id && row.source === "DOMICILIO" && !row.caseId
@@ -1159,6 +1175,7 @@ export function createLegalExposureService(deps: ExposureServiceDeps) {
         throw error;
       } finally {
         sourceJobLocks.delete(jobKey);
+        if (ownsDomicilioCollection) domicilioCollectionRunning = false;
       }
     },
     async testConnection(source: LegalExposureSource, input?: { entityId?: string }) {

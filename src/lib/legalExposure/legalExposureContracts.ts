@@ -741,6 +741,24 @@ export type SourceSyncCoverage = {
   complete: boolean;
 };
 
+export const DOMICILIO_REJECTION_REASONS = [
+  "RECIPIENT_MISMATCH",
+  "RECIPIENT_MISSING",
+  "RECIPIENT_MALFORMED",
+  "MISSING_IDENTIFIER",
+] as const;
+
+/**
+ * Registro devolvido pelo CNJ que não foi gravado. Sanitizado: sem o documento do
+ * destinatário (pode ser CPF de terceiro), só o tipo e se a raiz do CNPJ coincide.
+ */
+export type DomicilioRejection = {
+  reason: (typeof DOMICILIO_REJECTION_REASONS)[number];
+  communicationRef: string | null;
+  recipientKind: "CNPJ" | "CPF" | "OTHER" | "NONE";
+  sameRoot: boolean;
+};
+
 /** Contadores da coleta do Domicílio de uma empresa. Sem segredo: a chave da conta é um rótulo. */
 export type DomicilioSyncStats = {
   accountKey: string | null;
@@ -750,6 +768,8 @@ export type DomicilioSyncStats = {
   rejectedRecipient: number;
   invalid: number;
   reconciledProcesses: number;
+  /** Amostra limitada das recusas, para análise. */
+  rejections: DomicilioRejection[];
 };
 
 export type NormalizedSourceBatch = {

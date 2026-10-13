@@ -18,6 +18,8 @@ export const DOMICILIO_ENV = {
   backfillDays: "PDPJ_DOMICILIO_BACKFILL_DAYS",
   minRequestIntervalMs: "PDPJ_DOMICILIO_MIN_REQUEST_INTERVAL_MS",
   maxPages: "PDPJ_DOMICILIO_MAX_PAGES",
+  overlapDays: "PDPJ_DOMICILIO_OVERLAP_DAYS",
+  reconcileMaxProcesses: "PDPJ_DOMICILIO_RECONCILE_MAX_PROCESSES",
 } as const;
 
 const ACCOUNT_FIELDS = {
@@ -140,6 +142,16 @@ export function domicilioBackfillDays(env: LegalExposureEnv): number {
 
 export function domicilioMinRequestIntervalMs(env: LegalExposureEnv): number {
   return clampInt(read(env, DOMICILIO_ENV.minRequestIntervalMs), 500, 100, 10_000);
+}
+
+/** Dias relidos antes do checkpoint a cada execução (padrão 2). Sujeito à homologação. */
+export function domicilioOverlapDays(env: LegalExposureEnv): number {
+  return clampInt(read(env, DOMICILIO_ENV.overlapDays), 2, 0, 30);
+}
+
+/** Processos com comunicação pendente relidos por execução (padrão 25). Sujeito à homologação. */
+export function domicilioReconcileMaxProcesses(env: LegalExposureEnv): number {
+  return clampInt(read(env, DOMICILIO_ENV.reconcileMaxProcesses), 25, 0, 200);
 }
 
 export function domicilioMaxPages(env: LegalExposureEnv): number {

@@ -3,11 +3,17 @@
  * Defensivo: campo ausente vira null, item sem identificador é descartado e
  * comunicação de outro destinatário nunca é atribuída à conta consultada.
  *
+ * Destinatário: só o CNPJ completo da conta, que é o documento do perfil que o CNJ
+ * devolveu em GET /api/v1/eu. Mesma raiz (filial, outro estabelecimento) não basta:
+ * o contrato não comprova, pelas operações permitidas, que o tenant representa
+ * outro CNPJ. Sem essa prova documental não há exceção.
+ *
  * Os links devolvidos em `linksDocumentos` levam ao documento completo; abri-los
  * gera ciência. Eles não são guardados, devolvidos nem seguidos — só a contagem.
  */
 
 import type {
+  DomicilioRejection,
   NormalizedCaseObservation,
   NormalizedCommunicationObservation,
 } from "../../legalExposureContracts.js";
@@ -38,9 +44,40 @@ function digits(value: unknown): string {
   return String(value ?? "").replace(/\D/g, "");
 }
 
-/** Mesma empresa (matriz/filial): os 8 primeiros dígitos do CNPJ. */
-function sameCompanyRoot(left: string, right: string): boolean {
-  return left.length === 14 && right.length === 14 && left.slice(0, 8) === right.slice(0, 8);
+type RecipientCheck =
+  | { ok: true }
+  | { ok: false; rejection: Omit<DomicilioRejection, "communicationRef">; invalid: boolean };
+
+/**
+ * Compara o destinatário com o CNPJ da conta, dígito a dígito.
+ * Ausente ou malformado não se resolve por aproximação: é registro inválido.
+ */
+function checkRecipient(raw: unknown, accountCnpj: string): RecipientCheck {
+  const scalar = typeof raw === "string" || typeof raw === "number";
+  const source = scalar ? String(raw).trim() : "";
+  if (raw == null || (scalar && !source)) {
+    return { ok: false, invalid: true, rejection: { reason: "RECIPIENT_MISSING", recipientKind: "NONE", sameRoot: false } };
+  }
+  const onlyDigits = digits(source);
+  const wellFormed =
+    scalar && /^[\d.\-/\s]+$/.test(source) && (onlyDigits.length === 11 || onlyDigits.length === 14);
+  if (!wellFormed || (onlyDigits.length === 14 && !normalizeExposureCnpj(onlyDigits))) {
+    return { ok: false, invalid: true, rejection: { reason: "RECIPIENT_MALFORMED", recipientKind: "OTHER", sameRoot: false } };
+  }
+  if (onlyDigits === accountCnpj) return { ok: true };
+  return {
+    ok: false,
+    invalid: false,
+    rejection: {
+      reason: "RECIPIENT_MISMATCH",
+      recipientKind: onlyDigits.length === 14 ? "CNPJ" : "CPF",
+      sameRoot: onlyDigits.length === 14 && onlyDigits.slice(0, 8) === accountCnpj.slice(0, 8),
+    },
+  };
+}
+
+function communicationRef(value: string | null): string | null {
+  return value ? value.replace(/[^A-Za-z0-9-]/g, "").slice(0, 64) || null : null;
 }
 
 /** Perfis institucionais de `GET /api/v1/eu`. */
@@ -118,10 +155,12 @@ export type DomicilioMappedPage = {
   communications: NormalizedCommunicationObservation[];
   /** Uma observação por processo, para a descoberta/conciliação existente vincular a conta. */
   cases: NormalizedCaseObservation[];
-  /** Itens de outro destinatário, descartados. */
+  /** Itens de outro destinatário (CNPJ completo diferente do da conta), descartados. */
   rejectedRecipient: number;
-  /** Itens sem identificador de comunicação, descartados. */
+  /** Itens sem identificador ou com destinatário ausente/malformado, descartados. */
   invalid: number;
+  /** Uma ocorrência sanitizada por item descartado. */
+  rejections: DomicilioRejection[];
 };
 
 export function mapDomicilioCommunicationPage(
@@ -132,23 +171,27 @@ export function mapDomicilioCommunicationPage(
   const list = Array.isArray(record?.data) ? record.data : null;
   const paging = asRecord(record?.page);
   if (!record || !list) {
-    return { page: null, communications: [], cases: [], rejectedRecipient: 0, invalid: 0 };
+    return { page: null, communications: [], cases: [], rejectedRecipient: 0, invalid: 0, rejections: [] };
   }
   const communications: NormalizedCommunicationObservation[] = [];
   const cases = new Map<string, NormalizedCaseObservation>();
   let rejectedRecipient = 0;
   let invalid = 0;
+  const rejections: DomicilioRejection[] = [];
 
   for (const item of list) {
     const row = asRecord(item);
     const sourceCommunicationId = row ? text(row.numeroComunicacao) : null;
     if (!row || !sourceCommunicationId) {
       invalid += 1;
+      rejections.push({ reason: "MISSING_IDENTIFIER", communicationRef: null, recipientKind: "NONE", sameRoot: false });
       continue;
     }
-    const recipient = digits(row.documentoDestinatario);
-    if (!sameCompanyRoot(recipient, context.accountCnpj)) {
-      rejectedRecipient += 1;
+    const recipientCheck = checkRecipient(row.documentoDestinatario, context.accountCnpj);
+    if (recipientCheck.ok === false) {
+      if (recipientCheck.invalid) invalid += 1;
+      else rejectedRecipient += 1;
+      rejections.push({ ...recipientCheck.rejection, communicationRef: communicationRef(sourceCommunicationId) });
       continue;
     }
     const metadata = safeMetadata(row);
@@ -171,8 +214,7 @@ export function mapDomicilioCommunicationPage(
     });
 
     const processKey = normalizeProcessNumber(processNumber);
-    // Só o titular da conta entra na descoberta; filial é exibida na comunicação.
-    if (!processNumber || !processKey || recipient !== context.accountCnpj || cases.has(processKey)) continue;
+    if (!processNumber || !processKey || cases.has(processKey)) continue;
     cases.set(processKey, {
       processNumber,
       tribunal,
@@ -212,5 +254,6 @@ export function mapDomicilioCommunicationPage(
     cases: [...cases.values()],
     rejectedRecipient,
     invalid,
+    rejections,
   };
 }

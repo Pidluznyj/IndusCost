@@ -25,13 +25,15 @@ página `https://docs.pdpj.jus.br/servicos-negociais/domicilio-judicial-eletroni
 | Token (homologação) | `https://sso.stg.cloud.pje.jus.br/auth/realms/pje/protocol/openid-connect/token` |
 | Base (homologação) | `https://gateway.stg.cloud.pje.jus.br/domicilio-eletronico-hml` |
 | Base e token (produção) | **Não constam na documentação pública.** Usar os informados pelo CNJ no credenciamento |
-| `On-behalf-Of` | CPF (11 dígitos) do usuário responsável, em todas as requisições |
+| `On-behalf-Of` | CPF (11 dígitos) "do usuário em nome de quem a operação está sendo executada", para auditoria, nas requisições à API. O contrato não o pede no SSO, e o token é pedido sem ele |
 | `tenantId` | Cabeçalho obrigatório na listagem; obtido em `GET /api/v1/eu` (`perfis[].tenantId`) |
 | Listagem | `GET /api/v1/comunicacoes` — `statusCiente` obrigatório (`A`/`L`/`N`); `dataInicio`+`dataFim` (ISO 8601, no máximo 7 dias) **ou** `numeroProcesso`; `page` (base 0), `size`, `sort` |
 | Resposta | `{ page: { count, pageNumber, pageSize, totalPages }, data: [ComunicacaoProcessualViewModel] }` |
 | Situação (`status`) | `EM_CURSO`, `INTEIRO_TEOR_OBTIDO`, `CIENTE`, `CIENCIA_AUTOMATICA`, `CANCELADA` |
 | Limite de requisições | Não documentado. O cliente respeita `429`/`Retry-After` e um intervalo mínimo por conta |
 | Histórico disponível | Não documentado. A carga inicial é configurável (padrão 30 dias) |
+| Data filtrada por `dataInicio`/`dataFim` | **Não documentada.** A descrição oficial diz só "filtrar comunicações pela data" |
+| Efeito da listagem sobre a situação | Não há afirmação expressa. A ciência é definida como abrir e ler a URL do teor na íntegra, e a listagem aceita filtro de lidas/não lidas |
 
 ### Operações usadas (allowlist)
 
@@ -111,8 +113,17 @@ Isolamento:
 - `GET /api/v1/eu` tem de devolver um perfil com o mesmo CNPJ (e o mesmo tenant, se
   configurado). Se não devolver, a coleta para em `AUTH_ERROR` sem listar.
 - Token, intervalo mínimo, paginação, checkpoint, status e erros são por conta.
-- Comunicação cujo destinatário não é a empresa da conta (raiz de CNPJ diferente) é
-  descartada e contada em `rejectedRecipient`.
+- O destinatário tem de ser o **CNPJ completo** da conta — o mesmo documento do perfil que o
+  CNJ devolveu em `/api/v1/eu`. Filial, outro estabelecimento de mesma raiz, outra empresa ou
+  pessoa física: a comunicação não é gravada. Fica uma ocorrência sanitizada na execução
+  (`rejections`: motivo, tipo do documento, se a raiz coincide e a referência da comunicação;
+  nunca o documento recusado).
+- Não há exceção por representação: a documentação diz que a matriz pode ver comunicações de
+  filiais e coligadas vinculadas, mas pela interface web; nas operações permitidas da API nada
+  comprova que o tenant representa outro CNPJ. Para receber comunicações de uma filial, ela
+  precisa de conta própria (CNPJ, credencial e tenant dela).
+- Destinatário ausente ou malformado torna o registro inválido: não é gravado e o checkpoint
+  não avança (ver seção 5).
 - As empresas são consultadas em paralelo (`PDPJ_DOMICILIO_MAX_CONCURRENCY`, padrão 2,
   máximo 4). A falha de uma não interrompe as outras.
 - Processo com as duas empresas: um processo lógico, dois vínculos e uma comunicação
@@ -123,15 +134,38 @@ Isolamento:
 1. Janelas de até 7 dias desde o checkpoint menos 2 dias de sobreposição. Sem
    checkpoint, volta `PDPJ_DOMICILIO_BACKFILL_DAYS` (padrão 30, máximo 365).
 2. Todas as páginas de cada janela (`page` até `totalPages`).
-3. Releitura por `numeroProcesso` dos processos com comunicação ainda pendente
-   (até 25 por execução), para captar mudança de situação fora da janela.
+3. Releitura por `numeroProcesso` dos processos com comunicação ainda pendente, para captar
+   mudança de situação fora da janela. Até `PDPJ_DOMICILIO_RECONCILE_MAX_PROCESSES` por execução
+   (padrão 25), do menos recentemente relido para o mais recente, em rodízio.
 4. O checkpoint (`lastFullSyncAt`) só avança quando **todas** as janelas foram lidas
-   até a última página. Página faltando, limite de páginas ou erro no meio →
-   resultado `PARTIAL`: grava o que chegou e mantém o checkpoint.
+   até a última página **e** nenhum registro veio fora do contrato. Página faltando, limite
+   de páginas, erro no meio ou registro inválido (sem identificador, destinatário ausente ou
+   malformado) → resultado `PARTIAL`: grava o que é válido e mantém o checkpoint. Recusa por
+   destinatário diferente não trava o checkpoint: o registro foi lido e não pertence à conta.
 5. Comunicações e checkpoint são gravados na mesma transação. Se a gravação falhar,
    nada avança e a próxima execução repete a janela.
 6. Reprocessar o mesmo lote não cria comunicação, evento nem alerta repetido.
 7. Nada é apagado quando a fonte deixa de devolver um registro.
+8. Toda a coleta HTTP termina antes de a gravação começar; não há chamada externa dentro da transação.
+9. Duas coletas do Domicílio não correm juntas no mesmo processo: o job `DOMICILIO` é recusado
+   enquanto o `ALL` coleta, e o `ALL` não repete uma coleta em andamento. Entre processos
+   diferentes (web × linha de comando) a proteção é o `flock` da unit e a trava de execução por
+   job; se ainda assim coincidirem, o efeito é o checkpoint voltar ao valor da execução mais
+   antiga e uma situação ficar defasada até a execução seguinte — nunca um avanço indevido,
+   comunicação duplicada ou evento repetido.
+
+### Cobertura: o que é configuração, não garantia
+
+`PDPJ_DOMICILIO_BACKFILL_DAYS` (30), `PDPJ_DOMICILIO_OVERLAP_DAYS` (2) e
+`PDPJ_DOMICILIO_RECONCILE_MAX_PROCESSES` (25) são pontos de partida a calibrar na homologação.
+Como o contrato não diz sobre qual data o filtro atua nem até onde o histórico vai:
+
+- uma comunicação cuja data de filtro seja anterior à janela e que não esteja pendente em um
+  processo já conhecido **não** é alcançada;
+- mudança de situação é captada na janela de sobreposição ou pela releitura dos pendentes;
+  comunicação já com ciência que depois seja cancelada, ou sem número de processo, só é
+  revista se voltar a cair na janela;
+- "nenhuma comunicação" significa "nenhuma na janela consultada", não "nenhuma no Domicílio".
 
 ## 6. Conciliação
 
@@ -283,9 +317,13 @@ O comando precisa das variáveis do arquivo de segredos no ambiente do processo.
 mecanismo que você já usa para rodar os scripts `legal:exposure:*` com o ambiente do
 serviço (a unit de exemplo em `infra/systemd/legal-exposure/` mostra o `EnvironmentFile`).
 
-Conferir na saída: `outcome` `SUCCESS` ou `NO_RESULTS`, `externalCall: true`, quantidade
-de comunicações. Comparar com o portal do Domicílio da mesma empresa, **sem abrir o
-teor de nenhuma comunicação**.
+Antes do comando, anotar no portal do Domicílio a situação de cada comunicação pendente da
+empresa (**sem abrir o teor**). Conferir na saída: `outcome` `SUCCESS` ou `NO_RESULTS`,
+`externalCall: true`, quantidade de comunicações. Depois, conferir no portal que nenhuma
+situação mudou por causa da listagem. Se alguma tiver mudado, parar: não ligar a integração.
+
+Olhar também, no resumo da execução, `rejections` e `invalid`: registros de outro
+destinatário ou fora do contrato indicam algo a entender antes de seguir.
 
 **G. Gravação limitada** — mesma empresa, `--mode=apply`. Depois:
 
@@ -344,10 +382,14 @@ Havendo dúvida sobre efeito jurídico de qualquer chamada, não ligar a consult
 
 - Endereços de produção do CNJ não estão na documentação pública.
 - Limite de requisições e profundidade do histórico não são documentados.
-- O filtro por data da listagem não diz sobre qual data atua; por isso a sobreposição
-  de 2 dias e a releitura dos processos pendentes.
+- O filtro por data da listagem não diz sobre qual data atua; a sobreposição e a releitura
+  dos pendentes reduzem a lacuna, sem eliminá-la (ver "Cobertura", seção 5).
+- A documentação não afirma expressamente que listar não altera a situação. A allowlist
+  mantém só a listagem; confirmar na homologação comparando a situação no portal antes e
+  depois de uma listagem, sem abrir o teor.
+- O CPF do `On-behalf-Of` tem de ser de pessoa autorizada no perfil da instituição; confirmar
+  com o responsável de cada empresa antes da primeira chamada.
 - Nenhuma chamada real foi feita: o contrato foi conferido no OpenAPI e os testes usam um CNJ simulado.
-- Comunicação de filial (mesma raiz de CNPJ) é aceita na conta da matriz, mas só o CNPJ
-  exato da conta alimenta a descoberta de processo.
+- Comunicação de filial não é coletada pela conta da matriz (CNPJ completo obrigatório).
 - O polo informado pelo Domicílio (`parteInteressada`) fica nos metadados da
   comunicação e não altera o polo do processo.

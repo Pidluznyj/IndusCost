@@ -44,10 +44,8 @@ async function requestToken(input: {
     tokenUrl: input.endpoints.tokenUrl,
     baseUrl: input.endpoints.baseUrl,
     method: "POST",
-    headers: {
-      "content-type": "application/x-www-form-urlencoded",
-      "On-behalf-Of": input.account.onBehalfOf,
-    },
+    // O contrato pede On-behalf-Of nas requisições à API; o SSO recebe só o client_credentials.
+    headers: { "content-type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
       grant_type: "client_credentials",
       client_id: input.account.clientId,

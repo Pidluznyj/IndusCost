@@ -27,7 +27,10 @@ export const DOMICILIO_ALLOWED_HOST_SUFFIXES = [".pje.jus.br", ".pdpj.jus.br", "
 
 /** `dataInicio` e `dataFim` andam juntos, com no máximo 7 dias entre eles. */
 export const DOMICILIO_MAX_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
-/** Releitura a cada execução: cobre atraso de disponibilização e mudança de situação recente. */
+/**
+ * Sobreposição padrão entre execuções. O contrato não diz sobre qual data o filtro
+ * dataInicio/dataFim atua; a sobreposição é uma margem configurável, não garantia de cobertura.
+ */
 export const DOMICILIO_SYNC_OVERLAP_MS = 2 * 24 * 60 * 60 * 1000;
 export const DOMICILIO_PAGE_SIZE = 50;
 
@@ -73,11 +76,12 @@ export function domicilioSyncWindows(input: {
   now: Date;
   checkpoint: string | null;
   backfillDays: number;
+  overlapMs?: number;
 }): DomicilioWindow[] {
   const end = input.now.getTime();
   const checkpointMs = input.checkpoint ? Date.parse(input.checkpoint) : Number.NaN;
   const start = Number.isFinite(checkpointMs)
-    ? Math.min(checkpointMs, end) - DOMICILIO_SYNC_OVERLAP_MS
+    ? Math.min(checkpointMs, end) - (input.overlapMs ?? DOMICILIO_SYNC_OVERLAP_MS)
     : end - input.backfillDays * 24 * 60 * 60 * 1000;
   const windows: DomicilioWindow[] = [];
   for (let cursor = start; cursor < end; cursor += DOMICILIO_MAX_WINDOW_MS) {
