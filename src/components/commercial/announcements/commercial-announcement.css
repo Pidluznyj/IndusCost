@@ -1,0 +1,44 @@
+/*
+ * Fontes da arte do Gerador de Comunicados (Lato e Ubuntu, subconjunto latino).
+ * Ficam embutidas no sistema para a exportação em JPEG não depender de rede.
+ * Nomes próprios de família: não alteram a tipografia do restante do IndusCost.
+ */
+@font-face {
+  font-family: "Comunicado Lato";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("./assets/lato-400.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Comunicado Lato";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("./assets/lato-700.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Comunicado Ubuntu";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("./assets/ubuntu-400.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Comunicado Ubuntu";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("./assets/ubuntu-500.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Comunicado Ubuntu";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("./assets/ubuntu-700.woff2") format("woff2");
+}

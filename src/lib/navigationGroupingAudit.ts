@@ -110,6 +110,9 @@ function hasAppModuleRoute(appTsx: string, moduleId: AppModuleId): boolean {
   if (moduleId === "commercial-policy") {
     return /path=["']commercial\/policy["']/.test(appTsx);
   }
+  if (moduleId === "commercial-announcements") {
+    return /path=["']commercial\/announcements["']/.test(appTsx);
+  }
   if (moduleId === "treasury") {
     return /path=["']finance\/treasury(?:\/\*)?["']/.test(appTsx);
   }

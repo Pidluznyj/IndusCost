@@ -3,6 +3,7 @@
 import { canAccessCommissionsModule } from "@/src/lib/commissionsModulePermissions.js";
 import { canConsultCommercialPolicy } from "@/src/lib/commercialPolicy/commercialPolicyConsultAccess.js";
 import { canViewCommercialPriceTable } from "@/src/lib/commercialPriceTableAccess.js";
+import { canUseCommercialAnnouncementGenerator } from "@/src/lib/commercial/commercialAnnouncementAccess.js";
 import { resolveCrmCommercialPersona } from "@/src/lib/crmCommercialPersona.js";
 import { evaluateFleetRouteAccess } from "./fleetPermissionResolve.js";
 import { PRODUCT_TAB_RESOURCE_KEYS } from "@/src/lib/moduleTabResources.js";
@@ -31,6 +32,7 @@ export type AppModuleId =
   | "pricing"
   | "commercial-price-table"
   | "commercial-policy"
+  | "commercial-announcements"
   | "proposals"
   | "sales-orders"
   | "sales-order-flow"
@@ -56,6 +58,7 @@ export type PermissionChecker = {
   authUser?: {
     effectivePermissions?: string[];
     role?: import("@prisma/client").AppUserRole;
+    accessProfileName?: string | null;
   } | null;
 };
 
@@ -84,6 +87,7 @@ export const SIDEBAR_MODULE_ORDER: AppModuleId[] = [
   "pricing",
   "commercial-price-table",
   "commercial-policy",
+  "commercial-announcements",
   "proposals",
   "sales-orders",
   "sales-order-flow",
@@ -153,6 +157,12 @@ export function canAccessModule(moduleId: AppModuleId, check: PermissionChecker)
         role: check.authUser?.role ?? null,
         mustAcceptCommercialPolicy: (check.authUser as { mustAcceptCommercialPolicy?: boolean | null } | null | undefined)
           ?.mustAcceptCommercialPolicy,
+      });
+    case "commercial-announcements":
+      // Gate por papel/perfil (Super admin + supervisor de vendas), como a Política Comercial.
+      return canUseCommercialAnnouncementGenerator({
+        role: check.authUser?.role ?? null,
+        accessProfileName: check.authUser?.accessProfileName ?? null,
       });
     case "employees":
       return check.hasPermission("employees.view");
@@ -406,6 +416,12 @@ export function resolveModuleIdFromPath(pathname: string): AppModuleId | null {
   ) {
     return "commercial-policy";
   }
+  if (
+    normalized === "/commercial/announcements" ||
+    normalized.startsWith("/commercial/announcements/")
+  ) {
+    return "commercial-announcements";
+  }
   if (normalized === "/supply-chain/purchases" || normalized.startsWith("/supply-chain/purchases/")) {
     return "sc-purchases";
   }
@@ -434,6 +450,7 @@ export function getFirstAllowedModulePath(check: PermissionChecker): string | nu
       if (moduleId === "satisfaction") return "/commercial/satisfaction";
       if (moduleId === "commercial-price-table") return "/commercial/price-table";
       if (moduleId === "commercial-policy") return "/commercial/policy";
+      if (moduleId === "commercial-announcements") return "/commercial/announcements";
       if (moduleId === "treasury") return "/finance/treasury";
       if (moduleId === "invested-capital-recovery")
         return "/finance/invested-capital-recovery";
@@ -467,6 +484,7 @@ export const MODULE_LABELS: Record<AppModuleId, string> = {
   pricing: "Formação de Preço",
   "commercial-price-table": "Tabela comercial",
   "commercial-policy": "Política Comercial",
+  "commercial-announcements": "Gerador de Comunicados",
   proposals: "Propostas",
   "sales-orders": "Pedidos de venda",
   "sales-order-flow": "Fluxo de Pedidos",
