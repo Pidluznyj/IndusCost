@@ -32,6 +32,8 @@ type Fixture = {
   code: string;
   issue: string;
   status?: string;
+  /** Presença do pedido no Nomus (padrão PRESENT). */
+  presence?: string;
   total: number;
   crs?: Cr[];
   plan?: Plan[];
@@ -100,6 +102,10 @@ function fakeDb(fixtures: Fixture[], options: { failAudit?: Set<string>; failLoa
         const status = f.status ?? "SENT_TO_NOMUS";
         if (v.not != null && status === v.not) return false;
         if (v.notIn && v.notIn.includes(status)) return false;
+      } else if (key === "sourcePresenceStatus") {
+        // Ligado por NOMUS_OPS_EXCLUDE_MISSING_SALES_ORDERS_ENABLED (ativo em homologação).
+        const v = value as { not?: string };
+        if (v.not != null && (f.presence ?? "PRESENT") === v.not) return false;
       } else if (key === "issueDate") {
         const v = value as { gte?: Date; lte?: Date };
         const at = new Date(`${f.issue}T12:00:00-03:00`).getTime();
@@ -127,7 +133,7 @@ function fakeDb(fixtures: Fixture[], options: { failAudit?: Set<string>; failLoa
           totalNetValue: f.total,
           nomusSellerName: "Ana",
           responsible: null,
-          sourcePresenceStatus: null,
+          sourcePresenceStatus: f.presence ?? "PRESENT",
           companyIssuer: "Empresa",
           Customer: { companyName: `Cliente ${f.code}`, tradeName: null, taxId: null },
           externalCustomerId: 1,
@@ -379,6 +385,29 @@ describe("Recebíveis Mensais — seleção por vencimento", () => {
     }));
     const db = fakeDb(many, { failLoaderAt: 2 });
     await assert.rejects(() => load(db), /timeout na carga em lote/);
+  });
+});
+
+describe("Recebíveis Mensais — presença no Nomus", () => {
+  const FLAG = "NOMUS_OPS_EXCLUDE_MISSING_SALES_ORDERS_ENABLED";
+
+  it("com a exclusão de ausentes ligada (como em homologação), pedido ausente no Nomus fica fora; o resto não muda", async () => {
+    const previous = process.env[FLAG];
+    const fixtures: Fixture[] = [
+      ...scenario(),
+      { id: "so-00008", code: "PD 00008", issue: "2025-06-01", presence: "MISSING_CONFIRMED", total: 2000, plan: [{ n: 1, due: "2026-10-05", amount: 2000 }] },
+    ];
+    try {
+      process.env[FLAG] = "1";
+      const on = await load(fakeDb(fixtures));
+      assert.deepEqual(on.rows.map((r) => r.salesOrderId).sort(), ELIGIBLE);
+      delete process.env[FLAG];
+      const off = await load(fakeDb(fixtures));
+      assert.deepEqual(off.rows.map((r) => r.salesOrderId).sort(), [...ELIGIBLE, "so-00008"].sort());
+    } finally {
+      if (previous === undefined) delete process.env[FLAG];
+      else process.env[FLAG] = previous;
+    }
   });
 });
 
