@@ -1,5 +1,5 @@
 import React, { useMemo } from "react";
-import type { BrandingSettingsDTO } from "@/src/types/branding";
+import { DEFAULT_BRANDING, type BrandingSettingsDTO } from "@/src/types/branding";
 import { PrintHeader } from "@/src/components/print/PrintHeader";
 import {
   displayFinanceText,
@@ -29,6 +29,12 @@ export function SalesOrderMonthlyReceivablesReportPrintDocument({
     () => payload.period.months.map((m) => m.key),
     [payload.period.months]
   );
+  const metaLines = [
+    { label: "Emitido em", value: formatFinanceDateTime(payload.generatedAt) },
+    { label: "Emitido por", value: payload.emitterName?.trim() || "—" },
+    { label: "Vencimento", value: `${payload.period.startMonth} — ${payload.period.endMonth}` },
+    { label: "Pedidos", value: formatFinanceInteger(payload.pagination.totalRows) },
+  ];
 
   return (
     <div
@@ -36,8 +42,9 @@ export function SalesOrderMonthlyReceivablesReportPrintDocument({
       className="sales-orders-print-root sales-orders-receivables-print-route"
     >
       <PrintHeader
-        branding={branding}
-        title={SALES_ORDER_MONTHLY_RECEIVABLES_REPORT_TITLE}
+        branding={branding ?? DEFAULT_BRANDING}
+        documentTitle={SALES_ORDER_MONTHLY_RECEIVABLES_REPORT_TITLE}
+        metaLines={metaLines}
         subtitle={SALES_ORDER_MONTHLY_RECEIVABLES_REPORT_SUBTITLE}
       />
 
@@ -108,12 +115,6 @@ export function SalesOrderMonthlyReceivablesReportPrintDocument({
         </tbody>
       </table>
 
-      {payload.truncated ? (
-        <p className="sales-orders-print-disclaimer">
-          Exibindo {payload.rows.length} de {payload.totalOrdersInScope} pedidos (limite{" "}
-          {payload.rowsLimit}).
-        </p>
-      ) : null}
 
       {payload.warnings.length > 0 ? (
         <p className="sales-orders-print-disclaimer">{payload.warnings.join(" · ")}</p>

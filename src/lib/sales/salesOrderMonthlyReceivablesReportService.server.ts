@@ -6,10 +6,11 @@
  * Linhas: FIN-08 (`buildFinanceArEffectiveTitles` via adapter).
  * Somente leitura — sem escrita em Pedido/CR/Documento/Fluxo.
  */
-import type { PrismaClient } from "@prisma/client";
+import type { Prisma, PrismaClient } from "@prisma/client";
 import { getSalesOrderNetValue } from "@/src/lib/crmCommercialOrderRules.js";
 import { shouldIncludeSalesOrderInOperationalReceivables } from "@/src/lib/financeArCancelledSalesOrderExclusion.js";
 import { getOrderFullAudit } from "@/src/lib/finance/orderFullAuditService.js";
+import { loadCashFlowOrderProjections } from "@/src/lib/finance/cashFlowOrderProjectionLoader.server.js";
 import { buildSalesOrderEffectiveFinancialSchedule } from "@/src/lib/finance/salesOrderEffectiveFinancialSchedule.js";
 import { buildEffectiveScheduleInputFromAudit } from "@/src/lib/sales-orders/salesOrderDetailEffectiveFinancial.js";
 import {
@@ -23,13 +24,13 @@ import {
   buildSalesOrderReportFilterLabels,
   computeMonthlyReceivablesTotalsFromRows,
   defaultDueMonthRange,
+  monthlyReceivablesIssueNotAppliedLabel,
   parseYearMonthKey,
   rowHasReceivablesInSelectedPeriod,
   SALES_ORDER_MONTHLY_RECEIVABLES_MAX_MONTHS,
   SALES_ORDER_MONTHLY_RECEIVABLES_PAGE_SIZE_DEFAULT,
   SALES_ORDER_MONTHLY_RECEIVABLES_REPORT_SUBTITLE,
   SALES_ORDER_MONTHLY_RECEIVABLES_REPORT_TITLE,
-  SALES_ORDER_MONTHLY_RECEIVABLES_ROWS_LIMIT,
   yearMonthKeyFromDueIso,
   type SalesOrderMonthlyReceivablesDetailPayload,
   type SalesOrderMonthlyReceivablesFinancialSituation,
@@ -46,8 +47,48 @@ import {
   mapEffectiveLineToDetail,
   rowMatchesOriginFilter,
 } from "./salesOrderMonthlyReceivablesReportMath.js";
+import {
+  buildCandidateDueWindow,
+  projectionHasDueInWindow,
+  type MonthlyReceivablesCandidateProjection,
+} from "./salesOrderMonthlyReceivablesCandidates.js";
 
 const CONCURRENCY = 4;
+
+/**
+ * Tamanhos de lote, não tetos: a população inteira é percorrida em páginas por id
+ * (ordem determinística) e os candidatos são selecionados lote a lote. Nada é descartado.
+ */
+export const MONTHLY_RECEIVABLES_POPULATION_PAGE_SIZE = 1000;
+export const MONTHLY_RECEIVABLES_CANDIDATE_BATCH_SIZE = 200;
+
+/** Dependências substituíveis em teste; em produção, as funções canônicas. */
+export type MonthlyReceivablesReportDeps = {
+  loadProjections: (
+    prisma: PrismaClient,
+    input: { salesOrderIds: string[]; referenceDate?: Date }
+  ) => Promise<Map<string, MonthlyReceivablesCandidateProjection>>;
+  getOrderFullAudit: typeof getOrderFullAudit;
+};
+
+const DEFAULT_DEPS: MonthlyReceivablesReportDeps = {
+  loadProjections: loadCashFlowOrderProjections,
+  getOrderFullAudit,
+};
+
+const POPULATION_SELECT = {
+  id: true,
+  orderCode: true,
+  status: true,
+  issueDate: true,
+  totalNetValue: true,
+  nomusSellerName: true,
+  responsible: true,
+  sourcePresenceStatus: true,
+  companyIssuer: true,
+  Customer: { select: { companyName: true, tradeName: true, taxId: true } },
+  externalCustomerId: true,
+} as const;
 
 function isoOrNull(value: Date | null | undefined): string | null {
   if (!value) return null;
@@ -180,7 +221,8 @@ export type LoadMonthlyReceivablesReportInput = {
 
 export async function loadSalesOrderMonthlyReceivablesReportPayload(
   prisma: PrismaClient,
-  input: LoadMonthlyReceivablesReportInput
+  input: LoadMonthlyReceivablesReportInput,
+  deps: MonthlyReceivablesReportDeps = DEFAULT_DEPS
 ): Promise<SalesOrderMonthlyReceivablesReportPayload> {
   const now = input.referenceDate ?? new Date();
   const defaults = defaultDueMonthRange(now);
@@ -255,38 +297,56 @@ export async function loadSalesOrderMonthlyReceivablesReportPayload(
     });
   }
 
-  const orders = await prisma.salesOrder.findMany({
-    where,
-    select: {
-      id: true,
-      orderCode: true,
-      status: true,
-      issueDate: true,
-      totalNetValue: true,
-      nomusSellerName: true,
-      responsible: true,
-      sourcePresenceStatus: true,
-      companyIssuer: true,
-      Customer: { select: { companyName: true, tradeName: true, taxId: true } },
-      externalCustomerId: true,
-    },
-    orderBy: { issueDate: "desc" },
-    take: SALES_ORDER_MONTHLY_RECEIVABLES_ROWS_LIMIT + 1,
-  });
+  // 1. População completa dos filtros do pedido, em páginas por id (sem corte).
+  type PopulationOrder = Prisma.SalesOrderGetPayload<{ select: typeof POPULATION_SELECT }>;
+  const population: PopulationOrder[] = [];
+  let cursor: string | null = null;
+  for (;;) {
+    const page: PopulationOrder[] = await prisma.salesOrder.findMany({
+      where,
+      select: POPULATION_SELECT,
+      orderBy: { id: "asc" },
+      take: MONTHLY_RECEIVABLES_POPULATION_PAGE_SIZE,
+      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+    });
+    population.push(...page);
+    if (page.length < MONTHLY_RECEIVABLES_POPULATION_PAGE_SIZE) break;
+    cursor = page[page.length - 1]!.id;
+  }
 
-  const truncated = orders.length > SALES_ORDER_MONTHLY_RECEIVABLES_ROWS_LIMIT;
-  const scoped = orders.slice(0, SALES_ORDER_MONTHLY_RECEIVABLES_ROWS_LIMIT);
+  // 2. Candidatos: CR ou parcela prevista vencendo na janela, pela carga em lote
+  //    canônica (a mesma do Fluxo de Caixa). Falha aqui interrompe o relatório:
+  //    sem saber os candidatos, qualquer resultado seria incompleto.
+  const operational = population.filter(
+    (order) =>
+      includeCancelled ||
+      shouldIncludeSalesOrderInOperationalReceivables({
+        status: order.status,
+        sourcePresenceStatus: order.sourcePresenceStatus,
+      })
+  );
+  const dueWindow = buildCandidateDueWindow(monthKeys);
+  const scoped: PopulationOrder[] = [];
+  for (let i = 0; i < operational.length; i += MONTHLY_RECEIVABLES_CANDIDATE_BATCH_SIZE) {
+    const batch = operational.slice(i, i + MONTHLY_RECEIVABLES_CANDIDATE_BATCH_SIZE);
+    const projections = await deps.loadProjections(prisma, {
+      salesOrderIds: batch.map((order) => order.id),
+      referenceDate: now,
+    });
+    for (const order of batch) {
+      const projection = projections.get(order.id);
+      // Sem projeção não há como descartar com segurança: o cálculo canônico decide.
+      if (!projection || projectionHasDueInWindow(projection, dueWindow)) scoped.push(order);
+    }
+  }
+
   const warnings: string[] = [];
   if (periodTooWide) {
     warnings.push(
       `Intervalo limitado a ${SALES_ORDER_MONTHLY_RECEIVABLES_MAX_MONTHS} meses. Exporte ou reduza o período.`
     );
   }
-  if (truncated) {
-    warnings.push(
-      `População truncada em ${SALES_ORDER_MONTHLY_RECEIVABLES_ROWS_LIMIT} pedidos. Refine os filtros.`
-    );
-  }
+  const failedOrderIds = new Set<string>();
 
   const builtRows: SalesOrderMonthlyReceivablesRow[] = [];
   for (let i = 0; i < scoped.length; i += CONCURRENCY) {
@@ -303,11 +363,12 @@ export async function loadSalesOrderMonthlyReceivablesReportPayload(
           return null;
         }
         try {
-          const audit = await getOrderFullAudit({
+          const audit = await deps.getOrderFullAudit({
             salesOrderId: order.id,
             orderCode: order.orderCode,
           });
           if (!("ok" in audit) || audit.ok !== true) {
+            failedOrderIds.add(order.id);
             return buildMonthlyReceivablesRowFromLines({
               salesOrderId: order.id,
               orderCode: order.orderCode,
@@ -374,6 +435,7 @@ export async function loadSalesOrderMonthlyReceivablesReportPayload(
             order.orderCode,
             err
           );
+          failedOrderIds.add(order.id);
           return buildMonthlyReceivablesRowFromLines({
             salesOrderId: order.id,
             orderCode: order.orderCode,
@@ -397,7 +459,18 @@ export async function loadSalesOrderMonthlyReceivablesReportPayload(
     }
   }
 
+  const eligibleOrders = builtRows.filter(
+    (row) => !failedOrderIds.has(row.salesOrderId) && rowHasReceivablesInSelectedPeriod(row)
+  ).length;
+  if (failedOrderIds.size > 0) {
+    warnings.push(
+      `Relatório incompleto: ${failedOrderIds.size} pedido(s) não puderam ser calculados e aparecem marcados com falha. Os totais não incluem os recebíveis desses pedidos.`
+    );
+  }
+
   let filtered = builtRows.filter((row) => {
+    // Falha no cálculo: a linha fica visível (marcada), nunca some em silêncio.
+    if (failedOrderIds.has(row.salesOrderId)) return true;
     // Vencimento DE/ATÉ: só pedidos com ao menos um título no período (após demais filtros de linha).
     if (!rowHasReceivablesInSelectedPeriod(row)) return false;
     if (onlyDivergent && Math.abs(row.difference) <= 1) return false;
@@ -458,6 +531,9 @@ export async function loadSalesOrderMonthlyReceivablesReportPayload(
       month: appliedFilters.month,
       search: appliedFilters.search,
     }),
+    ...[monthlyReceivablesIssueNotAppliedLabel(appliedFilters)].filter(
+      (line): line is NonNullable<typeof line> => line != null
+    ),
     { label: "Vencimento de", value: dueMonthFrom },
     { label: "Vencimento até", value: dueMonthTo },
     {
@@ -490,9 +566,13 @@ export async function loadSalesOrderMonthlyReceivablesReportPayload(
       totalPages,
     },
     rows: pageRows,
-    truncated,
-    totalOrdersInScope: scoped.length,
-    rowsLimit: SALES_ORDER_MONTHLY_RECEIVABLES_ROWS_LIMIT,
+    selection: {
+      populationOrders: population.length,
+      candidateOrders: scoped.length,
+      eligibleOrders,
+      failedOrders: failedOrderIds.size,
+      complete: failedOrderIds.size === 0,
+    },
     warnings,
   };
 }

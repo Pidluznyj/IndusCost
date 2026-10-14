@@ -33,6 +33,7 @@ export function buildSalesOrderMonthlyReceivablesXlsxBuffer(
       `Período vencimento: ${payload.period.startMonth} — ${payload.period.endMonth}`,
     ],
     [`Pedidos no escopo: ${payload.totals.orderCount}`],
+    ...payload.warnings.map((warning) => [`Aviso: ${warning}`]),
     [],
     ["Filtros aplicados"],
     ...payload.filterLabels.map((f) => [f.label, f.value]),

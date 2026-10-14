@@ -7,11 +7,16 @@ import { buildSalesOrderEffectiveFinancialSchedule } from "@/src/lib/finance/sal
 import { buildFinanceArEffectiveTitles } from "@/src/lib/finance/financeAccountsReceivableEffectiveTitles.js";
 import type { FinanceArDashboardRow } from "@/src/lib/financeAccountsReceivableDashboard.js";
 import {
+  buildSalesOrderListWhereForQuery,
+  parseSalesOrderListQuery,
+} from "@/src/lib/salesOrderListQuery.server.js";
+import {
   buildMonthColumns,
   computeMonthlyReceivablesTotalsFromRows,
   currentYearMonthKey,
   defaultDueMonthRange,
   defaultMonthlyReceivablesYearFilters,
+  monthlyReceivablesIssueNotAppliedLabel,
   formatYearMonthKey,
   rowHasReceivablesInSelectedPeriod,
   scrollLeftToAlignMonthAfterSticky,
@@ -343,13 +348,87 @@ describe("salesOrderMonthlyReceivablesReport — paridade FIN-08", () => {
     assert.equal(formatYearMonthKey(2026, 7), "2026-07");
   });
 
-  it("filtro inicial da UI = ano calendário (emissão + vencimento)", () => {
-    const filters = defaultMonthlyReceivablesYearFilters(new Date(2026, 6, 17));
+  it("filtro inicial da UI = vencimento do mês corrente a dezembro; emissão não aplicada", () => {
+    const filters = defaultMonthlyReceivablesYearFilters(new Date("2026-07-17T12:00:00-03:00"));
     assert.equal(filters.year, 2026);
-    assert.equal(filters.dueMonthFrom, "2026-01");
+    assert.equal(filters.dueMonthFrom, "2026-07");
     assert.equal(filters.dueMonthTo, "2026-12");
-    assert.equal(filters.startDate, "2026-01-01");
-    assert.equal(filters.endDate, "2026-12-31");
+    assert.equal(filters.startDate, "");
+    assert.equal(filters.endDate, "");
+  });
+
+  it("emissão não aplicada vira rótulo explícito; qualquer filtro de emissão o remove", () => {
+    const none = { startDate: null, endDate: null, year: null, month: null };
+    assert.deepEqual(monthlyReceivablesIssueNotAppliedLabel(none), { label: "Emissão", value: "Todas" });
+    assert.equal(monthlyReceivablesIssueNotAppliedLabel({ ...none, startDate: "2025-01-01" }), null);
+    assert.equal(monthlyReceivablesIssueNotAppliedLabel({ ...none, endDate: "2025-12-31" }), null);
+    assert.equal(monthlyReceivablesIssueNotAppliedLabel({ ...none, year: 2025 }), null);
+    assert.equal(monthlyReceivablesIssueNotAppliedLabel({ ...none, month: 3 }), null);
+  });
+
+  it("vencimento inicial segue a data corrente, inclusive dezembro e virada do ano", () => {
+    const cases: Array<[string, string, string]> = [
+      ["2026-10-14T09:00:00-03:00", "2026-10", "2026-12"],
+      ["2026-11-01T00:00:00-03:00", "2026-11", "2026-12"],
+      ["2026-12-20T15:00:00-03:00", "2026-12", "2026-12"],
+      ["2027-01-01T00:00:00-03:00", "2027-01", "2027-12"],
+      ["2027-06-15T12:00:00-03:00", "2027-06", "2027-12"],
+    ];
+    for (const [now, from, to] of cases) {
+      const filters = defaultMonthlyReceivablesYearFilters(new Date(now));
+      assert.deepEqual([filters.dueMonthFrom, filters.dueMonthTo], [from, to], now);
+    }
+  });
+
+  it("mês e ano são os de São Paulo, não os de UTC", () => {
+    // 31/12/2026 22:00 em São Paulo já é 01/01/2027 em UTC.
+    const lateNewYearsEve = defaultMonthlyReceivablesYearFilters(new Date("2027-01-01T01:00:00Z"));
+    assert.deepEqual([lateNewYearsEve.dueMonthFrom, lateNewYearsEve.dueMonthTo], ["2026-12", "2026-12"]);
+    // 30/09/2026 21:30 em São Paulo já é 01/10 em UTC.
+    assert.equal(defaultMonthlyReceivablesYearFilters(new Date("2026-10-01T00:30:00Z")).dueMonthFrom, "2026-09");
+    // 01/11/2026 00:00 em São Paulo.
+    assert.equal(defaultMonthlyReceivablesYearFilters(new Date("2026-11-01T03:00:00Z")).dueMonthFrom, "2026-11");
+  });
+
+  it("sem emissão na consulta, a população de pedidos não tem restrição de data de emissão", () => {
+    const issueClause = (query: Record<string, unknown>) =>
+      JSON.stringify(buildSalesOrderListWhereForQuery(parseSalesOrderListQuery(query), null)).includes("issueDate");
+    // Consulta padrão da tela: só vencimento.
+    assert.equal(issueClause({ dueMonthFrom: "2026-10", dueMonthTo: "2026-12", page: "1" }), false);
+    // Emissão informada manualmente continua filtrando.
+    assert.equal(issueClause({ dueMonthFrom: "2026-10", dueMonthTo: "2026-12", startDate: "2025-01-01" }), true);
+    assert.equal(issueClause({ dueMonthFrom: "2026-10", dueMonthTo: "2026-12", endDate: "2025-12-31" }), true);
+  });
+
+  it("pedido emitido no ano anterior com parcela no período entra na matriz", () => {
+    const schedule = buildSalesOrderEffectiveFinancialSchedule({
+      salesOrderId: "so-2025",
+      orderCode: "PD 07000",
+      originalInstallments: [
+        { installmentNumber: 1, dueDate: "2026-09-15", amount: "20000.00" },
+        { installmentNumber: 2, dueDate: "2026-10-15", amount: "20000.00" },
+      ],
+      items: [
+        { salesOrderItemId: "item-1", plannedNetValue: "40000.00", status: 1, orderedQuantity: 1, fulfilledQuantity: 0 },
+      ],
+      referenceDate: REF,
+    });
+    const lines = listEffectiveReceivableLinesFromSchedule({ schedule, referenceDate: REF });
+    const row = buildMonthlyReceivablesRowFromLines({
+      salesOrderId: "so-2025",
+      orderCode: "PD 07000",
+      customerName: "Cliente",
+      issueDate: "2025-11-10",
+      sellerName: "Ana",
+      status: "SENT_TO_NOMUS",
+      statusLabel: "Enviado",
+      orderCommercialTotal: 40_000,
+      monthKeys: ["2026-10", "2026-11", "2026-12"],
+      lines,
+    });
+    assert.equal(row.months["2026-10"]!.amount, 20_000);
+    assert.equal(row.outsidePeriodTotal, 20_000);
+    assert.equal(rowHasReceivablesInSelectedPeriod(row), true);
   });
 
   it("mês corrente YYYY-MM e scrollLeft alinham após colunas sticky", () => {

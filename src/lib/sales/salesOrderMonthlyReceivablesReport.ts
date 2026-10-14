@@ -15,7 +15,6 @@ export const SALES_ORDER_MONTHLY_RECEIVABLES_REPORT_SUBTITLE =
   "Agenda financeira efetiva (FIN-05/FIN-08) agrupada por mês de vencimento — só pedidos com recebível no período";
 export const SALES_ORDER_MONTHLY_RECEIVABLES_MAX_MONTHS = 24;
 export const SALES_ORDER_MONTHLY_RECEIVABLES_DEFAULT_HORIZON_MONTHS = 12;
-export const SALES_ORDER_MONTHLY_RECEIVABLES_ROWS_LIMIT = 500;
 export const SALES_ORDER_MONTHLY_RECEIVABLES_PAGE_SIZE_DEFAULT = 50;
 
 export type SalesOrderMonthlyReceivablesQualityStatus =
@@ -169,10 +168,22 @@ export type SalesOrderMonthlyReceivablesReportPayload = {
     totalPages: number;
   };
   rows: SalesOrderMonthlyReceivablesRow[];
-  truncated: boolean;
-  totalOrdersInScope: number;
-  rowsLimit: number;
+  /** Como a população foi formada. Sem corte: todos os candidatos são calculados. */
+  selection: SalesOrderMonthlyReceivablesSelection;
   warnings: string[];
+};
+
+export type SalesOrderMonthlyReceivablesSelection = {
+  /** Pedidos que atendem aos filtros do pedido (status, cliente, vendedor, emissão…). */
+  populationOrders: number;
+  /** Desses, os que têm CR ou parcela prevista vencendo na janela do período. */
+  candidateOrders: number;
+  /** Candidatos com recebível no período pelo cálculo canônico (antes dos filtros de linha). */
+  eligibleOrders: number;
+  /** Candidatos cujo cálculo canônico falhou; aparecem nas linhas, marcados. */
+  failedOrders: number;
+  /** false quando algum candidato falhou: os totais não incluem esses pedidos. */
+  complete: boolean;
 };
 
 export {
@@ -286,9 +297,26 @@ export function defaultDueMonthRange(referenceDate = new Date()): {
   return { dueMonthFrom: from, dueMonthTo: formatYearMonthKey(ey, em) };
 }
 
+/** Fuso operacional da empresa: a data "de hoje" dos filtros é a de São Paulo. */
+export const SALES_ORDER_MONTHLY_RECEIVABLES_TIME_ZONE = "America/Sao_Paulo";
+
+/** Ano e mês civis em São Paulo no instante dado, sem passar por UTC nem pelo fuso do navegador. */
+export function saoPauloYearMonth(at: Date): { year: number; month: number } {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: SALES_ORDER_MONTHLY_RECEIVABLES_TIME_ZONE,
+    year: "numeric",
+    month: "numeric",
+  }).formatToParts(at);
+  const pick = (type: "year" | "month") => Number(parts.find((part) => part.type === type)?.value);
+  return { year: pick("year"), month: pick("month") };
+}
+
 /**
- * Filtro inicial da UI: ano calendário corrente (emissão + vencimento).
- * Alinha a tela ao padrão de Pedidos de Venda (ano atual).
+ * Filtro inicial da UI (abertura da tela e "Limpar filtros"):
+ * - vencimento: do mês corrente (dia 1) até dezembro (dia 31) do ano corrente;
+ * - emissão: não aplicada (vazio). O eixo da tela é o vencimento; um pedido de ano
+ *   anterior com parcela no período entra. O usuário ainda pode filtrar a emissão.
+ * Mês e ano são os de São Paulo.
  */
 export function defaultMonthlyReceivablesYearFilters(referenceDate = new Date()): {
   dueMonthFrom: string;
@@ -297,14 +325,29 @@ export function defaultMonthlyReceivablesYearFilters(referenceDate = new Date())
   endDate: string;
   year: number;
 } {
-  const year = referenceDate.getFullYear();
+  const { year, month } = saoPauloYearMonth(referenceDate);
   return {
     year,
-    dueMonthFrom: formatYearMonthKey(year, 1),
+    dueMonthFrom: formatYearMonthKey(year, month),
     dueMonthTo: formatYearMonthKey(year, 12),
-    startDate: `${year}-01-01`,
-    endDate: `${year}-12-31`,
+    startDate: "",
+    endDate: "",
   };
+}
+
+/**
+ * Emissão não aplicada = nenhum parâmetro de emissão na consulta (startDate, endDate,
+ * year, month). Tela, API, Excel e PDF usam a mesma regra; o rótulo deixa isso explícito
+ * nos filtros aplicados das exportações.
+ */
+export function monthlyReceivablesIssueNotAppliedLabel(filters: {
+  startDate: string | null;
+  endDate: string | null;
+  year: number | null;
+  month: number | null;
+}): SalesOrderReportFilterLabel | null {
+  const applied = Boolean(filters.startDate || filters.endDate) || filters.year != null || filters.month != null;
+  return applied ? null : { label: "Emissão", value: "Todas" };
 }
 
 export function emptyMonthCell(): SalesOrderMonthlyReceivablesCell {
