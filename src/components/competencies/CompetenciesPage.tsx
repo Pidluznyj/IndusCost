@@ -10,7 +10,7 @@ import { usePermissions } from "@/src/hooks/usePermissions";
 import type { UiPermissionAction } from "@/src/lib/actionPermissionAccess";
 import { resolveCompetencyCapabilities } from "@/src/lib/competencies/competencyAccess";
 import { deleteAssessment, deleteTraining, setCompetencyLevel, setTrainingStatus } from "@/src/lib/competencies/competencyClient";
-import { COMPETENCY_SHIFTS, businessTodayIso, competencyShiftLabel } from "@/src/lib/competencies/competencyDomain";
+import { businessTodayIso } from "@/src/lib/competencies/competencyDomain";
 import type { CompetencyAssessmentDto, TrainingDto } from "@/src/lib/competencies/competencyTypes";
 import { CompetencyAssessmentOverlay, type AssessmentPreset } from "./CompetencyAssessmentOverlay";
 import { CompetencyAssessmentsTab } from "./CompetencyAssessmentsTab";
@@ -19,6 +19,7 @@ import { CompetencyCatalogOverlay } from "./CompetencyCatalogOverlay";
 import { CompetencyDepartmentsTab } from "./CompetencyDepartmentsTab";
 import { CompetencyImportOverlay } from "./CompetencyImportOverlay";
 import { CompetencyMatrixTab } from "./CompetencyMatrixTab";
+import { CompetencyViewFilters } from "./CompetencyViewFilters";
 import { CompetencyOverviewTab } from "./CompetencyOverviewTab";
 import { CompetencyTrainingOverlay, type TrainingPreset } from "./CompetencyTrainingOverlay";
 import { CompetencyTrainingsTab } from "./CompetencyTrainingsTab";
@@ -59,6 +60,9 @@ function CompetenciesModule() {
   );
   const [departmentFilter, setDepartmentFilter] = useState("");
   const [shiftFilter, setShiftFilter] = useState<string[]>([]);
+  const [matrixGroupsOpen, setMatrixGroupsOpen] = useState<string[]>([]);
+  const toggleShift = (shift: string) =>
+    setShiftFilter((current) => (current.includes(shift) ? current.filter((item) => item !== shift) : [...current, shift].sort()));
   const { ws, reload } = useCompetencyWorkspace(caps, { departmentId: departmentFilter || null, shifts: shiftFilter });
   const [tab, setTab] = useState<TabId>("visao");
   const [modal, setModal] = useState<Modal>(null);
@@ -185,43 +189,13 @@ function CompetenciesModule() {
       </div>
 
       {activeTab === "visao" || activeTab === "matriz" ? (
-        <div className="flex flex-wrap items-end gap-3" data-testid="competency-view-filters">
-          <label className="flex min-w-[12rem] flex-col gap-1 text-xs font-semibold">
-            Departamento
-            <select
-              value={departmentFilter}
-              onChange={(event) => setDepartmentFilter(event.target.value)}
-              className="h-9 rounded-md border border-border bg-background px-2 text-sm font-normal"
-              data-testid="competency-filter-department"
-            >
-              <option value="">Todos</option>
-              {(ws.options.data?.departments ?? []).map((department) => (
-                <option key={department.id} value={department.id}>
-                  {department.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <fieldset className="flex flex-wrap items-center gap-3">
-            <legend className="text-xs font-semibold">Turnos</legend>
-            {COMPETENCY_SHIFTS.map((shift) => (
-              <label key={shift} className="inline-flex items-center gap-1.5 text-sm">
-                <input
-                  type="checkbox"
-                  checked={shiftFilter.includes(shift)}
-                  onChange={() =>
-                    setShiftFilter((current) => (current.includes(shift) ? current.filter((item) => item !== shift) : [...current, shift].sort()))
-                  }
-                  data-testid={`competency-filter-shift-${shift}`}
-                />
-                {competencyShiftLabel(shift)}
-              </label>
-            ))}
-          </fieldset>
-          <p className="max-w-xl text-xs text-muted-foreground">
-            O departamento filtra colaboradores pelo vínculo oficial. O turno filtra as competências configuradas. Não há turno cadastrado no colaborador.
-          </p>
-        </div>
+        <CompetencyViewFilters
+          departmentId={departmentFilter}
+          departments={ws.options.data?.departments ?? []}
+          shifts={shiftFilter}
+          onDepartmentChange={setDepartmentFilter}
+          onToggleShift={toggleShift}
+        />
       ) : null}
 
       <OverlayTabs<TabId> tabs={tabs} active={activeTab} onChange={setTab} variant="pill" ariaLabel="Seções de competências" testId="competencies-tabs" />
@@ -246,7 +220,19 @@ function CompetenciesModule() {
         <CompetencyOverviewTab overview={ws.overview} onRetry={() => void reload(["overview"])} />
       ) : null}
       {activeTab === "matriz" ? (
-        <CompetencyMatrixTab matrix={ws.matrix} canEdit={caps.editMatrix} onSetLevel={onSetLevel} onRetry={() => void reload(["matrix"])} />
+        <CompetencyMatrixTab
+          matrix={ws.matrix}
+          canEdit={caps.editMatrix}
+          onSetLevel={onSetLevel}
+          onRetry={() => void reload(["matrix"])}
+          departmentId={departmentFilter}
+          departments={ws.options.data?.departments ?? []}
+          shifts={shiftFilter}
+          onDepartmentChange={setDepartmentFilter}
+          onToggleShift={toggleShift}
+          expandedKeys={matrixGroupsOpen}
+          onExpandedKeysChange={setMatrixGroupsOpen}
+        />
       ) : null}
       {activeTab === "avaliacoes" ? (
         <CompetencyAssessmentsTab
