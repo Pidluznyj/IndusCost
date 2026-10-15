@@ -61,6 +61,9 @@ export function createTreasuryCaixaScenariosControllers(
         const year = parseIntParam(q.year);
         const month = parseIntParam(q.month);
         const day = parseIntParam(q.day);
+        const extendRaw = parseStringParam(q.extendDueEstimatesBeyondAnchorYear);
+        const extendDueEstimatesBeyondAnchorYear =
+          extendRaw === "1" || extendRaw === "true";
 
         const result = await service.getBoard({
           asOfCivilDate: asOfCivilDate ?? null,
@@ -68,6 +71,7 @@ export function createTreasuryCaixaScenariosControllers(
           year: year ?? null,
           month: month ?? null,
           day: day ?? null,
+          extendDueEstimatesBeyondAnchorYear,
         });
         res.status(200).json({ ...result, requestId });
       } catch (err) {

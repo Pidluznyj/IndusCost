@@ -1,25 +1,46 @@
 /**
  * Projeção do caixa — cenários — VISÃO AMPLIADA (apresentação).
  *
- * NÃO é um segundo motor: o modal pede ao MESMO endpoint dos cenários um
- * horizonte maior (o serviço já aceita e clampa `horizonDays` até 365) e
- * desenha com o MESMO componente/`buildRows`. Este arquivo só resolve o
- * horizonte prospectivo, o recorte local (slicer) e os KPIs derivados —
+ * NÃO é um segundo motor: o modal pede ao MESMO endpoint dos cenários o
+ * horizonte de HOJE até a data final pedida (o serviço aceita até 366 dias
+ * e, sem o parâmetro explícito, continua clampando em silêncio para os
+ * recortes do card) e desenha com o MESMO componente/`buildRows`. Este
+ * arquivo resolve o período, o recorte local (slicer) e os KPIs derivados —
  * nenhuma fórmula financeira vive aqui.
  *
  * SEMÂNTICA TEMPORAL (motor real): a projeção é PROSPECTIVA — janela civil
  * de asOf (hoje) até asOf + horizonDays. Não existe projeção retroativa; o
- * board que alimenta o motor cobre o ANO CIVIL do asOf. Por isso a visão
- * ampliada projeta HOJE → 31/12 do ano corrente (o máximo semanticamente
- * rico), e os presets/datas/brush RECORTAM localmente essa janela diária.
+ * passado realizado entra como PREFIXO da Linha do tempo do ano pedido.
+ * O padrão da visão ampliada continua 01/01 → 31/12 do ano de hoje.
+ * Período que o motor não cobre é recusado com mensagem — nunca truncado.
  *
  * Datas são strings civis (YYYY-MM-DD) de ponta a ponta — nada de
- * `new Date("YYYY-MM-DD")` deslocando dia por timezone.
+ * `new Date("YYYY-MM-DD")` deslocando dia por timezone. O fuso operacional
+ * é America/Sao_Paulo (`todayTreasuryCivilDateInSaoPaulo`).
  */
 
 import { normalizeAnnualRange } from "@/src/lib/treasury/treasuryCaixaAnnualViewUi.js";
 import type { TreasuryCaixaAnnualRange } from "@/src/lib/treasury/treasuryCaixaAnnualViewUi.js";
 import type { TreasuryCaixaHistoricalArPresentationBridge } from "@/src/lib/treasury/domain/treasuryCaixaRules.js";
+import { isTreasuryCivilDate } from "@/src/lib/treasury/contracts/treasuryCivilDate.js";
+import {
+  addCivilDays,
+  diffCivilDays,
+} from "@/src/lib/treasury/domain/treasuryCaixaScenarioDeltas.js";
+
+/**
+ * Igual a `TREASURY_CAIXA_SCENARIOS_MAX_HORIZON_DAYS` no serviço de cenários.
+ * Um ano civil inteiro (366 em bissexto). A visão ampliada recusa acima
+ * disto em vez de herdar o clamp silencioso do serviço.
+ */
+export const SCENARIO_EXPANDED_MAX_HORIZON_DAYS = 366;
+
+/**
+ * Cada ano civil é um board oficial completo da Caixa. Três anos cobrem o
+ * caso suportado (ano anterior realizado + ano da âncora + ano seguinte
+ * dentro do teto de 366 dias) sem multiplicar essa leitura.
+ */
+export const SCENARIO_EXPANDED_MAX_CIVIL_YEARS = 3;
 
 export type { TreasuryCaixaAnnualRange as TreasuryScenarioExpandedRange };
 export { normalizeAnnualRange as normalizeScenarioExpandedRange };
@@ -41,6 +62,218 @@ export function resolveScenarioExpandedHorizon(todayCivil: string): {
   const MS = 24 * 60 * 60 * 1000;
   const horizonDays = Math.max(1, Math.round((endUtc - startUtc) / MS) + 1);
   return { horizonDays, endCivil };
+}
+
+/** Padrão da visão ampliada: 01/01 → 31/12 do ano civil de hoje (America/Sao_Paulo). */
+export function defaultScenarioExpandedPeriod(todayCivil: string): {
+  startCivil: string;
+  endCivil: string;
+} {
+  const year = /^(\d{4})-\d{2}-\d{2}$/.exec(todayCivil.trim())?.[1];
+  if (!year) return { startCivil: todayCivil, endCivil: todayCivil };
+  return { startCivil: `${year}-01-01`, endCivil: `${year}-12-31` };
+}
+
+export type ScenarioExpandedPeriodPlan =
+  | {
+      ok: true;
+      startCivil: string;
+      endCivil: string;
+      /** Anos com realizado a carregar (início → último dia anterior a hoje dentro do período). */
+      historyYears: number[];
+      /**
+       * Dias inclusivos de hoje até a data final. `null` quando o período
+       * termina antes de hoje — não há projeção, só realizado.
+       */
+      horizonDays: number | null;
+      /** Último dia civil que o motor alcança a partir de hoje (inclusivo). */
+      maxHorizonEndCivil: string;
+      /**
+       * true só quando a janela prospectiva passa de 31/12 do ano da âncora.
+       * O serviço só então lê as estimativas por vencimento do ano seguinte.
+       * Recortes de 7/15/30/60/90 não enviam este sinal.
+       */
+      extendDueEstimatesBeyondAnchorYear: boolean;
+      /** Anos estritamente posteriores ao da âncora, cobertos pelo horizonte. */
+      estimateYears: number[];
+    }
+  | {
+      ok: false;
+      code:
+        | "MISSING_START"
+        | "MISSING_END"
+        | "INVALID_START"
+        | "INVALID_END"
+        | "END_BEFORE_START"
+        | "HORIZON_EXCEEDED"
+        | "TOO_MANY_YEARS";
+      message: string;
+      proposal: string | null;
+    };
+
+function civilYear(civil: string): number {
+  return Number(civil.slice(0, 4));
+}
+
+function yearsInclusive(fromYear: number, toYear: number): number[] {
+  const years: number[] = [];
+  for (let year = fromYear; year <= toYear; year += 1) years.push(year);
+  return years;
+}
+
+/**
+ * Plano de carregamento do período pedido. Não busca dados e não altera
+ * saldo: só decide quais boards anuais e qual horizonte o modal pode pedir
+ * aos endpoints que já existem. Fora do que o motor cobre, recusa.
+ */
+export function planScenarioExpandedPeriod(input: {
+  todayCivil: string;
+  startCivil: string;
+  endCivil: string;
+}): ScenarioExpandedPeriodPlan {
+  const startCivil = input.startCivil.trim();
+  const endCivil = input.endCivil.trim();
+  const todayCivil = input.todayCivil.trim();
+
+  if (startCivil === "") {
+    return {
+      ok: false,
+      code: "MISSING_START",
+      message: "Informe a data inicial.",
+      proposal: null,
+    };
+  }
+  if (endCivil === "") {
+    return {
+      ok: false,
+      code: "MISSING_END",
+      message: "Informe a data final.",
+      proposal: null,
+    };
+  }
+  if (!isTreasuryCivilDate(startCivil) || !isTreasuryCivilDate(todayCivil)) {
+    return {
+      ok: false,
+      code: "INVALID_START",
+      message:
+        "Data inicial inválida. Use uma data civil válida no fuso America/Sao_Paulo.",
+      proposal: null,
+    };
+  }
+  if (!isTreasuryCivilDate(endCivil)) {
+    return {
+      ok: false,
+      code: "INVALID_END",
+      message:
+        "Data final inválida. Use uma data civil válida no fuso America/Sao_Paulo.",
+      proposal: null,
+    };
+  }
+  if (endCivil < startCivil) {
+    return {
+      ok: false,
+      code: "END_BEFORE_START",
+      message: "A data final não pode ser anterior à data inicial.",
+      proposal: null,
+    };
+  }
+
+  const maxHorizonEndCivil = addCivilDays(
+    todayCivil,
+    SCENARIO_EXPANDED_MAX_HORIZON_DAYS - 1
+  );
+  const horizonDays =
+    endCivil < todayCivil ? null : diffCivilDays(todayCivil, endCivil) + 1;
+  if (horizonDays != null && horizonDays > SCENARIO_EXPANDED_MAX_HORIZON_DAYS) {
+    return {
+      ok: false,
+      code: "HORIZON_EXCEEDED",
+      message:
+        `O motor de cenários projeta no máximo ${SCENARIO_EXPANDED_MAX_HORIZON_DAYS} dias corridos a partir de hoje ` +
+        `(${todayCivil}), até ${maxHorizonEndCivil}, no fuso America/Sao_Paulo. ` +
+        `O período termina em ${endCivil}. A projeção não foi gerada e não foi truncada.`,
+      proposal:
+        "Para ir além desse teto é preciso medir o tempo de getBoard e de computeTreasuryCaixaScenarios " +
+        "e só então subir MAX_HORIZON_DAYS, carregando um board por ano civil adicional. " +
+        "O teto atual cabe num ano civil inteiro (366 em bissexto) e permanece intacto nos recortes de 7, 15, 30, 60 e 90 dias.",
+    };
+  }
+
+  const yesterdayCivil = addCivilDays(todayCivil, -1);
+  const historyEnd =
+    endCivil < todayCivil ? endCivil : yesterdayCivil;
+  const historyYears =
+    historyEnd < startCivil
+      ? []
+      : yearsInclusive(civilYear(startCivil), civilYear(historyEnd));
+
+  const anchorYear = civilYear(todayCivil);
+  const anchorYearEnd = `${anchorYear}-12-31`;
+  const estimateYears =
+    horizonDays == null || endCivil <= anchorYearEnd
+      ? []
+      : yearsInclusive(anchorYear + 1, civilYear(endCivil));
+
+  const coveredYears = new Set<number>(historyYears);
+  if (horizonDays != null) coveredYears.add(anchorYear);
+  for (const year of estimateYears) coveredYears.add(year);
+  if (coveredYears.size > SCENARIO_EXPANDED_MAX_CIVIL_YEARS) {
+    return {
+      ok: false,
+      code: "TOO_MANY_YEARS",
+      message:
+        `Este intervalo cobre ${coveredYears.size} anos civis. Cada ano é um board oficial completo da Caixa; ` +
+        `a visão ampliada carrega no máximo ${SCENARIO_EXPANDED_MAX_CIVIL_YEARS} anos por geração. ` +
+        "A projeção não foi gerada e não foi truncada.",
+      proposal:
+        "Uma série diária contínua (realizado + estimativas por vencimento), paginada, substituiria um getBoard completo por ano civil.",
+    };
+  }
+
+  return {
+    ok: true,
+    startCivil,
+    endCivil,
+    historyYears,
+    horizonDays,
+    maxHorizonEndCivil,
+    extendDueEstimatesBeyondAnchorYear: estimateYears.length > 0,
+    estimateYears,
+  };
+}
+
+/** true quando as datas do formulário diferem do período já desenhado. */
+export function scenarioExpandedDraftIsStale(
+  draft: { startCivil: string; endCivil: string },
+  loaded: { startCivil: string; endCivil: string } | null
+): boolean {
+  if (loaded == null) return false;
+  return (
+    draft.startCivil !== loaded.startCivil || draft.endCivil !== loaded.endCivil
+  );
+}
+
+/**
+ * Índices inclusivos da série já montada que caem em [start, end].
+ * Datas fora do período permanecem na série quando o encadeamento do saldo
+ * precisa delas; o gráfico abre neste recorte.
+ */
+export function rangeCoveringCivilDates(
+  civilDates: readonly string[],
+  startCivil: string,
+  endCivil: string
+): TreasuryCaixaAnnualRange | null {
+  if (civilDates.length === 0) return null;
+  let startIndex = -1;
+  let endIndex = -1;
+  for (let i = 0; i < civilDates.length; i += 1) {
+    const date = civilDates[i]!;
+    if (date < startCivil || date > endCivil) continue;
+    if (startIndex < 0) startIndex = i;
+    endIndex = i;
+  }
+  if (startIndex < 0 || endIndex < 0) return null;
+  return { startIndex, endIndex };
 }
 
 export type TreasuryScenarioExpandedPreset = {

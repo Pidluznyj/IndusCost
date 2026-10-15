@@ -60,6 +60,15 @@ export type TreasuryCaixaScenariosRequest = {
   year?: number | null;
   month?: number | null;
   day?: number | null;
+  /**
+   * Só a visão ampliada, e só quando a data final passa de 31/12 do ano da
+   * âncora. Acrescenta `dailyDueEstimates` dos anos seguintes (mesma função
+   * de board, datas estritamente depois de 31/12). Não mistura títulos de
+   * CR/CP — a população de títulos do ano da âncora permanece a do card.
+   * Ausente ou false: comportamento anterior, inclusive o clamp e os
+   * recortes de 7/15/30/60/90.
+   */
+  extendDueEstimatesBeyondAnchorYear?: boolean | null;
 };
 
 export type TreasuryCaixaScenariosResponse = TreasuryScenarioComputationResult & {
@@ -91,8 +100,13 @@ const DEFAULT_HORIZON_DAYS = 90;
  * 01/01/2028 → 31/12/2028 perdia o dia 31/12 (off-by-one provado em
  * treasuryCaixaScenariosExpandedUi.test.ts). 366 é o menor teto que
  * representa qualquer ano civil inteiro.
+ *
+ * A visão ampliada usa o mesmo número (`SCENARIO_EXPANDED_MAX_HORIZON_DAYS`)
+ * e recusa o pedido antes do clamp. Quem não pede a extensão continua
+ * recebendo o clamp silencioso — os recortes do card dependem disso.
  */
-const MAX_HORIZON_DAYS = 366;
+export const TREASURY_CAIXA_SCENARIOS_MAX_HORIZON_DAYS = 366;
+const MAX_HORIZON_DAYS = TREASURY_CAIXA_SCENARIOS_MAX_HORIZON_DAYS;
 
 function toIsoDate(d: Date): string {
   return d.toISOString().slice(0, 10);
@@ -387,6 +401,30 @@ export function createTreasuryCaixaScenariosService(deps: {
           estimatedInflow: entry.estimatedInflow,
           estimatedOutflow: entry.estimatedOutflow,
         });
+      }
+
+      // Extensão opt-in da visão ampliada. Não altera dias do ano da âncora:
+      // só preenche datas > 31/12 que o board daquele ano não contém. Títulos
+      // em aberto NÃO entram — um título do ano seguinte deslocado pela
+      // política pessimista mudaria o ano da âncora. Os totais diários do
+      // Realista usam a mesma estimativa por vencimento do board daquele ano.
+      if (request.extendDueEstimatesBeyondAnchorYear === true) {
+        const windowEnd =
+          projectedWindow[projectedWindow.length - 1] ?? asOfCivilDate;
+        const anchorYear = Number(asOfCivilDate.slice(0, 4));
+        const endYear = Number(windowEnd.slice(0, 4));
+        const anchorYearEnd = `${anchorYear}-12-31`;
+        for (let extraYear = anchorYear + 1; extraYear <= endYear; extraYear += 1) {
+          const extraBoard = await caixa.getBoard({ year: extraYear });
+          for (const entry of extraBoard.dailyDueEstimates ?? []) {
+            if (entry.civilDate <= anchorYearEnd) continue;
+            if (dailyDueEstimatesByDate.has(entry.civilDate)) continue;
+            dailyDueEstimatesByDate.set(entry.civilDate, {
+              estimatedInflow: entry.estimatedInflow,
+              estimatedOutflow: entry.estimatedOutflow,
+            });
+          }
+        }
       }
 
       const result = computeTreasuryCaixaScenarios({

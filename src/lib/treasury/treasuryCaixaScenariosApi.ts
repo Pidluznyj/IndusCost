@@ -17,6 +17,11 @@ export type TreasuryCaixaScenariosFetchParams = {
   year?: number | null;
   month?: number | null;
   day?: number | null;
+  /**
+   * Só a visão ampliada, quando a data final passa de 31/12 do ano corrente.
+   * O card e os recortes de 7/15/30/60/90 não enviam este parâmetro.
+   */
+  extendDueEstimatesBeyondAnchorYear?: boolean | null;
   signal?: AbortSignal;
 };
 
@@ -72,6 +77,9 @@ export function buildTreasuryCaixaScenariosUrl(
   setIf(qs, "year", params.year ?? null);
   setIf(qs, "month", params.month ?? null);
   setIf(qs, "day", params.day ?? null);
+  if (params.extendDueEstimatesBeyondAnchorYear === true) {
+    qs.set("extendDueEstimatesBeyondAnchorYear", "1");
+  }
   const q = qs.toString();
   return q ? `${TREASURY_CAIXA_SCENARIOS_PATH}?${q}` : TREASURY_CAIXA_SCENARIOS_PATH;
 }
