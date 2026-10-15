@@ -11,12 +11,17 @@ import {
 import {
   matchesPurchaseOrderFinancialFilter,
   matchesPurchaseOrderFiscalFilter,
+  parsePurchaseOrderPlannedInstallments,
 } from "@/src/lib/nomus/nomusPurchaseOrder360.js";
 import {
+  applyPaymentTermsListFilters,
   buildNomusPurchaseOrderKpis,
   buildNomusPurchaseOrderWhere,
+  hasPaymentTermsListFilters,
   parseNomusPurchaseOrderListFilters,
 } from "@/src/lib/nomus/nomusPurchaseOrderQuery.js";
+import { buildPaymentTermsCell } from "@/src/lib/purchasing/purchasePaymentTermsAnalysis.js";
+import { loadPaymentTermsSettings } from "@/src/lib/purchasing/purchasePaymentTermsAnalysis.server.js";
 import { NOMUS_PURCHASE_ORDER_VIEW_PERMISSIONS } from "@/src/lib/purchasing/nomusPurchaseOrderAccess.js";
 
 type AuthGuards = {
@@ -105,8 +110,9 @@ export function registerNomusPurchaseOrderRoutes(app: express.Express, auth: Aut
       const skip = ((filters.page ?? 1) - 1) * (filters.pageSize ?? 25);
       const pageSize = filters.pageSize ?? 25;
       const needsPostFilter = Boolean(filters.fiscalStatus || filters.financialStatus);
+      const needsPaymentTerms = hasPaymentTermsListFilters(filters);
 
-      const [kpiRows, health] = await Promise.all([
+      const [kpiRows, health, paymentTermsSettings] = await Promise.all([
         prisma.nomusPurchaseOrder.findMany({
           where,
           select: { stage: true, expectedAt: true, totalAmount: true },
@@ -115,7 +121,9 @@ export function registerNomusPurchaseOrderRoutes(app: express.Express, auth: Aut
           orderBy: { syncedAt: "desc" },
           select: { syncedAt: true },
         }),
+        loadPaymentTermsSettings(prisma),
       ]);
+      const enrichOptions = { paymentTermsTargetDays: paymentTermsSettings.targetPmpDays };
 
       if (needsPostFilter) {
         const candidates = await prisma.nomusPurchaseOrder.findMany({
@@ -123,11 +131,14 @@ export function registerNomusPurchaseOrderRoutes(app: express.Express, auth: Aut
           select: LIST_SELECT,
           orderBy: [{ issuedAt: "desc" }, { externalId: "desc" }],
         });
-        const enriched = await enrichNomusPurchaseOrderListRows(candidates, now);
-        const filtered = enriched.filter(
-          (row) =>
-            matchesPurchaseOrderFiscalFilter(row.invoiceCount, filters.fiscalStatus) &&
-            matchesPurchaseOrderFinancialFilter(row.financialStatus, filters.financialStatus)
+        const enriched = await enrichNomusPurchaseOrderListRows(candidates, now, enrichOptions);
+        const filtered = applyPaymentTermsListFilters(
+          enriched.filter(
+            (row) =>
+              matchesPurchaseOrderFiscalFilter(row.invoiceCount, filters.fiscalStatus) &&
+              matchesPurchaseOrderFinancialFilter(row.financialStatus, filters.financialStatus)
+          ),
+          filters
         );
         return res.json({
           page: filters.page ?? 1,
@@ -135,7 +146,44 @@ export function registerNomusPurchaseOrderRoutes(app: express.Express, auth: Aut
           total: filtered.length,
           kpis: buildNomusPurchaseOrderKpis(kpiRows, now),
           lastSyncedAt: health?.syncedAt?.toISOString() ?? null,
+          paymentTermsTargetDays: paymentTermsSettings.targetPmpDays,
           items: filtered.slice(skip, skip + pageSize),
+        });
+      }
+
+      if (needsPaymentTerms) {
+        // Filtro/ordenação pelo PMP: calcula só a célula (parcelas já persistidas) para os
+        // candidatos e enriquece apenas a página final — sem carregar fiscal/financeiro de todos.
+        const candidates = await prisma.nomusPurchaseOrder.findMany({
+          where,
+          select: LIST_SELECT,
+          orderBy: [{ issuedAt: "desc" }, { externalId: "desc" }],
+        });
+        const withTerms = candidates.map((order) => ({
+          order,
+          paymentTerms: buildPaymentTermsCell(
+            {
+              installments: parsePurchaseOrderPlannedInstallments(order.rawPayload),
+              issuedAt: order.issuedAt,
+              totalAmount: order.totalAmount != null ? Number(order.totalAmount.toString()) : null,
+              canceled: order.canceled === true || order.stage === "CANCELED",
+            },
+            paymentTermsSettings.targetPmpDays
+          ),
+        }));
+        const selected = applyPaymentTermsListFilters(withTerms, filters);
+        return res.json({
+          page: filters.page ?? 1,
+          pageSize,
+          total: selected.length,
+          kpis: buildNomusPurchaseOrderKpis(kpiRows, now),
+          lastSyncedAt: health?.syncedAt?.toISOString() ?? null,
+          paymentTermsTargetDays: paymentTermsSettings.targetPmpDays,
+          items: await enrichNomusPurchaseOrderListRows(
+            selected.slice(skip, skip + pageSize).map((row) => row.order),
+            now,
+            enrichOptions
+          ),
         });
       }
 
@@ -156,7 +204,8 @@ export function registerNomusPurchaseOrderRoutes(app: express.Express, auth: Aut
         total,
         kpis: buildNomusPurchaseOrderKpis(kpiRows, now),
         lastSyncedAt: health?.syncedAt?.toISOString() ?? null,
-        items: await enrichNomusPurchaseOrderListRows(rows, now),
+        paymentTermsTargetDays: paymentTermsSettings.targetPmpDays,
+        items: await enrichNomusPurchaseOrderListRows(rows, now, enrichOptions),
       });
     } catch (error) {
       console.error("GET /api/nomus/purchase-orders", error);
@@ -180,7 +229,14 @@ export function registerNomusPurchaseOrderRoutes(app: express.Express, auth: Aut
       if (!row) return res.status(404).json({ error: "Pedido de compra Nomus não encontrado." });
 
       const includeRaw = String(req.query.includeRaw ?? "").trim() === "1" && canSeeRawPayload(user);
-      return res.json(await buildNomusPurchaseOrder360({ order: row, includeRaw }));
+      const paymentTermsSettings = await loadPaymentTermsSettings(prisma);
+      return res.json(
+        await buildNomusPurchaseOrder360({
+          order: row,
+          includeRaw,
+          paymentTermsTargetDays: paymentTermsSettings.targetPmpDays,
+        })
+      );
     } catch (error) {
       console.error("GET /api/nomus/purchase-orders/:id", error);
       return res.status(500).json({ error: "Erro ao carregar pedido de compra Nomus." });

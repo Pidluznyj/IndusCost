@@ -1,8 +1,12 @@
 import React from "react";
 import {
+  PROJECT_CLIENT_REPORT_MONTHLY_VALUE_LABEL,
+  PROJECT_CLIENT_REPORT_MONTHLY_VOLUME_LABEL,
   PROJECT_CLIENT_REPORT_NOT_INFORMED,
   type ProjectClientReportPayload,
 } from "@/src/lib/projectsClientReportShared";
+import type { ProjectDocumentHeader } from "@/src/lib/projectsDocumentHeader";
+import { ProjectDocumentHeaderBlock } from "@/src/components/projects/documents/ProjectDocumentHeaderBlock";
 
 type Props = {
   report: ProjectClientReportPayload;
@@ -10,6 +14,9 @@ type Props = {
   quantityDrafts?: Record<string, string>;
   quantityErrors?: Record<string, string>;
   onQuantityChange?: (productId: string, value: string) => void;
+  /** Bloco documental comum (prévia ou emissão). */
+  documentHeader?: ProjectDocumentHeader | null;
+  sha256?: string | null;
 };
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
@@ -36,9 +43,23 @@ export function ProjectClientReport({
   quantityDrafts,
   quantityErrors,
   onQuantityChange,
+  documentHeader,
+  sha256,
 }: Props) {
   return (
     <article className="project-client-report-document mx-auto max-w-[1180px] bg-white p-6 print:p-0">
+      {documentHeader ? (
+        <ProjectDocumentHeaderBlock
+          header={documentHeader}
+          sha256={sha256}
+          extraRows={[
+            {
+              label: "Validade",
+              value: report.project.validUntil ? `até ${formatClientReportDate(`${report.project.validUntil}T12:00:00`)}` : "A definir",
+            },
+          ]}
+        />
+      ) : (
       <header className="mb-6 border-b border-slate-200 pb-4">
         <p className="text-xs uppercase tracking-[0.14em] text-slate-500">{report.project.issuerName}</p>
         <h1 className="mt-2 text-2xl font-bold text-slate-900">{report.title}</h1>
@@ -66,6 +87,7 @@ export function ProjectClientReport({
           ) : null}
         </div>
       </header>
+      )}
 
       <Section title="Resumo executivo">
         <p className="text-sm leading-relaxed text-slate-700">{report.executiveSummary}</p>
@@ -79,13 +101,13 @@ export function ProjectClientReport({
         />
         {report.summary.estimatedQuantity != null ? (
           <SummaryCard
-            label="Quantidade estimada"
-            value={String(report.summary.estimatedQuantity)}
+            label={PROJECT_CLIENT_REPORT_MONTHLY_VOLUME_LABEL}
+            value={report.summary.estimatedQuantity.toLocaleString("pt-BR")}
           />
         ) : null}
         {report.summary.totalProposalValue != null ? (
           <SummaryCard
-            label="Valor total estimado"
+            label={PROJECT_CLIENT_REPORT_MONTHLY_VALUE_LABEL}
             value={formatClientReportMoney(report.summary.totalProposalValue)}
           />
         ) : null}
@@ -179,57 +201,42 @@ export function ProjectClientReport({
         </div>
       </Section>
 
-      {(report.commercialTerms.paymentTerms ||
-        report.commercialTerms.deliveryTerms ||
-        report.commercialTerms.proposalValidity ||
-        report.commercialTerms.freightTerms ||
-        report.commercialTerms.exclusivity ||
-        report.commercialTerms.notes) && (
-        <Section title="Condições comerciais">
-          <dl className="grid gap-2 text-sm sm:grid-cols-2">
-            {report.commercialTerms.paymentTerms ? (
-              <div>
-                <dt className="font-medium text-slate-900">Condição de pagamento</dt>
-                <dd className="text-slate-700">{report.commercialTerms.paymentTerms}</dd>
-              </div>
-            ) : null}
-            {report.commercialTerms.deliveryTerms ? (
-              <div>
-                <dt className="font-medium text-slate-900">Prazo de entrega</dt>
-                <dd className="text-slate-700">{report.commercialTerms.deliveryTerms}</dd>
-              </div>
-            ) : null}
-            {report.commercialTerms.proposalValidity ? (
-              <div>
-                <dt className="font-medium text-slate-900">Validade da proposta</dt>
-                <dd className="text-slate-700">{report.commercialTerms.proposalValidity}</dd>
-              </div>
-            ) : null}
-            {report.commercialTerms.freightTerms ? (
-              <div>
-                <dt className="font-medium text-slate-900">Frete / Incoterm</dt>
-                <dd className="text-slate-700">{report.commercialTerms.freightTerms}</dd>
-              </div>
-            ) : null}
-            {report.commercialTerms.exclusivity ? (
-              <div>
-                <dt className="font-medium text-slate-900">Exclusividade</dt>
-                <dd className="text-slate-700">{report.commercialTerms.exclusivity}</dd>
-              </div>
-            ) : null}
-            {report.commercialTerms.notes ? (
-              <div className="sm:col-span-2">
-                <dt className="font-medium text-slate-900">Observações comerciais</dt>
-                <dd className="text-slate-700">{report.commercialTerms.notes}</dd>
-              </div>
-            ) : null}
-          </dl>
-        </Section>
-      )}
+      <Section title="Condições comerciais">
+        <dl className="grid gap-2 text-sm sm:grid-cols-2">
+          {[
+            ["Validade da proposta", report.commercialTerms.proposalValidity],
+            ["Condição de pagamento", report.commercialTerms.paymentTerms],
+            ["Entrega", report.commercialTerms.deliveryTerms],
+            ["Frete", report.commercialTerms.freightTerms],
+          ].map(([label, value]) => (
+            <div key={label}>
+              <dt className="font-medium text-slate-900">{label}</dt>
+              <dd className={value ? "text-slate-700" : "italic text-slate-500"}>{value ?? "A definir"}</dd>
+            </div>
+          ))}
+          {report.commercialTerms.exclusivity ? (
+            <div>
+              <dt className="font-medium text-slate-900">Exclusividade</dt>
+              <dd className="text-slate-700">{report.commercialTerms.exclusivity}</dd>
+            </div>
+          ) : null}
+          {report.commercialTerms.notes ? (
+            <div className="sm:col-span-2">
+              <dt className="font-medium text-slate-900">Observações</dt>
+              <dd className="whitespace-pre-wrap text-slate-700">{report.commercialTerms.notes}</dd>
+            </div>
+          ) : null}
+        </dl>
+      </Section>
 
       <footer className="mt-8 border-t border-slate-200 pt-4 text-xs leading-relaxed text-slate-500">
         <p>{report.disclaimer}</p>
         <p className="mt-2">
+          {documentHeader?.documentNumber
+            ? `${documentHeader.documentNumber} · revisão ${documentHeader.revision} · `
+            : documentHeader
+              ? "Prévia sem valor de emissão · "
+              : ""}
           Documento gerado em {formatClientReportDate(report.generatedAt)} · {report.project.issuerName}
         </p>
       </footer>

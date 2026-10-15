@@ -1,4 +1,6 @@
 import React from "react";
+import type { ProjectDocumentHeader } from "@/src/lib/projectsDocumentHeader";
+import { ProjectDocumentHeaderBlock } from "@/src/components/projects/documents/ProjectDocumentHeaderBlock";
 import {
   PROJECT_INTAKE_FORM_PENDING_LABEL,
   PROJECT_INTAKE_FORM_TITLE,
@@ -132,22 +134,29 @@ function SignatureTable({ rows }: { rows: IntakeSignatureRow[] }) {
 
 type Props = {
   payload: ProjectIntakeFormPayload;
+  /** Bloco documental comum (emitente, cliente, projeto, emissão). Ausente na ficha em branco. */
+  documentHeader?: ProjectDocumentHeader | null;
+  sha256?: string | null;
 };
 
-export function ProjectIntakeFormDocument({ payload }: Props) {
+export function ProjectIntakeFormDocument({ payload, documentHeader, sha256 }: Props) {
   const generatedDate = new Date(payload.generatedAt).toLocaleDateString("pt-BR");
   const mode = payload.mode;
 
   return (
     <article className="project-intake-form-document">
       <header className="project-intake-form-header project-intake-form-section">
-        <div className="project-intake-form-brand">
-          <div className="project-intake-form-brand-title">INDUSCOST</div>
-          <div className="project-intake-form-brand-subtitle">{PROJECT_INTAKE_FORM_TITLE}</div>
-          <div className="project-intake-form-brand-meta">
-            {mode === "blank" ? "Formulário em branco para preenchimento manual" : "Formulário preenchido a partir do projeto"}
+        {documentHeader ? (
+          <ProjectDocumentHeaderBlock header={documentHeader} sha256={sha256} />
+        ) : (
+          <div className="project-intake-form-brand">
+            <div className="project-intake-form-brand-title">INDUSCOST</div>
+            <div className="project-intake-form-brand-subtitle">{PROJECT_INTAKE_FORM_TITLE}</div>
+            <div className="project-intake-form-brand-meta">
+              {mode === "blank" ? "Formulário em branco para preenchimento manual" : "Formulário preenchido a partir do projeto"}
+            </div>
           </div>
-        </div>
+        )}
         <div className="project-intake-form-header-grid">
           <div>
             <span className="project-intake-form-header-label">Projeto</span>
@@ -388,7 +397,9 @@ export function ProjectIntakeFormDocument({ payload }: Props) {
 
       <footer className="project-intake-form-footer project-intake-form-section">
         <div>
-          Documento gerado pelo IndusCost — uso interno
+          {documentHeader?.documentNumber
+            ? `${documentHeader.documentNumber} · revisão ${documentHeader.revision} — uso interno`
+            : "Documento gerado pelo IndusCost — uso interno"}
           {payload.generatedBy ? ` · ${payload.generatedBy}` : ""}
         </div>
         <div>

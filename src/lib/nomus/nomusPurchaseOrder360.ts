@@ -719,6 +719,8 @@ export type NomusPurchaseOrderListRowDto = {
   openAmount: number;
   /** Títulos apresentados pelo pedido que NÃO contam (dono financeiro é outro pedido / conflito). */
   excludedPayableCount?: number;
+  /** Prazo de pagamento: PMP desde a emissão (motor purchasePaymentTerms). */
+  paymentTerms: import("@/src/lib/purchasing/purchasePaymentTermsAnalysis").PaymentTermsCellDto;
   overdue: boolean;
   open: boolean;
   syncedAt: string;

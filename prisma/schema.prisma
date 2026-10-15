@@ -1828,6 +1828,7 @@ model Customer {
   person                           Person?                           @relation("CustomerIdentityPerson", fields: [personId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   contactPerson                    Person?                           @relation("CustomerContactPerson", fields: [contactPersonId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   proposals                        Proposal[]
+  projects                         Project[]                         @relation("ProjectCustomer")
   salesOrders                      SalesOrder[]
   commissionCustomerExclusionRules CommissionCustomerExclusionRule[]
   commissionReceiptLedgerLines     CommissionReceiptLedgerLine[]
@@ -3937,6 +3938,29 @@ model NomusPurchaseOrderItem {
   @@index([productCode])
 }
 
+/// Meta gerencial de PMP de Compras (prazo médio ponderado desde a emissão do pedido).
+/// Singleton. Só para análise: não altera pedidos, vencimentos nem bloqueia compras.
+model PurchasePaymentTermsSettings {
+  id                String   @id @default("GLOBAL")
+  /// Meta em dias. Null = sem meta: indicadores sem classificação de atendimento.
+  targetPmpDays     Int?
+  updatedAt         DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+  updatedByUserId   String?  @db.Uuid
+  updatedByUserName String?
+}
+
+/// Histórico das alterações da meta de PMP (autoria e data).
+model PurchasePaymentTermsSettingsHistory {
+  id                 String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  previousTargetDays Int?
+  targetDays         Int?
+  changedAt          DateTime @default(now()) @db.Timestamptz(6)
+  changedByUserId    String?  @db.Uuid
+  changedByUserName  String
+
+  @@index([changedAt])
+}
+
 /// Avaliação do fornecedor pelo Pedido de Compra Nomus (espelho local).
 /// Identidade determinística: NomusPurchaseOrder.id. Não mistura com PurchaseOrder interno.
 /// A nota do FinancialSupplier continua DERIVADA — nenhuma coluna de score no cadastro.
@@ -5990,8 +6014,14 @@ model Project {
   number                Int           @unique @default(autoincrement())
   code                  String        @unique
   title                 String
+  /// Snapshot textual do cliente (histórico da época). Com customerId, vem do cadastro oficial.
   customerName          String
   customerDocument      String?
+  /// Vínculo com o cadastro oficial de clientes (opcional; projetos antigos conciliados por CNPJ).
+  customerId            String?       @db.Uuid
+  customerLinkedAt      DateTime?     @db.Timestamptz(6)
+  /// LOOKUP (escolhido na busca) | CNPJ_RECONCILIATION (conciliação por CNPJ confirmada).
+  customerLinkSource    String?
   description           String?
   projectType           ProjectType
   status                ProjectStatus @default(DRAFT)
@@ -6000,11 +6030,28 @@ model Project {
   expectedMonthlyVolume Decimal?      @db.Decimal(20, 6)
   targetPrice           Decimal?      @db.Decimal(20, 6)
   targetMarginPercent   Decimal?      @db.Decimal(10, 6)
+  /// Observações INTERNAS — nunca aparecem em documentos destinados ao cliente.
   notes                 String?
+  /// Observações para o cliente (Proposta Cliente). Separadas das internas.
+  clientNotes           String?
+  /// Condições comerciais estruturadas — vazias até serem definidas (sem preenchimento automático).
+  proposalValidityDays  Int?
+  paymentTerms          String?
+  deliveryTimeDays      Int?
+  deliveryLocation      String?
+  /// CIF | FOB (mesmo vocabulário da Proposta comercial).
+  freightCondition      String?
+  desiredDeadline       DateTime?     @db.Timestamptz(6)
+  /// LOW | MEDIUM | HIGH | URGENT.
+  priority              String?
+  /// Aplicação do produto/peça no cliente.
+  application           String?
   createdAt             DateTime      @default(now()) @db.Timestamptz(6)
   updatedAt             DateTime      @default(now()) @updatedAt @db.Timestamptz(6)
 
+  customer            Customer?        @relation("ProjectCustomer", fields: [customerId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   versions            ProjectVersion[]
+  issuedDocuments     ProjectIssuedDocument[]
   simulatedProducts   ProjectSimulatedProduct[]
   simulatedItems      ProjectSimulatedItem[]
   structureLines      ProjectStructureLine[]
@@ -6018,6 +6065,7 @@ model Project {
   @@index([status])
   @@index([projectType])
   @@index([customerName])
+  @@index([customerId])
   @@index([updatedAt])
 }
 
@@ -6091,6 +6139,37 @@ model ProjectClientProposalItem {
 
   @@unique([projectId, targetItemId])
   @@index([projectId])
+}
+
+/// Emissão imutável de documento do projeto (Ficha rápida/completa, Planilha, Relatório
+/// gerencial, Proposta Cliente). Guarda o conteúdo exato emitido + sha256; revisões nunca
+/// alteram emissões anteriores. UPDATE/DELETE bloqueados por trigger (exceto projectId → NULL
+/// quando o projeto é excluído).
+model ProjectIssuedDocument {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId      String?   @db.Uuid
+  projectCode    String
+  /// QUICK_FORM | FULL_FORM | SPREADSHEET | EXECUTIVE_REPORT | CLIENT_PROPOSAL
+  documentType   String
+  revision       Int
+  documentNumber String    @unique
+  versionId      String?   @db.Uuid
+  versionNumber  Int?
+  /// SAVED_PRICING | NO_SAVED_PRICING
+  valueSource    String
+  pricingSavedAt DateTime? @db.Timestamptz(6)
+  /// Valores da precificação divergiam do projeto atual no momento da emissão.
+  pricingStale   Boolean   @default(false)
+  issuedAt       DateTime  @default(now()) @db.Timestamptz(6)
+  issuedByUserId String?   @db.Uuid
+  issuedByName   String
+  payload        Json
+  payloadSha256  String
+
+  project Project? @relation(fields: [projectId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@unique([projectId, documentType, revision])
+  @@index([projectId, issuedAt])
 }
 
 model ProjectVersion {

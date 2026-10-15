@@ -94,6 +94,8 @@ export type SavedProjectPricingItem = {
   amortizationPriceAddOnUnit?: number;
   projectRecoveryValue?: number | null;
   commissionableBaseWithoutProjectRecovery?: number | null;
+  /** Instante da gravação ("Salvar precificação"). */
+  savedAt?: string | null;
 };
 
 const STATUS_LABEL: Record<ProjectPricingItemStatus, string> = {

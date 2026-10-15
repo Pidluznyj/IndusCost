@@ -40,6 +40,7 @@ describe("projectsCustomerLookup", () => {
     });
     assert.equal(payload.customerName, "ACME Ltda");
     assert.equal(payload.customerDocument, "99887766000155");
+    assert.equal(payload.customerId, "c2");
   });
 
   it("lookup limita resultados a 20", () => {
@@ -57,7 +58,11 @@ describe("projectsCustomerLookup", () => {
   it("lookup respeita permissões projects.view e projects.manage", () => {
     const routes = readFileSync(join(process.cwd(), "src", "lib", "projectsRoutes.ts"), "utf8");
     const perms = readFileSync(join(process.cwd(), "src", "lib", "projectsPermissions.ts"), "utf8");
-    assert.match(routes, /PROJECTS_LOOKUP_PERMISSIONS/);
+    // Desde a P19 as rotas usam requireResource (engineering.projects) em vez de listas de permissão.
+    assert.match(
+      routes,
+      /const lookup = \[\s*auth\.requireAppAuth,\s*auth\.requireResource\(ENGINEERING_RESOURCE_KEYS\.projects, ENGINEERING_ACTIONS\.view\)/
+    );
     assert.match(routes, /lookup\/customers.*\.\.\.lookup/s);
     assert.match(perms, /projects\.view/);
     assert.match(perms, /projects\.manage/);
@@ -82,14 +87,14 @@ describe("projectsCustomerLookup", () => {
   it("projectCustomerSelectionToPayload aceita manual e existente", () => {
     assert.deepEqual(
       projectCustomerSelectionToPayload({ mode: "simulation", name: "Novo Cliente" }),
-      { customerName: "Novo Cliente", customerDocument: null }
+      { customerId: null, customerName: "Novo Cliente", customerDocument: null }
     );
     assert.deepEqual(
       projectCustomerSelectionToPayload({
         mode: "existing",
         item: { id: "1", name: "ACME", document: "111", source: "customer" },
       }),
-      { customerName: "ACME", customerDocument: "111" }
+      { customerId: "1", customerName: "ACME", customerDocument: "111" }
     );
   });
 

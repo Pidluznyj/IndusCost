@@ -54,6 +54,7 @@ import { ProjectHomeAssistant } from "@/src/components/projects/ProjectHomeAssis
 import { ProjectItemsTab } from "@/src/components/projects/ProjectItemsTab";
 import { ProjectOtherCostsModal } from "@/src/components/projects/ProjectOtherCostsModal";
 import { canDeleteProject, canManageProjects } from "@/src/lib/projectsPermissions";
+import { ProjectCommercialDataPanel } from "@/src/components/projects/ProjectCommercialDataPanel";
 import {
   ProjectCustomerLookupField,
   projectCustomerSelectionToPayload,
@@ -210,6 +211,7 @@ function ProjectsListView({ canManage }: { canManage: boolean }) {
     let customerPayload = projectCustomerSelectionToPayload(customerSelection);
     if (!customerPayload && customerDraft.trim()) {
       customerPayload = {
+        customerId: null,
         customerName: customerDraft.trim(),
         customerDocument: null,
       };
@@ -225,6 +227,7 @@ function ProjectsListView({ canManage }: { canManage: boolean }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           title: form.title.trim(),
+          customerId: customerPayload.customerId,
           customerName: customerPayload.customerName,
           customerDocument: customerPayload.customerDocument,
           projectType: form.projectType,
@@ -897,6 +900,10 @@ function ProjectDetailView({
             </button>
           </div>
         </div>
+      ) : null}
+
+      {tab === "home" ? (
+        <ProjectCommercialDataPanel detail={detail} canManage={canManage} onSave={patchProject} />
       ) : null}
 
       {tab === "home" ? (

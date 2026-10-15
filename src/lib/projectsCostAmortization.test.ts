@@ -22,6 +22,7 @@ import {
 import { canManageProjects, canViewProjects } from "./projectsPermissions.js";
 import { buildOtherCostNotes } from "./projectsOtherCostGroups.js";
 import type { ProjectDetail } from "@/src/types/projects.js";
+import { EMPTY_PROJECT_DOCUMENT_FIELDS } from "./projectsCommercialTerms.js";
 
 const AMORTIZATION_PERCENT_TOLERANCE = 0.0001;
 const MOLD_TOTAL = 52_000;
@@ -39,6 +40,7 @@ function buildDetailFixture(): ProjectDetail {
     title: "Projeto teste",
     customerName: "Cliente",
     customerDocument: null,
+    ...EMPTY_PROJECT_DOCUMENT_FIELDS,
     description: null,
     projectType: "NEW_PRODUCT",
     status: "DRAFT",
@@ -370,7 +372,7 @@ describe("projectsCostAmortization — UI estática", () => {
       "utf8"
     );
     assert.match(modal, /Percentual repassado ao cliente/);
-    assert.match(modal, /% da amortização/);
+    assert.match(modal, /% amort\./);
     assert.match(modal, /Salvar amortização/);
   });
 

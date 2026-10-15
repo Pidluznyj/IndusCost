@@ -254,6 +254,27 @@ describe("projectsClientReport", () => {
     assert.equal(report.summary.finalSetPrice, 3.2);
   });
 
+  it("observações internas nunca vão à proposta; só observações ao cliente e termos definidos", () => {
+    const detail = buildDetailWithPricing();
+    detail.notes = "INTERNO: margem negociável até 5%";
+    const blank = buildProjectClientReport(detail);
+    assert.equal(blank.commercialTerms.notes, null);
+    assert.equal(blank.commercialTerms.paymentTerms, null, "sem preenchimento automático");
+    assert.equal(blank.project.validUntil, null);
+    assert.doesNotMatch(JSON.stringify(blank), /INTERNO/);
+    detail.clientNotes = "Amostras em 10 dias.";
+    detail.paymentTerms = "28 DDL";
+    detail.freightCondition = "FOB";
+    detail.proposalValidityDays = 15;
+    const report = buildProjectClientReport(detail);
+    assert.equal(report.commercialTerms.notes, "Amostras em 10 dias.");
+    assert.equal(report.commercialTerms.paymentTerms, "28 DDL");
+    assert.equal(report.commercialTerms.freightTerms, "FOB (frete por conta do destinatário)");
+    assert.equal(report.commercialTerms.proposalValidity, "15 dias");
+    assert.match(report.project.validUntil ?? "", /^\d{4}-\d{2}-\d{2}$/);
+    assert.doesNotMatch(JSON.stringify(report), /INTERNO/);
+  });
+
   it("endpoint payload não expõe campos internos de custo", () => {
     const report = buildProjectClientReport(buildDetailWithPricing());
     assertProjectClientReportPayloadIsSafe(report);
@@ -395,7 +416,8 @@ describe("projectsClientReport", () => {
     assert.match(pptx, /Resumo executivo/);
     assert.match(pptx, /Composição do conjunto/);
     assert.match(pptx, /Próximos passos/);
-    assert.match(page, /fetch\(`\/api\/projects\/\$\{projectId\}\/client-proposal-pptx`/);
+    // PowerPoint sai da proposta EMITIDA (conteúdo congelado), não do projeto atual.
+    assert.match(page, /fetch\(`\/api\/projects\/\$\{projectId\}\/documents\/issued\/\$\{doc\.issued\.id\}\/proposal\.pptx`/);
     assert.match(page, /createObjectURL/);
     assert.doesNotMatch(page, /window\.open\([^)]*client-proposal-pptx/);
     const report = readFileSync(

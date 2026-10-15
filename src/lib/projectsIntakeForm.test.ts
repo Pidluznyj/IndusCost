@@ -35,6 +35,7 @@ import {
   PROJECT_INTAKE_FORM_FULL_TITLE,
 } from "./projectsIntakeForm.js";
 import type { ProjectDetail, ProjectStructureLineRow } from "@/src/types/projects.js";
+import { EMPTY_PROJECT_DOCUMENT_FIELDS } from "./projectsCommercialTerms.js";
 
 function structureLine(
   partial: Partial<ProjectStructureLineRow> & Pick<ProjectStructureLineRow, "id" | "lineType" | "descriptionSnapshot">
@@ -77,6 +78,7 @@ function minimalDetail(): ProjectDetail {
     title: "Projeto Teste",
     customerName: "Cliente ABC",
     customerDocument: "12.345.678/0001-90",
+    ...EMPTY_PROJECT_DOCUMENT_FIELDS,
     description: "Desenvolver novo filtro.",
     projectType: "NEW_PRODUCT",
     status: "DRAFT",

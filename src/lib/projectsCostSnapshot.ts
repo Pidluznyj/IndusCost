@@ -90,8 +90,12 @@ function resolveCostAmortizationSummary(detail: ProjectDetail): ProjectCostAmort
   return buildProjectCostAmortizationSummary(detail, saved);
 }
 
+/**
+ * Tela: motor vivo. Documentos: valores da precificação salva (detail.documentValueSource,
+ * montado no servidor por buildProjectDocumentValueSource).
+ */
 function resolvePricingView(detail: ProjectDetail) {
-  return computeLiveProjectPricingView(detail);
+  return detail.documentValueSource?.view ?? computeLiveProjectPricingView(detail);
 }
 
 export function resolveProjectPricingItemSku(

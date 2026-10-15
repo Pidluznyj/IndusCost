@@ -261,6 +261,7 @@ export const SUPPLIER_PERFORMANCE_VIEW_PARAM = "view";
 export const SUPPLIER_PERFORMANCE_VIEWS = [
   { id: "overview", label: "Visão geral" },
   { id: "classification", label: "Classificação de fornecedores" },
+  { id: "payment-terms", label: "Condições de compra" },
 ] as const;
 
 export type SupplierPerformanceViewId = (typeof SUPPLIER_PERFORMANCE_VIEWS)[number]["id"];
