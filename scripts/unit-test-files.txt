@@ -382,3 +382,6 @@ src/lib/competencies/competencyImportRoutes.test.ts
 src/lib/competencies/competencyGovernance.test.ts
 src/lib/competencies/competencyGovernanceRoutes.test.ts
 src/lib/competencies/competencyFeatureFlags.test.ts
+src/lib/projectsCustomerLink.test.ts
+src/lib/projectsCommercialTerms.test.ts
+src/lib/projectsDocuments.test.ts

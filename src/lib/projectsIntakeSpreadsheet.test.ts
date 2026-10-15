@@ -65,9 +65,10 @@ describe("projectsIntakeSpreadsheet", () => {
     assert.deepEqual(listSpreadsheetSheetColumns("08_Pendencias"), PROJECT_INTAKE_SHEET_08_COLUMNS);
   });
 
-  it("workbook XLSX contém abas e cabeçalhos", () => {
+  it("workbook XLSX contém abas e cabeçalhos; exemplo fica em aba própria", () => {
     const wb = buildProjectIntakeSpreadsheetWorkbook();
-    assert.equal(wb.SheetNames.length, 8);
+    assert.equal(wb.SheetNames.length, 9);
+    assert.equal(wb.SheetNames.at(-1), "99_Exemplo");
     for (const name of PROJECT_INTAKE_SPREADSHEET_SHEETS) {
       assert.ok(wb.SheetNames.includes(name));
     }
@@ -88,8 +89,12 @@ describe("projectsIntakeSpreadsheet", () => {
     assert.ok(composicao.length >= 10);
     assert.ok("produto_entregavel" in composicao[0]);
     assert.ok("item_pai" in composicao[0]);
-    assert.ok(composicao.some((r) => r.produto_entregavel === "610.51AA" && r.item_pai === "306.02AA"));
-    assert.ok(composicao.some((r) => r.tipo === "Serviço" && r.horas_quantidade_servico === "15"));
+    // Dados de exemplo nunca se misturam às linhas de dados.
+    assert.ok(composicao.every((r) => r.produto_entregavel === ""));
+    const exemplo = XLSX.utils.sheet_to_json<Record<string, string>>(parsed.Sheets["99_Exemplo"], { defval: "" });
+    assert.ok(exemplo.some((r) => r.produto_entregavel === "610.51AA" && r.item_pai === "306.02AA"));
+    assert.ok(exemplo.some((r) => r.tipo === "Serviço" && r.horas_quantidade_servico === "15"));
+    assert.ok(exemplo.every((r) => r.observacao.startsWith("EXEMPLO ILUSTRATIVO")));
   });
 
   it("botão de download referenciado na UI", () => {

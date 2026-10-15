@@ -1,4 +1,6 @@
 import React from "react";
+import type { ProjectDocumentHeader } from "@/src/lib/projectsDocumentHeader";
+import { ProjectDocumentHeaderBlock } from "@/src/components/projects/documents/ProjectDocumentHeaderBlock";
 import {
   formatExecutiveReportDate,
   formatExecutiveReportMoney,
@@ -11,6 +13,9 @@ import {
 
 type Props = {
   report: ProjectExecutiveReportPayload;
+  /** Bloco documental comum (prévia ou emissão). */
+  documentHeader?: ProjectDocumentHeader | null;
+  sha256?: string | null;
 };
 
 function Section({
@@ -94,11 +99,22 @@ function CheckboxLine({ label }: { label: string }) {
   );
 }
 
-export function ProjectExecutiveReport({ report }: Props) {
+export function ProjectExecutiveReport({ report, documentHeader, sha256 }: Props) {
   const { project, executiveSummary, economicAnalysis } = report;
 
   return (
     <div className="project-executive-report-document mx-auto w-full max-w-[1180px] bg-white text-slate-900 shadow-sm print:max-w-none print:shadow-none">
+      {documentHeader ? (
+        <header className="project-executive-report-header border-b border-slate-200 px-6 py-5 print:px-0">
+          <ProjectDocumentHeaderBlock header={documentHeader} sha256={sha256} />
+          <div
+            className="project-executive-report-disclaimer-banner border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-950"
+            role="note"
+          >
+            {PROJECT_EXECUTIVE_REPORT_INTERNAL_DISCLAIMER}
+          </div>
+        </header>
+      ) : (
       <header className="project-executive-report-header border-b border-slate-200 px-6 py-5 print:px-0">
         <p className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-500">IndusCost</p>
         <h1 className="mt-1 text-2xl font-bold">{PROJECT_EXECUTIVE_REPORT_TITLE}</h1>
@@ -143,6 +159,7 @@ export function ProjectExecutiveReport({ report }: Props) {
           </tbody>
         </table>
       </header>
+      )}
 
       <div className="space-y-5 px-6 py-5 print:space-y-4 print:px-0">
         <Section title="Objetivo / Escopo">
@@ -157,9 +174,9 @@ export function ProjectExecutiveReport({ report }: Props) {
         <Section title="Resumo executivo financeiro">
           <div className="project-executive-report-kpi-grid grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             <SummaryCard
-              label="Custo base dos itens"
+              label="Custo base do conjunto"
               value={formatExecutiveReportMoney(executiveSummary.baseItemsCost)}
-              hint="Soma unitária antes da amortização"
+              hint="Σ custo base unitário × quantidade por conjunto, antes da amortização"
             />
             <SummaryCard
               label="Investimento em moldes"
@@ -182,8 +199,13 @@ export function ProjectExecutiveReport({ report }: Props) {
               value={formatExecutiveReportMoney(executiveSummary.absorbedInternally)}
             />
             <SummaryCard
-              label="Custo final dos itens com amortização"
+              label="Custo final do conjunto (com amortização)"
               value={formatExecutiveReportMoney(executiveSummary.finalItemsCost)}
+              hint={
+                executiveSummary.setQuantitiesAssumed
+                  ? "Σ custo final unitário × qtd./conjunto. Itens sem quantidade salva contam 1."
+                  : "Σ custo final unitário × quantidade por conjunto"
+              }
             />
             <SummaryCard
               label="Custo total do projeto"
@@ -219,22 +241,24 @@ export function ProjectExecutiveReport({ report }: Props) {
             <DataTable
               headers={[
                 "Item",
-                "Tipo",
                 "Origem",
                 "Custo base unit.",
                 "Amort. unit.",
                 "Custo final unit.",
-                "Qtd. base",
-                "Custo total est.",
+                "Qtd./conj.",
+                "Custo final no conj.",
+                "Volume base",
+                "Custo no volume",
                 "Status",
               ]}
               rows={report.items.map((item) => [
                 item.name,
-                item.typeLabel,
-                item.originLabel,
+                `${item.originLabel}${item.costSource === "CURRENT_COSTS" ? " · custo atual (sem precificação salva)" : ""}`,
                 formatExecutiveReportMoney(item.baseUnitCost),
                 formatExecutiveReportMoney(item.unitAmortizedCost),
                 formatExecutiveReportMoney(item.finalUnitCost),
+                `${(item.quantityPerSet ?? 1).toLocaleString("pt-BR")}${item.quantityPerSetSaved === false ? "*" : ""}`,
+                formatExecutiveReportMoney(item.setFinalCost ?? item.finalUnitCost),
                 item.baseQuantity.toLocaleString("pt-BR"),
                 formatExecutiveReportMoney(item.estimatedTotalCost),
                 item.statusLabel,
@@ -567,10 +591,12 @@ export function ProjectExecutiveReport({ report }: Props) {
               <span className="font-medium">Elaborado por:</span> {report.approval.preparedBy}
             </p>
             <p className="text-sm">
-              <span className="font-medium">Revisado por:</span> {report.approval.reviewedBy}
+              <span className="font-medium">Revisado por:</span>{" "}
+              {report.approval.reviewedBy || "______________________________"}
             </p>
             <p className="text-sm">
-              <span className="font-medium">Aprovado por:</span> {report.approval.approvedBy}
+              <span className="font-medium">Aprovado por:</span>{" "}
+              {report.approval.approvedBy || "______________________________"}
             </p>
             <p className="text-sm">
               <span className="font-medium">Data:</span> ____________________

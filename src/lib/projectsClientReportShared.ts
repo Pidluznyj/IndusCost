@@ -3,8 +3,11 @@
 export const PROJECT_CLIENT_REPORT_TITLE = "Proposta Comercial — Relatório Geral do Cliente";
 export const PROJECT_CLIENT_REPORT_BUTTON_LABEL = "Proposta Cliente";
 export const PROJECT_CLIENT_REPORT_ROUTE_SUFFIX = "client-report";
-export const PROJECT_CLIENT_REPORT_VERSION = "1.0";
-export const PROJECT_CLIENT_REPORT_ISSUER_NAME = "IndusCost";
+export const PROJECT_CLIENT_REPORT_VERSION = "2.0";
+/** Usado só quando a razão social não está nas Configurações de Marca. */
+export const PROJECT_CLIENT_REPORT_ISSUER_NAME = "Emitente não configurado";
+export const PROJECT_CLIENT_REPORT_MONTHLY_VOLUME_LABEL = "Volume mensal estimado";
+export const PROJECT_CLIENT_REPORT_MONTHLY_VALUE_LABEL = "Valor mensal estimado (conjunto × volume mensal)";
 export const PROJECT_CLIENT_REPORT_NOT_INFORMED = "Não informado";
 
 export const PROJECT_CLIENT_REPORT_DISCLAIMER =
@@ -70,6 +73,7 @@ export type ProjectClientReportPayload = {
     code: string;
     name: string;
     customerName: string;
+    customerDocument?: string | null;
     commercialResponsibleName: string | null;
     issuedAt: string;
     validUntil: string | null;
@@ -80,7 +84,9 @@ export type ProjectClientReportPayload = {
     productsCount: number;
     finalSetPrice: number | null;
     finalSetPriceLabel: string;
+    /** Volume mensal estimado do projeto (Project.expectedMonthlyVolume). */
     estimatedQuantity: number | null;
+    /** Preço do conjunto × volume mensal estimado. */
     totalProposalValue: number | null;
     currency: "BRL";
     pricingPending: boolean;

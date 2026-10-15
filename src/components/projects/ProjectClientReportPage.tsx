@@ -5,7 +5,7 @@ import { useAuth } from "@/src/contexts/AuthContext";
 import { fetchJsonOk } from "@/src/lib/http";
 import { canManageProjects, canViewProjects } from "@/src/lib/projectsPermissions";
 import { PROJECT_DETAIL_PATH } from "@/src/lib/projectsNavigation";
-import { PROJECT_CLIENT_REPORT_TITLE, buildProjectClientProposalPptxFilename } from "@/src/lib/projectsClientReportShared";
+import { PROJECT_CLIENT_REPORT_TITLE } from "@/src/lib/projectsClientReportShared";
 import type { ProjectClientReportPayload } from "@/src/lib/projectsClientReportShared";
 import {
   applyProjectClientReportQuantities,
@@ -16,6 +16,8 @@ import {
 import { ProjectClientReport } from "@/src/components/projects/ProjectClientReport";
 import { ProjectExecutiveReportPrintControls } from "@/src/components/projects/ProjectExecutiveReportPrintControls";
 import "@/src/project-client-report-print.css";
+import { ProjectDocumentIssueBar } from "@/src/components/projects/documents/ProjectDocumentIssueBar";
+import { useProjectDocument } from "@/src/components/projects/documents/useProjectDocument";
 
 const ROUTE_BODY_CLASS = "project-client-report-route";
 
@@ -44,12 +46,20 @@ export function ProjectClientReportPage() {
   const canManage = canManageProjects(auth);
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
-  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [baseReport, setBaseReport] = useState<ProjectClientReportPayload | null>(null);
+  // Prévia (precificação salva, montada no servidor) ou emissão congelada (?emissao=<id>).
+  const doc = useProjectDocument<ProjectClientReportPayload>(projectId, "CLIENT_PROPOSAL", canView && !!projectId);
+  const isIssued = doc.issued != null;
+  const baseReport = doc.envelope?.body ?? null;
+  const loading = doc.loading;
+  const canEditQuantities = canManage && !isIssued;
   const [quantityDrafts, setQuantityDrafts] = useState<Record<string, string>>({});
   const [savedQuantityDrafts, setSavedQuantityDrafts] = useState<Record<string, string>>({});
-  const [error, setError] = useState<string | null>(null);
+  const error = !canView
+    ? "Você não possui permissão para visualizar relatórios de projetos."
+    : !projectId
+      ? "Projeto inválido."
+      : doc.error;
   const [saveError, setSaveError] = useState<string | null>(null);
   const [pptxError, setPptxError] = useState<string | null>(null);
   const [pptxDownloading, setPptxDownloading] = useState(false);
@@ -67,39 +77,12 @@ export function ProjectClientReportPage() {
     };
   }, []);
 
-  const loadReport = useCallback(async () => {
-    if (!projectId) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const data = await fetchJsonOk<ProjectClientReportPayload>(
-        `/api/projects/${projectId}/client-report`
-      );
-      setBaseReport(data);
-      const drafts = quantitiesFromReport(data);
-      setQuantityDrafts(drafts);
-      setSavedQuantityDrafts(drafts);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Não foi possível carregar o relatório.");
-      setBaseReport(null);
-    } finally {
-      setLoading(false);
-    }
-  }, [projectId]);
-
   useEffect(() => {
-    if (!canView) {
-      setLoading(false);
-      setError("Você não possui permissão para visualizar relatórios de projetos.");
-      return;
-    }
-    if (!projectId) {
-      setLoading(false);
-      setError("Projeto inválido.");
-      return;
-    }
-    void loadReport();
-  }, [canView, projectId, loadReport]);
+    if (!baseReport) return;
+    const drafts = quantitiesFromReport(baseReport);
+    setQuantityDrafts(drafts);
+    setSavedQuantityDrafts(drafts);
+  }, [baseReport]);
 
   const quantityValidation = useMemo(() => {
     if (!baseReport) return { ok: true as const, errors: {} };
@@ -109,28 +92,30 @@ export function ProjectClientReportPage() {
 
   const displayReport = useMemo(() => {
     if (!baseReport) return null;
-    if (!canManage) return baseReport;
+    if (!canEditQuantities) return baseReport;
     const numeric = quantitiesToNumbers(quantityDrafts);
     if (Object.keys(numeric).length !== baseReport.products.length) {
       return baseReport;
     }
     return applyProjectClientReportQuantities(baseReport, numeric);
-  }, [baseReport, canManage, quantityDrafts]);
+  }, [baseReport, canEditQuantities, quantityDrafts]);
 
   const hasUnsavedQuantities = useMemo(() => {
     return JSON.stringify(quantityDrafts) !== JSON.stringify(savedQuantityDrafts);
   }, [quantityDrafts, savedQuantityDrafts]);
 
-  const exportBlocked =
+  const printBlocked =
     !displayReport ||
     !!error ||
-    (canManage &&
+    (canEditQuantities &&
       (!quantityValidation.ok || hasUnsavedQuantities || displayReport.summary.pricingPending));
+  // PDF/PowerPoint saem só da proposta EMITIDA (conteúdo congelado, número e hash).
+  const exportBlocked = !isIssued || !!error || !displayReport;
 
   useEffect(() => {
     if (!displayReport) return;
-    document.title = `${displayReport.project.code} — Proposta Cliente`;
-  }, [displayReport]);
+    document.title = `${doc.envelope?.header.documentNumber ?? displayReport.project.code} — Proposta Cliente`;
+  }, [displayReport, doc.envelope?.header.documentNumber]);
 
   const handleQuantityChange = useCallback((productId: string, value: string) => {
     setQuantityDrafts((current) => ({ ...current, [productId]: value }));
@@ -160,7 +145,7 @@ export function ProjectClientReportPage() {
     setSaving(true);
     setSaveError(null);
     try {
-      const payload = await fetchJsonOk<ProjectClientReportPayload>(
+      await fetchJsonOk<ProjectClientReportPayload>(
         `/api/projects/${projectId}/client-report/quantities`,
         {
           method: "PUT",
@@ -173,37 +158,40 @@ export function ProjectClientReportPage() {
           }),
         }
       );
-      setBaseReport(payload);
-      const drafts = quantitiesFromReport(payload);
-      setQuantityDrafts(drafts);
-      setSavedQuantityDrafts(drafts);
+      // Recarrega a prévia do servidor (mesma fonte da emissão).
+      await doc.reload();
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : "Erro ao salvar quantidades.");
     } finally {
       setSaving(false);
     }
-  }, [projectId, baseReport, quantityDrafts, quantityValidation.ok]);
+  }, [projectId, baseReport, quantityDrafts, quantityValidation.ok, doc.reload]);
 
   const handlePrint = useCallback(() => {
-    if (exportBlocked) return;
+    if (printBlocked) return;
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
         window.print();
       });
     });
-  }, [exportBlocked]);
+  }, [printBlocked]);
 
   const handleDownloadPdf = useCallback(() => {
-    if (!projectId || exportBlocked) return;
-    window.open(`/api/projects/${projectId}/client-report.pdf`, "_blank", "noopener,noreferrer");
-  }, [projectId, exportBlocked]);
+    if (!projectId || exportBlocked || !doc.issued) return;
+    window.open(
+      `/api/projects/${projectId}/documents/issued/${doc.issued.id}/proposal.pdf`,
+      "_blank",
+      "noopener,noreferrer"
+    );
+  }, [projectId, exportBlocked, doc.issued]);
 
   const handleDownloadPptx = useCallback(async () => {
     if (!projectId || exportBlocked || !displayReport) return;
     setPptxDownloading(true);
     setPptxError(null);
     try {
-      const res = await fetch(`/api/projects/${projectId}/client-proposal-pptx`, {
+      if (!doc.issued) return;
+      const res = await fetch(`/api/projects/${projectId}/documents/issued/${doc.issued.id}/proposal.pptx`, {
         credentials: "include",
       });
       if (!res.ok) {
@@ -222,10 +210,7 @@ export function ProjectClientReportPage() {
         return;
       }
       const blob = await res.blob();
-      const filename = buildProjectClientProposalPptxFilename(
-        displayReport.project.code,
-        displayReport.project.name
-      );
+      const filename = `${(doc.issued.documentNumber ?? displayReport.project.code).replace(/[^\w.-]+/g, "_")}.pptx`;
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = url;
@@ -237,7 +222,7 @@ export function ProjectClientReportPage() {
     } finally {
       setPptxDownloading(false);
     }
-  }, [projectId, exportBlocked, displayReport]);
+  }, [projectId, exportBlocked, displayReport, doc.issued]);
 
   const handleBack = useCallback(() => {
     if (projectId) {
@@ -263,11 +248,11 @@ export function ProjectClientReportPage() {
         <ProjectExecutiveReportPrintControls
           onBack={handleBack}
           onPrint={handlePrint}
-          printDisabled={exportBlocked}
+          printDisabled={printBlocked}
           backLabel="Voltar ao projeto"
         />
         <div className="flex flex-wrap items-center gap-2">
-          {canManage && baseReport ? (
+          {canEditQuantities && baseReport ? (
             <>
               <button
                 type="button"
@@ -299,6 +284,7 @@ export function ProjectClientReportPage() {
             type="button"
             onClick={() => void handleDownloadPptx()}
             disabled={exportBlocked || pptxDownloading}
+            title={!isIssued ? "Emita a proposta para exportar o PowerPoint." : undefined}
             className="inline-flex items-center gap-2 rounded-lg border border-border bg-white px-4 py-2 text-sm font-semibold hover:bg-accent disabled:pointer-events-none disabled:opacity-50"
             data-testid="project-client-report-download-pptx"
           >
@@ -313,6 +299,7 @@ export function ProjectClientReportPage() {
             type="button"
             onClick={handleDownloadPdf}
             disabled={exportBlocked}
+            title={!isIssued ? "Emita a proposta para exportar o PDF." : undefined}
             className="inline-flex items-center gap-2 rounded-lg border border-border bg-white px-4 py-2 text-sm font-semibold hover:bg-accent disabled:pointer-events-none disabled:opacity-50"
             data-testid="project-client-report-download-pdf"
           >
@@ -322,13 +309,33 @@ export function ProjectClientReportPage() {
         </div>
       </div>
 
-      {canManage && hasUnsavedQuantities ? (
+      {displayReport ? (
+        <ProjectDocumentIssueBar
+          state={doc}
+          canIssue={canManage}
+          disabledReason={
+            hasUnsavedQuantities
+              ? "Salve as quantidades antes de emitir."
+              : !quantityValidation.ok
+                ? "Corrija as quantidades antes de emitir."
+                : null
+          }
+        />
+      ) : null}
+
+      {!isIssued && displayReport ? (
+        <div className="project-client-report-print-no-print mx-auto mb-4 max-w-[1180px] rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
+          PDF e PowerPoint são gerados a partir da proposta emitida (número, revisão e código de verificação).
+        </div>
+      ) : null}
+
+      {canEditQuantities && hasUnsavedQuantities ? (
         <div className="project-client-report-print-no-print mx-auto mb-4 max-w-[1180px] rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
           Salve as quantidades antes de imprimir ou exportar o PDF.
         </div>
       ) : null}
 
-      {canManage && displayReport?.summary.pricingPending ? (
+      {canEditQuantities && displayReport?.summary.pricingPending ? (
         <div className="project-client-report-print-no-print mx-auto mb-4 max-w-[1180px] rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
           Alguns produtos ainda não possuem preço comercial final. Corrija a precificação antes de
           gerar a proposta.
@@ -363,7 +370,9 @@ export function ProjectClientReportPage() {
       {displayReport ? (
         <ProjectClientReport
           report={displayReport}
-          editable={canManage}
+          documentHeader={doc.envelope?.header ?? null}
+          sha256={doc.issued?.payloadSha256 ?? null}
+          editable={canEditQuantities}
           quantityDrafts={quantityDrafts}
           quantityErrors={quantityValidation.ok ? undefined : quantityValidation.errors}
           onQuantityChange={handleQuantityChange}

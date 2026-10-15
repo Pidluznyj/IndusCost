@@ -1,27 +1,32 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Loader2 } from "lucide-react";
 import { useAuth } from "@/src/contexts/AuthContext";
-import { fetchJsonOk } from "@/src/lib/http";
-import { canViewProjects } from "@/src/lib/projectsPermissions";
-import {
-  buildProjectExecutiveReport,
-} from "@/src/lib/projectsExecutiveReport";
+import { canManageProjects, canViewProjects } from "@/src/lib/projectsPermissions";
+import type { ProjectExecutiveReportPayload } from "@/src/lib/projectsExecutiveReport";
 import { PROJECT_DETAIL_PATH } from "@/src/lib/projectsNavigation";
 import { ProjectExecutiveReport } from "@/src/components/projects/ProjectExecutiveReport";
 import { ProjectExecutiveReportPrintControls } from "@/src/components/projects/ProjectExecutiveReportPrintControls";
-import type { ProjectDetail } from "@/src/types/projects";
+import { ProjectDocumentIssueBar } from "@/src/components/projects/documents/ProjectDocumentIssueBar";
+import { useProjectDocument } from "@/src/components/projects/documents/useProjectDocument";
 
 const ROUTE_BODY_CLASS = "project-executive-report-route";
 
 export function ProjectExecutiveReportPage() {
   const auth = useAuth();
   const canView = canViewProjects(auth);
+  const canManage = canManageProjects(auth);
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
-  const [loading, setLoading] = useState(true);
-  const [detail, setDetail] = useState<ProjectDetail | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  // Montado no servidor com a precificação salva; emissão congela número/revisão/hash.
+  const doc = useProjectDocument<ProjectExecutiveReportPayload>(projectId, "EXECUTIVE_REPORT", canView && !!projectId);
+  const report = doc.envelope?.body ?? null;
+  const loading = doc.loading;
+  const error = !canView
+    ? "Você não possui permissão para visualizar relatórios de projetos."
+    : !projectId
+      ? "Projeto inválido."
+      : doc.error;
   const routeEntryTitleRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -37,51 +42,9 @@ export function ProjectExecutiveReportPage() {
   }, []);
 
   useEffect(() => {
-    if (!canView) {
-      setLoading(false);
-      setError("Você não possui permissão para visualizar relatórios de projetos.");
-      return;
-    }
-    if (!projectId) {
-      setLoading(false);
-      setError("Projeto inválido.");
-      return;
-    }
-
-    let cancelled = false;
-    setLoading(true);
-    setError(null);
-
-    const run = async () => {
-      try {
-        const data = await fetchJsonOk<ProjectDetail>(`/api/projects/${projectId}`);
-        if (cancelled) return;
-        setDetail(data);
-      } catch (err) {
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : "Não foi possível carregar o projeto.");
-          setDetail(null);
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    };
-
-    void run();
-    return () => {
-      cancelled = true;
-    };
-  }, [canView, projectId]);
-
-  const report = useMemo(
-    () => (detail ? buildProjectExecutiveReport(detail) : null),
-    [detail]
-  );
-
-  useEffect(() => {
     if (!report) return;
-    document.title = `${report.project.code} — Relatório Gerencial`;
-  }, [report]);
+    document.title = `${doc.envelope?.header.documentNumber ?? report.project.code} — Relatório Gerencial`;
+  }, [report, doc.envelope?.header.documentNumber]);
 
   const handlePrint = useCallback(() => {
     if (!report) return;
@@ -130,6 +93,7 @@ export function ProjectExecutiveReportPage() {
         onPrint={handlePrint}
         printDisabled={!report || !!error}
       />
+      {report ? <ProjectDocumentIssueBar state={doc} canIssue={canManage} /> : null}
 
       <div className="project-executive-report-scroll mx-auto w-full max-w-[1180px] overflow-x-hidden print:overflow-visible">
         {loading ? (
@@ -146,7 +110,11 @@ export function ProjectExecutiveReportPage() {
             Projeto não localizado.
           </div>
         ) : (
-          <ProjectExecutiveReport report={report} />
+          <ProjectExecutiveReport
+            report={report}
+            documentHeader={doc.envelope?.header ?? null}
+            sha256={doc.issued?.payloadSha256 ?? null}
+          />
         )}
       </div>
     </div>

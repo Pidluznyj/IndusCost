@@ -1,4 +1,6 @@
 import React from "react";
+import type { ProjectDocumentHeader } from "@/src/lib/projectsDocumentHeader";
+import { ProjectDocumentHeaderBlock } from "@/src/components/projects/documents/ProjectDocumentHeaderBlock";
 import {
   PROJECT_INTAKE_QUICK_FORM_TITLE,
   PROJECT_INTAKE_QUICK_PENDING_LABEL,
@@ -50,18 +52,25 @@ function FieldLine({ label, value, mode }: { label: string; value: string | null
 
 type Props = {
   payload: ProjectIntakeQuickFormPayload;
+  /** Bloco documental comum (emitente, cliente, projeto, emissão). Ausente na ficha em branco. */
+  documentHeader?: ProjectDocumentHeader | null;
+  sha256?: string | null;
 };
 
-export function ProjectIntakeQuickFormDocument({ payload }: Props) {
+export function ProjectIntakeQuickFormDocument({ payload, documentHeader, sha256 }: Props) {
   const { mode, header } = payload;
 
   return (
     <article className="project-intake-form-document project-intake-quick-form-document">
       <header className="project-intake-form-header project-intake-quick-header">
-        <div className="project-intake-form-brand">
-          <div className="project-intake-form-brand-title">INDUSCOST</div>
-          <div className="project-intake-form-brand-subtitle">{PROJECT_INTAKE_QUICK_FORM_TITLE}</div>
-        </div>
+        {documentHeader ? (
+          <ProjectDocumentHeaderBlock header={documentHeader} sha256={sha256} />
+        ) : (
+          <div className="project-intake-form-brand">
+            <div className="project-intake-form-brand-title">INDUSCOST</div>
+            <div className="project-intake-form-brand-subtitle">{PROJECT_INTAKE_QUICK_FORM_TITLE}</div>
+          </div>
+        )}
         <div className="project-intake-quick-header-grid">
           <FieldLine label="Projeto" value={header.projectName} mode={mode} />
           <FieldLine label="Cliente" value={header.customerName} mode={mode} />
@@ -254,8 +263,12 @@ export function ProjectIntakeQuickFormDocument({ payload }: Props) {
       </section>
 
       <footer className="project-intake-form-footer project-intake-quick-footer">
-        <span>Documento gerado pelo IndusCost — uso interno</span>
-        <span>Página</span>
+        <span>
+          {documentHeader?.documentNumber
+            ? `${documentHeader.documentNumber} · revisão ${documentHeader.revision} — uso interno`
+            : "Documento gerado pelo IndusCost — uso interno"}
+        </span>
+        <span>{documentHeader?.issuedBy.name ?? ""}</span>
       </footer>
     </article>
   );

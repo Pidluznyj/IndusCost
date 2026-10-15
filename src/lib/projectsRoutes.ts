@@ -3,6 +3,13 @@ import type { RequestHandler } from "express";
 import { Prisma, type ProjectStatus, type ProjectType } from "@prisma/client";
 import type { AppAuthContext } from "@/src/lib/appAuth.js";
 import { prisma } from "@/src/lib/prisma.js";
+import { resolveProjectCustomerLink, type ProjectCustomerLinkData } from "@/src/lib/projectsCustomerLinkService.js";
+import { projectDocumentTypeFromSlug } from "@/src/lib/projectsDocumentHeader.js";
+import {
+  PROJECT_COMMERCIAL_FIELD_KEYS,
+  parseProjectCommercialPatch,
+  toProjectCommercialData,
+} from "@/src/lib/projectsCommercialTerms.js";
 import {
   ENGINEERING_ACTIONS,
   ENGINEERING_RESOURCE_KEYS,
@@ -114,6 +121,14 @@ function parsePageSize(value: unknown): number {
   if (!Number.isFinite(n)) return 20;
   return Math.min(100, Math.max(1, Math.floor(n)));
 }
+
+/** Campos do PATCH que não afetam custos (não disparam recálculo da versão). */
+const PROJECT_DOCUMENTARY_KEYS = new Set<string>([
+  "customerId",
+  "customerName",
+  "customerDocument",
+  ...PROJECT_COMMERCIAL_FIELD_KEYS,
+]);
 
 function optStr(value: unknown): string | null {
   if (value == null) return null;
@@ -444,6 +459,108 @@ export function registerProjectsRoutes(
     }
   });
 
+  // ── Documentos do projeto: prévia, emissão congelada (número/revisão/sha256) e consulta ──
+  const documentActor = async (req: express.Request) => {
+    const user = await auth.getCurrentAppUser(req);
+    return { userId: user?.id ?? null, name: user?.name?.trim() || user?.email || "Usuário não identificado" };
+  };
+  const parseDocumentType = (raw: string) => projectDocumentTypeFromSlug(String(raw ?? ""));
+
+  app.get("/api/projects/:id/documents/issued", ...view, async (req, res) => {
+    try {
+      if (!isUuid(req.params.id)) return res.status(400).json({ error: "ID inválido." });
+      const type = req.query.type ? parseDocumentType(String(req.query.type)) : null;
+      if (req.query.type && !type) return res.status(400).json({ error: "Tipo de documento inválido." });
+      const { listProjectIssuedDocuments } = await import("./projectsDocuments.server.js");
+      res.json({ rows: await listProjectIssuedDocuments(req.params.id, type ?? undefined) });
+    } catch (e: unknown) {
+      console.error("GET /api/projects/:id/documents/issued", e);
+      res.status(500).json({ error: "Erro ao listar documentos emitidos." });
+    }
+  });
+
+  app.get("/api/projects/:id/documents/issued/:issuedId", ...view, async (req, res) => {
+    try {
+      if (!isUuid(req.params.id) || !isUuid(req.params.issuedId)) return res.status(400).json({ error: "ID inválido." });
+      const { getProjectIssuedDocument } = await import("./projectsDocuments.server.js");
+      const doc = await getProjectIssuedDocument(req.params.id, req.params.issuedId);
+      if (!doc) return res.status(404).json({ error: "Documento emitido não encontrado." });
+      res.json(doc);
+    } catch (e: unknown) {
+      console.error("GET /api/projects/:id/documents/issued/:issuedId", e);
+      res.status(500).json({ error: "Erro ao abrir documento emitido." });
+    }
+  });
+
+  app.get("/api/projects/:id/documents/issued/:issuedId/proposal.:format", ...view, async (req, res) => {
+    try {
+      if (!isUuid(req.params.id) || !isUuid(req.params.issuedId)) return res.status(400).json({ error: "ID inválido." });
+      const format = req.params.format;
+      if (format !== "pdf" && format !== "pptx") return res.status(400).json({ error: "Formato inválido." });
+      const { getProjectIssuedDocument } = await import("./projectsDocuments.server.js");
+      const doc = await getProjectIssuedDocument(req.params.id, req.params.issuedId);
+      if (!doc || doc.issued.documentType !== "CLIENT_PROPOSAL") {
+        return res.status(404).json({ error: "Proposta emitida não encontrada." });
+      }
+      if (!doc.integrity.verified) {
+        return res.status(409).json({ error: "O conteúdo emitido não confere com o hash gravado.", code: "INTEGRITY_FAILED" });
+      }
+      const envelope = doc.envelope as import("./projectsDocumentHeader.js").ProjectDocumentEnvelope<
+        import("./projectsClientReportShared.js").ProjectClientReportPayload
+      >;
+      if (format === "pdf") {
+        const { buildProjectProposalPdf, buildProjectProposalPdfFilename } = await import("./projectsDocumentPdf.js");
+        const buffer = buildProjectProposalPdf(envelope, { sha256: doc.issued.payloadSha256 });
+        res.setHeader("Content-Type", "application/pdf");
+        res.setHeader("Content-Disposition", `attachment; filename="${buildProjectProposalPdfFilename(envelope)}"`);
+        return res.send(buffer);
+      }
+      const { buildProjectClientProposalPptxExportBuffer } = await import("./projectsClientReportService.js");
+      const buffer = await buildProjectClientProposalPptxExportBuffer(envelope.body);
+      res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.presentationml.presentation");
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="${(envelope.header.documentNumber ?? envelope.header.project.code).replace(/[^\w.-]+/g, "_")}.pptx"`,
+      );
+      res.send(buffer);
+    } catch (e: unknown) {
+      console.error("GET /api/projects/:id/documents/issued/:issuedId/proposal", e);
+      res.status(500).json({ error: "Erro ao gerar arquivo da proposta emitida." });
+    }
+  });
+
+  app.get("/api/projects/:id/documents/:type/preview", ...view, async (req, res) => {
+    try {
+      if (!isUuid(req.params.id)) return res.status(400).json({ error: "ID inválido." });
+      const type = parseDocumentType(req.params.type);
+      if (!type) return res.status(400).json({ error: "Tipo de documento inválido." });
+      const { previewProjectDocument } = await import("./projectsDocuments.server.js");
+      const preview = await previewProjectDocument(req.params.id, type, await documentActor(req));
+      if (!preview) return res.status(404).json({ error: "Projeto não encontrado." });
+      res.json(preview);
+    } catch (e: unknown) {
+      console.error("GET /api/projects/:id/documents/:type/preview", e);
+      res.status(500).json({ error: "Erro ao gerar prévia do documento." });
+    }
+  });
+
+  app.post("/api/projects/:id/documents/:type/issue", ...manage, async (req, res) => {
+    try {
+      if (!isUuid(req.params.id)) return res.status(400).json({ error: "ID inválido." });
+      const type = parseDocumentType(req.params.type);
+      if (!type) return res.status(400).json({ error: "Tipo de documento inválido." });
+      const { issueProjectDocument } = await import("./projectsDocuments.server.js");
+      const result = await issueProjectDocument(req.params.id, type, await documentActor(req));
+      if (result.ok === false) {
+        return res.status(result.status).json({ error: result.error, code: result.code, blockers: result.blockers ?? [] });
+      }
+      res.status(201).json(result);
+    } catch (e: unknown) {
+      console.error("POST /api/projects/:id/documents/:type/issue", e);
+      res.status(500).json({ error: "Erro ao emitir documento." });
+    }
+  });
+
   app.get("/api/projects/:id/client-report", ...view, async (req, res) => {
     try {
       if (!isUuid(req.params.id)) return res.status(400).json({ error: "ID inválido." });
@@ -460,16 +577,17 @@ export function registerProjectsRoutes(
   app.get("/api/projects/:id/client-report.pdf", ...view, async (req, res) => {
     try {
       if (!isUuid(req.params.id)) return res.status(400).json({ error: "ID inválido." });
-      const { loadProjectClientReport, buildProjectClientReportPdfBuffer, buildProjectClientReportPdfFilename } =
-        await import("./projectsClientReportService.js");
-      const payload = await loadProjectClientReport(req.params.id);
-      if (!payload) return res.status(404).json({ error: "Projeto não encontrado." });
-      const buffer = buildProjectClientReportPdfBuffer(payload);
+      // Exportação sem emissão = PRÉVIA (marca d'água, sem número). A proposta oficial é a emitida.
+      const { previewProjectDocument } = await import("./projectsDocuments.server.js");
+      const { buildProjectProposalPdf, buildProjectProposalPdfFilename } = await import("./projectsDocumentPdf.js");
+      const preview = await previewProjectDocument(req.params.id, "CLIENT_PROPOSAL", await documentActor(req));
+      if (!preview) return res.status(404).json({ error: "Projeto não encontrado." });
+      const envelope = preview.envelope as import("./projectsDocumentHeader.js").ProjectDocumentEnvelope<
+        import("./projectsClientReportShared.js").ProjectClientReportPayload
+      >;
+      const buffer = buildProjectProposalPdf(envelope);
       res.setHeader("Content-Type", "application/pdf");
-      res.setHeader(
-        "Content-Disposition",
-        `attachment; filename="${buildProjectClientReportPdfFilename(payload.project.code)}"`
-      );
+      res.setHeader("Content-Disposition", `attachment; filename="${buildProjectProposalPdfFilename(envelope)}"`);
       res.send(buffer);
     } catch (e: unknown) {
       console.error("GET /api/projects/:id/client-report.pdf", e);
@@ -550,11 +668,25 @@ export function registerProjectsRoutes(
     try {
       const body = req.body ?? {};
       const title = typeof body.title === "string" ? body.title.trim() : "";
-      const customerName = typeof body.customerName === "string" ? body.customerName.trim() : "";
-      const customerDocument =
-        body.customerDocument === undefined || body.customerDocument === null
+      let customerLink: ProjectCustomerLinkData | null = null;
+      if (body.customerId != null && body.customerId !== "") {
+        const link = await resolveProjectCustomerLink(prisma, body.customerId);
+        if (link.ok === false) return res.status(link.status).json({ error: link.error, code: link.code });
+        customerLink = link.data;
+      }
+      // Com vínculo, nome e documento vêm do cadastro oficial (snapshot da época).
+      const customerName = customerLink
+        ? customerLink.customerName
+        : typeof body.customerName === "string"
+          ? body.customerName.trim()
+          : "";
+      const customerDocument = customerLink
+        ? customerLink.customerDocument
+        : body.customerDocument === undefined || body.customerDocument === null
           ? null
           : optStr(body.customerDocument);
+      const commercial = parseProjectCommercialPatch(body);
+      if (commercial.ok === false) return res.status(400).json({ error: commercial.message, code: commercial.code });
       const projectType = body.projectType;
 
       if (!title) return res.status(400).json({ error: "Título é obrigatório." });
@@ -579,6 +711,14 @@ export function registerProjectsRoutes(
         targetPrice: optNum(body.targetPrice),
         targetMarginPercent: optNum(body.targetMarginPercent),
         notes: optStr(body.notes),
+        customerLink: customerLink
+          ? {
+              customerId: customerLink.customerId,
+              customerLinkSource: customerLink.customerLinkSource,
+              customerLinkedAt: customerLink.customerLinkedAt,
+            }
+          : null,
+        commercial: toProjectCommercialData(commercial.value),
       });
 
       const detail = await loadProjectDetail(project.id);
@@ -600,10 +740,43 @@ export function registerProjectsRoutes(
         return res.status(400).json({ error: "Tipo de projeto inválido." });
       }
 
-      const data: Prisma.ProjectUpdateInput = {};
+      const current = await prisma.project.findUnique({
+        where: { id: req.params.id },
+        select: { customerId: true },
+      });
+      if (!current) return res.status(404).json({ error: "Projeto não encontrado." });
+
+      const data: Prisma.ProjectUncheckedUpdateInput = {};
       if (body.title != null) data.title = String(body.title).trim();
-      if (body.customerName != null) data.customerName = String(body.customerName).trim();
-      if (body.customerDocument !== undefined) data.customerDocument = optStr(body.customerDocument);
+      if ("customerId" in body) {
+        if (body.customerId === null || body.customerId === "") {
+          // Desvincular: o snapshot textual permanece (histórico); pode ser editado em seguida.
+          data.customerId = null;
+          data.customerLinkSource = null;
+          data.customerLinkedAt = null;
+          if (body.customerName != null) data.customerName = String(body.customerName).trim();
+          if (body.customerDocument !== undefined) data.customerDocument = optStr(body.customerDocument);
+        } else {
+          const link = await resolveProjectCustomerLink(prisma, body.customerId);
+          if (link.ok === false) return res.status(link.status).json({ error: link.error, code: link.code });
+          Object.assign(data, link.data);
+        }
+      } else if (
+        current.customerId &&
+        ((body.customerName != null) || body.customerDocument !== undefined)
+      ) {
+        return res.status(409).json({
+          error: "Cliente vinculado ao cadastro oficial: desvincule antes de editar o nome ou o documento.",
+          code: "CUSTOMER_LINKED",
+        });
+      } else {
+        if (body.customerName != null) data.customerName = String(body.customerName).trim();
+        if (body.customerDocument !== undefined) data.customerDocument = optStr(body.customerDocument);
+      }
+      if (data.customerName === "") return res.status(400).json({ error: "Cliente é obrigatório." });
+      const commercial = parseProjectCommercialPatch(body);
+      if (commercial.ok === false) return res.status(400).json({ error: commercial.message, code: commercial.code });
+      Object.assign(data, toProjectCommercialData(commercial.value));
       if (body.description !== undefined) data.description = optStr(body.description);
       if (body.projectType != null) data.projectType = body.projectType;
       if (body.status != null) data.status = body.status;
@@ -619,8 +792,10 @@ export function registerProjectsRoutes(
       if (body.notes !== undefined) data.notes = optStr(body.notes);
 
       await prisma.project.update({ where: { id: req.params.id }, data });
-      const version = await requireProjectAndVersion(req.params.id);
-      if (version.version) {
+      // Cliente e condições comerciais não alteram custo: não recalcula a versão por eles.
+      const documentaryOnly = Object.keys(body).every((k) => PROJECT_DOCUMENTARY_KEYS.has(k));
+      const version = documentaryOnly ? null : await requireProjectAndVersion(req.params.id);
+      if (version?.version) {
         await recalculateAndPersistVersionCosts(version.version.id);
       }
       const detail = await loadProjectDetail(req.params.id);

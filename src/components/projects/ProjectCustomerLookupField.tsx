@@ -14,6 +14,11 @@ type Props = {
   onChange: (value: ProjectCustomerSelection) => void;
   onDraftChange?: (draft: string) => void;
   disabled?: boolean;
+  /**
+   * true (padrão, criação de projeto): texto digitado e não escolhido vira cliente novo ao sair
+   * do campo. false (edição): só uma escolha explícita na lista altera o cliente.
+   */
+  commitDraftOnBlur?: boolean;
 };
 
 function formatDocument(doc: string | null | undefined) {
@@ -26,6 +31,7 @@ export function ProjectCustomerLookupField({
   onChange,
   onDraftChange,
   disabled,
+  commitDraftOnBlur = true,
 }: Props) {
   const listId = useId();
   const rootRef = useRef<HTMLDivElement>(null);
@@ -126,7 +132,7 @@ export function ProjectCustomerLookupField({
             if (value) onChange(null);
           }}
           onBlur={() => {
-            if (!value && trimmed) {
+            if (commitDraftOnBlur && !value && trimmed) {
               onChange({ mode: "simulation", name: trimmed });
             }
           }}
@@ -211,17 +217,20 @@ export function ProjectCustomerLookupField({
 }
 
 export function projectCustomerSelectionToPayload(selection: ProjectCustomerSelection): {
+  customerId: string | null;
   customerName: string;
   customerDocument: string | null;
 } | null {
   if (!selection) return null;
   if (selection.mode === "existing") {
     return {
+      customerId: selection.item.id,
       customerName: selection.item.name.trim(),
       customerDocument: selection.item.document,
     };
   }
   return {
+    customerId: null,
     customerName: selection.name.trim(),
     customerDocument: null,
   };

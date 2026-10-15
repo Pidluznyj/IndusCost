@@ -55,6 +55,7 @@ function serializePricingItem(row: ProjectPricingItem): SavedProjectPricingItem 
     taxAmount: dec(row.taxAmount),
     marginAmount: dec(row.marginAmount),
     status: row.status as ProjectPricingItemStatus,
+    savedAt: row.updatedAt.toISOString(),
   };
 }
 

@@ -149,7 +149,12 @@ export function ProjectHistory({
 
       <div className="rounded-xl border border-border bg-card p-5">
         <div className="flex items-center justify-between gap-3">
-          <h5 className="font-semibold">Observações e comentários</h5>
+          <div>
+            <h5 className="font-semibold">Observações internas</h5>
+            <p className="text-xs text-muted-foreground">
+              Uso interno da equipe. Nunca aparecem em documentos destinados ao cliente.
+            </p>
+          </div>
           {canManage ? (
             <div className="flex items-center gap-2">
               {notesStatus === "saved" ? (
