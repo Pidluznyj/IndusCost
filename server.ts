@@ -548,6 +548,7 @@ import { registerPurchaseEvidenceRoutes } from "./src/lib/purchasing/purchaseEvi
 import { registerPurchaseOrderRoutes } from "./src/lib/purchasing/purchaseOrderRoutes.js";
 import { registerSupplierPerformanceRoutes } from "./src/lib/purchasing/supplierPerformanceRoutes.js";
 import { registerSupplierPerformanceDashboardRoutes } from "./src/lib/purchasing/supplierPerformanceDashboardRoutes.js";
+import { registerPurchasePaymentTermsRoutes } from "./src/lib/purchasing/purchasePaymentTermsRoutes.js";
 import { registerPurchasingWorkstationRoutes } from "./src/lib/purchasing/purchasingWorkstationRoutes.js";
 import { registerPurchaseReceiptRoutes } from "./src/lib/purchasing/purchaseReceiptRoutes.js";
 import { registerShadowPurchasePlanningRoutes } from "./src/lib/purchasing/shadowPurchasePlanningRoutes.js";
@@ -17231,6 +17232,13 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   registerSupplierPerformanceDashboardRoutes(app, {
     requireAppAuth,
     requireResource,
+  });
+
+  // Compras → Performance → Condições de compra (PMP desde a emissão + meta gerencial).
+  registerPurchasePaymentTermsRoutes(app, {
+    requireAppAuth,
+    requireResource,
+    getCurrentAppUser,
   });
 
   registerPurchasingWorkstationRoutes(app, {

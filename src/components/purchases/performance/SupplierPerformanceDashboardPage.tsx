@@ -44,6 +44,7 @@ import {
 } from "./SupplierPerformanceSections";
 import { SupplierMaterialMatrixSection } from "./SupplierMaterialMatrixSection";
 import { SupplierClassificationPage } from "./SupplierClassificationSection";
+import { PurchasePaymentTermsPage } from "./PurchasePaymentTermsSection";
 import { SupplierScorecardOverlay } from "./SupplierScorecardOverlay";
 import { MaterialDetailOverlay } from "./MaterialDetailOverlay";
 import {
@@ -295,7 +296,9 @@ export function SupplierPerformanceDashboardPage() {
 
   return (
     <>
-      {view === "classification" ? (
+      {view === "payment-terms" ? (
+        <PurchasePaymentTermsPage view={view} onViewChange={handleViewChange} />
+      ) : view === "classification" ? (
         <SupplierClassificationPage
           view={view}
           onViewChange={handleViewChange}

@@ -4,6 +4,11 @@ import { Loader2, RefreshCw, Search } from "lucide-react";
 import { formatCurrency } from "@/src/lib/utils";
 import { fetchJsonOk } from "@/src/lib/http";
 import { PurchaseChainViewNav } from "@/src/components/supply-chain/PurchaseChainViewNav";
+import {
+  PAYMENT_TERMS_BUCKETS,
+  PAYMENT_TERMS_BUCKET_LABELS,
+} from "@/src/lib/purchasing/purchasePaymentTerms";
+import type { PaymentTermsSort } from "@/src/components/purchases/NomusPurchaseOrderListTable";
 import { NomusPurchaseOrderListTable } from "@/src/components/purchases/NomusPurchaseOrderListTable";
 import type { NomusPurchaseOrderListRowDto } from "@/src/lib/nomus/nomusPurchaseOrder360";
 
@@ -18,6 +23,8 @@ type ListResponse = {
   pageSize: number;
   total: number;
   lastSyncedAt: string | null;
+  /** Meta de PMP configurada (null = sem meta; filtro de meta fica oculto). */
+  paymentTermsTargetDays?: number | null;
   kpis: {
     openCount: number;
     openAmount: number;
@@ -67,6 +74,9 @@ function NomusPurchaseOrderList({ initialDetailId }: { initialDetailId: string |
   const [financialStatus, setFinancialStatus] = useState("");
   const [openOnly, setOpenOnly] = useState(false);
   const [overdueOnly, setOverdueOnly] = useState(false);
+  const [paymentTermsBucket, setPaymentTermsBucket] = useState("");
+  const [paymentTermsTarget, setPaymentTermsTarget] = useState("");
+  const [sort, setSort] = useState<PaymentTermsSort>(null);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -87,6 +97,9 @@ function NomusPurchaseOrderList({ initialDetailId }: { initialDetailId: string |
     if (financialStatus) params.set("financialStatus", financialStatus);
     if (openOnly) params.set("openOnly", "1");
     if (overdueOnly) params.set("overdueOnly", "1");
+    if (paymentTermsBucket) params.set("paymentTermsBucket", paymentTermsBucket);
+    if (paymentTermsTarget) params.set("paymentTermsTarget", paymentTermsTarget);
+    if (sort) params.set("sort", sort);
     params.set("page", String(page));
     params.set("pageSize", "25");
     try {
@@ -97,7 +110,7 @@ function NomusPurchaseOrderList({ initialDetailId }: { initialDetailId: string |
     } finally {
       setLoading(false);
     }
-  }, [q, stage, fiscalStatus, financialStatus, openOnly, overdueOnly, page]);
+  }, [q, stage, fiscalStatus, financialStatus, openOnly, overdueOnly, paymentTermsBucket, paymentTermsTarget, sort, page]);
 
   useEffect(() => {
     void load();
@@ -207,6 +220,43 @@ function NomusPurchaseOrderList({ initialDetailId }: { initialDetailId: string |
             ))}
           </select>
         </label>
+        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+          Prazo de pagamento
+          <select
+            value={paymentTermsBucket}
+            onChange={(e) => {
+              setPage(1);
+              setPaymentTermsBucket(e.target.value);
+            }}
+            className="rounded-md border border-border bg-white px-3 py-2 text-sm text-foreground"
+            data-testid="npo-filter-payment-terms-bucket"
+          >
+            <option value="">Todos</option>
+            {PAYMENT_TERMS_BUCKETS.map((bucket) => (
+              <option key={bucket} value={bucket}>
+                {PAYMENT_TERMS_BUCKET_LABELS[bucket]}
+              </option>
+            ))}
+          </select>
+        </label>
+        {data?.paymentTermsTargetDays != null ? (
+          <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+            Meta de PMP ({data.paymentTermsTargetDays} dias)
+            <select
+              value={paymentTermsTarget}
+              onChange={(e) => {
+                setPage(1);
+                setPaymentTermsTarget(e.target.value);
+              }}
+              className="rounded-md border border-border bg-white px-3 py-2 text-sm text-foreground"
+              data-testid="npo-filter-payment-terms-target"
+            >
+              <option value="">Todos</option>
+              <option value="BELOW">Abaixo da meta</option>
+              <option value="MEETS">Atende a meta</option>
+            </select>
+          </label>
+        ) : null}
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={openOnly} onChange={(e) => { setPage(1); setOpenOnly(e.target.checked); }} />
           Somente abertos
@@ -236,6 +286,11 @@ function NomusPurchaseOrderList({ initialDetailId }: { initialDetailId: string |
         loading={loading}
         selectedOrderId={detailId}
         onOpenDetail={openDetail}
+        sort={sort}
+        onSortChange={(next) => {
+          setPage(1);
+          setSort(next);
+        }}
       />
 
       <div className="flex items-center gap-2 text-sm">

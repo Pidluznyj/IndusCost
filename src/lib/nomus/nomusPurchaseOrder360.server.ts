@@ -2,10 +2,11 @@
  * Enriquecimento 360º do Pedido de Compra Nomus a partir do mirror local.
  * Sem chamada live ao Nomus. Resolução em lote para evitar N+1.
  */
+import { buildPaymentTermsCell, buildPaymentTermsDetail } from "@/src/lib/purchasing/purchasePaymentTermsAnalysis.js";
 import { prisma } from "@/src/lib/prisma.js";
 import { normalizeSupplierDocument, normalizeSupplierName } from "@/src/lib/financeSupplierIdentity.js";
 import { isNomusPurchaseOrderOverdue, isNomusPurchaseOrderOpenStage } from "./nomusPurchaseOrderClassifier.js";
-import { extractPurchaseOrderHeaderFields, extractPurchaseOrderItemFields } from "./nomusPurchaseOrder360.js";
+import { extractPurchaseOrderHeaderFields, extractPurchaseOrderItemFields, parsePurchaseOrderPlannedInstallments } from "./nomusPurchaseOrder360.js";
 import {
   buildPurchaseOrderFinancialBundle,
   extractDirectNomusNfeRefs,
@@ -377,9 +378,36 @@ function bundleForOrder(
   };
 }
 
+/**
+ * Nome de exibição dos fornecedores — MESMA resolução da listagem (alias, documento, identidade
+ * de Contas a Pagar). Chave: supplierExternalId (texto) ou "name:<nome Nomus>".
+ */
+export async function resolvePurchaseOrderSupplierDisplayNames(
+  orders: Array<Pick<PurchaseOrderMirrorHeader, "supplierExternalId" | "supplierName" | "supplierTaxId">>
+): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  if (orders.length === 0) return out;
+  const maps = await loadSupplierMaps(orders);
+  for (const order of orders) {
+    const key = order.supplierExternalId != null ? String(order.supplierExternalId) : `name:${order.supplierName ?? ""}`;
+    if (out.has(key)) continue;
+    const supplier = resolveOneSupplier(order, maps);
+    out.set(
+      key,
+      formatSupplierDisplayName({
+        resolvedName: supplier.resolvedName,
+        nomusName: supplier.nomusName ?? order.supplierName,
+        supplierExternalId: order.supplierExternalId,
+      })
+    );
+  }
+  return out;
+}
+
 export async function enrichNomusPurchaseOrderListRows(
   orders: PurchaseOrderMirrorHeader[],
-  now: Date = new Date()
+  now: Date = new Date(),
+  options: { paymentTermsTargetDays?: number | null } = {}
 ): Promise<NomusPurchaseOrderListRowDto[]> {
   if (orders.length === 0) return [];
   const [supplierMaps, fiscalMaps, financial] = await Promise.all([
@@ -424,6 +452,14 @@ export async function enrichNomusPurchaseOrderListRows(
       paidAmount: bundle.payableSummary.paidAmount,
       openAmount: bundle.payableSummary.openAmount,
       excludedPayableCount: bundle.excludedPayables.length,
+      paymentTerms: buildPaymentTermsCell(
+        {
+          installments: parsePurchaseOrderPlannedInstallments(order.rawPayload),
+          issuedAt: order.issuedAt,
+          totalAmount: order.totalAmount != null ? Number(order.totalAmount.toString()) : null,
+        },
+        options.paymentTermsTargetDays ?? null
+      ),
       overdue: isNomusPurchaseOrderOverdue({ stage, expectedAt: order.expectedAt, now }),
       open: isNomusPurchaseOrderOpenStage(stage),
       syncedAt: order.syncedAt.toISOString(),
@@ -435,6 +471,8 @@ export async function buildNomusPurchaseOrder360(input: {
   order: PurchaseOrderMirrorHeader & { items: PurchaseOrderMirrorItem[] };
   includeRaw: boolean;
   now?: Date;
+  /** Meta de PMP (Compras › Performance › Condições de compra); null = sem meta. */
+  paymentTermsTargetDays?: number | null;
 }) {
   const now = input.now ?? new Date();
   const { order } = input;
@@ -566,6 +604,15 @@ export async function buildNomusPurchaseOrder360(input: {
       ...row,
       dueDate: iso(row.dueDate),
     })),
+    paymentTerms: buildPaymentTermsDetail(
+      {
+        installments: bundle.plannedInstallments,
+        issuedAt: order.issuedAt,
+        totalAmount: order.totalAmount != null ? Number(order.totalAmount.toString()) : null,
+        conditionText: typeof header.paymentConditionText === "string" ? header.paymentConditionText : null,
+      },
+      input.paymentTermsTargetDays ?? null
+    ),
     receiving,
     fiscal: {
       invoices: bundle.invoices.map((nfe) => ({

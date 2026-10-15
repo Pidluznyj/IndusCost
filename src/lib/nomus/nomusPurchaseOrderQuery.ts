@@ -2,6 +2,37 @@ import type { Prisma } from "@prisma/client";
 import { isNomusPurchaseOrderOpenStage, isNomusPurchaseOrderOverdue } from "./nomusPurchaseOrderClassifier.js";
 import type { PurchaseOrderFinancialStatus } from "./nomusPurchaseOrder360.js";
 import type { NomusPurchaseOrderStage } from "./nomusPurchaseOrderTypes.js";
+import { PAYMENT_TERMS_BUCKETS, type PaymentTermsBucket } from "@/src/lib/purchasing/purchasePaymentTerms.js";
+import type { PaymentTermsCellDto } from "@/src/lib/purchasing/purchasePaymentTermsAnalysis.js";
+
+/** Filtros e ordenação do Prazo de Pagamento sobre linhas já calculadas (mesmo motor). */
+export function applyPaymentTermsListFilters<T extends { paymentTerms: PaymentTermsCellDto; issuedAt?: string | null }>(
+  rows: T[],
+  filters: Pick<NomusPurchaseOrderListFilters, "paymentTermsBucket" | "paymentTermsTarget" | "sort">
+): T[] {
+  let out = rows;
+  if (filters.paymentTermsBucket) out = out.filter((r) => r.paymentTerms.bucket === filters.paymentTermsBucket);
+  if (filters.paymentTermsTarget === "BELOW") out = out.filter((r) => r.paymentTerms.belowTarget === true);
+  if (filters.paymentTermsTarget === "MEETS") out = out.filter((r) => r.paymentTerms.belowTarget === false);
+  if (filters.sort) {
+    const dir = filters.sort === "pmp_asc" ? 1 : -1;
+    out = [...out].sort((a, b) => {
+      const pa = a.paymentTerms.pmpDays;
+      const pb = b.paymentTerms.pmpDays;
+      if (pa == null && pb == null) return 0;
+      if (pa == null) return 1;
+      if (pb == null) return -1;
+      return (pa - pb) * dir;
+    });
+  }
+  return out;
+}
+
+export function hasPaymentTermsListFilters(
+  filters: Pick<NomusPurchaseOrderListFilters, "paymentTermsBucket" | "paymentTermsTarget" | "sort">
+): boolean {
+  return Boolean(filters.paymentTermsBucket || filters.paymentTermsTarget || filters.sort);
+}
 
 export type NomusPurchaseOrderFiscalFilter = "WITH_NFE" | "WITHOUT_NFE";
 
@@ -23,6 +54,12 @@ export type NomusPurchaseOrderListFilters = {
   canceledOnly?: boolean;
   fiscalStatus?: NomusPurchaseOrderFiscalFilter | null;
   financialStatus?: PurchaseOrderFinancialStatus | null;
+  /** Faixa do PMP (Prazo de Pagamento). */
+  paymentTermsBucket?: PaymentTermsBucket | null;
+  /** Comparação com a meta de PMP (só com meta configurada). */
+  paymentTermsTarget?: "BELOW" | "MEETS" | null;
+  /** Ordenação pelo PMP em dias (não identificados sempre ao final). */
+  sort?: "pmp_asc" | "pmp_desc" | null;
   page?: number;
   pageSize?: number;
 };
@@ -74,6 +111,17 @@ export function parseNomusPurchaseOrderListFilters(
     product: String(query.product ?? query.produto ?? "").trim() || null,
     fiscalStatus,
     financialStatus: financialAliases[financialRaw] ?? null,
+    paymentTermsBucket: PAYMENT_TERMS_BUCKETS.find(
+      (b) => b === String(query.paymentTermsBucket ?? query.faixaPmp ?? "").trim().toUpperCase()
+    ) ?? null,
+    paymentTermsTarget: (() => {
+      const raw = String(query.paymentTermsTarget ?? query.metaPmp ?? "").trim().toUpperCase();
+      return raw === "BELOW" || raw === "ABAIXO" ? "BELOW" : raw === "MEETS" || raw === "ATENDE" ? "MEETS" : null;
+    })(),
+    sort: (() => {
+      const raw = String(query.sort ?? "").trim().toLowerCase();
+      return raw === "pmp_asc" || raw === "pmp_desc" ? raw : null;
+    })(),
     issuedFrom: parseOptionalDate(query.issuedFrom ?? query.emissaoDe),
     issuedTo: parseOptionalDate(query.issuedTo ?? query.emissaoAte),
     expectedFrom: parseOptionalDate(query.expectedFrom ?? query.previsaoDe),

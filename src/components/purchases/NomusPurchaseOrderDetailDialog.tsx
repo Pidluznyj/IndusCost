@@ -1,4 +1,5 @@
 import "./nomus-purchase-order-detail-print.css";
+import { formatPmpDays } from "@/src/lib/purchasing/purchasePaymentTerms";
 import "@/src/sales-order-print.css";
 import "@/src/proposal-print.css";
 
@@ -605,6 +606,7 @@ function FinanceiroTab({
 }) {
   return (
     <div className="space-y-6" data-testid="npo-tab-panel-financeiro">
+      {payload.paymentTerms ? <PurchasePaymentTermsBlock detail={payload.paymentTerms} /> : null}
       <section>
         <h2 className="mb-2 text-xs font-bold uppercase tracking-wide text-[#1e3a8a]">
           Planejado no pedido
@@ -633,6 +635,7 @@ function FinanceiroTab({
               <th className="px-2 py-2">Parcela</th>
               <th className="px-2 py-2">Vencimento</th>
               <th className="px-2 py-2">Valor</th>
+              <th className="px-2 py-2" title="Dias corridos entre a emissão do pedido e o vencimento">Dias desde a emissão</th>
               <th className="px-2 py-2">Forma</th>
               <th className="px-2 py-2">Conta</th>
               <th className="px-2 py-2">Adiantamento</th>
@@ -644,6 +647,9 @@ function FinanceiroTab({
                 <td className="px-2 py-2">{row.index + 1}</td>
                 <td className="px-2 py-2">{formatDate(row.dueDate) !== "—" ? formatDate(row.dueDate) : display(row.dueDateRaw)}</td>
                 <td className="px-2 py-2 tabular-nums">{money(row.amount)}</td>
+                <td className="px-2 py-2 tabular-nums" data-testid="npo-installment-days">
+                  {payload.paymentTerms?.daysByInstallmentIndex[row.index] ?? "—"}
+                </td>
                 <td className="px-2 py-2">{row.paymentMethodId != null ? `#${row.paymentMethodId}` : "—"}</td>
                 <td className="px-2 py-2">{row.bankAccountId != null ? `#${row.bankAccountId}` : "—"}</td>
                 <td className="px-2 py-2">{row.generatesAdvance == null ? "—" : row.generatesAdvance ? "Sim" : "Não"}</td>
@@ -659,6 +665,58 @@ function FinanceiroTab({
         onChanged={onPayablesChanged}
       />
     </div>
+  );
+}
+
+/** Condição de Pagamento da Compra — PMP desde a emissão (somente leitura, mesmo motor do grid). */
+function PurchasePaymentTermsBlock({ detail }: { detail: NonNullable<Detail360["paymentTerms"]> }) {
+  const { cell } = detail;
+  const base = cell.baseDate ? cell.baseDate.split("-").reverse().join("/") : "—";
+  return (
+    <section data-testid="npo-payment-terms-block" className="rounded-lg border border-slate-200 bg-slate-50/60 p-3">
+      <h2 className="mb-1 text-xs font-bold uppercase tracking-wide text-[#1e3a8a]">Condição de Pagamento da Compra</h2>
+      <p className="mb-2 text-xs text-slate-500">{detail.baseNote}</p>
+      <div className="grid gap-2 sm:grid-cols-4">
+        <SummaryCard label="Prazo médio ponderado desde a emissão" value={formatPmpDays(cell.pmpDays).replace("PMP: ", "")} />
+        <SummaryCard label="Condição observada (parcelas)" value={cell.label} />
+        <SummaryCard label="Emissão usada como data-base" value={base} />
+        <SummaryCard
+          label={detail.targetDays != null ? `Meta de PMP (${detail.targetDays} dias)` : "Meta de PMP"}
+          value={
+            detail.targetDays == null
+              ? "Não configurada"
+              : cell.gapDays == null
+                ? "—"
+                : cell.gapDays < 0
+                  ? `${cell.gapDays} dias (abaixo)`
+                  : cell.gapDays === 0
+                    ? "Na meta"
+                    : `+${cell.gapDays} dias`
+          }
+        />
+      </div>
+      <dl className="mt-2 grid gap-1 text-xs text-slate-600 sm:grid-cols-2">
+        <div>
+          <dt className="inline font-medium">Condição informada no Nomus: </dt>
+          <dd className="inline">{detail.conditionText ?? "não informada"}</dd>
+        </div>
+        <div>
+          <dt className="inline font-medium">Confiabilidade: </dt>
+          <dd className="inline">
+            {cell.status === "IDENTIFIED"
+              ? `${cell.installmentCount} parcela(s) com vencimento e valor`
+              : `Não identificado — ${cell.reasonLabel ?? "dados insuficientes"}`}
+          </dd>
+        </div>
+      </dl>
+      {cell.warnings.length > 0 ? (
+        <ul className="mt-2 ml-4 list-disc text-xs text-amber-800">
+          {cell.warnings.map((w) => (
+            <li key={w}>{w}</li>
+          ))}
+        </ul>
+      ) : null}
+    </section>
   );
 }
 

@@ -3905,6 +3905,29 @@ model NomusPurchaseOrderItem {
   @@index([productCode])
 }
 
+/// Meta gerencial de PMP de Compras (prazo médio ponderado desde a emissão do pedido).
+/// Singleton. Só para análise: não altera pedidos, vencimentos nem bloqueia compras.
+model PurchasePaymentTermsSettings {
+  id                String   @id @default("GLOBAL")
+  /// Meta em dias. Null = sem meta: indicadores sem classificação de atendimento.
+  targetPmpDays     Int?
+  updatedAt         DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+  updatedByUserId   String?  @db.Uuid
+  updatedByUserName String?
+}
+
+/// Histórico das alterações da meta de PMP (autoria e data).
+model PurchasePaymentTermsSettingsHistory {
+  id                 String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  previousTargetDays Int?
+  targetDays         Int?
+  changedAt          DateTime @default(now()) @db.Timestamptz(6)
+  changedByUserId    String?  @db.Uuid
+  changedByUserName  String
+
+  @@index([changedAt])
+}
+
 /// Avaliação do fornecedor pelo Pedido de Compra Nomus (espelho local).
 /// Identidade determinística: NomusPurchaseOrder.id. Não mistura com PurchaseOrder interno.
 /// A nota do FinancialSupplier continua DERIVADA — nenhuma coluna de score no cadastro.
