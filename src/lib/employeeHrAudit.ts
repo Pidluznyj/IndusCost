@@ -43,7 +43,19 @@ export type EmployeeHrAuditEvent =
   | "employee.evaluation.complete"
   | "employee.evaluation.print"
   | "employee.evaluation.cancel"
-  | "employee.evaluation.attachment";
+  | "employee.evaluation.attachment"
+  | "employee.competency.level.change"
+  | "employee.competency.assessment.create"
+  | "employee.competency.assessment.update"
+  | "employee.competency.assessment.complete"
+  | "employee.competency.assessment.delete"
+  | "employee.competency.position.assign"
+  | "competency.catalog.change"
+  | "competency.position.change"
+  | "competency.training.change"
+  | "competency.import.apply"
+  | "employee.competency.level.request"
+  | "employee.competency.level.decision";
 
 export type EmployeeHrAuditPayload = {
   event: EmployeeHrAuditEvent;

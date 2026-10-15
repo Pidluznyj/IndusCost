@@ -163,6 +163,14 @@ model Employee {
   hrEvaluations                HrEmployeeEvaluation[]              @relation("HrEvaluationSubject")
   hrEvaluationsAsEvaluator     HrEmployeeEvaluation[]              @relation("HrEvaluationEvaluator")
   hrEvaluationActionsResponsible HrEvaluationActionPlan[]          @relation("HrEvaluationActionResponsible")
+  /// Competências e Desenvolvimento.
+  hrWorkPositionAssignments    HrEmployeeWorkPosition[]           @relation("HrWorkPositionAssignee")
+  hrCompetencyLevels           HrEmployeeCompetencyLevel[]        @relation("HrCompetencyLevelEmployee")
+  hrCompetencyLevelHistory     HrEmployeeCompetencyLevelHistory[] @relation("HrCompetencyLevelHistoryEmployee")
+  hrCompetencyAssessments      HrCompetencyAssessment[]           @relation("HrCompetencyAssessmentSubject")
+  hrCompetencyAssessmentsAsEvaluator HrCompetencyAssessment[]     @relation("HrCompetencyAssessmentEvaluator")
+  hrTrainingParticipations     HrTrainingParticipant[]            @relation("HrTrainingParticipantEmployee")
+  hrCompetencyLevelRequests    HrCompetencyLevelRequest[]         @relation("HrCompetencyLevelRequestEmployee")
 
   @@unique([personId])
   @@index([costCenterId])
@@ -213,6 +221,7 @@ model HrDepartment {
   parentDepartment HrDepartment?  @relation("HrDepartmentHierarchy", fields: [parentDepartmentId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   childDepartments HrDepartment[] @relation("HrDepartmentHierarchy")
   employees        Employee[]     @relation("EmployeeOrgDepartment")
+  workPositions    HrWorkPosition[] @relation("HrWorkPositionDepartment")
 
   @@unique([directorateId, name])
   @@index([status])
@@ -591,6 +600,264 @@ model HrEvaluationAuditEvent {
   evaluation   HrEmployeeEvaluation @relation(fields: [evaluationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([evaluationId, createdAt(sort: Desc)])
+}
+
+/// Competências e Desenvolvimento — catálogo de competências da matriz.
+/// Categoria: TECHNICAL | SAFETY | QUALITY | BEHAVIORAL. Nome único entre as ativas
+/// (índice parcial `HrCompetency_name_active_uidx`, escrito à mão na migration).
+model HrCompetency {
+  id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name              String
+  category          String
+  description       String?
+  /// Exige reciclagem periódica: sem treinamento concluído válido o nível efetivo cai para 1.
+  requiresRecycling Boolean  @default(false)
+  /// Crítica (ex.: segurança): qualquer subida de nível fora de avaliação formal exige aprovação.
+  critical          Boolean  @default(false)
+  status            String   @default("ACTIVE")
+  sortOrder         Int      @default(0)
+  createdByUserId   String?  @db.Uuid
+  updatedByUserId   String?  @db.Uuid
+  createdAt         DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt         DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+  requirements      HrWorkPositionRequirement[]
+  employeeLevels    HrEmployeeCompetencyLevel[]
+  levelHistory      HrEmployeeCompetencyLevelHistory[]
+  assessmentItems   HrCompetencyAssessmentItem[]
+  trainings         HrTraining[]
+  levelRequests     HrCompetencyLevelRequest[]
+
+  @@index([status, sortOrder])
+}
+
+/// Posto de trabalho físico (não confundir com cargo `Role`). Setor = departamento oficial RH.
+/// shiftPattern: ONE_SHIFT | TWO_SHIFTS | THREE_SHIFTS.
+model HrWorkPosition {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name            String
+  departmentId    String?  @db.Uuid
+  shiftPattern    String   @default("ONE_SHIFT")
+  status          String   @default("ACTIVE")
+  notes           String?
+  createdByUserId String?  @db.Uuid
+  updatedByUserId String?  @db.Uuid
+  createdAt       DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt       DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+  department      HrDepartment? @relation("HrWorkPositionDepartment", fields: [departmentId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  requirements    HrWorkPositionRequirement[]
+  assignments     HrEmployeeWorkPosition[]
+  assessments     HrCompetencyAssessment[]
+
+  @@index([status])
+  @@index([departmentId])
+}
+
+/// Nível mínimo (1 a 4) exigido de uma competência para atuar no posto.
+model HrWorkPositionRequirement {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  positionId   String   @db.Uuid
+  competencyId String   @db.Uuid
+  minLevel     Int
+  createdAt    DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt    DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+  position     HrWorkPosition @relation(fields: [positionId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  competency   HrCompetency   @relation(fields: [competencyId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@unique([positionId, competencyId])
+  @@index([competencyId])
+}
+
+/// Alocação colaborador → posto com histórico. No máximo uma ativa (endedAt nulo) por
+/// colaborador — índice parcial `HrEmployeeWorkPosition_employee_active_uidx` na migration.
+model HrEmployeeWorkPosition {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  employeeId      String    @db.Uuid
+  positionId      String    @db.Uuid
+  startedAt       DateTime  @default(now()) @db.Timestamptz(6)
+  endedAt         DateTime? @db.Timestamptz(6)
+  createdByUserId String?   @db.Uuid
+  createdAt       DateTime  @default(now()) @db.Timestamptz(6)
+  employee        Employee       @relation("HrWorkPositionAssignee", fields: [employeeId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  position        HrWorkPosition @relation(fields: [positionId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@index([employeeId, startedAt(sort: Desc)])
+  @@index([positionId])
+}
+
+/// Nível atual (0 a 4) do colaborador numa competência. source: ASSESSMENT | MANUAL | TRAINING.
+model HrEmployeeCompetencyLevel {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  employeeId      String   @db.Uuid
+  competencyId    String   @db.Uuid
+  level           Int
+  source          String
+  assessedAt      DateTime @db.Timestamptz(6)
+  /// Concorrência otimista: incrementa a cada gravação; edição sobre versão antiga → 409.
+  version         Int      @default(1)
+  updatedByUserId String?  @db.Uuid
+  createdAt       DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt       DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+  employee        Employee     @relation("HrCompetencyLevelEmployee", fields: [employeeId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  competency      HrCompetency @relation(fields: [competencyId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@unique([employeeId, competencyId])
+  @@index([competencyId])
+}
+
+/// Histórico append-only das alterações de nível (nunca editado nem apagado).
+model HrEmployeeCompetencyLevelHistory {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  employeeId    String   @db.Uuid
+  competencyId  String   @db.Uuid
+  previousLevel Int
+  newLevel      Int
+  source        String
+  assessmentId  String?  @db.Uuid
+  /// Lote de importação por planilha que gravou o nível (source = IMPORT).
+  importBatchId String?  @db.Uuid
+  /// Solicitação aprovada que originou a alteração (governança).
+  requestId     String?  @db.Uuid
+  actorUserId   String?  @db.Uuid
+  createdAt     DateTime @default(now()) @db.Timestamptz(6)
+  employee      Employee                @relation("HrCompetencyLevelHistoryEmployee", fields: [employeeId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  competency    HrCompetency            @relation(fields: [competencyId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  assessment    HrCompetencyAssessment? @relation(fields: [assessmentId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  importBatch   HrCompetencyImportBatch? @relation(fields: [importBatchId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  request       HrCompetencyLevelRequest? @relation(fields: [requestId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([employeeId, createdAt(sort: Desc)])
+  @@index([competencyId])
+}
+
+/// Avaliação de competências do colaborador. status: PENDING | IN_PROGRESS | COMPLETED.
+/// Diferente de `HrEmployeeEvaluation` (avaliação de experiência por template).
+model HrCompetencyAssessment {
+  id                    String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  employeeId            String    @db.Uuid
+  evaluatorEmployeeId   String?   @db.Uuid
+  evaluatorNameSnapshot String?
+  positionId            String?   @db.Uuid
+  positionNameSnapshot  String?
+  assessmentDate        DateTime  @db.Timestamptz(6)
+  status                String    @default("PENDING")
+  notes                 String?
+  /// Média dos níveis atribuídos (engine oficial), gravada ao concluir.
+  averageLevel          Decimal?  @db.Decimal(4, 2)
+  completedAt           DateTime? @db.Timestamptz(6)
+  createdByUserId       String?   @db.Uuid
+  updatedByUserId       String?   @db.Uuid
+  createdAt             DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt             DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+  employee              Employee        @relation("HrCompetencyAssessmentSubject", fields: [employeeId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  evaluator             Employee?       @relation("HrCompetencyAssessmentEvaluator", fields: [evaluatorEmployeeId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  position              HrWorkPosition? @relation(fields: [positionId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  items                 HrCompetencyAssessmentItem[]
+  levelHistory          HrEmployeeCompetencyLevelHistory[]
+
+  @@index([employeeId, assessmentDate(sort: Desc)])
+  @@index([status])
+}
+
+model HrCompetencyAssessmentItem {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  assessmentId   String   @db.Uuid
+  competencyId   String   @db.Uuid
+  level          Int
+  requiredLevel  Int?
+  createdAt      DateTime @default(now()) @db.Timestamptz(6)
+  assessment     HrCompetencyAssessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  competency     HrCompetency           @relation(fields: [competencyId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@unique([assessmentId, competencyId])
+  @@index([competencyId])
+}
+
+/// Turma de treinamento vinculada a uma competência.
+/// modality: IN_PERSON | ONLINE | ON_THE_JOB. status: SCHEDULED | IN_PROGRESS | COMPLETED.
+/// validityMonths = 0 → sem validade.
+model HrTraining {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  title           String
+  competencyId    String    @db.Uuid
+  modality        String
+  workloadHours   Int
+  startDate       DateTime  @db.Timestamptz(6)
+  validityMonths  Int       @default(0)
+  status          String    @default("SCHEDULED")
+  completedAt     DateTime? @db.Timestamptz(6)
+  createdByUserId String?   @db.Uuid
+  updatedByUserId String?   @db.Uuid
+  createdAt       DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt       DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+  competency      HrCompetency @relation(fields: [competencyId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  participants    HrTrainingParticipant[]
+
+  @@index([competencyId])
+  @@index([status, startDate])
+}
+
+model HrTrainingParticipant {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  trainingId  String    @db.Uuid
+  employeeId  String    @db.Uuid
+  /// Data de conclusão do participante (base da validade da reciclagem).
+  completedAt DateTime? @db.Timestamptz(6)
+  createdAt   DateTime  @default(now()) @db.Timestamptz(6)
+  training    HrTraining @relation(fields: [trainingId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  employee    Employee   @relation("HrTrainingParticipantEmployee", fields: [employeeId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@unique([trainingId, employeeId])
+  @@index([employeeId])
+}
+
+/// Importação assistida de níveis por planilha (um registro por aplicação com alteração).
+/// Reaplicar o mesmo arquivo não cria lote (zero alterações) — ver docs/hr/competencies-and-development.md.
+model HrCompetencyImportBatch {
+  id                   String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  fileName             String
+  fileSha256           String
+  rowCount             Int
+  changedCount         Int
+  conflictAppliedCount Int      @default(0)
+  /// Resumo da prévia aplicada (contagens; sem nomes nem valores pessoais).
+  summary              Json?
+  createdByUserId      String?  @db.Uuid
+  createdAt            DateTime @default(now()) @db.Timestamptz(6)
+  levelHistory         HrEmployeeCompetencyLevelHistory[]
+  levelRequests        HrCompetencyLevelRequest[]
+
+  @@index([fileSha256])
+  @@index([createdAt(sort: Desc)])
+}
+
+/// Solicitação de alteração de nível que exige aprovação (governança).
+/// status: PENDING | APPROVED | REJECTED | SUPERSEDED. reason: GOVERNED_LEVEL | CRITICAL_COMPETENCY.
+/// Pendente não altera a matriz. Uma pendente por colaborador + competência (índice parcial).
+model HrCompetencyLevelRequest {
+  id                String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  employeeId        String    @db.Uuid
+  competencyId      String    @db.Uuid
+  fromLevel         Int
+  toLevel           Int
+  /// Versão do nível quando pedida; mudou até a decisão → a solicitação é superada.
+  baseVersion       Int
+  source            String
+  reason            String
+  importBatchId     String?   @db.Uuid
+  status            String    @default("PENDING")
+  requestedByUserId String?   @db.Uuid
+  decidedByUserId   String?   @db.Uuid
+  decidedAt         DateTime? @db.Timestamptz(6)
+  decisionNote      String?
+  createdAt         DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt         DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+  employee          Employee                 @relation("HrCompetencyLevelRequestEmployee", fields: [employeeId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  competency        HrCompetency             @relation(fields: [competencyId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  importBatch       HrCompetencyImportBatch? @relation(fields: [importBatchId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  levelHistory      HrEmployeeCompetencyLevelHistory[]
+
+  @@index([status, createdAt(sort: Desc)])
+  @@index([employeeId])
 }
 
 model Material {

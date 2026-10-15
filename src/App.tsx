@@ -4,6 +4,7 @@ import { Layout } from "./components/layout/Layout";
 import { DashboardModule } from "./components/DashboardModule";
 import { EmployeeModule } from "./components/EmployeeModule";
 import { HrOrgChartPage } from "./components/employee/HrOrgChartPage";
+import { CompetenciesPage } from "./components/competencies/CompetenciesPage";
 import { EmployeesDashboardPage } from "./components/employee/EmployeesDashboardPage";
 import { MachineModule } from "./components/MachineModule";
 import { MaterialsModule } from "./components/MaterialsModule";
@@ -324,6 +325,7 @@ export default function App() {
             </ModulePageShell>
           }
         />
+        <Route path="competencies" element={<CompetenciesPage />} />
         <Route
           path="machines"
           element={

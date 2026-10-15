@@ -235,13 +235,14 @@ describe("sidebarNavigation — grupos oficiais", () => {
     assert.ok(nav.directItems.map((i) => i.itemId).includes("goals"));
   });
 
-  it("Gestão de pessoas contém Dashboard, Pessoas/RH e Organograma", () => {
+  it("Gestão de pessoas contém Dashboard, Pessoas/RH, Organograma e Competências", () => {
     const nav = buildAccessibleSidebarNavigation(fullAccessChecker());
     const group = nav.groups.find((g) => g.id === "gestao_pessoas");
     assert.deepEqual(group?.items.map((i) => i.itemId), [
       "employees-dashboard",
       "employees",
       "org-chart",
+      "competencies",
     ]);
   });
 });

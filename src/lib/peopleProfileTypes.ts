@@ -340,6 +340,7 @@ export const PEOPLE_PROFILE_TAB_IDS = [
   "epi",
   "documents",
   "evaluations",
+  "competencies",
   "absences",
   "history",
   "notes",

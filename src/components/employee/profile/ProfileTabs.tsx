@@ -5,6 +5,7 @@ import {
   ClipboardCheck,
   FileText,
   Gift,
+  GraduationCap,
   Heart,
   History,
   Landmark,
@@ -31,6 +32,7 @@ export const PEOPLE_PROFILE_TAB_DEFS: { id: PeopleProfileTabId; label: string }[
   { id: "epi", label: "EPI & uniformes" },
   { id: "documents", label: "Documentos" },
   { id: "evaluations", label: "Avaliações" },
+  { id: "competencies", label: "Competências" },
   { id: "absences", label: "Férias & afastamentos" },
   { id: "history", label: "Histórico" },
   { id: "notes", label: "Observações" },
@@ -42,7 +44,7 @@ export const PEOPLE_PROFILE_TAB_DEFS: { id: PeopleProfileTabId; label: string }[
 export const PEOPLE_PROFILE_TAB_GROUPS: { label: string; ids: PeopleProfileTabId[] }[] = [
   { label: "Perfil", ids: ["overview", "personal", "emergency"] },
   { label: "Trabalho", ids: ["professional", "career", "compensation", "benefits"] },
-  { label: "Rotina", ids: ["absences", "epi", "documents", "evaluations"] },
+  { label: "Rotina", ids: ["absences", "epi", "documents", "evaluations", "competencies"] },
   { label: "Registro", ids: ["history", "notes", "links", "admin"] },
 ];
 
@@ -57,6 +59,7 @@ const TAB_ICONS: Record<PeopleProfileTabId, LucideIcon> = {
   epi: Shield,
   documents: FileText,
   evaluations: ClipboardCheck,
+  competencies: GraduationCap,
   absences: CalendarDays,
   history: History,
   notes: MessageSquare,
@@ -66,7 +69,7 @@ const TAB_ICONS: Record<PeopleProfileTabId, LucideIcon> = {
 
 export function visibleProfileTabs(
   caps: PeopleProfileCapabilities | null,
-  extras?: { canViewLinks?: boolean; canViewAdmin?: boolean }
+  extras?: { canViewLinks?: boolean; canViewAdmin?: boolean; canViewCompetencies?: boolean }
 ): PeopleProfileTabId[] {
   const ids: PeopleProfileTabId[] = ["overview"];
   if (!caps || caps.canViewProfessional) ids.push("professional");
@@ -78,6 +81,8 @@ export function visibleProfileTabs(
   if (!caps || caps.canViewEpi) ids.push("epi");
   if (!caps || caps.canViewDocuments) ids.push("documents");
   if (caps?.canViewEvaluations) ids.push("evaluations");
+  // Módulo Competências: permissão própria; o escopo hierárquico é aplicado pela API do módulo.
+  if (extras?.canViewCompetencies) ids.push("competencies");
   if (!caps || caps.canViewAbsences) ids.push("absences");
   if (!caps || caps.canViewHistory) ids.push("history");
   if (!caps || caps.canViewNotes) ids.push("notes");

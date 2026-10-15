@@ -129,6 +129,7 @@ describe("permissionTreeSidebarLayout", () => {
     assert.deepEqual(childKeys(group), [
       "admin.employees.dashboard",
       "admin.employees",
+      "admin.employees.competencies",
     ]);
     const employees = group!.children.find(
       (child) => child.resourceKey === "admin.employees"

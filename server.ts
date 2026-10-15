@@ -266,6 +266,9 @@ import { registerCrmReportsRoutes } from "./src/lib/commercial/crmReportsRoutes.
 import { registerEmployeeLookupRoutes } from "./src/lib/employeeLookupRoutes.js";
 import { registerHrOrgStructureRoutes } from "./src/lib/hrOrgStructureRoutes.js";
 import { registerEmployeesDashboardRoutes } from "./src/lib/employeesDashboardRoutes.js";
+import { registerCompetencyRoutes } from "./src/lib/competencies/competencyRoutes.js";
+import { resolvePeopleAccessScope } from "./src/lib/peopleProfileCapabilities.js";
+import { loadDescendantEmployeeIds } from "./src/lib/peopleProfileHierarchy.server.js";
 import { buildEmployeeCosts } from "./src/lib/employeeCostEngine.js";
 import {
   HrOrgStructureError,
@@ -15335,6 +15338,43 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
       return employeePermCheck(authUser);
     },
   });
+
+  // Competências e Desenvolvimento (Gestão de pessoas) — docs/hr/competencies-and-development.md.
+  // Recursos admin.employees.competencies[.assessments|.trainings|.approvals]; o editor de RH passa sem
+  // grant próprio (nunca contra deny explícito), como nas demais facetas admin.employees.*.
+  // Escopo hierárquico (mesma régua da ficha): RH/SUPER_ADMIN = todos; líder = sua equipe.
+  registerCompetencyRoutes(
+    app,
+    {
+      requireAppAuth,
+      requireResource: requireResourceOrHrEditor,
+      getCurrentAppUser,
+      getScopeInput: async (req) => {
+        const authUser =
+          (req as { appAuth?: AppAuthContext }).appAuth ?? (await getCurrentAppUser(req));
+        return {
+          accessScope: resolvePeopleAccessScope(employeePermCheck(authUser)),
+          actorEmployeeId: (authUser as { employeeId?: string | null } | null)?.employeeId ?? null,
+        };
+      },
+      // Aprovar = grant de admin.employees.competencies.approvals:manage (o editor de RH passa pelo alias).
+      canApprove: async (req) => {
+        try {
+          const decision = await authorizeResourceRequest(req, "admin.employees.competencies.approvals", "manage");
+          if (decision.ok) return true;
+          const authUser = (req as { appAuth?: AppAuthContext }).appAuth ?? (await getCurrentAppUser(req));
+          return Boolean(
+            authUser &&
+              employeePermCheck(authUser).isHrEditor &&
+              !(authUser.canonicalAccess?.overrideDenied ?? []).includes("admin.employees.competencies.approvals:manage")
+          );
+        } catch {
+          return false;
+        }
+      },
+    },
+    { prisma, loadDescendantIds: (managerId) => loadDescendantEmployeeIds(prisma, managerId) }
+  );
 
   registerCanonicalPersonRoutes(app, {
     requireAppAuth,

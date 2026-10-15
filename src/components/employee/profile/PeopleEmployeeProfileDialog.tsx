@@ -11,6 +11,9 @@ import { ProfileTabs, visibleProfileTabs } from "./ProfileTabs";
 import { PeopleOverviewTab } from "./PeopleOverviewTab";
 import { ProfileState, formatProfileDateTime } from "./profileUi";
 import { PROFILE_NETWORK_ERROR_MESSAGE } from "./profileClient";
+import { usePermissions } from "@/src/hooks/usePermissions";
+import { COMPETENCY_RESOURCE_KEYS } from "@/src/lib/competencies/competencyAccess";
+import { useCompetenciesFeature } from "@/src/components/competencies/useCompetenciesFeature";
 
 const PeopleProfessionalTab = lazy(() =>
   import("./PeopleProfessionalTab").then((m) => ({ default: m.PeopleProfessionalTab }))
@@ -33,6 +36,10 @@ const PeopleEmergencyTab = lazy(() =>
 const PeopleEpiTab = lazy(() => import("./PeopleEpiTab").then((m) => ({ default: m.PeopleEpiTab })));
 const PeopleDocumentsTab = lazy(() =>
   import("./PeopleDocumentsTab").then((m) => ({ default: m.PeopleDocumentsTab }))
+);
+// Competências: aba própria do módulo (carrega os próprios dados nos endpoints do módulo).
+const PeopleCompetenciesTab = lazy(() =>
+  import("./PeopleCompetenciesTab").then((m) => ({ default: m.PeopleCompetenciesTab }))
 );
 const PeopleEvaluationsTab = lazy(() =>
   import("./PeopleEvaluationsTab").then((m) => ({ default: m.PeopleEvaluationsTab }))
@@ -138,9 +145,14 @@ export function PeopleEmployeeProfileDialog({
   const tabAbortRef = useRef<AbortController | null>(null);
 
   const caps: PeopleProfileCapabilities | null = summary?.capabilities ?? null;
+  const { canPerformAction } = usePermissions();
+  const canSeeCompetenciesModule = canPerformAction(COMPETENCY_RESOURCE_KEYS.module, "view");
+  // Aba só com permissão E com o módulo ligado no servidor (flag COMPETENCIES_ENABLED).
+  const competenciesFeature = useCompetenciesFeature(canSeeCompetenciesModule);
+  const canViewCompetencies = canSeeCompetenciesModule && competenciesFeature === true;
   const visibleTabIds = useMemo(
-    () => visibleProfileTabs(caps, { canViewLinks, canViewAdmin }),
-    [caps, canViewLinks, canViewAdmin]
+    () => visibleProfileTabs(caps, { canViewLinks, canViewAdmin, canViewCompetencies }),
+    [caps, canViewLinks, canViewAdmin, canViewCompetencies]
   );
 
   useEffect(() => {
@@ -425,6 +437,7 @@ export function PeopleEmployeeProfileDialog({
                     onSaved={() => onRecorded("epi")}
                   />
                 )}
+                {activeTab === "competencies" && <PeopleCompetenciesTab employeeId={employeeId} />}
                 {activeTab === "evaluations" && (
                   <PeopleEvaluationsTab
                     data={

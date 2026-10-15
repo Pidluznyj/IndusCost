@@ -13,6 +13,7 @@ export type AppModuleId =
   | "employees"
   | "employees-dashboard"
   | "org-chart"
+  | "competencies"
   | "machines"
   | "materials"
   | "purchases"
@@ -67,6 +68,7 @@ export const SIDEBAR_MODULE_ORDER: AppModuleId[] = [
   "employees-dashboard",
   "employees",
   "org-chart",
+  "competencies",
   "machines",
   "materials",
   "purchases",
@@ -168,6 +170,11 @@ export function canAccessModule(moduleId: AppModuleId, check: PermissionChecker)
       );
     case "org-chart":
       return check.hasPermission("employees.view");
+    case "competencies":
+      return (
+        check.hasPermission("employees.competencies.view") ||
+        check.hasPermission("employees.edit")
+      );
     case "machines":
       return check.hasPermission("machines.view");
     case "materials":
@@ -460,6 +467,7 @@ export const MODULE_LABELS: Record<AppModuleId, string> = {
   employees: "Pessoas / RH",
   "employees-dashboard": "Dashboard de Pessoas",
   "org-chart": "Organograma",
+  competencies: "Competências e Desenvolvimento",
   machines: "Máquinas",
   materials: "Suprimentos",
   purchases: "Compras",

@@ -1,0 +1,368 @@
+# Competências e Desenvolvimento
+
+Submódulo de **Gestão de pessoas** (`/competencies`). Reúne a matriz de competências por posto de trabalho, as lacunas, as avaliações e os treinamentos da equipe.
+
+Breadcrumb: Gestão de pessoas › Competências e Desenvolvimento.
+
+## Princípios
+
+- **Engine oficial única.** `src/lib/competencies/competencyEngine.ts` é pura (sem Prisma) e calcula cobertura, lacunas, aptidão, média da avaliação e reciclagem.
+  - Só `competency.server.ts` a chama. A UI apenas formata o que a API devolve.
+  - O teste `competencyOfficialEngineGuard.test.ts` impede que componentes importem funções de cálculo dela.
+- **Nada de entidade paralela.**
+  - Colaborador = `Employee` (somente ativos).
+  - Setor = `HrDepartment` (departamento oficial do RH).
+  - O posto de trabalho é físico e **não** substitui o cargo salarial (`Role`).
+  - Não existe tabela de turno no RH, então o posto guarda o padrão de turno como string validada.
+- **Avaliação de competência ≠ avaliação de experiência.** `HrEmployeeEvaluation` (45/90 dias, por template e pesos) continua intacta. Aqui o registro é o nível de 1 a 4 por competência exigida.
+- **Histórico append-only.**
+  - Toda gravação de nível gera uma linha em `HrEmployeeCompetencyLevelHistory`: na avaliação, sempre; na edição manual, só quando o nível muda.
+  - A alocação em posto encerra a anterior em vez de apagá-la.
+- Nada aqui altera custo, folha, comissões, Nomus ou o snapshot de `Employee`.
+
+## Ativação (feature flag)
+
+`COMPETENCIES_ENABLED` (servidor, `competencyFeatureFlags.ts`) segue o padrão do Fluxo de Pedidos e do Exposure. É **fail closed**: sem `1/true/yes/on/enabled`, fica desligada.
+
+| | Desligada (padrão) | Ligada |
+|---|---|---|
+| API `/api/hr/competencies/*` | 404 `FEATURE_DISABLED` para todos, inclusive SUPER_ADMIN (antes de qualquer acesso ao banco) | Normal, com permissões e escopo |
+| `GET /api/hr/competencies/feature-status` | `{ enabled: false }` (exige sessão) | `{ enabled: true }` |
+| Menu "Competências e Desenvolvimento" | Oculto (`filterCompetenciesMenuNavigation` no Sidebar) | Visível para quem tem permissão |
+| Rota `/competencies` (link direto) | "não está ativado neste ambiente" | Módulo |
+| Aba Competências da ficha | Oculta | Visível para quem tem permissão |
+
+- A flag não concede permissão, e a permissão não liga a flag.
+- A interface consulta o status uma vez por carregamento da página. Falha na consulta = desligada.
+- Não há processo, cron ou fila associada: desligar não deixa nada rodando.
+- Documentada em `.env.example` como `COMPETENCIES_ENABLED=0`.
+
+## Escala (fixa)
+
+| Nível | Nome | Descrição | Cor |
+|---|---|---|---|
+| 0 | Não avaliado | Sem registro | cinza (slate) |
+| 1 | Em formação | Executa com acompanhamento constante | vermelho (rose) |
+| 2 | Básico | Executa tarefas padrão com supervisão | âmbar |
+| 3 | Proficiente | Executa com autonomia e qualidade | azul (primary) |
+| 4 | Referência | Domina, ensina e melhora o processo | verde (emerald) |
+
+## Regras (engine oficial)
+
+| Conceito | Regra |
+|---|---|
+| Nível efetivo | Nível gravado; com **reciclagem vencida**, cai para 1 (veja abaixo). |
+| Requisito atendido | nível efetivo ≥ mínimo do posto do colaborador. |
+| Lacuna | Requisito não atendido. Diferença = mínimo − nível efetivo. |
+| Ordenação das lacunas | Maior diferença primeiro; empate por nome do colaborador e depois pela ordem da competência. A Visão geral mostra as 6 primeiras. |
+| Cobertura | atendidos ÷ total de requisitos; "—" sem requisitos. |
+| Apto no posto | Atende 100% dos requisitos do posto. |
+| Barra de aptidão | Verde ≥ 75%, âmbar ≥ 50%, vermelho abaixo disso, neutra sem equipe. |
+| Média da avaliação | Média dos níveis atribuídos, 1 casa decimal, com vírgula (`2,8`). |
+| Pendências | Avaliações ≠ `COMPLETED`; treinamentos ≠ `COMPLETED`. |
+
+**Reciclagem.** Vale para competências marcadas com `requiresRecycling`.
+
+1. Pega o último treinamento **concluído** do colaborador naquela competência (maior data de conclusão do participante).
+2. O vencimento é a data de conclusão + validade em meses. O dia do vencimento ainda vale; vence a partir do dia seguinte.
+3. Vencido, o nível efetivo vira 1 ("Em formação"). O nível gravado não muda: a matriz mostra 1 e o tooltip informa o vencimento e o nível registrado.
+
+Quando o nível não cai:
+- **Sem treinamento concluído registrado:** mantém o nível gravado. Isso evita derrubar a equipe inteira no dia em que a competência passa a exigir reciclagem.
+- **Validade 0:** sem vencimento.
+
+**População.** Entram na matriz e nos indicadores os colaboradores **ativos** com alocação ativa num posto **ativo**. Competências arquivadas saem das colunas e dos requisitos.
+
+## Governança de níveis
+
+Regras adotadas em 2026-10-15 (`competencyGovernance.ts`, pura). São ajustáveis num único lugar e estão sujeitas à validação do RH.
+
+| Situação | Tratamento |
+|---|---|
+| Avaliação formal (ou treinamento) | Grava direto. É o registro oficial e não passa por aprovação, nem em competência crítica. |
+| Ajuste na matriz / importação que **sobe** para 3 ou 4 | Exige aprovação (`GOVERNED_LEVEL`). |
+| Qualquer subida em competência **crítica** (ex.: NR-12) | Exige aprovação (`CRITICAL_COMPETENCY`). |
+| Rebaixar ou manter | Nunca exige aprovação (direção conservadora). |
+| Quem tem "Aprovar níveis" faz o ajuste | Grava direto e fica registrado (auditoria com `selfApproved`). |
+| Quem não tem | Cria **solicitação pendente**. A matriz não muda e a célula mostra "aprovação → N". |
+| Decisão | Aprovar aplica o nível, com histórico ligado à solicitação (`requestId`). Rejeitar exige justificativa. Quem pediu não decide a própria solicitação (403 `SELF_DECISION`). |
+| Nível mudou por outro caminho (avaliação, ajuste, aprovação de outra) | A solicitação pendente do mesmo par vira **Superada**. |
+| Mesma solicitação repetida (ou reimportação) | Reaproveita a pendente; não duplica. |
+
+**Competência crítica:** flag `critical` no cadastro ("Competência crítica"). Ela aparece marcada na matriz, nas lacunas, na ficha e nas aprovações. A Visão geral conta as lacunas críticas à parte (`criticalGaps`).
+
+**Concorrência:**
+- **Nível:** cada nível tem `version`. O ajuste envia a versão exibida e a gravação é condicional (`updateMany … where version`). Edição simultânea → 409 `LEVEL_CHANGED`, e a tela recarrega o valor atual.
+- **Avaliação:** a conclusão de uma avaliação aberta é condicional ao status. Concluir duas vezes → 409 `ASSESSMENT_LOCKED`.
+- **Aprovação:** a decisão é condicional a `PENDING` (duas decisões → 409 `REQUEST_DECIDED`) e exige que a versão do nível seja a da solicitação (senão 409 `REQUEST_STALE` e a solicitação é superada).
+- **Banco:** um índice parcial garante uma única solicitação pendente por colaborador + competência.
+
+## Modelo de dados
+
+Migration: `20261008120000_hr_competencies`. É aditiva: só cria tabelas, não altera colunas nem dados existentes.
+
+| Tabela | Conteúdo |
+|---|---|
+| `HrCompetency` | `name`, `category` (`TECHNICAL`/`SAFETY`/`QUALITY`/`BEHAVIORAL`), `description`, `requiresRecycling`, `critical`, `status`, `sortOrder` (ordem das colunas). Nome único entre as ativas, sem diferenciar maiúsculas (índice parcial `HrCompetency_name_active_uidx`). |
+| `HrWorkPosition` | `name`, `departmentId` → `HrDepartment`, `shiftPattern` (`ONE_SHIFT`/`TWO_SHIFTS`/`THREE_SHIFTS`), `status`. |
+| `HrWorkPositionRequirement` | `positionId`, `competencyId`, `minLevel` 1–4 (CHECK). Único por par. |
+| `HrEmployeeWorkPosition` | Alocação com histórico (`startedAt`/`endedAt`). No máximo uma ativa por colaborador (índice parcial `HrEmployeeWorkPosition_employee_active_uidx`). |
+| `HrEmployeeCompetencyLevel` | Nível atual 0–4 (CHECK), `source` (`ASSESSMENT`/`MANUAL`/`TRAINING`/`IMPORT`), `assessedAt`, `version` (concorrência otimista). Único por colaborador + competência. |
+| `HrEmployeeCompetencyLevelHistory` | Append-only: nível anterior → novo, origem, `assessmentId?`, `importBatchId?`, `requestId?`, ator. |
+| `HrCompetencyLevelRequest` | Solicitação de nível governado: de → para, `baseVersion`, origem, motivo, `importBatchId?`, status (`PENDING`/`APPROVED`/`REJECTED`/`SUPERSEDED`), solicitante, decisor, data e justificativa. Uma pendente por par (índice parcial); níveis com CHECK 0–4. |
+| `HrCompetencyAssessment` | Colaborador, avaliador (`Employee`) + snapshot do nome, posto + snapshot do nome, data, `status` (`PENDING`/`IN_PROGRESS`/`COMPLETED`), observações, `averageLevel`. |
+| `HrCompetencyAssessmentItem` | Nível 1–4 (CHECK) por competência e o mínimo vigente no momento (`requiredLevel`). |
+| `HrTraining` | `title`, `competencyId`, `modality` (`IN_PERSON`/`ONLINE`/`ON_THE_JOB`), `workloadHours`, `startDate`, `validityMonths` (0 = sem validade), `status` (`SCHEDULED`/`IN_PROGRESS`/`COMPLETED`), `completedAt`. |
+| `HrTrainingParticipant` | Participante e `completedAt`, que é a base da reciclagem. |
+| `HrCompetencyImportBatch` | Uma linha por importação por planilha **que alterou algo**: nome e SHA-256 do arquivo, linhas, alterações, conflitos aplicados, resumo (JSON só com contagens) e autor. O histórico de níveis aponta para o lote (`importBatchId`, origem `IMPORT`). |
+
+Datas de negócio são gravadas como meia-noite UTC e trafegam como `AAAA-MM-DD`. O "hoje" da engine segue o fuso de São Paulo.
+
+## API
+
+Arquivo: `src/lib/competencies/competencyRoutes.ts`. É registrado em `server.ts` com `requireResourceOrHrEditor`.
+
+- Erros saem como `{ error: CODE, message }`, com mensagem em pt-BR.
+- A autoria vem sempre da sessão.
+- Leituras usam `Cache-Control: no-store`.
+- Cliente do navegador: `competencyClient.ts`.
+
+| Método | Caminho | Capacidade | Notas |
+|---|---|---|---|
+| GET | `/api/hr/competencies/overview` | ver | KPIs, 6 maiores lacunas e aptidão por posto, já calculados pela engine. |
+| GET | `/api/hr/competencies/matrix` | ver | Linhas × colunas, com nível efetivo, mínimo, `belowMinimum` e situação da reciclagem. |
+| GET | `/api/hr/competencies/catalog` | ver | Competências ativas. |
+| GET | `/api/hr/competencies/positions` | ver | Postos com requisitos e equipe. |
+| GET | `/api/hr/competencies/options` | ver | Colaboradores ativos (avaliador, equipe) e setores. |
+| GET | `/api/hr/competencies/employees/:employeeId` | ver | Perfil de UM colaborador para a ficha funcional: posto, requisitos com nível atual, cobertura, apto, outras competências registradas e as últimas 50 alterações de nível. Também inclui inativo e quem está sem posto. Fora do escopo → 404. |
+| POST/PUT/DELETE | `/api/hr/competencies/catalog[/:id]` | gerenciar | DELETE arquiva (`INACTIVE`). 409 `DUPLICATE_NAME`. |
+| POST/PUT/DELETE | `/api/hr/competencies/positions[/:id]` | gerenciar | Exige nome e ≥ 1 requisito (`REQUIREMENTS_REQUIRED`). Nível 0 = não exigido. DELETE arquiva e encerra as alocações. |
+| PUT | `/api/hr/competencies/positions/:id/team` | gerenciar | `{ employeeIds }`. Encerra a alocação de quem sai e transfere quem vem de outro posto. |
+| PUT | `/api/hr/competencies/levels/:employeeId/:competencyId` | editar matriz | `{ level: 0..4, expectedVersion? }`, origem `MANUAL`. 200 `APPLIED` ou 202 `REQUESTED` (governança). Versão antiga → 409 `LEVEL_CHANGED`. |
+| GET | `/api/hr/competencies/approvals?status=PENDING\|DECIDED` | ver aprovações | Solicitações no escopo do usuário. |
+| POST | `/api/hr/competencies/approvals/:id/decision` | aprovar níveis | `{ decision: APPROVE\|REJECT, note? }`. Rejeitar exige `note`. Autoaprovação → 403. Já decidida → 409. |
+| GET | `/api/hr/competencies/import/template` | editar matriz | Modelo .xlsx: colaboradores que o usuário pode alterar, com os níveis **gravados** (0 sai em branco) e uma aba de instruções. |
+| POST | `/api/hr/competencies/import/preview` | editar matriz | Multipart: `file` (.xlsx, até 5 MB) + `resolutions` (JSON). Devolve a prévia e a `fingerprint`. **Não grava nada.** |
+| POST | `/api/hr/competencies/import/apply` | editar matriz | Mesmo arquivo + `resolutions` + `fingerprint`. Refaz o plano dentro da transação; estado mudou desde a prévia → 409 `PREVIEW_STALE`. Sem alterações → `batchId: null` (nenhum lote). |
+| GET | `/api/hr/competencies/assessments` | ver avaliações | `?employeeId=` opcional (ficha). Colaborador fora do escopo → lista vazia. |
+| POST | `/api/hr/competencies/assessments` | registrar avaliação | Detalhado na tabela de status abaixo. |
+| PUT | `/api/hr/competencies/assessments/:id` | registrar avaliação | Conclui ou reagenda uma avaliação aberta. |
+| DELETE | `/api/hr/competencies/assessments/:id` | registrar avaliação | Só avaliações abertas. Concluída → 409 `ASSESSMENT_LOCKED`. |
+| GET | `/api/hr/competencies/trainings` | ver treinamentos | `?employeeId=` opcional (ficha). Colaborador fora do escopo → lista vazia, nem a participação em turma mista é revelada. |
+| POST/PUT | `/api/hr/competencies/trainings[/:id]` | gerenciar treinamentos | Exige título e ≥ 1 participante. Nasce `SCHEDULED`. |
+| PATCH | `/api/hr/competencies/trainings/:id/status` | gerenciar treinamentos | `{ status, completedOn? }`. Concluir grava a data de conclusão dos participantes. |
+| DELETE | `/api/hr/competencies/trainings/:id` | gerenciar treinamentos | Treinamento concluído → 409 `TRAINING_LOCKED`. |
+
+**POST `/assessments` por status:**
+
+| Status | Comportamento |
+|---|---|
+| `COMPLETED` | Exige avaliador e **um nível para cada competência exigida pelo posto** (400 `ITEMS_MISMATCH`). Colaborador sem posto → 409 `NO_POSITION`. Na mesma transação: grava a média calculada pela engine, os itens, os níveis atuais e o histórico, e **substitui** a avaliação aberta do colaborador. A mais recente vira a concluída e as demais pendências dele são removidas. |
+| `PENDING` / `IN_PROGRESS` | Só agenda, sem níveis. |
+
+Auditoria em `logEmployeeHrAudit`:
+- Eventos `employee.competency.*`: `level.change`, `assessment.create`, `assessment.update`, `assessment.complete`, `assessment.delete`, `position.assign`.
+- Eventos `competency.catalog.change`, `competency.position.change` e `competency.training.change`.
+- Os detalhes trazem só ids, contagens e níveis.
+
+## Permissões
+
+O perfil de acesso persiste 3 eixos por recurso (ver / executar / gerenciar). Por isso as capacidades usam um recurso principal e duas abas:
+
+| Capacidade | Recurso (contrato) | Ação | Chave legada |
+|---|---|---|---|
+| Ver o módulo | `admin.employees.competencies` (SUBMENU) | view | `employees.competencies.view` |
+| Editar a matriz | `admin.employees.competencies` | update | `employees.competencies.matrix.execute` |
+| Gerenciar competências e postos | `admin.employees.competencies` | manage | `employees.competencies.manage` |
+| Ver avaliações | `admin.employees.competencies.assessments` (TAB) | view | `employees.competencies.assessments.view` |
+| Registrar avaliação | `admin.employees.competencies.assessments` | create | `employees.competencies.assessments.create` |
+| Ver treinamentos | `admin.employees.competencies.trainings` (TAB) | view | `employees.competencies.trainings.view` |
+| Gerenciar treinamentos | `admin.employees.competencies.trainings` | manage | `employees.competencies.trainings.manage` |
+| Ver aprovações de nível | `admin.employees.competencies.approvals` (TAB) | view | `employees.competencies.approvals.view` |
+| Aprovar níveis | `admin.employees.competencies.approvals` | manage | `employees.competencies.approvals.manage` |
+
+- **Sufixos das chaves legadas.** Seguem o eixo da heurística de dual-write (`.execute`/`.create` → executar; `.manage` → gerenciar).
+- **Editor de RH.** `employees.edit` também é alias das ações, como nas demais facetas `admin.employees.*`. O pin de `employees.edit` → `admin.employees` (`aliasIndex.ts`) continua decidindo o vínculo canônico, então marcar "ver Competências" num perfil **não** concede edição do RH. No servidor, `requireResourceOrHrEditor` supre só a ausência de grant (`DENY_DEFAULT`) e nunca um deny explícito.
+- **Perfis.** Os recursos entram pelo seed derivado do contrato (`npm run permissions:seed`). Por padrão, só o SUPER_ADMIN e o editor de RH têm acesso. Os demais perfis são liberados na tela de perfis.
+- **UI.** Botões, abas e a edição da matriz somem sem a capacidade (`resolveCompetencyCapabilities` + `canPerformAction`). A aba sem permissão nem chama a API. A API recusa com 403 de qualquer forma.
+
+### Escopo hierárquico (quem o usuário pode ver e alterar)
+
+A permissão de recurso diz **o que** o usuário pode fazer; o escopo diz **sobre quem**. É a mesma régua da ficha do RH (`resolvePeopleAccessScope`), resolvida no servidor a cada requisição (`getScopeInput` em `server.ts` → `buildCompetencyScope`, `src/lib/competencies/competencyScope.ts`). Nunca vem do cliente.
+
+| Perfil | Escopo | Vê | Altera |
+|---|---|---|---|
+| RH (`employees.view` / `employees.edit`) e SUPER_ADMIN | ALL | todos | todos |
+| Líder com `employees.team.descendants.view` | DESCENDANTS | ele + toda a árvore abaixo (CTE `loadDescendantEmployeeIds`) | só a árvore |
+| Líder com `employees.team.view` | DIRECT_REPORTS | ele + liderados diretos | só os liderados |
+| Só ficha própria | SELF | só ele | ninguém |
+| Sem colaborador vinculado ao usuário, ou sem escopo | NONE | ninguém | ninguém |
+
+O líder nunca altera o próprio nível nem se autoavalia: isso continua com o RH.
+
+O que o escopo filtra ou bloqueia:
+- **Leituras:** matriz, Visão geral (KPIs, lacunas, aptidão, contadores), busca de colaboradores (`/options`), equipe dos postos, avaliações e treinamentos. A lista de treinamentos mostra as turmas com ao menos um liderado; os participantes de outras equipes aparecem só como contagem (`hiddenParticipantCount`).
+- **Escritas (403 `OUT_OF_SCOPE`):** nível manual; avaliação de quem não é liderado ou com avaliador de fora da equipe; inscrição em treinamento; alterar, concluir ou excluir turma que tenha participante de outra equipe; alocar ou retirar alguém no posto; arquivar posto com membro de fora.
+- **Registro de outra equipe:** avaliação ou treinamento que o líder não vê → 404, sem confirmar que existe.
+- **Equipe do posto:** quem o líder não enxerga é **preservado** quando ele salva a equipe. Nunca sai por omissão.
+
+A interface usa `writable` (por linha da matriz e por colaborador em `/options`) para esconder o que o servidor recusaria, e mostra um aviso quando a visão é restrita (`overview.scope`).
+
+## UI
+
+Componentes em `src/components/competencies/`. Partes reaproveitadas do repositório:
+- `SystemTotalizerCard` + `SummaryKpiGrid` nos KPIs.
+- `OverlayTabs` (pill, com contador) nas abas.
+- `Overlay`, `OverlayHeader`, `OverlayFooter` (hint à esquerda, Cancelar e ação primária desabilitada até o formulário ser válido), `OverlayField`, `OverlayInput`/`OverlaySelect`/`OverlayTextarea`, `OverlayTable` e `OverlayBadge` nos modais e tabelas.
+
+Não há CSS novo. Segmentado, toggle, chip e toast seguem os padrões locais do Dashboard de Pessoas e do CRM, porque o repositório não tem primitivo compartilhado para eles.
+
+| Aba | Conteúdo |
+|---|---|
+| Visão geral | 4 KPIs; Lacunas por posto (atual → exigido, botão **Planejar**); Aptidão por posto. |
+| Matriz de competências | Primeira coluna fixa na rolagem horizontal. Célula com o nível e "mín. N". Contorno vermelho abaixo do mínimo. Popover com os 5 níveis (edição persistida com histórico). |
+| Avaliações | Colaborador, posto, avaliador, data dd/mm/aaaa, média e status. **Agendar avaliação**; nas abertas, **Avaliar** e **Excluir**. Contador de pendentes na aba. |
+| Treinamentos | Título + validade, competência, modalidade, carga, início, participantes e status. **Iniciar** / **Concluir** / **Excluir**. Contador de não concluídos na aba. |
+| Aprovações | Pendentes (Aprovar / Rejeitar com justificativa) e Decididas. Contador de pendentes na aba. Sem "Aprovar níveis": só leitura. |
+| Postos de trabalho | Cards com setor · turno, nome, requisitos e barra de aptos. **Equipe (n)** aloca colaboradores. |
+
+O que cada modal faz:
+- **Planejar:** abre o Novo treinamento com a competência, o título "<competência> — capacitação" e o colaborador como participante.
+- **Nova avaliação:** o escopo e o nível atual vêm das células da matriz. Trocar o colaborador limpa os níveis escolhidos.
+- **Novo treinamento:** os chips mostram um ponto vermelho em quem está abaixo do mínimo naquela competência.
+- **Nova competência:** inclui o toggle "Exige reciclagem periódica".
+- **Novo posto:** para cada competência, nível mínimo de 0 a 4.
+
+Cada aba tem estados de carregamento, vazio e erro (com "Tentar novamente"). Depois de cada gravação há um toast, e a página recarrega os dados sem refresh. A edição de nível recarrega só a matriz e a Visão geral.
+
+### Importação assistida por planilha
+
+Botão **Importar planilha** no cabeçalho, com a permissão de editar a matriz. A regra fica em `competencyImport.ts` (pura); o I/O fica em `competencyImport.server.ts`.
+
+1. **Modelo** ("Baixar modelo"): ID, Colaborador, Posto e uma coluna por competência, já com os níveis atuais da equipe do usuário. Reimportar o modelo sem editar não altera nada.
+2. **Prévia** (nada é gravado). Mostra:
+   - resumo: linhas, reconhecidas, alterações, sem alteração, em branco, conflitos, inválidas, sem colaborador;
+   - colunas não reconhecidas (ignoradas);
+   - conciliação de colaboradores;
+   - conflitos;
+   - lista de alterações.
+   Cada decisão refaz a prévia.
+3. **Aplicar:** grava só o que a prévia mostrou, numa transação, com histórico `IMPORT` ligado ao lote.
+
+| Situação | Tratamento |
+|---|---|
+| Célula vazia | Não altera (nunca zera). Para registrar "Não avaliado", digitar 0. |
+| Valor fora de 0–4 / nome de nível | Célula inválida, ignorada e contada. |
+| Valor igual ao gravado | "Sem alteração". |
+| Valor menor que o gravado (inclusive 0) | **Conflito DOWNGRADE**: padrão manter; aplicar exige marcar. |
+| Nível atual veio de avaliação formal | **Conflito ASSESSED**: padrão manter; aplicar exige marcar. |
+| Colaborador pela coluna ID | Casado pelo id (precedência sobre o nome). |
+| Nome igual a mais de um colaborador | **Ambíguo**: escolher entre os candidatos ou deixar de fora. |
+| Nome não encontrado | Associar manualmente a alguém da equipe ou deixar de fora. |
+| Colaborador fora da equipe do líder | Tratado como "não encontrado" (não revela quem existe). O próprio líder aparece como "fora da sua equipe". |
+| Mesmo colaborador em duas linhas | Só a primeira vale; as demais são ignoradas. |
+| Coluna que não é competência | Ignorada e listada. |
+
+- **Idempotência:** reaplicar o mesmo arquivo gera zero alterações e nenhum lote novo. A prévia avisa quando o mesmo arquivo (SHA-256) já foi aplicado.
+- **Concorrência:** a `fingerprint` cobre o arquivo, o catálogo, os níveis atuais dos colaboradores da planilha e as alterações decididas. Se algo mudar entre a prévia e a aplicação, a aplicação é recusada (409) e a tela refaz a prévia.
+- **Sem estado no servidor:** nada fica em memória entre a prévia e a aplicação. O arquivo é processado em memória e nunca vai para o disco.
+- **Limites:** 5 MB, 2.000 linhas e 200 colunas. Só .xlsx (assinatura ZIP); fórmulas não são avaliadas.
+- **Biblioteca `xlsx` 0.18.5:** é a versão que o repositório já usa. Ela tem avisos públicos conhecidos (prototype pollution e ReDoS na leitura, corrigidos em versões posteriores do SheetJS). A exposição aqui fica limitada a usuários autenticados com permissão de editar a matriz, mais os limites acima. A troca de versão vale para o repositório inteiro e fica como pendência.
+
+### Ficha funcional › Competências
+
+A aba **Competências** fica na Ficha Funcional do colaborador (Pessoas / RH › abrir a ficha), no grupo *Rotina*.
+
+- **Fonte dos dados:** só os endpoints do módulo (`/employees/:id`, `/assessments?employeeId=` e `/trainings?employeeId=`). A ficha não tem tabela, rota nem cálculo próprios de competências, e o guard `competencyOfficialEngineGuard.test.ts` garante isso.
+- **Carregamento:** sob demanda (`lazy`), como as demais abas da ficha.
+- **Visibilidade:** a aba aparece com a permissão de ver o módulo (`admin.employees.competencies:view`). As seções de avaliações e de treinamentos dependem das permissões das respectivas abas.
+- **Escopo:** é o mesmo do módulo. Colaborador fora da equipe do líder → "fora do seu escopo".
+- **Somente leitura:** para avaliar ou alterar níveis, use "Abrir módulo".
+
+Conteúdo da aba:
+- posto (setor · turno), cobertura e "Apto no posto" / "Com lacunas";
+- requisitos do posto (exigido × atual, lacuna, reciclagem vencida);
+- outras competências registradas;
+- avaliações;
+- treinamentos;
+- histórico de níveis.
+
+## Diferenças em relação ao protótipo
+
+| Protótipo | Implementação | Motivo |
+|---|---|---|
+| Clique na célula faz o ciclo 0→4 | Popover com os 5 níveis, persistido e com histórico | Pedido do prompt para a produção. |
+| Avaliador em texto livre | Colaborador ativo (FK + snapshot do nome) | Rastreabilidade; mesmo padrão de `HrEmployeeEvaluation`. |
+| Salvar a avaliação sem escolher níveis (média "—") | Exige um nível de 1 a 4 em cada competência exigida | A média e a matriz precisam de nível explícito; evita avaliação vazia marcada como concluída. |
+| Pendências só como dados de exemplo | "Agendar avaliação" + "Avaliar" / "Excluir" nas abertas | Sem isso o KPI de pendentes ficaria sempre em 0. |
+| Sem alocação de colaboradores | "Equipe (n)" no card do posto | O vínculo colaborador → posto precisa ser mantido em produção. |
+| Sobretítulo "Gestão de pessoas" no cabeçalho | Breadcrumb do app | As páginas do RH não usam sobretítulo; o breadcrumb já mostra o grupo. |
+| Setor/turno de lista fixa | Setor = `HrDepartment`; turno = 1/2/3 turnos validado | Reuso do cadastro oficial. |
+| Barra de aptidão vermelha sem equipe | Neutra ("—") | 0 de 0 não é inaptidão. |
+
+## Rollout
+
+0. Manter `COMPETENCIES_ENABLED` desligada (padrão) até concluir os passos abaixo. Ligar ao final, sem rebuild: basta reiniciar o processo com a variável.
+1. Aplicar a migration `20261008120000_hr_competencies` **antes** do código: a página consulta as tabelas novas.
+2. Rodar `npm run permissions:seed` para criar os 3 recursos novos.
+3. Liberar os perfis desejados na tela de perfis de acesso.
+4. Cadastrar competências e postos e alocar as equipes. Os níveis começam em 0 e são preenchidos pelas avaliações, pela edição da matriz ou pela importação por planilha (carga inicial: Baixar modelo → preencher → Importar).
+
+## Testes
+
+`npm run test:competencies` cobre:
+- `competencyEngine.test.ts`: cobertura, lacunas e ordenação, apto, média e reciclagem, sobre o cenário do protótipo.
+- `competencyRoutes.test.ts`: guardas 401/403 por capacidade, catálogo, postos e alocação; a avaliação atualiza matriz, KPIs e lacunas e substitui a pendente; imutabilidade; treinamentos e reciclagem; rollback da transação. Também cobre a ficha: os números batem com a matriz, abrir a ficha não grava nada, colaborador sem posto e filtros por colaborador. Usa banco simulado (`competencyTestSupport.ts`).
+- `competencyOfficialEngineGuard.test.ts`: a UI não recalcula. A aba da ficha só lê pelo cliente do módulo e é carregada sob demanda.
+- `competencyImport.test.ts`: regra pura da importação (células, conflitos, conciliação, duplicidade, erros fatais, idempotência, impressão digital).
+- `competencyImportRoutes.test.ts`: XLSX real nas rotas reais. Cobre:
+  - o modelo e a reimportação idempotente do modelo;
+  - prévia sem gravar e aplicação com resoluções (lote e histórico `IMPORT`);
+  - reaplicação sem lote novo e prévia desatualizada (409);
+  - escopo de líder;
+  - arquivo inválido ou grande e resoluções inválidas;
+  - 403 sem permissão.
+- `competencyGovernance.test.ts`: regra pura (quando exige aprovação, decisão de gravação, validação da decisão).
+- `competencyGovernanceRoutes.test.ts`: rotas reais. Cobre:
+  - competência crítica e contagem de lacunas críticas;
+  - solicitação e reaproveitamento sem duplicar;
+  - autoaprovação proibida e 403 sem permissão;
+  - aprovar com histórico e segunda decisão 409;
+  - rejeitar com justificativa;
+  - versão antiga 409;
+  - aprovador grava direto e rebaixar não exige aprovação;
+  - solicitação superada por avaliação;
+  - importação governada sem duplicar.
+- `competencyFeatureFlags.test.ts`: fail closed, `.env.example`, filtro do menu, 404 em todos os endpoints com a flag desligada (sem tocar o banco), status 401 para anônimo e uso da flag no Sidebar, na página e na ficha.
+- `competencyScope.test.ts`: regra pura de escopo e **testes negativos de acesso cruzado** nas rotas reais. Cobre matriz, dashboard, busca, equipe do posto, avaliações (inclusive avaliador de fora e autoavaliação), treinamentos (inscrição e turma mista), nível manual, descendentes, usuário sem vínculo e RH.
+
+Esses arquivos também estão em `scripts/unit-test-files.txt`.
+
+`competencyPersistence.pg.test.ts` é **opt-in**: só roda com `COMPETENCY_PG_TEST_URL` apontando para um PostgreSQL local (127.0.0.1/localhost) que já recebeu o schema base + a migration. Fora disso, é ignorado. Ele cobre:
+- transação real e rollback;
+- índices parciais e CHECKs;
+- a substituição da avaliação pendente;
+- a reciclagem vencida;
+- o escopo de líder com a CTE recursiva real de descendentes;
+- a importação por planilha (lote, histórico com FK, idempotência e prévia desatualizada);
+- a governança (versão condicional, índice de uma pendente por par, aprovação aplicada e segunda decisão recusada).
+
+Em 2026-10-15 passou 9/9 em PGlite (PostgreSQL 17.5 em memória, via `pglite-socket`). O `prisma migrate diff` do banco migrado contra o `schema.prisma` saiu vazio.
+
+## Status e pendências (auditoria de 2026-10-15)
+
+- **Escopo hierárquico: implementado** (ver Permissões › Escopo hierárquico).
+- **Aba Competências na ficha: implementada** (ver UI › Ficha funcional › Competências).
+- **Importação XLSX assistida: implementada** (ver UI › Importação assistida por planilha). Pendente apenas a atualização da biblioteca `xlsx` no repositório.
+- **Governança (nível 3, competência crítica, aprovação, histórico, concorrência): implementada** com as regras padrão acima. Falta a validação dessas regras pelo RH.
+  - Concorrência verdadeiramente paralela (várias conexões) não foi testada: o PostgreSQL local de teste (PGlite) atende uma conexão por vez. A proteção é a gravação condicional mais os índices parciais, validados de forma sequencial.
+- **Feature flag: implementada** (`COMPETENCIES_ENABLED`, desligada por padrão; ver Ativação).
+
+## Changelog
+
+- 2026-10-15: versão inicial do módulo (schema, engine, API, permissões, navegação e UI).
+- 2026-10-15: escopo hierárquico no backend (leitura e escrita) e na UI, com testes negativos de acesso cruzado.
+- 2026-10-15: aba Competências na Ficha Funcional (somente leitura, consumindo os endpoints do módulo).
+- 2026-10-15: importação assistida de níveis por planilha (modelo, prévia, conciliação, conflitos, idempotência), com a tabela `HrCompetencyImportBatch` na mesma migration.
+- 2026-10-15: governança de níveis (competência crítica, aprovação, versão otimista, decisões condicionais), com `HrCompetencyLevelRequest` na mesma migration.
+- 2026-10-15: feature flag `COMPETENCIES_ENABLED` (fail closed) para API, menu, rota e aba da ficha.

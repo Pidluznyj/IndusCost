@@ -1568,6 +1568,103 @@ export const PERMISSION_CATALOG: PermissionCatalogEntry[] = [
     requires: ["employees.view"],
   }),
   perm({
+    key: "employees.competencies.view",
+    label: "Competências e Desenvolvimento",
+    group: OPS,
+    module: "competencies",
+    description:
+      "Ver matriz de competências, lacunas, aptidão por posto e postos de trabalho (Gestão de pessoas).",
+    type: "menu",
+  }),
+  perm({
+    key: "employees.competencies.matrix.execute",
+    label: "Competências — Editar matriz",
+    group: OPS,
+    module: "competencies",
+    description:
+      "Alterar manualmente o nível de um colaborador numa competência (gera histórico).",
+    type: "action",
+    parentKey: "employees.competencies.view",
+    requires: ["employees.competencies.view"],
+  }),
+  perm({
+    key: "employees.competencies.manage",
+    label: "Competências — Gerenciar competências e postos",
+    group: OPS,
+    module: "competencies",
+    description:
+      "Cadastrar e arquivar competências, postos de trabalho, requisitos mínimos e alocação de colaboradores.",
+    type: "action",
+    parentKey: "employees.competencies.view",
+    requires: ["employees.competencies.view"],
+  }),
+  perm({
+    key: "employees.competencies.assessments.view",
+    label: "Competências — Ver avaliações",
+    group: OPS,
+    module: "competencies",
+    description:
+      "Ver a lista de avaliações de competência (concluídas, em andamento e pendentes).",
+    type: "tab",
+    parentKey: "employees.competencies.view",
+    requires: ["employees.competencies.view"],
+  }),
+  perm({
+    key: "employees.competencies.assessments.create",
+    label: "Competências — Registrar avaliação",
+    group: OPS,
+    module: "competencies",
+    description:
+      "Agendar e registrar avaliações de competência; ao concluir, atualiza os níveis da matriz.",
+    type: "action",
+    parentKey: "employees.competencies.assessments.view",
+    requires: ["employees.competencies.assessments.view"],
+  }),
+  perm({
+    key: "employees.competencies.trainings.view",
+    label: "Competências — Ver treinamentos",
+    group: OPS,
+    module: "competencies",
+    description:
+      "Ver turmas de treinamento vinculadas às competências.",
+    type: "tab",
+    parentKey: "employees.competencies.view",
+    requires: ["employees.competencies.view"],
+  }),
+  perm({
+    key: "employees.competencies.approvals.view",
+    label: "Competências — Ver aprovações de nível",
+    group: OPS,
+    module: "competencies",
+    description:
+      "Ver solicitações de nível que exigem aprovação (nível 3–4 fora de avaliação formal ou competência crítica).",
+    type: "tab",
+    parentKey: "employees.competencies.view",
+    requires: ["employees.competencies.view"],
+  }),
+  perm({
+    key: "employees.competencies.approvals.manage",
+    label: "Competências — Aprovar níveis",
+    group: OPS,
+    module: "competencies",
+    description:
+      "Aprovar ou rejeitar solicitações de nível; ajustes e importações de quem tem esta permissão gravam direto (registrados).",
+    type: "action",
+    parentKey: "employees.competencies.approvals.view",
+    requires: ["employees.competencies.approvals.view"],
+  }),
+  perm({
+    key: "employees.competencies.trainings.manage",
+    label: "Competências — Gerenciar treinamentos",
+    group: OPS,
+    module: "competencies",
+    description:
+      "Agendar, alterar, concluir e excluir treinamentos (a conclusão alimenta a reciclagem).",
+    type: "action",
+    parentKey: "employees.competencies.trainings.view",
+    requires: ["employees.competencies.trainings.view"],
+  }),
+  perm({
     key: "employees.edit",
     label: "Pessoas / RH — Editar",
     group: OPS,

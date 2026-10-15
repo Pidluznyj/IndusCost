@@ -43,6 +43,7 @@ export const SIDEBAR_MODULE_CONTRACT_KEYS: Record<AppModuleId, readonly string[]
   employees: ["admin.employees"],
   "employees-dashboard": ["admin.employees.dashboard"],
   "org-chart": ["admin.employees"],
+  competencies: ["admin.employees.competencies"],
   machines: ["operations.machines"],
   /** Shell Suprimentos: catálogo e/ou qualquer folha de Inteligência de Mercado. */
   materials: [

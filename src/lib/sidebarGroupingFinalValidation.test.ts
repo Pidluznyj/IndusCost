@@ -114,6 +114,7 @@ const EXPECTED_MENU: Record<
     MODULE_LABELS["employees-dashboard"],
     MODULE_LABELS.employees,
     MODULE_LABELS["org-chart"],
+    MODULE_LABELS.competencies,
   ],
   // P1 (OKR): "Objetivos e Metas" saiu de Administração e virou item direto
   // ao lado do Dashboard — gestão do negócio, não configuração do sistema.
@@ -311,6 +312,7 @@ describe("validação final — permissões por perfil de role", () => {
       "finance",
       "employees",
       "employees-dashboard",
+      "competencies",
       "pricing",
       "inventory",
       "purchases",
