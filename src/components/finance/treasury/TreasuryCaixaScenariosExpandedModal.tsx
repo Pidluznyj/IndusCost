@@ -13,9 +13,10 @@
  *  - o motor segue prospectivo e ancorado no saldo oficial de hoje; o
  *    passado entra como PREFIXO realizado (três cenários coincidem com o
  *    realizado). Projeção passada não vira realizado;
- *  - virada de ano dentro do teto de 366 dias: estimativas por vencimento
- *    do ano seguinte, opt-in, sem misturar títulos de CR/CP;
- *  - fora do teto ou de 3 anos civis: mensagem e proposta, sem truncar;
+ *  - virada de ano: estimativas por vencimento do board daquele ano,
+ *    opt-in, sem misturar títulos de CR/CP do ano da âncora;
+ *  - acima de dois anos civis de projeção, ou de 3 anos de board:
+ *    mensagem e proposta, sem truncar;
  *  - o gráfico é o PRÓPRIO TreasuryCaixaScenariosChart; a linha Realista
  *    futura usa a timeline canônica. Slicer local permanece;
  *  - corrida: AbortController + sequência; fechar/desmontar aborta.

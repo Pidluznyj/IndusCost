@@ -22,12 +22,14 @@ próximos 90 / próximos 180 dias, sobre a série já gerada.
 
 ## Arquitetura (fonte única)
 
-- Backend: `GET /api/treasury/caixa/scenarios` segue clampando `horizonDays`
-  em 366. A visão ampliada **recusa** acima disso (mensagem + proposta, sem
-  truncar). Só quando a data final passa de 31/12 do ano da âncora ela envia
-  `extendDueEstimatesBeyondAnchorYear=1`, que acrescenta as estimativas por
-  vencimento do ano seguinte — sem misturar títulos de CR/CP. O card e os
-  recortes de 7/15/30/60/90 não enviam o parâmetro.
+- Backend: `GET /api/finance/treasury/caixa/scenarios` segue clampando `horizonDays`
+  em 366 para quem não pede a extensão. Isso preserva os recortes de
+  7/15/30/60/90. A visão ampliada, quando a data final passa de 31/12 do
+  ano da âncora, envia `extendDueEstimatesBeyondAnchorYear=1`. O serviço
+  então lê o board oficial de cada ano seguinte da janela e honra o
+  horizonte até 732 dias (dois anos civis). Acima disso a visão recusa,
+  com mensagem, sem truncar. As estimativas entram só no mapa diário do
+  Realista; a população de títulos de CR/CP do ano da âncora não muda.
 - Período inteiramente anterior a hoje não chama o motor de cenários: o
   gráfico é o prefixo realizado da Linha do tempo daquele ano.
 - `treasuryCaixaScenariosExpandedUi.ts` — plano do período (strings civis),

@@ -101,11 +101,18 @@ const DEFAULT_HORIZON_DAYS = 90;
  * treasuryCaixaScenariosExpandedUi.test.ts). 366 é o menor teto que
  * representa qualquer ano civil inteiro.
  *
- * A visão ampliada usa o mesmo número (`SCENARIO_EXPANDED_MAX_HORIZON_DAYS`)
- * e recusa o pedido antes do clamp. Quem não pede a extensão continua
- * recebendo o clamp silencioso — os recortes do card dependem disso.
+ * Quem não pede a extensão da visão ampliada continua neste clamp — os
+ * recortes de 7/15/30/60/90 dependem disso e nunca pedem mais de 90.
+ *
+ * A visão ampliada, e só ela, pode pedir a leitura dos boards dos anos
+ * seguintes (`extendDueEstimatesBeyondAnchorYear`). Nesse caminho o teto
+ * passa a ser dois anos civis (366 + 366). Acima disso o serviço recusa,
+ * sem devolver uma janela mais curta. O motor puro não muda de fórmula:
+ * só recebe uma lista maior de dias civis e as estimativas oficiais
+ * daqueles anos.
  */
 export const TREASURY_CAIXA_SCENARIOS_MAX_HORIZON_DAYS = 366;
+export const TREASURY_CAIXA_SCENARIOS_EXTENDED_MAX_HORIZON_DAYS = 732;
 const MAX_HORIZON_DAYS = TREASURY_CAIXA_SCENARIOS_MAX_HORIZON_DAYS;
 
 function toIsoDate(d: Date): string {
@@ -120,13 +127,19 @@ function normalizeAsOf(value: unknown): TreasuryCivilDate {
   return todayTreasuryCivilDateInSaoPaulo();
 }
 
-function normalizeHorizon(value: unknown): number {
-  if (value == null || value === "") return DEFAULT_HORIZON_DAYS;
+function parseHorizon(value: unknown): number | null {
+  if (value == null || value === "") return null;
   const n = typeof value === "number" ? value : Number.parseInt(String(value), 10);
-  if (!Number.isFinite(n)) return DEFAULT_HORIZON_DAYS;
-  if (n <= 0) return 1;
-  if (n > MAX_HORIZON_DAYS) return MAX_HORIZON_DAYS;
+  if (!Number.isFinite(n)) return null;
   return Math.floor(n);
+}
+
+function normalizeHorizon(value: unknown, maxDays: number): number {
+  const n = parseHorizon(value);
+  if (n == null) return DEFAULT_HORIZON_DAYS;
+  if (n <= 0) return 1;
+  if (n > maxDays) return maxDays;
+  return n;
 }
 
 /**
@@ -300,7 +313,26 @@ export function createTreasuryCaixaScenariosService(deps: {
   return {
     async getBoard(request) {
       const asOfCivilDate = normalizeAsOf(request.asOfCivilDate);
-      const horizonDays = normalizeHorizon(request.horizonDays);
+      const extendBeyondAnchorYear =
+        request.extendDueEstimatesBeyondAnchorYear === true;
+      const requestedHorizon = parseHorizon(request.horizonDays);
+      if (
+        extendBeyondAnchorYear &&
+        requestedHorizon != null &&
+        requestedHorizon > TREASURY_CAIXA_SCENARIOS_EXTENDED_MAX_HORIZON_DAYS
+      ) {
+        throw new Error(
+          `Horizonte de ${requestedHorizon} dias excede o teto operacional de ` +
+            `${TREASURY_CAIXA_SCENARIOS_EXTENDED_MAX_HORIZON_DAYS} dias da visão ampliada ` +
+            "(dois anos civis). A projeção não foi gerada e não foi truncada."
+        );
+      }
+      const horizonDays = normalizeHorizon(
+        request.horizonDays,
+        extendBeyondAnchorYear
+          ? TREASURY_CAIXA_SCENARIOS_EXTENDED_MAX_HORIZON_DAYS
+          : MAX_HORIZON_DAYS
+      );
 
       // Board padrão: ano do asOf, sem month/day → carrega o ano inteiro.
       // Assim o motor tem toda a população de AR/AP; a janela de dias que
@@ -408,7 +440,7 @@ export function createTreasuryCaixaScenariosService(deps: {
       // em aberto NÃO entram — um título do ano seguinte deslocado pela
       // política pessimista mudaria o ano da âncora. Os totais diários do
       // Realista usam a mesma estimativa por vencimento do board daquele ano.
-      if (request.extendDueEstimatesBeyondAnchorYear === true) {
+      if (extendBeyondAnchorYear) {
         const windowEnd =
           projectedWindow[projectedWindow.length - 1] ?? asOfCivilDate;
         const anchorYear = Number(asOfCivilDate.slice(0, 4));

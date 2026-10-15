@@ -2,11 +2,12 @@
  * Projeção do caixa — cenários — VISÃO AMPLIADA (apresentação).
  *
  * NÃO é um segundo motor: o modal pede ao MESMO endpoint dos cenários o
- * horizonte de HOJE até a data final pedida (o serviço aceita até 366 dias
- * e, sem o parâmetro explícito, continua clampando em silêncio para os
- * recortes do card) e desenha com o MESMO componente/`buildRows`. Este
- * arquivo resolve o período, o recorte local (slicer) e os KPIs derivados —
- * nenhuma fórmula financeira vive aqui.
+ * horizonte de HOJE até a data final pedida e desenha com o MESMO
+ * componente/`buildRows`. Sem o parâmetro da visão ampliada, o serviço
+ * continua clampando em 366 dias para os recortes do card. Com a leitura
+ * dos boards dos anos seguintes, o teto operacional é dois anos civis
+ * (732 dias). Este arquivo resolve o período, o recorte local e os KPIs
+ * derivados — nenhuma fórmula financeira vive aqui.
  *
  * SEMÂNTICA TEMPORAL (motor real): a projeção é PROSPECTIVA — janela civil
  * de asOf (hoje) até asOf + horizonDays. Não existe projeção retroativa; o
@@ -29,16 +30,18 @@ import {
 } from "@/src/lib/treasury/domain/treasuryCaixaScenarioDeltas.js";
 
 /**
- * Igual a `TREASURY_CAIXA_SCENARIOS_MAX_HORIZON_DAYS` no serviço de cenários.
- * Um ano civil inteiro (366 em bissexto). A visão ampliada recusa acima
- * disto em vez de herdar o clamp silencioso do serviço.
+ * Igual a `TREASURY_CAIXA_SCENARIOS_EXTENDED_MAX_HORIZON_DAYS`.
+ * Dois anos civis completos (366 + 366). Cobre 01/07 de um ano até 31/07
+ * do seguinte, e também 01/01 do ano seguinte até 31/12, sem truncar.
+ * O clamp de 366 permanece só para quem não pede os boards seguintes.
+ * A visão ampliada recusa acima deste teto.
  */
-export const SCENARIO_EXPANDED_MAX_HORIZON_DAYS = 366;
+export const SCENARIO_EXPANDED_MAX_HORIZON_DAYS = 732;
 
 /**
- * Cada ano civil é um board oficial completo da Caixa. Três anos cobrem o
- * caso suportado (ano anterior realizado + ano da âncora + ano seguinte
- * dentro do teto de 366 dias) sem multiplicar essa leitura.
+ * Cada ano civil é um board oficial completo da Caixa. Três anos cobrem
+ * o realizado do ano anterior, o ano da âncora e o ano seguinte da
+ * projeção — o caso 01/07 → 31/07 do ano seguinte usa dois.
  */
 export const SCENARIO_EXPANDED_MAX_CIVIL_YEARS = 3;
 
@@ -193,9 +196,9 @@ export function planScenarioExpandedPeriod(input: {
         `(${todayCivil}), até ${maxHorizonEndCivil}, no fuso America/Sao_Paulo. ` +
         `O período termina em ${endCivil}. A projeção não foi gerada e não foi truncada.`,
       proposal:
-        "Para ir além desse teto é preciso medir o tempo de getBoard e de computeTreasuryCaixaScenarios " +
-        "e só então subir MAX_HORIZON_DAYS, carregando um board por ano civil adicional. " +
-        "O teto atual cabe num ano civil inteiro (366 em bissexto) e permanece intacto nos recortes de 7, 15, 30, 60 e 90 dias.",
+        "O teto é operacional: dois anos civis de projeção diária a partir de hoje, " +
+        "com um board oficial por ano. Os recortes de 7, 15, 30, 60 e 90 dias " +
+        "não usam esta leitura e permanecem no clamp de 366.",
     };
   }
 
