@@ -457,6 +457,7 @@ export async function enrichNomusPurchaseOrderListRows(
           installments: parsePurchaseOrderPlannedInstallments(order.rawPayload),
           issuedAt: order.issuedAt,
           totalAmount: order.totalAmount != null ? Number(order.totalAmount.toString()) : null,
+          canceled: order.canceled === true || stage === "CANCELED",
         },
         options.paymentTermsTargetDays ?? null
       ),

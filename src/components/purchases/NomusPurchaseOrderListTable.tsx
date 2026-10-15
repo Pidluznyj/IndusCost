@@ -58,7 +58,7 @@ export function PaymentTermsCell({ cell }: { cell: PaymentTermsCellDto }) {
         {formatPmpDays(cell.pmpDays)}
         {cell.gapDays != null ? (
           <span className={cell.gapDays < 0 ? "ml-1 text-amber-700" : "ml-1"} data-testid="npo-list-payment-terms-gap">
-            · {cell.gapDays < 0 ? `${cell.gapDays} d da meta` : "na meta"}
+            · {cell.gapDays < 0 ? `−${Math.abs(cell.gapDays)} d da meta` : "na meta"}
           </span>
         ) : null}
       </div>
@@ -193,7 +193,8 @@ export const NomusPurchaseOrderListTable = memo(function NomusPurchaseOrderListT
                 {onSortChange ? (
                   <button
                     type="button"
-                    className="inline-flex items-center gap-1 font-inherit"
+                    className="inline-flex items-center gap-1"
+                    style={{ font: "inherit", textTransform: "inherit", letterSpacing: "inherit", color: "inherit" }}
                     onClick={() => onSortChange(nextSort)}
                     title="Ordenar pelo PMP (dias). Não identificados ficam ao final."
                     data-testid="npo-list-sort-pmp"

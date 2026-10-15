@@ -95,7 +95,9 @@ export function evaluatePaymentTermsOrder(order: PaymentTermsOrderInput, targetD
     orderTotal: order.totalAmount,
   });
   const pmpDays = result.status === "IDENTIFIED" ? result.pmpDays : null;
-  const gapDays = paymentTermsGapDays(pmpDays, targetDays);
+  const canceled = isPaymentTermsOrderCanceled(order);
+  // Cancelado não é comparado com a meta (está fora da carteira).
+  const gapDays = canceled ? null : paymentTermsGapDays(pmpDays, targetDays);
   const installmentsTotal = result.status === "IDENTIFIED" ? result.installmentsTotal : null;
   return {
     id: order.id,
@@ -107,7 +109,7 @@ export function evaluatePaymentTermsOrder(order: PaymentTermsOrderInput, targetD
     issuedDate: order.issuedDate,
     month: order.issuedDate ? order.issuedDate.slice(0, 7) : null,
     stage: order.stage,
-    canceled: isPaymentTermsOrderCanceled(order),
+    canceled,
     purchaseAmount: round2(order.totalAmount ?? installmentsTotal ?? 0),
     conditionText: order.conditionText?.trim() && order.conditionText.trim() !== "." ? order.conditionText.trim() : null,
     result,
@@ -511,7 +513,13 @@ export type PaymentTermsCellDto = {
 };
 
 export function buildPaymentTermsCell(
-  input: { installments: readonly PaymentTermsInstallmentInput[]; issuedAt: Date | null; totalAmount: number | null },
+  input: {
+    installments: readonly PaymentTermsInstallmentInput[];
+    issuedAt: Date | null;
+    totalAmount: number | null;
+    /** Pedido cancelado: mostra o prazo, mas não compara com a meta. */
+    canceled?: boolean;
+  },
   targetDays: number | null,
 ): PaymentTermsCellDto {
   const result = computePurchasePaymentTerms({
@@ -521,7 +529,7 @@ export function buildPaymentTermsCell(
     orderTotal: input.totalAmount,
   });
   const pmpDays = result.status === "IDENTIFIED" ? result.pmpDays : null;
-  const gapDays = paymentTermsGapDays(pmpDays, targetDays);
+  const gapDays = input.canceled ? null : paymentTermsGapDays(pmpDays, targetDays);
   return {
     status: result.status,
     label: result.status === "IDENTIFIED" ? result.label : "Não identificado",

@@ -385,3 +385,7 @@ src/lib/competencies/competencyFeatureFlags.test.ts
 src/lib/projectsCustomerLink.test.ts
 src/lib/projectsCommercialTerms.test.ts
 src/lib/projectsDocuments.test.ts
+src/lib/purchasing/purchasePaymentTerms.test.ts
+src/lib/purchasing/purchasePaymentTermsBaseAudit.test.ts
+src/lib/purchasing/purchasePaymentTermsAnalysis.test.ts
+src/lib/purchasing/purchasePaymentTermsList.test.ts

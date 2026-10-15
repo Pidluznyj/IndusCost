@@ -443,8 +443,8 @@ export function PurchasePaymentTermsPage({
               description={data.ordersTruncated ? "Lista limitada aos 2.000 pedidos mais recentes; os indicadores usam todos." : "Rastreável até o pedido: clique no número para abrir o detalhe."}
               testId="payment-terms-orders"
               actions={
-                <div className="flex flex-wrap gap-2">
-                  <select className={PERFORMANCE_CONTROL_CLASS} value={bucket} onChange={(e) => setBucket(e.target.value as PaymentTermsBucket | "")} data-testid="payment-terms-filter-bucket">
+                <div className="flex flex-wrap gap-2 sm:flex-nowrap">
+                  <select className={`${PERFORMANCE_CONTROL_CLASS} sm:w-52`} value={bucket} onChange={(e) => setBucket(e.target.value as PaymentTermsBucket | "")} data-testid="payment-terms-filter-bucket">
                     <option value="">Todas as faixas</option>
                     {PAYMENT_TERMS_BUCKETS.map((b) => (
                       <option key={b} value={b}>
@@ -452,13 +452,13 @@ export function PurchasePaymentTermsPage({
                       </option>
                     ))}
                   </select>
-                  <select className={PERFORMANCE_CONTROL_CLASS} value={identification} onChange={(e) => setIdentification(e.target.value as typeof identification)} data-testid="payment-terms-filter-identification">
+                  <select className={`${PERFORMANCE_CONTROL_CLASS} sm:w-52`} value={identification} onChange={(e) => setIdentification(e.target.value as typeof identification)} data-testid="payment-terms-filter-identification">
                     <option value="">Identificados e não</option>
                     <option value="IDENTIFIED">Prazo identificado</option>
                     <option value="NOT_IDENTIFIED">Não identificado</option>
                   </select>
                   {target != null ? (
-                    <select className={PERFORMANCE_CONTROL_CLASS} value={targetFilter} onChange={(e) => setTargetFilter(e.target.value as typeof targetFilter)} data-testid="payment-terms-filter-target">
+                    <select className={`${PERFORMANCE_CONTROL_CLASS} sm:w-52`} value={targetFilter} onChange={(e) => setTargetFilter(e.target.value as typeof targetFilter)} data-testid="payment-terms-filter-target">
                       <option value="">Abaixo e acima da meta</option>
                       <option value="BELOW">Abaixo da meta</option>
                       <option value="MEETS">Na meta ou acima</option>

@@ -79,6 +79,17 @@ describe("PMP desde a emissão — pedido", () => {
     assert.equal(noIssue.pmpDays, null);
   });
 
+  it("cancelado mostra o prazo, mas não é comparado com a meta", () => {
+    const o = order({ days: [3], stage: "CANCELED" });
+    const e = evaluatePaymentTermsOrder(o, 60);
+    assert.equal(e.pmpDays, 3);
+    assert.equal(e.gapDays, null);
+    assert.equal(e.belowTarget, null);
+    const cell = buildPaymentTermsCell({ installments: o.installments, issuedAt: d(o.issuedDate!), totalAmount: 1000, canceled: true }, 60);
+    assert.equal(cell.gapDays, null);
+    assert.equal(cell.pmpDays, 3);
+  });
+
   it("gap: ausente, negativo, zero e positivo", () => {
     assert.equal(paymentTermsGapDays(28, null), null);
     assert.equal(paymentTermsGapDays(28, 60), -32);
