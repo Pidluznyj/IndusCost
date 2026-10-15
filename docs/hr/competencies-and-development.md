@@ -228,7 +228,7 @@ Não há CSS novo. Segmentado, toggle, chip e toast seguem os padrões locais do
 | Aba | Conteúdo |
 |---|---|
 | Visão geral | 4 KPIs; Lacunas por posto (atual → exigido, botão **Planejar**); Aptidão por posto. |
-| Matriz de competências | A aba mostra o resumo e abre a grade numa modal de tela cheia. Só a grade rola. Colaborador e cabeçalho ficam grudados. As categorias oficiais do catálogo (`TECHNICAL`, `SAFETY`, `QUALITY`, `BEHAVIORAL`; o restante em "Sem categoria") recolhem e expandem colunas, sem agregar nível. Popover com os 5 níveis (edição persistida com histórico). |
+| Matriz de competências | A aba mostra o resumo e abre a grade numa modal de tela cheia. Só a grade rola. Colaborador e cabeçalho ficam grudados. O agrupamento inicial é por departamento, a partir de `HrDepartmentCompetency` e dos turnos configurados. A outra visão agrupa pelo texto gravado em `HrCompetency.category`; "Sem categoria" só aparece quando esse texto está vazio. A mesma competência pode repetir a coluna em mais de um departamento, com uma única avaliação. Popover com os 5 níveis (edição persistida com histórico). |
 | Avaliações | Colaborador, posto, avaliador, data dd/mm/aaaa, média e status. **Agendar avaliação**; nas abertas, **Avaliar** e **Excluir**. Contador de pendentes na aba. |
 | Treinamentos | Título + validade, competência, modalidade, carga, início, participantes e status. **Iniciar** / **Concluir** / **Excluir**. Contador de não concluídos na aba. |
 | Aprovações | Pendentes (Aprovar / Rejeitar com justificativa) e Decididas. Contador de pendentes na aba. Sem "Aprovar níveis": só leitura. |

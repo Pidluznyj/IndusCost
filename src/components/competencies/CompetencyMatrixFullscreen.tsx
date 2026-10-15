@@ -4,6 +4,7 @@ import { X } from "lucide-react";
 import { competencyShiftLabel } from "@/src/lib/competencies/competencyDomain";
 import type { CompetencyDepartmentOptionDto, CompetencyMatrixResponse } from "@/src/lib/competencies/competencyTypes";
 import { CompetencyMatrixGrid, MatrixLevelLegend, type MatrixOpenCell } from "./CompetencyMatrixGrid";
+import type { MatrixCompetencyGroup, MatrixGroupMode } from "./competencyMatrixGroups";
 import { CompetencyViewFilters } from "./CompetencyViewFilters";
 import { BTN_SECONDARY } from "./competencyUi";
 
@@ -51,6 +52,11 @@ export function CompetencyMatrixFullscreen({
   onDepartmentChange,
   onToggleShift,
   anchor,
+  groups,
+  groupingStatus,
+  groupingMessage,
+  groupMode,
+  onGroupModeChange,
 }: {
   open: boolean;
   onClose: () => void;
@@ -68,6 +74,11 @@ export function CompetencyMatrixFullscreen({
   onDepartmentChange: (departmentId: string) => void;
   onToggleShift: (shift: string) => void;
   anchor: HTMLElement | null;
+  groups: readonly MatrixCompetencyGroup<CompetencyMatrixResponse["competencies"][number]>[];
+  groupingStatus: "loading" | "ready" | "error";
+  groupingMessage?: string;
+  groupMode: MatrixGroupMode;
+  onGroupModeChange: (mode: MatrixGroupMode) => void;
 }) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -109,8 +120,13 @@ export function CompetencyMatrixFullscreen({
   const data = matrix.data;
   const departmentName = departments.find((department) => department.id === departmentId)?.name ?? "Todos os departamentos";
   const shiftName = shifts.length === 0 ? "Todos os turnos" : shifts.map((shift) => competencyShiftLabel(shift)).join(", ");
+  const shown = new Set(groups.flatMap((group) => group.columns.map((column) => column.competency.id))).size;
   const counts =
-    data != null ? `${data.rows.length} colaboradores · ${data.competencies.length} competências` : "Carregando a matriz";
+    data == null
+      ? "Carregando a matriz"
+      : groupingStatus === "loading"
+        ? "Carregando agrupamento"
+        : `${data.rows.length} ${data.rows.length === 1 ? "colaborador" : "colaboradores"} · ${shown} ${shown === 1 ? "competência" : "competências"}`;
 
   const dialog = (
     <div
@@ -148,7 +164,30 @@ export function CompetencyMatrixFullscreen({
           shiftTestId={(shift) => `competency-matrix-filter-shift-${shift}`}
         />
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2 text-xs" role="radiogroup" aria-label="Agrupar por">
+              <span className="font-medium text-muted-foreground">Agrupar por</span>
+              <label className="inline-flex items-center gap-1.5">
+                <input
+                  type="radio"
+                  name="competency-matrix-group-by"
+                  checked={groupMode === "department"}
+                  onChange={() => onGroupModeChange("department")}
+                  data-testid="competency-matrix-group-by-department"
+                />
+                Departamento
+              </label>
+              <label className="inline-flex items-center gap-1.5">
+                <input
+                  type="radio"
+                  name="competency-matrix-group-by"
+                  checked={groupMode === "category"}
+                  onChange={() => onGroupModeChange("category")}
+                  data-testid="competency-matrix-group-by-category"
+                />
+                Categoria
+              </label>
+            </div>
             <button type="button" className={BTN_SECONDARY} onClick={onExpandAll} data-testid="competency-matrix-expand-all">
               Expandir todas
             </button>
@@ -168,6 +207,9 @@ export function CompetencyMatrixFullscreen({
       >
         <CompetencyMatrixGrid
           matrix={matrix}
+          groups={groups}
+          groupingStatus={groupingStatus}
+          groupingMessage={groupingMessage}
           canEdit={canEdit}
           expandedKeys={expandedKeys}
           onToggleGroup={onToggleGroup}

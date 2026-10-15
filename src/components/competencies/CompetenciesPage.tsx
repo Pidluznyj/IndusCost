@@ -61,6 +61,7 @@ function CompetenciesModule() {
   const [departmentFilter, setDepartmentFilter] = useState("");
   const [shiftFilter, setShiftFilter] = useState<string[]>([]);
   const [matrixGroupsOpen, setMatrixGroupsOpen] = useState<string[]>([]);
+  const [matrixGroupMode, setMatrixGroupMode] = useState<"department" | "category">("department");
   const toggleShift = (shift: string) =>
     setShiftFilter((current) => (current.includes(shift) ? current.filter((item) => item !== shift) : [...current, shift].sort()));
   const { ws, reload } = useCompetencyWorkspace(caps, { departmentId: departmentFilter || null, shifts: shiftFilter });
@@ -232,6 +233,8 @@ function CompetenciesModule() {
           onToggleShift={toggleShift}
           expandedKeys={matrixGroupsOpen}
           onExpandedKeysChange={setMatrixGroupsOpen}
+          groupMode={matrixGroupMode}
+          onGroupModeChange={setMatrixGroupMode}
         />
       ) : null}
       {activeTab === "avaliacoes" ? (

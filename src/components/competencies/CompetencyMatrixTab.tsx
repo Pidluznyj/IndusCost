@@ -6,11 +6,12 @@ import {
   COMPETENCY_LEVEL_LABELS,
   COMPETENCY_LEVELS,
 } from "@/src/lib/competencies/competencyDomain";
+import { fetchDepartmentCompetencies } from "@/src/lib/competencies/competencyClient";
 import type { CompetencyDepartmentOptionDto, CompetencyMatrixResponse } from "@/src/lib/competencies/competencyTypes";
 import { cn } from "@/src/lib/utils";
 import { CompetencyMatrixFullscreen } from "./CompetencyMatrixFullscreen";
 import { MatrixLevelLegend, type MatrixOpenCell } from "./CompetencyMatrixGrid";
-import { groupMatrixCompetencies } from "./competencyMatrixGroups";
+import { associationsFromBoard, groupMatrixColumns, type MatrixAssociation, type MatrixGroupMode } from "./competencyMatrixGroups";
 import type { Slice } from "./useCompetencyWorkspace";
 import { BTN_PRIMARY, PANEL, levelToneClass } from "./competencyUi";
 
@@ -104,6 +105,9 @@ export function CompetencyMatrixTab({
   onToggleShift,
   expandedKeys,
   onExpandedKeysChange,
+  groupMode,
+  onGroupModeChange,
+  associations: associationsProp,
 }: {
   matrix: Slice<CompetencyMatrixResponse>;
   canEdit: boolean;
@@ -116,15 +120,56 @@ export function CompetencyMatrixTab({
   onToggleShift: (shift: string) => void;
   expandedKeys: readonly string[];
   onExpandedKeysChange: (keys: string[]) => void;
+  groupMode: MatrixGroupMode;
+  onGroupModeChange: (mode: MatrixGroupMode) => void;
+  /** Quando informado, a aba não consulta o quadro de departamentos. Usado nos testes. */
+  associations?: readonly MatrixAssociation[];
 }) {
   const openButtonRef = useRef<HTMLButtonElement>(null);
   const [fullscreen, setFullscreen] = useState(false);
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const [open, setOpen] = useState<MatrixOpenCell | null>(null);
   const [saving, setSaving] = useState(false);
+  const [loadedAssociations, setLoadedAssociations] = useState<readonly MatrixAssociation[] | null>(null);
+  const [boardError, setBoardError] = useState<string | null>(null);
+  const [boardAttempt, setBoardAttempt] = useState(0);
   const data = matrix.data;
   const expanded = useMemo(() => new Set(expandedKeys), [expandedKeys]);
-  const groups = useMemo(() => groupMatrixCompetencies(data?.competencies ?? []), [data?.competencies]);
+  const associations = associationsProp ?? loadedAssociations;
+  const boardRequired = groupMode === "department" || departmentId !== "";
+  useEffect(() => {
+    if (associationsProp) return;
+    const controller = new AbortController();
+    let active = true;
+    fetchDepartmentCompetencies(controller.signal)
+      .then((board) => {
+        if (!active) return;
+        setLoadedAssociations(associationsFromBoard(board));
+        setBoardError(null);
+      })
+      .catch((error: unknown) => {
+        if (!active || controller.signal.aborted) return;
+        setBoardError(error instanceof Error ? error.message : "Não foi possível carregar os departamentos.");
+      });
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [associationsProp, boardAttempt]);
+  const groups = useMemo(() => {
+    if (!data || (boardRequired && associations == null)) return [];
+    return groupMatrixColumns(data.competencies, {
+      mode: groupMode,
+      associations: associations ?? [],
+      departmentId,
+      shifts,
+    });
+  }, [data, boardRequired, associations, groupMode, departmentId, shifts]);
+  const groupingStatus = !boardRequired ? "ready" : boardError && associations == null ? "error" : associations == null ? "loading" : "ready";
+  const shownCompetencies = new Set(groups.flatMap((group) => group.columns.map((column) => column.competency.id))).size;
+  const groupNoun = groupMode === "department"
+    ? (groups.length === 1 ? "departamento" : "departamentos")
+    : (groups.length === 1 ? "categoria" : "categorias");
 
   const pick = async (level: number) => {
     if (!open) return;
@@ -147,14 +192,22 @@ export function CompetencyMatrixTab({
         <div className="min-w-0 space-y-2">
           <h3 className="text-sm font-semibold">Matriz de competências</h3>
           <p className="max-w-2xl text-sm text-muted-foreground">
-            A grade abre em tela cheia, com rolagem própria. As categorias do catálogo recolhem e expandem as colunas. O departamento filtra colaboradores e o turno filtra competências configuradas.
+            A grade abre em tela cheia, com rolagem própria. O agrupamento inicial é por departamento; a categoria usa o texto gravado no catálogo. O departamento filtra colaboradores e o turno filtra competências configuradas.
           </p>
-          {data ? (
+          {data && groupingStatus === "ready" ? (
             <p className="text-sm font-medium text-foreground" data-testid="competency-matrix-summary">
-              {data.rows.length} colaboradores · {data.competencies.length} competências · {groups.length} categorias
+              {data.rows.length} {data.rows.length === 1 ? "colaborador" : "colaboradores"} · {shownCompetencies} {shownCompetencies === 1 ? "competência" : "competências"} · {groups.length} {groupNoun}
             </p>
           ) : (
-            <p className="text-sm text-muted-foreground">{matrix.status === "error" ? matrix.message : "Carregando matriz…"}</p>
+            <p className="text-sm text-muted-foreground">
+              {data && groupingStatus === "error"
+                ? boardError
+                : data
+                  ? "Carregando agrupamento…"
+                  : matrix.status === "error"
+                    ? matrix.message
+                    : "Carregando matriz…"}
+            </p>
           )}
           <MatrixLevelLegend />
         </div>
@@ -182,15 +235,23 @@ export function CompetencyMatrixTab({
         expandedKeys={expanded}
         onToggleGroup={toggleGroup}
         onExpandAll={() => onExpandedKeysChange([...new Set([...expandedKeys, ...groups.map((group) => group.key)])])}
-        onCollapseAll={() => onExpandedKeysChange([])}
+        onCollapseAll={() => onExpandedKeysChange(expandedKeys.filter((key) => !groups.some((group) => group.key === key)))}
         onOpenCell={setOpen}
-        onRetry={onRetry}
+        onRetry={() => {
+          setBoardAttempt((attempt) => attempt + 1);
+          onRetry();
+        }}
         departmentId={departmentId}
         departments={departments}
         shifts={shifts}
         onDepartmentChange={onDepartmentChange}
         onToggleShift={onToggleShift}
         anchor={anchor}
+        groups={groups}
+        groupingStatus={groupingStatus}
+        groupingMessage={boardError ?? undefined}
+        groupMode={groupMode}
+        onGroupModeChange={onGroupModeChange}
       />
       {open ? <LevelPopover open={open} onPick={(level) => void pick(level)} onClose={() => !saving && setOpen(null)} saving={saving} /> : null}
     </section>

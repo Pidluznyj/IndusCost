@@ -6,7 +6,7 @@ import type { CompetencyMatrixResponse } from "@/src/lib/competencies/competency
 import { CompetencyMatrixFullscreen } from "./CompetencyMatrixFullscreen.tsx";
 import { CompetencyMatrixGrid } from "./CompetencyMatrixGrid.tsx";
 import { CompetencyMatrixTab } from "./CompetencyMatrixTab.tsx";
-import { UNCATEGORIZED_MATRIX_GROUP } from "./competencyMatrixGroups.ts";
+import { groupMatrixColumns, type MatrixAssociation } from "./competencyMatrixGroups.ts";
 
 function cell(competencyId: string, level: 0 | 1 | 2 | 3 | 4) {
   return {
@@ -59,27 +59,47 @@ function matrix(): CompetencyMatrixResponse {
 }
 
 const ready = { status: "ready" as const, data: matrix() };
+const categoryGroups = groupMatrixColumns(ready.data!.competencies, { mode: "category" });
+
+const sharedAssociations: MatrixAssociation[] = [
+  { departmentId: "comercial", departmentName: "Comercial", competencyId: "solda", appliesToAllShifts: true, shifts: [] },
+  { departmentId: "comercial", departmentName: "Comercial", competencyId: "legado", appliesToAllShifts: true, shifts: [] },
+  { departmentId: "compras", departmentName: "Compras", competencyId: "solda", appliesToAllShifts: true, shifts: [] },
+  { departmentId: "compras", departmentName: "Compras", competencyId: "nr", appliesToAllShifts: true, shifts: [] },
+];
+const departmentGroups = groupMatrixColumns(ready.data!.competencies, { mode: "department", associations: sharedAssociations });
 
 describe("CompetencyMatrixGrid", () => {
   it("começa com categorias recolhidas, sem nível agregado e sem as colunas de competência", () => {
     const html = renderToStaticMarkup(
-      <CompetencyMatrixGrid matrix={ready} canEdit expandedKeys={new Set()} onToggleGroup={() => undefined} onOpenCell={() => undefined} onRetry={() => undefined} />,
+      <CompetencyMatrixGrid
+        matrix={ready}
+        groups={categoryGroups}
+        canEdit
+        expandedKeys={new Set()}
+        onToggleGroup={() => undefined}
+        onOpenCell={() => undefined}
+        onRetry={() => undefined}
+      />,
     );
     assert.match(html, /aria-expanded="false"/);
-    assert.match(html, /competency-matrix-group-TECHNICAL/);
+    assert.match(html, /competency-matrix-group-category:TECHNICAL/);
+    assert.match(html, /competency-matrix-group-category:PLANILHA/);
     assert.match(html, /Técnica \(1\)/);
+    assert.equal(html.includes("Sem categoria"), false);
     assert.match(html, /competency-matrix-group-collapsed/);
     assert.equal(html.includes("Solda de gabinete"), false);
     assert.equal(html.includes("competency-matrix-cell"), false);
     assert.equal(html.includes(">4<"), false);
   });
 
-  it("expande só a categoria pedida e mantém a outra recolhida", () => {
+  it("expande só os grupos pedidos e mantém o outro recolhido", () => {
     const html = renderToStaticMarkup(
       <CompetencyMatrixGrid
         matrix={ready}
+        groups={categoryGroups}
         canEdit
-        expandedKeys={new Set(["TECHNICAL", UNCATEGORIZED_MATRIX_GROUP])}
+        expandedKeys={new Set(["category:TECHNICAL", "category:PLANILHA"])}
         onToggleGroup={() => undefined}
         onOpenCell={() => undefined}
         onRetry={() => undefined}
@@ -91,6 +111,25 @@ describe("CompetencyMatrixGrid", () => {
     assert.match(html, /competency-matrix-cell/);
     assert.match(html, /sticky left-0/);
     assert.match(html, /top-9/);
+  });
+
+  it("repete a competência compartilhada na tela sem duplicar a avaliação", () => {
+    const html = renderToStaticMarkup(
+      <CompetencyMatrixGrid
+        matrix={ready}
+        groups={departmentGroups}
+        canEdit
+        expandedKeys={new Set(["department:comercial", "department:compras"])}
+        onToggleGroup={() => undefined}
+        onOpenCell={() => undefined}
+        onRetry={() => undefined}
+      />,
+    );
+    assert.equal((html.match(/data-column="department:comercial:solda"/g) ?? []).length, 3);
+    assert.equal((html.match(/data-column="department:compras:solda"/g) ?? []).length, 3);
+    assert.match(html, /Solda de gabinete/);
+    assert.equal(ready.data?.rows[0]?.cells.filter((item) => item.competencyId === "solda").length, 1);
+    assert.equal(ready.data?.rows[1]?.cells.filter((item) => item.competencyId === "solda").length, 1);
   });
 });
 
@@ -114,6 +153,10 @@ describe("CompetencyMatrixFullscreen", () => {
         onDepartmentChange={() => undefined}
         onToggleShift={() => undefined}
         anchor={null}
+        groups={departmentGroups}
+        groupingStatus="ready"
+        groupMode="department"
+        onGroupModeChange={() => undefined}
       />,
     );
     assert.match(html, /role="dialog"/);
@@ -123,6 +166,9 @@ describe("CompetencyMatrixFullscreen", () => {
     assert.match(html, /Turno 2/);
     assert.match(html, /h-dvh/);
     assert.match(html, /min-h-0 min-w-0 flex-1 overflow-auto/);
+    assert.match(html, /Agrupar por/);
+    assert.match(html, /competency-matrix-group-by-department/);
+    assert.match(html, /competency-matrix-group-by-category/);
     assert.match(html, /competency-matrix-expand-all/);
     assert.match(html, /competency-matrix-collapse-all/);
     assert.match(html, /competency-matrix-filter-department/);
@@ -147,6 +193,8 @@ describe("CompetencyMatrixTab", () => {
         onToggleShift={() => undefined}
         expandedKeys={[]}
         onExpandedKeysChange={() => undefined}
+        groupMode="category"
+        onGroupModeChange={() => undefined}
       />,
     );
     assert.match(html, /Abrir matriz em tela cheia/);

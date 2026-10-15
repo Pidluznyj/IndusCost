@@ -3,7 +3,7 @@ import { ChevronLeft } from "lucide-react";
 import { COMPETENCY_LEVEL_LABELS, competencyLevelLabel, formatIsoDateBr } from "@/src/lib/competencies/competencyDomain";
 import type { CompetencyMatrixResponse } from "@/src/lib/competencies/competencyTypes";
 import { cn } from "@/src/lib/utils";
-import { groupMatrixCompetencies } from "./competencyMatrixGroups";
+import type { MatrixCompetencyGroup } from "./competencyMatrixGroups";
 import { LevelChip, PanelState, levelToneClass } from "./competencyUi";
 
 type MatrixRow = CompetencyMatrixResponse["rows"][number];
@@ -92,6 +92,9 @@ function LevelCell({
 /** Uma tabela: coluna do colaborador e cabeçalho grudados no contêiner que rola. */
 export function CompetencyMatrixGrid({
   matrix,
+  groups,
+  groupingStatus = "ready",
+  groupingMessage,
   canEdit,
   expandedKeys,
   onToggleGroup,
@@ -99,6 +102,9 @@ export function CompetencyMatrixGrid({
   onRetry,
 }: {
   matrix: { status: "loading" | "ready" | "error"; data: CompetencyMatrixResponse | null; message?: string };
+  groups: readonly MatrixCompetencyGroup<CompetencyMatrixResponse["competencies"][number]>[];
+  groupingStatus?: "loading" | "ready" | "error";
+  groupingMessage?: string;
   canEdit: boolean;
   expandedKeys: ReadonlySet<string>;
   onToggleGroup: (key: string) => void;
@@ -106,7 +112,6 @@ export function CompetencyMatrixGrid({
   onRetry: () => void;
 }) {
   const data = matrix.data;
-  const groups = useMemo(() => groupMatrixCompetencies(data?.competencies ?? []), [data?.competencies]);
   const cellsByEmployee = useMemo(() => {
     const byEmployee = new Map<string, Map<string, MatrixCell>>();
     for (const row of data?.rows ?? []) byEmployee.set(row.employeeId, new Map(row.cells.map((cell) => [cell.competencyId, cell])));
@@ -117,15 +122,28 @@ export function CompetencyMatrixGrid({
     return <PanelState kind="error" message={matrix.message} onRetry={onRetry} testId="competency-matrix-error" />;
   }
   if (!data) return <PanelState kind="loading" message="Carregando matriz…" />;
-  if (data.competencies.length === 0 || data.rows.length === 0) {
+  if (groupingStatus === "loading") return <PanelState kind="loading" message="Carregando departamentos…" />;
+  if (groupingStatus === "error") {
+    return (
+      <PanelState
+        kind="error"
+        message={groupingMessage ?? "Não foi possível carregar os departamentos."}
+        onRetry={onRetry}
+        testId="competency-matrix-grouping-error"
+      />
+    );
+  }
+  if (data.rows.length === 0 || groups.length === 0) {
     return (
       <PanelState
         kind="empty"
         testId="competency-matrix-empty"
         message={
-          data.competencies.length === 0
-            ? "Nenhuma competência neste filtro. Ajuste o departamento ou os turnos."
-            : "Nenhum colaborador ativo no seu escopo."
+          data.rows.length === 0
+            ? "Nenhum colaborador ativo no seu escopo."
+            : data.competencies.length === 0
+              ? "Nenhuma competência neste filtro. Ajuste o departamento ou os turnos."
+              : "Nenhuma competência associada a este departamento no turno selecionado."
         }
       />
     );
@@ -152,7 +170,7 @@ export function CompetencyMatrixGrid({
                 key={group.key}
                 scope="colgroup"
                 rowSpan={expanded ? 1 : 2}
-                colSpan={expanded ? group.competencies.length : 1}
+                colSpan={expanded ? group.columns.length : 1}
                 className={cn(
                   "sticky top-0 z-20 border-b border-r border-border bg-muted p-0",
                   expanded ? "left-auto h-9" : "w-9 min-w-9 max-w-9",
@@ -170,12 +188,12 @@ export function CompetencyMatrixGrid({
                     <>
                       <ChevronLeft className="h-3.5 w-3.5 shrink-0" aria-hidden />
                       <span className="truncate">
-                        {group.label} ({group.competencies.length})
+                        {group.label} ({group.columns.length})
                       </span>
                     </>
                   ) : (
                     <span className="inline-block max-h-16 overflow-hidden py-1 [writing-mode:vertical-rl] rotate-180">
-                      {group.label} ({group.competencies.length})
+                      {group.label} ({group.columns.length})
                     </span>
                   )}
                 </button>
@@ -186,19 +204,21 @@ export function CompetencyMatrixGrid({
         <tr>
           {groups.map((group) =>
             expandedKeys.has(group.key)
-              ? group.competencies.map((competency) => (
+              ? group.columns.map((column) => (
                   <th
-                    key={competency.id}
+                    key={column.columnKey}
                     scope="col"
+                    data-column={column.columnKey}
+                    data-competency-id={column.competency.id}
                     className={cn(
                       "sticky z-20 h-16 w-[7.25rem] min-w-[6.75rem] max-w-[8.5rem] border-b border-border bg-card px-1.5 py-1 text-center align-bottom",
                       COMPETENCY_ROW,
                     )}
                   >
-                    <span className="line-clamp-3 text-xs font-semibold leading-tight text-foreground" title={competency.name}>
-                      {competency.name}
+                    <span className="line-clamp-3 text-xs font-semibold leading-tight text-foreground" title={column.competency.name}>
+                      {column.competency.name}
                     </span>
-                    {competency.critical ? (
+                    {column.competency.critical ? (
                       <span className="mt-0.5 block text-[10px] font-semibold text-rose-700">Crítica</span>
                     ) : null}
                   </th>
@@ -234,20 +254,25 @@ export function CompetencyMatrixGrid({
                       data-group={group.key}
                     >
                       <span className="sr-only">
-                        {group.label} recolhida, {group.competencies.length} competências
+                        {group.label} recolhida, {group.columns.length} competências
                       </span>
                     </td>
                   );
                 }
-                return group.competencies.map((competency) => {
-                  const cell = cells?.get(competency.id);
+                return group.columns.map((column) => {
+                  const cell = cells?.get(column.competency.id);
                   return (
-                    <td key={competency.id} className="border-b border-border/70 bg-card px-1.5 py-1.5">
+                    <td
+                      key={column.columnKey}
+                      data-column={column.columnKey}
+                      data-competency-id={column.competency.id}
+                      className="border-b border-border/70 bg-card px-1.5 py-1.5"
+                    >
                       {cell ? (
                         <LevelCell
                           row={row}
                           cell={cell}
-                          competencyName={competency.name}
+                          competencyName={column.competency.name}
                           canEdit={canEdit}
                           onOpenCell={onOpenCell}
                         />
