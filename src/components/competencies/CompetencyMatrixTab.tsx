@@ -21,7 +21,6 @@ type OpenCell = { row: CompetencyMatrixRow; cell: CompetencyMatrixRow["cells"][n
 function cellTitle(row: CompetencyMatrixRow, competencyName: string, cell: CompetencyMatrixRow["cells"][number]): string {
   const parts = [`${row.employeeName} · ${competencyName}: ${competencyLevelLabel(cell.level)}`];
   if (cell.pending) parts.push(`— aguardando aprovação para ${cell.pending.toLevel}`);
-  if (cell.requiredLevel !== null) parts.push(`(mínimo ${cell.requiredLevel})`);
   if (cell.recycling === "EXPIRED") {
     parts.push(`— reciclagem vencida em ${formatIsoDateBr(cell.recyclingExpiresOn)}; nível registrado ${cell.storedLevel}`);
   }
@@ -71,7 +70,6 @@ function LevelPopover({
     >
       <p className="px-2 pb-1 pt-0.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
         {open.competencyName}
-        {open.cell.requiredLevel !== null ? ` · mín. ${open.cell.requiredLevel}` : ""}
       </p>
       <div role="radiogroup">
         {COMPETENCY_LEVELS.map((n) => {
@@ -132,7 +130,7 @@ export function CompetencyMatrixTab({
           message={
             data.competencies.length === 0
               ? "Nenhuma competência cadastrada. Use + Competência para criar a primeira coluna."
-              : "Nenhum colaborador alocado em posto. Defina a equipe na aba Postos de trabalho."
+              : "Nenhum colaborador ativo no seu escopo."
           }
         />
       </div>
@@ -161,9 +159,6 @@ export function CompetencyMatrixTab({
               <LevelChip level={n} /> {COMPETENCY_LEVEL_LABELS[n]}
             </span>
           ))}
-          <span className="inline-flex items-center gap-1.5">
-            <span className="inline-block h-4 w-4 rounded ring-2 ring-inset ring-rose-500" aria-hidden /> Abaixo do mínimo
-          </span>
         </div>
         <p className="text-xs text-muted-foreground">{canEdit ? "Clique na célula para alterar o nível" : "Somente leitura"}</p>
       </header>
@@ -190,14 +185,13 @@ export function CompetencyMatrixTab({
               <tr key={row.employeeId} data-testid="competency-matrix-row">
                 <th scope="row" className="sticky left-0 z-10 border-b border-r border-border bg-card px-4 py-2 text-left font-normal">
                   <span className="block truncate text-sm font-semibold">{row.employeeName}</span>
-                  <span className="block truncate text-xs text-muted-foreground">{row.positionName ?? "Sem posto"}</span>
+                  <span className="block truncate text-xs text-muted-foreground">{row.departmentName ?? "Sem departamento"}</span>
                 </th>
                 {row.cells.map((cell) => {
                   const competencyName = names.get(cell.competencyId) ?? "";
                   const content = (
                     <>
                       <span className="text-sm font-bold tabular-nums">{cell.level > 0 ? cell.level : "—"}</span>
-                      {cell.requiredLevel !== null ? <span className="text-[10px] font-medium opacity-80">mín. {cell.requiredLevel}</span> : null}
                       {cell.pending ? (
                         <span className="text-[10px] font-semibold text-amber-800" data-testid="competency-matrix-pending">
                           aprovação → {cell.pending.toLevel}
@@ -208,7 +202,6 @@ export function CompetencyMatrixTab({
                   const cls = cn(
                     "mx-auto flex h-11 w-full max-w-[96px] flex-col items-center justify-center rounded-lg",
                     levelToneClass(cell.level),
-                    cell.belowMinimum && "ring-2 ring-inset ring-rose-500",
                     cell.recycling === "EXPIRED" && "underline decoration-dotted",
                   );
                   return (

@@ -1,7 +1,7 @@
 /**
  * Gestão de pessoas › Competências e Desenvolvimento.
- * Números (cobertura, lacunas, aptidão, média, reciclagem) vêm só da engine oficial,
- * calculados no servidor. A página só formata e recarrega após cada gravação.
+ * Números vêm só da engine oficial, calculados no servidor.
+ * A página só formata e recarrega após cada gravação.
  */
 import React, { useCallback, useMemo, useState } from "react";
 import { ClipboardCheck, FileSpreadsheet, GraduationCap, Plus } from "lucide-react";
@@ -10,33 +10,28 @@ import { usePermissions } from "@/src/hooks/usePermissions";
 import type { UiPermissionAction } from "@/src/lib/actionPermissionAccess";
 import { resolveCompetencyCapabilities } from "@/src/lib/competencies/competencyAccess";
 import { deleteAssessment, deleteTraining, setCompetencyLevel, setTrainingStatus } from "@/src/lib/competencies/competencyClient";
-import { businessTodayIso } from "@/src/lib/competencies/competencyDomain";
-import type { RequirementEvaluation } from "@/src/lib/competencies/competencyEngine";
-import type { CompetencyAssessmentDto, TrainingDto, WorkPositionDto } from "@/src/lib/competencies/competencyTypes";
+import { COMPETENCY_SHIFTS, businessTodayIso, competencyShiftLabel } from "@/src/lib/competencies/competencyDomain";
+import type { CompetencyAssessmentDto, TrainingDto } from "@/src/lib/competencies/competencyTypes";
 import { CompetencyAssessmentOverlay, type AssessmentPreset } from "./CompetencyAssessmentOverlay";
 import { CompetencyAssessmentsTab } from "./CompetencyAssessmentsTab";
 import { CompetencyApprovalsTab } from "./CompetencyApprovalsTab";
 import { CompetencyCatalogOverlay } from "./CompetencyCatalogOverlay";
+import { CompetencyDepartmentsTab } from "./CompetencyDepartmentsTab";
 import { CompetencyImportOverlay } from "./CompetencyImportOverlay";
 import { CompetencyMatrixTab } from "./CompetencyMatrixTab";
 import { CompetencyOverviewTab } from "./CompetencyOverviewTab";
-import { CompetencyPositionOverlay } from "./CompetencyPositionOverlay";
-import { CompetencyPositionsTab } from "./CompetencyPositionsTab";
-import { CompetencyPositionTeamOverlay } from "./CompetencyPositionTeamOverlay";
 import { CompetencyTrainingOverlay, type TrainingPreset } from "./CompetencyTrainingOverlay";
 import { CompetencyTrainingsTab } from "./CompetencyTrainingsTab";
 import { BTN_PRIMARY, BTN_SECONDARY, PanelState, Toast } from "./competencyUi";
 import { useCompetencyWorkspace } from "./useCompetencyWorkspace";
 import { useCompetenciesFeature } from "./useCompetenciesFeature";
 
-type TabId = "visao" | "matriz" | "avaliacoes" | "treinamentos" | "aprovacoes" | "postos";
+type TabId = "visao" | "matriz" | "avaliacoes" | "treinamentos" | "aprovacoes" | "departamentos";
 
 type Modal =
   | { kind: "assessment"; mode: "complete" | "schedule"; preset: AssessmentPreset | null }
   | { kind: "training"; preset: TrainingPreset | null }
   | { kind: "competency" }
-  | { kind: "position" }
-  | { kind: "team"; position: WorkPositionDto }
   | { kind: "import" }
   | null;
 
@@ -62,7 +57,9 @@ function CompetenciesModule() {
     () => resolveCompetencyCapabilities((rk, action) => canPerformAction(rk, action as UiPermissionAction)),
     [canPerformAction],
   );
-  const { ws, reload } = useCompetencyWorkspace(caps);
+  const [departmentFilter, setDepartmentFilter] = useState("");
+  const [shiftFilter, setShiftFilter] = useState<string[]>([]);
+  const { ws, reload } = useCompetencyWorkspace(caps, { departmentId: departmentFilter || null, shifts: shiftFilter });
   const [tab, setTab] = useState<TabId>("visao");
   const [modal, setModal] = useState<Modal>(null);
   const [toast, setToast] = useState<string | null>(null);
@@ -85,7 +82,7 @@ function CompetenciesModule() {
         caps.viewAssessments ? { id: "avaliacoes" as const, label: "Avaliações", count: pending || undefined } : null,
         caps.viewTrainings ? { id: "treinamentos" as const, label: "Treinamentos", count: openTrainings || undefined } : null,
         caps.viewApprovals ? { id: "aprovacoes" as const, label: "Aprovações", count: pendingApprovals || undefined } : null,
-        { id: "postos" as const, label: "Postos de trabalho" },
+        { id: "departamentos" as const, label: "Departamentos e Competências" },
       ].filter((t): t is NonNullable<typeof t> => t !== null),
     [caps.viewAssessments, caps.viewTrainings, caps.viewApprovals, pending, openTrainings, pendingApprovals],
   );
@@ -108,12 +105,6 @@ function CompetenciesModule() {
       setActionError(error instanceof Error && error.message ? error.message : "Não foi possível concluir a ação.");
     }
   };
-
-  const onPlan = (gap: RequirementEvaluation) =>
-    setModal({
-      kind: "training",
-      preset: { competencyId: gap.competencyId, title: `${gap.competencyName} — capacitação`, participantIds: [gap.employeeId] },
-    });
 
   const onSetLevel = async (employeeId: string, competencyId: string, level: number, expectedVersion: number) => {
     setActionError(null);
@@ -161,7 +152,7 @@ function CompetenciesModule() {
         <div className="flex min-w-0 flex-1 flex-col gap-1">
           <h2 className="text-3xl font-bold tracking-tight">Competências e Desenvolvimento</h2>
           <p className="text-muted-foreground">
-            Matriz de competências por posto de trabalho, lacunas, avaliações e treinamentos da equipe.
+            Competências por departamento, avaliações individuais, evolução e treinamentos da equipe.
           </p>
         </div>
         <div className="flex shrink-0 flex-wrap gap-2" data-testid="competencies-actions">
@@ -170,8 +161,8 @@ function CompetenciesModule() {
               <button type="button" className={BTN_SECONDARY} onClick={() => setModal({ kind: "competency" })}>
                 <Plus className="h-4 w-4" aria-hidden /> Competência
               </button>
-              <button type="button" className={BTN_SECONDARY} onClick={() => setModal({ kind: "position" })}>
-                <Plus className="h-4 w-4" aria-hidden /> Posto
+              <button type="button" className={BTN_SECONDARY} onClick={() => setTab("departamentos")} data-testid="competencies-manage-departments">
+                Gerenciar competências
               </button>
             </>
           ) : null}
@@ -193,6 +184,46 @@ function CompetenciesModule() {
         </div>
       </div>
 
+      {activeTab === "visao" || activeTab === "matriz" ? (
+        <div className="flex flex-wrap items-end gap-3" data-testid="competency-view-filters">
+          <label className="flex min-w-[12rem] flex-col gap-1 text-xs font-semibold">
+            Departamento
+            <select
+              value={departmentFilter}
+              onChange={(event) => setDepartmentFilter(event.target.value)}
+              className="h-9 rounded-md border border-border bg-background px-2 text-sm font-normal"
+              data-testid="competency-filter-department"
+            >
+              <option value="">Todos</option>
+              {(ws.options.data?.departments ?? []).map((department) => (
+                <option key={department.id} value={department.id}>
+                  {department.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <fieldset className="flex flex-wrap items-center gap-3">
+            <legend className="text-xs font-semibold">Turnos</legend>
+            {COMPETENCY_SHIFTS.map((shift) => (
+              <label key={shift} className="inline-flex items-center gap-1.5 text-sm">
+                <input
+                  type="checkbox"
+                  checked={shiftFilter.includes(shift)}
+                  onChange={() =>
+                    setShiftFilter((current) => (current.includes(shift) ? current.filter((item) => item !== shift) : [...current, shift].sort()))
+                  }
+                  data-testid={`competency-filter-shift-${shift}`}
+                />
+                {competencyShiftLabel(shift)}
+              </label>
+            ))}
+          </fieldset>
+          <p className="max-w-xl text-xs text-muted-foreground">
+            O departamento filtra colaboradores pelo vínculo oficial. O turno filtra as competências configuradas. Não há turno cadastrado no colaborador.
+          </p>
+        </div>
+      ) : null}
+
       <OverlayTabs<TabId> tabs={tabs} active={activeTab} onChange={setTab} variant="pill" ariaLabel="Seções de competências" testId="competencies-tabs" />
 
       {ws.overview.data && ws.overview.data.scope !== "ALL" ? (
@@ -212,7 +243,7 @@ function CompetenciesModule() {
       ) : null}
 
       {activeTab === "visao" ? (
-        <CompetencyOverviewTab overview={ws.overview} canPlanTraining={caps.manageTrainings} onPlan={onPlan} onRetry={() => void reload(["overview"])} />
+        <CompetencyOverviewTab overview={ws.overview} onRetry={() => void reload(["overview"])} />
       ) : null}
       {activeTab === "matriz" ? (
         <CompetencyMatrixTab matrix={ws.matrix} canEdit={caps.editMatrix} onSetLevel={onSetLevel} onRetry={() => void reload(["matrix"])} />
@@ -246,15 +277,7 @@ function CompetenciesModule() {
           }}
         />
       ) : null}
-      {activeTab === "postos" ? (
-        <CompetencyPositionsTab
-          positions={ws.positions}
-          overview={ws.overview}
-          canManage={caps.manageCatalog}
-          onEditTeam={(position) => setModal({ kind: "team", position })}
-          onRetry={() => void reload(["positions", "overview"])}
-        />
-      ) : null}
+      {activeTab === "departamentos" ? <CompetencyDepartmentsTab canManage={caps.manageCatalog} /> : null}
 
       <CompetencyAssessmentOverlay
         open={modal?.kind === "assessment"}
@@ -277,20 +300,6 @@ function CompetenciesModule() {
         onSaved={afterSave}
       />
       <CompetencyCatalogOverlay open={modal?.kind === "competency"} onClose={() => setModal(null)} onSaved={afterSave} />
-      <CompetencyPositionOverlay
-        open={modal?.kind === "position"}
-        competencies={competencies}
-        departments={ws.options.data?.departments ?? []}
-        onClose={() => setModal(null)}
-        onSaved={afterSave}
-      />
-      <CompetencyPositionTeamOverlay
-        position={modal?.kind === "team" ? modal.position : null}
-        positions={ws.positions.data ?? []}
-        employees={ws.options.data?.employees ?? []}
-        onClose={() => setModal(null)}
-        onSaved={afterSave}
-      />
       <CompetencyImportOverlay open={modal?.kind === "import"} onClose={() => setModal(null)} onSaved={afterSave} />
       <Toast message={toast} onDone={clearToast} />
     </div>

@@ -222,6 +222,7 @@ model HrDepartment {
   childDepartments HrDepartment[] @relation("HrDepartmentHierarchy")
   employees        Employee[]     @relation("EmployeeOrgDepartment")
   workPositions    HrWorkPosition[] @relation("HrWorkPositionDepartment")
+  departmentCompetencies HrDepartmentCompetency[]
 
   @@unique([directorateId, name])
   @@index([status])
@@ -626,8 +627,40 @@ model HrCompetency {
   assessmentItems   HrCompetencyAssessmentItem[]
   trainings         HrTraining[]
   levelRequests     HrCompetencyLevelRequest[]
+  departmentLinks   HrDepartmentCompetency[]
 
   @@index([status, sortOrder])
+}
+
+/// Competência pertinente a um departamento oficial do RH.
+/// Não define nível mínimo e não altera o departamento nem o turno do colaborador.
+/// `appliesToAllShifts` = configuração para os turnos 1, 2 e 3; senão, as linhas filhas.
+model HrDepartmentCompetency {
+  id                 String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  departmentId       String   @db.Uuid
+  competencyId       String   @db.Uuid
+  appliesToAllShifts Boolean  @default(true)
+  createdByUserId    String?  @db.Uuid
+  createdAt          DateTime @default(now()) @db.Timestamptz(6)
+
+  department HrDepartment @relation(fields: [departmentId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  competency HrCompetency @relation(fields: [competencyId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  shifts     HrDepartmentCompetencyShift[]
+
+  @@unique([departmentId, competencyId])
+  @@index([competencyId])
+}
+
+/// Turno de configuração (1, 2 ou 3) em que a competência do departamento se aplica.
+/// Não é o turno do colaborador: o RH não possui esse vínculo.
+model HrDepartmentCompetencyShift {
+  id                       String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  departmentCompetencyId   String @db.Uuid
+  shiftCode                String
+  departmentCompetency     HrDepartmentCompetency @relation(fields: [departmentCompetencyId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([departmentCompetencyId, shiftCode])
+  @@index([shiftCode])
 }
 
 /// Posto de trabalho físico (não confundir com cargo `Role`). Setor = departamento oficial RH.

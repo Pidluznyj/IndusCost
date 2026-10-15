@@ -8,6 +8,7 @@ import type { ImportResolutions } from "./competencyImport";
 import type {
   CompetencyAssessmentDto,
   CompetencyImportApplyResult,
+  DepartmentCompetencyBoard,
   CompetencyImportPreviewDto,
   EmployeeCompetencyProfileDto,
   LevelRequestDto,
@@ -30,11 +31,21 @@ function jsonInit(method: string, body: unknown): RequestInit {
 export const fetchCompetenciesFeatureStatus = (signal?: AbortSignal) =>
   fetchJsonOk<{ enabled: boolean }>(`${COMPETENCY_API_BASE}/feature-status`, { ...NO_STORE, signal });
 
-export const fetchCompetencyOverview = (signal?: AbortSignal) =>
-  fetchJsonOk<CompetencyOverviewResponse>(`${COMPETENCY_API_BASE}/overview`, { ...NO_STORE, signal });
+export type CompetencyBoardFilter = { departmentId?: string | null; shifts?: string[] };
 
-export const fetchCompetencyMatrix = (signal?: AbortSignal) =>
-  fetchJsonOk<CompetencyMatrixResponse>(`${COMPETENCY_API_BASE}/matrix`, { ...NO_STORE, signal });
+function viewQuery(filter?: CompetencyBoardFilter) {
+  const params = new URLSearchParams();
+  if (filter?.departmentId) params.set("departmentId", filter.departmentId);
+  if (filter?.shifts && filter.shifts.length > 0) params.set("shifts", filter.shifts.join(","));
+  const query = params.toString();
+  return query ? `?${query}` : "";
+}
+
+export const fetchCompetencyOverview = (signal?: AbortSignal, filter?: CompetencyBoardFilter) =>
+  fetchJsonOk<CompetencyOverviewResponse>(`${COMPETENCY_API_BASE}/overview${viewQuery(filter)}`, { ...NO_STORE, signal });
+
+export const fetchCompetencyMatrix = (signal?: AbortSignal, filter?: CompetencyBoardFilter) =>
+  fetchJsonOk<CompetencyMatrixResponse>(`${COMPETENCY_API_BASE}/matrix${viewQuery(filter)}`, { ...NO_STORE, signal });
 
 export const fetchCompetencyCatalog = (signal?: AbortSignal) =>
   fetchJsonOk<{ competencies: CompetencyDto[] }>(`${COMPETENCY_API_BASE}/catalog`, { ...NO_STORE, signal });
@@ -44,6 +55,18 @@ export const fetchWorkPositions = (signal?: AbortSignal) =>
 
 export const fetchCompetencyOptions = (signal?: AbortSignal) =>
   fetchJsonOk<CompetencyOptionsResponse>(`${COMPETENCY_API_BASE}/options`, { ...NO_STORE, signal });
+
+export const fetchDepartmentCompetencies = (signal?: AbortSignal) =>
+  fetchJsonOk<DepartmentCompetencyBoard>(`${COMPETENCY_API_BASE}/departments`, { ...NO_STORE, signal });
+
+export const setDepartmentCompetencies = (
+  departmentId: string,
+  items: { competencyId: string; shifts: string[] | null }[],
+) =>
+  fetchJsonOk<DepartmentCompetencyBoard>(
+    `${COMPETENCY_API_BASE}/departments/${encodeURIComponent(departmentId)}/competencies`,
+    jsonInit("PUT", { items }),
+  );
 
 const byEmployee = (employeeId?: string) => (employeeId ? `?employeeId=${encodeURIComponent(employeeId)}` : "");
 

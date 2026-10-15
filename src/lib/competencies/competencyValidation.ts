@@ -5,11 +5,14 @@
 
 import {
   COMPETENCY_ASSESSMENT_STATUSES,
+  COMPETENCY_SHIFTS,
   isAssessedLevel,
   isCompetencyAssessmentStatus,
   isCompetencyCategory,
   isCompetencyLevel,
+  isCompetencyShift,
   isShiftPattern,
+  normalizeCompetencyShifts,
   isTrainingModality,
   isTrainingStatus,
   type CompetencyAssessmentStatus,
@@ -158,6 +161,56 @@ export function parseWorkPositionBody(body: unknown): ParseResult<WorkPositionIn
   }
   if (requirements.length === 0) return fail("REQUIREMENTS_REQUIRED", "Defina pelo menos 1 requisito.");
   return { ok: true, value: { name, departmentId, shiftPattern: body.shiftPattern, requirements } };
+}
+
+export type DepartmentCompetencyAssignment = { competencyId: string; shifts: string[] | null };
+
+function readShiftSelection(value: unknown): string[] | null | "invalid" {
+  if (value == null || value === "ALL") return null;
+  if (!Array.isArray(value) || value.length === 0 || value.length > COMPETENCY_SHIFTS.length) return "invalid";
+  const codes: string[] = [];
+  for (const shift of value) {
+    if (!isCompetencyShift(shift) || codes.includes(shift)) return "invalid";
+    codes.push(shift);
+  }
+  return normalizeCompetencyShifts(codes);
+}
+
+export function parseDepartmentCompetenciesBody(body: unknown): ParseResult<{ items: DepartmentCompetencyAssignment[] }> {
+  if (!isRecord(body)) return fail("INVALID_BODY", "Corpo da requisição inválido.");
+  if (Array.isArray(body.items)) {
+    if (body.items.length > 500) return fail("INVALID_COMPETENCIES", "Lista de competências inválida.");
+    const items: DepartmentCompetencyAssignment[] = [];
+    const seen = new Set<string>();
+    for (const raw of body.items) {
+      if (!isRecord(raw) || !isUuidString(raw.competencyId)) return fail("INVALID_COMPETENCIES", "Lista de competências inválida.");
+      const competencyId = raw.competencyId.trim().toLowerCase();
+      if (seen.has(competencyId)) return fail("DUPLICATE_COMPETENCY", "Competência repetida na associação.");
+      seen.add(competencyId);
+      const shifts = readShiftSelection(raw.shifts);
+      if (shifts === "invalid") return fail("INVALID_SHIFTS", "Selecione um ou mais turnos, ou todos.");
+      items.push({ competencyId, shifts });
+    }
+    return { ok: true, value: { items } };
+  }
+  const competencyIds = readUuidList(body.competencyIds, 500);
+  if (!competencyIds) return fail("INVALID_COMPETENCIES", "Lista de competências inválida.");
+  return { ok: true, value: { items: competencyIds.map((competencyId) => ({ competencyId, shifts: null })) } };
+}
+
+export function parseCompetencyViewQuery(query: Record<string, unknown>): ParseResult<{ departmentId: string | null; shifts: string[] | null }> {
+  const rawDepartment = query.departmentId;
+  let departmentId: string | null = null;
+  if (rawDepartment != null && rawDepartment !== "") {
+    if (typeof rawDepartment !== "string" || !isUuidString(rawDepartment)) return fail("INVALID_DEPARTMENT", "Departamento inválido.");
+    departmentId = rawDepartment.trim().toLowerCase();
+  }
+  const rawShifts = query.shifts;
+  if (rawShifts == null || rawShifts === "" || rawShifts === "all") return { ok: true, value: { departmentId, shifts: null } };
+  if (typeof rawShifts !== "string") return fail("INVALID_SHIFTS", "Turnos inválidos.");
+  const shifts = readShiftSelection(rawShifts.split(",").map((shift) => shift.trim()).filter(Boolean));
+  if (shifts === "invalid") return fail("INVALID_SHIFTS", "Turnos inválidos.");
+  return { ok: true, value: { departmentId, shifts } };
 }
 
 export function parsePositionTeamBody(body: unknown): ParseResult<{ employeeIds: string[] }> {

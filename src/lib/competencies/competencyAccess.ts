@@ -89,6 +89,8 @@ export const COMPETENCY_ENDPOINTS = [
   { method: "GET", path: "/api/hr/competencies/catalog", capability: "view" },
   { method: "GET", path: "/api/hr/competencies/positions", capability: "view" },
   { method: "GET", path: "/api/hr/competencies/options", capability: "view" },
+  { method: "GET", path: "/api/hr/competencies/departments", capability: "view" },
+  { method: "PUT", path: "/api/hr/competencies/departments/:id/competencies", capability: "manageCatalog" },
   { method: "GET", path: "/api/hr/competencies/employees/:employeeId", capability: "view" },
   { method: "POST", path: "/api/hr/competencies/catalog", capability: "manageCatalog" },
   { method: "PUT", path: "/api/hr/competencies/catalog/:id", capability: "manageCatalog" },

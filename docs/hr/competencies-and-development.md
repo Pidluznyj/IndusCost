@@ -1,19 +1,19 @@
 # Competências e Desenvolvimento
 
-Submódulo de **Gestão de pessoas** (`/competencies`). Reúne a matriz de competências por posto de trabalho, as lacunas, as avaliações e os treinamentos da equipe.
+Submódulo de **Gestão de pessoas** (`/competencies`). Organiza as competências pelos departamentos oficiais do RH, com avaliações individuais, evolução, polivalência e treinamentos.
 
 Breadcrumb: Gestão de pessoas › Competências e Desenvolvimento.
 
 ## Princípios
 
-- **Engine oficial única.** `src/lib/competencies/competencyEngine.ts` é pura (sem Prisma) e calcula cobertura, lacunas, aptidão, média da avaliação e reciclagem.
+- **Engine oficial única.** `src/lib/competencies/competencyEngine.ts` é pura (sem Prisma) e calcula os indicadores de desenvolvimento, a média da avaliação, a reciclagem e, por compatibilidade, a cobertura legada dos postos.
   - Só `competency.server.ts` a chama. A UI apenas formata o que a API devolve.
   - O teste `competencyOfficialEngineGuard.test.ts` impede que componentes importem funções de cálculo dela.
 - **Nada de entidade paralela.**
   - Colaborador = `Employee` (somente ativos).
   - Setor = `HrDepartment` (departamento oficial do RH).
   - O posto de trabalho é físico e **não** substitui o cargo salarial (`Role`).
-  - Não existe tabela de turno no RH, então o posto guarda o padrão de turno como string validada.
+  - Não existe vínculo oficial de turno no colaborador (`Employee.workSchedule` é texto livre). A configuração da competência usa os códigos 1, 2 e 3; o `shiftPattern` do posto continua sendo só a quantidade de turnos do posto físico.
 - **Avaliação de competência ≠ avaliação de experiência.** `HrEmployeeEvaluation` (45/90 dias, por template e pesos) continua intacta. Aqui o registro é o nível de 1 a 4 por competência exigida.
 - **Histórico append-only.**
   - Toda gravação de nível gera uma linha em `HrEmployeeCompetencyLevelHistory`: na avaliação, sempre; na edição manual, só quando o nível muda.
@@ -71,7 +71,11 @@ Quando o nível não cai:
 - **Sem treinamento concluído registrado:** mantém o nível gravado. Isso evita derrubar a equipe inteira no dia em que a competência passa a exigir reciclagem.
 - **Validade 0:** sem vencimento.
 
-**População.** Entram na matriz e nos indicadores os colaboradores **ativos** com alocação ativa num posto **ativo**. Competências arquivadas saem das colunas e dos requisitos.
+**Unidade organizacional.** O departamento oficial (`HrDepartment`, via `Employee.departmentId`) é o contexto. A tela lista departamentos já existentes — não os cria — e associa competências do catálogo (`HrDepartmentCompetency`), sem nível mínimo. A mesma competência pode pertencer a vários departamentos e, na configuração, a um, vários ou todos os turnos 1, 2 e 3. Essa escolha não classifica o colaborador, não altera `workSchedule` e não duplica a competência no catálogo. Trocar o departamento do colaborador não duplica nem apaga o histórico de níveis. A matriz e a visão geral filtram colaboradores pelo departamento oficial; o filtro de turno restringe as competências configuradas.
+
+**População.** Entram na matriz e nos indicadores os colaboradores **ativos** visíveis no escopo, com ou sem posto. Competências arquivadas saem das colunas. A associação ao departamento sugere competências na avaliação; não obriga a avaliar todas e não cria lacuna.
+
+**Postos (compatibilidade).** `HrWorkPosition`, `HrWorkPositionRequirement` e `HrEmployeeWorkPosition` permanecem no banco e na API. Não são o fluxo principal e não são exigidos para avaliar. Os indicadores da Visão geral não usam o mínimo do posto.
 
 ## Governança de níveis
 
@@ -104,7 +108,9 @@ Migration: `20261008120000_hr_competencies`. É aditiva: só cria tabelas, não 
 | Tabela | Conteúdo |
 |---|---|
 | `HrCompetency` | `name`, `category` (`TECHNICAL`/`SAFETY`/`QUALITY`/`BEHAVIORAL`), `description`, `requiresRecycling`, `critical`, `status`, `sortOrder` (ordem das colunas). Nome único entre as ativas, sem diferenciar maiúsculas (índice parcial `HrCompetency_name_active_uidx`). |
-| `HrWorkPosition` | `name`, `departmentId` → `HrDepartment`, `shiftPattern` (`ONE_SHIFT`/`TWO_SHIFTS`/`THREE_SHIFTS`), `status`. |
+| `HrDepartmentCompetency` | Associação `departmentId` + `competencyId`, sem nível mínimo. `appliesToAllShifts` (padrão true) cobre os turnos 1, 2 e 3. Única por par. Migration `20261015140000_hr_department_competency`. |
+| `HrDepartmentCompetencyShift` | Subconjunto de turnos de configuração (`shiftCode` 1, 2 ou 3) quando `appliesToAllShifts` é false. Única por associação + código. Não é turno do colaborador. Migration `20261015153000_hr_department_competency_shift`. |
+| `HrWorkPosition` | Compatibilidade. `name`, `departmentId` → `HrDepartment`, `shiftPattern` (`ONE_SHIFT`/`TWO_SHIFTS`/`THREE_SHIFTS`), `status`. |
 | `HrWorkPositionRequirement` | `positionId`, `competencyId`, `minLevel` 1–4 (CHECK). Único por par. |
 | `HrEmployeeWorkPosition` | Alocação com histórico (`startedAt`/`endedAt`). No máximo uma ativa por colaborador (índice parcial `HrEmployeeWorkPosition_employee_active_uidx`). |
 | `HrEmployeeCompetencyLevel` | Nível atual 0–4 (CHECK), `source` (`ASSESSMENT`/`MANUAL`/`TRAINING`/`IMPORT`), `assessedAt`, `version` (concorrência otimista). Único por colaborador + competência. |
@@ -129,11 +135,13 @@ Arquivo: `src/lib/competencies/competencyRoutes.ts`. É registrado em `server.ts
 
 | Método | Caminho | Capacidade | Notas |
 |---|---|---|---|
-| GET | `/api/hr/competencies/overview` | ver | KPIs, 6 maiores lacunas e aptidão por posto, já calculados pela engine. |
-| GET | `/api/hr/competencies/matrix` | ver | Linhas × colunas, com nível efetivo, mínimo, `belowMinimum` e situação da reciclagem. |
+| GET | `/api/hr/competencies/overview` | ver | KPIs já calculados pela engine. `?departmentId=` filtra colaboradores do departamento oficial. `?shifts=1,2` filtra competências configuradas para esses turnos. |
+| GET | `/api/hr/competencies/matrix` | ver | Linhas × colunas, com nível efetivo, mínimo, `belowMinimum` e situação da reciclagem. Aceita os mesmos filtros de departamento e turno. |
 | GET | `/api/hr/competencies/catalog` | ver | Competências ativas. |
 | GET | `/api/hr/competencies/positions` | ver | Postos com requisitos e equipe. |
 | GET | `/api/hr/competencies/options` | ver | Colaboradores ativos (avaliador, equipe) e setores. |
+| GET | `/api/hr/competencies/departments` | ver | Departamentos oficiais e as competências associadas, com turnos de configuração. |
+| PUT | `/api/hr/competencies/departments/:id/competencies` | gerenciar | Substitui as associações. `{ items: [{ competencyId, shifts }] }`; `shifts` null ou `["1","2","3"]` = todos. Não grava nível, avaliação nem turno do colaborador. Lista antiga `{ competencyIds }` continua valendo para todos os turnos. |
 | GET | `/api/hr/competencies/employees/:employeeId` | ver | Perfil de UM colaborador para a ficha funcional: posto, requisitos com nível atual, cobertura, apto, outras competências registradas e as últimas 50 alterações de nível. Também inclui inativo e quem está sem posto. Fora do escopo → 404. |
 | POST/PUT/DELETE | `/api/hr/competencies/catalog[/:id]` | gerenciar | DELETE arquiva (`INACTIVE`). 409 `DUPLICATE_NAME`. |
 | POST/PUT/DELETE | `/api/hr/competencies/positions[/:id]` | gerenciar | Exige nome e ≥ 1 requisito (`REQUIREMENTS_REQUIRED`). Nível 0 = não exigido. DELETE arquiva e encerra as alocações. |
@@ -157,7 +165,7 @@ Arquivo: `src/lib/competencies/competencyRoutes.ts`. É registrado em `server.ts
 
 | Status | Comportamento |
 |---|---|
-| `COMPLETED` | Exige avaliador e **um nível para cada competência exigida pelo posto** (400 `ITEMS_MISMATCH`). Colaborador sem posto → 409 `NO_POSITION`. Na mesma transação: grava a média calculada pela engine, os itens, os níveis atuais e o histórico, e **substitui** a avaliação aberta do colaborador. A mais recente vira a concluída e as demais pendências dele são removidas. |
+| `COMPLETED` | Exige avaliador e ao menos um item com nível. Lista vazia → 400 `ITEMS_REQUIRED`. Competência desconhecida → `UNKNOWN_COMPETENCY`. Item repetido → `DUPLICATE_ITEM`. Não exige posto. Uma avaliação grava um nível por colaborador e competência, qualquer que seja o turno configurado. Na mesma transação: grava a média calculada pela engine, os itens, os níveis atuais e o histórico, e **substitui** a avaliação aberta do colaborador. A mais recente vira a concluída e as demais pendências dele são removidas. |
 | `PENDING` / `IN_PROGRESS` | Só agenda, sem níveis. |
 
 Auditoria em `logEmployeeHrAudit`:
@@ -280,8 +288,8 @@ A aba **Competências** fica na Ficha Funcional do colaborador (Pessoas / RH ›
 - **Somente leitura:** para avaliar ou alterar níveis, use "Abrir módulo".
 
 Conteúdo da aba:
-- posto (setor · turno), cobertura e "Apto no posto" / "Com lacunas";
-- requisitos do posto (exigido × atual, lacuna, reciclagem vencida);
+- departamento oficial e competências associadas a ele, com o nível atual (sem mínimo inventado);
+- níveis registrados fora do departamento atual (polivalência) e o histórico;
 - outras competências registradas;
 - avaliações;
 - treinamentos;
@@ -348,6 +356,48 @@ Esses arquivos também estão em `scripts/unit-test-files.txt`.
 - a governança (versão condicional, índice de uma pendente por par, aprovação aplicada e segunda decisão recusada).
 
 Em 2026-10-15 passou 9/9 em PGlite (PostgreSQL 17.5 em memória, via `pglite-socket`). O `prisma migrate diff` do banco migrado contra o `schema.prisma` saiu vazio.
+
+## Competências já cadastradas na homologação
+
+As competências que já estão em `HrCompetency` — inclusive as 67 carregadas antes desta refatoração — permanecem no catálogo. O deploy das migrations `20261015140000_hr_department_competency` e `20261015153000_hr_department_competency_shift` só cria a associação. Não há backfill. A importação de níveis (ID, Colaborador, Posto) continua separada e não cria competência nem departamento.
+
+A carga das associações é uma etapa **posterior e supervisionada**. Este deploy não a executa.
+
+### Plano de conciliação com a TDE-FO-002 V202604
+
+Origem do agrupamento: as oito áreas dessa planilha. Elas não são departamentos e não estão gravadas no cadastro. O destino é somente `HrDepartment` já existente. A competência de destino é somente uma linha ativa já existente em `HrCompetency`.
+
+A prévia não grava. A gravação só ocorre depois de uma confirmação explícita da prévia, numa etapa própria.
+
+**1. Prévia**
+
+- Contar `HrCompetency` ativas. O esperado na homologação é 67. Outra contagem interrompe a prévia.
+- Listar `HrDepartment` ativos. Não criar departamento.
+- Ler as oito áreas da TDE-FO-002 V202604 e os nomes de competência de cada área.
+- Normalizar texto só para comparar: sem espaços nas pontas, sem diferença de maiúsculas e sem acento. O nome gravado não muda.
+
+**2. Correspondência exata**
+
+- Cada nome da planilha casa com uma única competência ativa. Zero ocorrências fica como ausente. Mais de uma fica como ambígua.
+- Cada área casa com um único departamento ativo pelo nome normalizado. Zero ou mais de um deixa a área inteira sem proposta.
+- Proposta aceita: `departmentId` + `competencyId` já existentes, turnos em branco (todos os turnos, `appliesToAllShifts`). Sem nível mínimo.
+- A mesma competência pode aparecer em mais de uma área só se cada área tiver um departamento exato. Continua sendo uma linha no catálogo.
+
+**3. Ambiguidades**
+
+Ficam de fora da proposta, para decisão humana:
+
+- área sem departamento oficial de mesmo nome, ou com mais de um;
+- competência da planilha sem par ativo no catálogo, ou com mais de um;
+- nome que só se parece com o departamento (contém, abrevia ou traduz) sem ser igual depois da normalização.
+
+Nada disso vira departamento novo, competência nova ou associação automática.
+
+**4. Confirmação antes de gravar**
+
+A prévia devolve três listas: propostas exatas, ambiguidades e ausências, mais uma impressão digital dos ids de catálogo, departamentos e propostas. A confirmação repete a leitura. Se a impressão mudou, a gravação é recusada e a prévia é refeita.
+
+Quando essa etapa for autorizada, a gravação substitui apenas as associações confirmadas, numa transação, sem duplicar o par departamento × competência. Não altera `Employee`, `workSchedule`, avaliação, treinamento, nível nem histórico. Turno específico só entra se a confirmação o trouxer; o padrão da prévia é todos os turnos.
 
 ## Status e pendências (auditoria de 2026-10-15)
 

@@ -87,6 +87,8 @@ describe("competencyRoutes — guardas", () => {
     const viewer = await startCompetencyTestApp({ granted: [`${COMPETENCY_RESOURCE_KEYS.module}:view`] });
     try {
       assert.equal((await requestJson(viewer, "GET", "/api/hr/competencies/overview")).status, 200);
+      assert.equal((await requestJson(viewer, "GET", "/api/hr/competencies/departments")).status, 200);
+      assert.equal((await requestJson(viewer, "PUT", samplePath("/api/hr/competencies/departments/:id/competencies"), { competencyIds: [] })).status, 403);
       assert.equal((await requestJson(viewer, "POST", "/api/hr/competencies/assessments", {})).status, 403);
       assert.equal((await requestJson(viewer, "PUT", samplePath("/api/hr/competencies/levels/:a/:b"), { level: 2 })).status, 403);
       assert.equal((await requestJson(viewer, "GET", "/api/hr/competencies/trainings")).status, 403);
@@ -188,15 +190,15 @@ describe("competencyRoutes — avaliação atualiza matriz, KPIs e lacunas", () 
     assert.equal(ov.pendingAssessments, 1);
   });
 
-  it("conclusão exige um nível para cada competência exigida", async () => {
+  it("conclusão exige ao menos uma competência", async () => {
     const res = await requestJson(app, "POST", "/api/hr/competencies/assessments", {
       employeeId: s.ana,
       evaluatorEmployeeId: s.marcos,
       assessmentDate: "2026-10-15",
-      items: [{ competencyId: s.desenho, level: 3 }],
+      items: [],
     });
     assert.equal(res.status, 400);
-    assert.equal(res.json.error, "ITEMS_MISMATCH");
+    assert.equal(res.json.error, "ITEMS_REQUIRED");
     const noEval = await requestJson(app, "POST", "/api/hr/competencies/assessments", {
       employeeId: s.ana,
       assessmentDate: "2026-10-15",
@@ -247,15 +249,21 @@ describe("competencyRoutes — avaliação atualiza matriz, KPIs e lacunas", () 
     assert.equal(put.json.error, "ASSESSMENT_LOCKED");
   });
 
-  it("colaborador sem posto não pode ser avaliado", async () => {
+  it("colaborador sem posto pode ser avaliado e entra na matriz", async () => {
     const res = await requestJson(app, "POST", "/api/hr/competencies/assessments", {
       employeeId: s.marcos,
       evaluatorEmployeeId: s.ana,
       assessmentDate: "2026-10-15",
       items: [{ competencyId: s.desenho, level: 3 }],
     });
-    assert.equal(res.status, 409);
-    assert.equal(res.json.error, "NO_POSITION");
+    assert.equal(res.status, 201, JSON.stringify(res.json));
+    const matrix = (await requestJson(app, "GET", "/api/hr/competencies/matrix")).json;
+    const row = matrix.rows.find((r: { employeeId: string }) => r.employeeId === s.marcos);
+    assert.equal(row.positionId, null);
+    const cell = row.cells.find((c: { competencyId: string }) => c.competencyId === s.desenho);
+    assert.equal(cell.level, 3);
+    assert.equal(cell.requiredLevel, null);
+    assert.equal(cell.belowMinimum, false);
   });
 
   it("nível manual na matriz grava histórico só quando muda", async () => {
@@ -371,6 +379,226 @@ describe("competencyRoutes — treinamentos e reciclagem", () => {
     const cell = matrix.rows.find((r: any) => r.employeeId === s.ana).cells.find((c: any) => c.competencyId === s.nr12);
     assert.deepEqual([cell.storedLevel, cell.level, cell.recycling, cell.recyclingExpiresOn], [3, 1, "EXPIRED", "2026-09-01"]);
     assert.equal((await requestJson(app, "DELETE", `/api/hr/competencies/trainings/${id}`)).json.error, "TRAINING_LOCKED");
+  });
+});
+
+describe("competencyRoutes — departamentos e competências", () => {
+  let app: CompetencyTestApp;
+  before(async () => {
+    app = await startCompetencyTestApp();
+  });
+  after(() => app.close());
+
+  it("associa a mesma competência a dois departamentos sem nível mínimo e sem mexer no colaborador", async () => {
+    const injecao = seedDepartment(app.db, "Injeção");
+    const qualidade = seedDepartment(app.db, "Qualidade");
+    const ana = seedEmployee(app.db, "Ana Dept", { departmentId: injecao });
+    const desenho = (await requestJson(app, "POST", "/api/hr/competencies/catalog", { name: "Desenho", category: "TECHNICAL" })).json.id as string;
+    const nr = (await requestJson(app, "POST", "/api/hr/competencies/catalog", { name: "NR-12 Dept", category: "SAFETY" })).json.id as string;
+
+    const first = await requestJson(app, "PUT", `/api/hr/competencies/departments/${injecao}/competencies`, { competencyIds: [desenho, nr] });
+    assert.equal(first.status, 200, JSON.stringify(first.json));
+    const again = await requestJson(app, "PUT", `/api/hr/competencies/departments/${injecao}/competencies`, { competencyIds: [nr, desenho] });
+    assert.equal(again.status, 200);
+    assert.equal(app.db.tables.hrDepartmentCompetency.filter((r) => r.departmentId === injecao).length, 2);
+    const second = await requestJson(app, "PUT", `/api/hr/competencies/departments/${qualidade}/competencies`, { competencyIds: [desenho] });
+    assert.equal(second.status, 200);
+    const board = second.json.departments as { id: string; competencyIds: string[]; employees: { id: string }[] }[];
+    assert.deepEqual(board.find((d) => d.id === injecao)?.competencyIds.sort(), [desenho, nr].sort());
+    assert.deepEqual(board.find((d) => d.id === qualidade)?.competencyIds, [desenho]);
+    assert.equal(app.db.tables.employee.find((e) => e.id === ana)?.departmentId, injecao);
+
+    const off = await requestJson(app, "PUT", `/api/hr/competencies/departments/${injecao}/competencies`, { competencyIds: [desenho] });
+    assert.equal(off.status, 200);
+    assert.equal(app.db.tables.hrDepartmentCompetency.filter((r) => r.departmentId === injecao && r.competencyId === nr).length, 0);
+
+    const inactiveId = seedDepartment(app.db, "Arquivado");
+    const inactive = app.db.tables.hrDepartment.find((d) => d.id === inactiveId)!;
+    inactive.status = "INACTIVE";
+    assert.equal((await requestJson(app, "PUT", `/api/hr/competencies/departments/${inactiveId}/competencies`, { competencyIds: [desenho] })).status, 404);
+  });
+
+  it("avalia sem posto, preserva histórico na troca de departamento e não cria lacuna artificial", async () => {
+    const injecao = seedDepartment(app.db, "Montagem");
+    const qualidade = seedDepartment(app.db, "Testagem");
+    const person = seedEmployee(app.db, "Sem Posto", { departmentId: injecao });
+    const evaluator = seedEmployee(app.db, "Avaliador Dept");
+    const home = (await requestJson(app, "POST", "/api/hr/competencies/catalog", { name: "Montagem básica", category: "TECHNICAL" })).json.id as string;
+    const other = (await requestJson(app, "POST", "/api/hr/competencies/catalog", { name: "Teste elétrico", category: "QUALITY" })).json.id as string;
+    await requestJson(app, "PUT", `/api/hr/competencies/departments/${injecao}/competencies`, { competencyIds: [home] });
+    await requestJson(app, "PUT", `/api/hr/competencies/departments/${qualidade}/competencies`, { competencyIds: [other] });
+
+    const saved = await requestJson(app, "POST", "/api/hr/competencies/assessments", {
+      employeeId: person,
+      evaluatorEmployeeId: evaluator,
+      assessmentDate: "2026-10-15",
+      items: [
+        { competencyId: home, level: 2 },
+        { competencyId: other, level: 4 },
+      ],
+    });
+    assert.equal(saved.status, 201, JSON.stringify(saved.json));
+    const historyBefore = app.db.tables.hrEmployeeCompetencyLevelHistory.filter((h) => h.employeeId === person).length;
+    assert.equal(historyBefore, 2);
+
+    const employee = app.db.tables.employee.find((e) => e.id === person)!;
+    employee.departmentId = qualidade;
+    const profile = await requestJson(app, "GET", `/api/hr/competencies/employees/${person}`);
+    assert.equal(profile.status, 200);
+    assert.equal(profile.json.department.id, qualidade);
+    assert.equal(profile.json.position, null);
+    assert.equal(profile.json.history.length, historyBefore);
+    const matrix = (await requestJson(app, "GET", "/api/hr/competencies/matrix")).json;
+    const row = matrix.rows.find((r: { employeeId: string }) => r.employeeId === person);
+    assert.equal(row.departmentId, qualidade);
+    assert.deepEqual(row.linkedCompetencyIds, [other]);
+    const homeCell = row.cells.find((c: { competencyId: string; level: number; belowMinimum: boolean }) => c.competencyId === home);
+    assert.equal(homeCell.level, 2);
+    assert.equal(homeCell.belowMinimum, false);
+    const ov = (await requestJson(app, "GET", "/api/hr/competencies/overview")).json;
+    assert.ok(ov.development.evaluatedEmployees >= 1);
+    assert.ok(ov.development.polyvalentEmployees >= 1);
+    assert.ok(ov.development.multipliers >= 1);
+  });
+
+  it("associar competência ao departamento não amplia o que o líder enxerga", async () => {
+    const dep = seedDepartment(app.db, "Ferramentaria");
+    const leader = seedEmployee(app.db, "Líder Ferramentaria");
+    const mine = seedEmployee(app.db, "Liderado", { managerId: leader, departmentId: dep });
+    const other = seedEmployee(app.db, "Outra equipe", { departmentId: dep });
+    const comp = (await requestJson(app, "POST", "/api/hr/competencies/catalog", { name: "Ajuste de molde", category: "TECHNICAL" })).json.id as string;
+    app.setScope({ accessScope: "DIRECT_REPORTS", actorEmployeeId: leader });
+    const before = await requestJson(app, "GET", "/api/hr/competencies/departments");
+    assert.equal(before.status, 200);
+    const people = (before.json.departments as { id: string; employees: { id: string }[] }[]).find((d) => d.id === dep)?.employees ?? [];
+    assert.deepEqual(people.map((e) => e.id), [mine]);
+    const linked = await requestJson(app, "PUT", `/api/hr/competencies/departments/${dep}/competencies`, { competencyIds: [comp] });
+    assert.equal(linked.status, 200);
+    const afterPeople = (linked.json.departments as { id: string; employees: { id: string }[] }[]).find((d) => d.id === dep)?.employees ?? [];
+    assert.deepEqual(afterPeople.map((e) => e.id), [mine]);
+    const matrix = (await requestJson(app, "GET", "/api/hr/competencies/matrix")).json;
+    const ids = (matrix.rows as { employeeId: string }[]).map((r) => r.employeeId);
+    assert.equal(ids.includes(mine), true);
+    assert.equal(ids.includes(other), false);
+    assert.equal(ids.includes(leader), true);
+    assert.equal((await requestJson(app, "GET", `/api/hr/competencies/employees/${other}`)).status, 404);
+  });
+
+  it("aplica a mesma competência aos turnos 1 e 2 sem duplicar catálogo, avaliação ou turno do colaborador", async () => {
+    app.setScope({ accessScope: "ALL", actorEmployeeId: null });
+    const montagem = seedDepartment(app.db, "Montagem turnos");
+    const qualidade = seedDepartment(app.db, "Qualidade turnos");
+    const person = seedEmployee(app.db, "Operador turnos", { departmentId: montagem, workSchedule: "Seg–Sex 07:30–17:18" });
+    const other = seedEmployee(app.db, "Qualidade turnos pessoa", { departmentId: qualidade });
+    const evaluator = seedEmployee(app.db, "Avaliador turnos");
+    const catalogBefore = app.db.tables.hrCompetency.length;
+    const a = (await requestJson(app, "POST", "/api/hr/competencies/catalog", { name: "Solda de gabinete", category: "TECHNICAL" })).json.id as string;
+    const b = (await requestJson(app, "POST", "/api/hr/competencies/catalog", { name: "Inspeção visual", category: "QUALITY" })).json.id as string;
+    assert.equal(app.db.tables.hrCompetency.length, catalogBefore + 2);
+
+    const first = await requestJson(app, "PUT", `/api/hr/competencies/departments/${montagem}/competencies`, {
+      items: [
+        { competencyId: a, shifts: ["2", "1"] },
+        { competencyId: b, shifts: ["1", "2"] },
+      ],
+    });
+    assert.equal(first.status, 200, JSON.stringify(first.json));
+    const links = (first.json.departments as { id: string; links: { competencyId: string; appliesToAllShifts: boolean; shifts: string[] }[] }[])
+      .find((department) => department.id === montagem)?.links ?? [];
+    assert.equal(links.length, 2);
+    assert.equal(links.every((link) => link.appliesToAllShifts === false && link.shifts.join(",") === "1,2"), true);
+    const parents = () => app.db.tables.hrDepartmentCompetency.filter((row) => row.departmentId === montagem);
+    const shiftRows = () => {
+      const ids = new Set(parents().map((row) => row.id));
+      return app.db.tables.hrDepartmentCompetencyShift.filter((row) => ids.has(String(row.departmentCompetencyId)));
+    };
+    assert.equal(parents().length, 2);
+    assert.equal(shiftRows().length, 4);
+
+    const again = await requestJson(app, "PUT", `/api/hr/competencies/departments/${montagem}/competencies`, {
+      items: [
+        { competencyId: a, shifts: ["1", "2"] },
+        { competencyId: b, shifts: ["1", "2"] },
+      ],
+    });
+    assert.equal(again.status, 200);
+    assert.equal(parents().length, 2);
+    assert.equal(shiftRows().length, 4);
+    assert.equal(app.db.tables.hrCompetency.filter((row) => row.id === a || row.id === b).length, 2);
+
+    const saved = await requestJson(app, "POST", "/api/hr/competencies/assessments", {
+      employeeId: person,
+      evaluatorEmployeeId: evaluator,
+      assessmentDate: "2026-10-15",
+      items: [{ competencyId: a, level: 3 }],
+    });
+    assert.equal(saved.status, 201, JSON.stringify(saved.json));
+    const levels = () => app.db.tables.hrEmployeeCompetencyLevel.filter((row) => row.employeeId === person);
+    const history = () => app.db.tables.hrEmployeeCompetencyLevelHistory.filter((row) => row.employeeId === person);
+    assert.equal(levels().length, 1);
+    assert.equal(levels()[0].competencyId, a);
+    assert.equal(levels()[0].level, 3);
+    const historyCount = history().length;
+    await requestJson(app, "PUT", `/api/hr/competencies/departments/${montagem}/competencies`, {
+      items: [
+        { competencyId: a, shifts: ["1", "2"] },
+        { competencyId: b, shifts: ["1", "2"] },
+      ],
+    });
+    assert.equal(levels().length, 1);
+    assert.equal(history().length, historyCount);
+    const employee = app.db.tables.employee.find((row) => row.id === person)!;
+    assert.equal(employee.departmentId, montagem);
+    assert.equal(employee.workSchedule, "Seg–Sex 07:30–17:18");
+
+    const invalid = await requestJson(app, "PUT", `/api/hr/competencies/departments/${montagem}/competencies`, {
+      items: [{ competencyId: a, shifts: ["9"] }],
+    });
+    assert.equal(invalid.status, 400);
+    assert.equal(invalid.json.error, "INVALID_SHIFTS");
+    assert.equal(parents().length, 2);
+    assert.equal(shiftRows().length, 4);
+
+    const allShifts = await requestJson(app, "PUT", `/api/hr/competencies/departments/${montagem}/competencies`, {
+      items: [{ competencyId: a, shifts: ["1", "2", "3"] }],
+    });
+    assert.equal(allShifts.status, 200);
+    assert.equal(parents().length, 1);
+    assert.equal(parents()[0].appliesToAllShifts, true);
+    assert.equal(shiftRows().length, 0);
+    const allLink = (allShifts.json.departments as { id: string; links: { competencyId: string; appliesToAllShifts: boolean; shifts: string[] }[] }[])
+      .find((department) => department.id === montagem)?.links[0];
+    assert.equal(allLink?.appliesToAllShifts, true);
+    assert.deepEqual(allLink?.shifts, []);
+
+    await requestJson(app, "PUT", `/api/hr/competencies/departments/${montagem}/competencies`, {
+      items: [
+        { competencyId: a, shifts: ["1"] },
+        { competencyId: b, shifts: ["2"] },
+      ],
+    });
+    await requestJson(app, "PUT", `/api/hr/competencies/departments/${qualidade}/competencies`, {
+      items: [{ competencyId: b, shifts: null }],
+    });
+    const byShift = (await requestJson(app, "GET", "/api/hr/competencies/matrix?shifts=2")).json;
+    const columnIds = (byShift.competencies as { id: string }[]).map((competency) => competency.id);
+    assert.equal(columnIds.includes(a), false);
+    assert.equal(columnIds.includes(b), true);
+    const rowIds = (byShift.rows as { employeeId: string }[]).map((row) => row.employeeId);
+    assert.equal(rowIds.includes(person), true);
+    assert.equal(rowIds.includes(other), true);
+    const byDepartment = (await requestJson(app, "GET", `/api/hr/competencies/matrix?departmentId=${montagem}`)).json;
+    const departmentRows = (byDepartment.rows as { employeeId: string }[]).map((row) => row.employeeId);
+    assert.deepEqual(departmentRows, [person]);
+    const badFilter = await requestJson(app, "GET", "/api/hr/competencies/matrix?shifts=9");
+    assert.equal(badFilter.status, 400);
+    assert.equal(badFilter.json.error, "INVALID_SHIFTS");
+    const overview = (await requestJson(app, "GET", `/api/hr/competencies/overview?departmentId=${montagem}`)).json;
+    assert.equal(overview.development.evaluatedEmployees, 1);
+    assert.equal(overview.development.employeesInScope, 1);
+    const otherOverview = (await requestJson(app, "GET", `/api/hr/competencies/overview?departmentId=${qualidade}`)).json;
+    assert.equal(otherOverview.development.evaluatedEmployees, 0);
+    assert.equal(levels().length, 1);
   });
 });
 

@@ -32,6 +32,8 @@ import {
   getCompetencyMatrix,
   getCompetencyOptions,
   getCompetencyOverview,
+  listDepartmentCompetencies,
+  setDepartmentCompetencies,
   getEmployeeCompetencyProfile,
   decideLevelRequest,
   listLevelRequests,
@@ -52,6 +54,8 @@ import {
   isUuidString,
   parseAssessmentBody,
   parseCompetencyBody,
+  parseDepartmentCompetenciesBody,
+  parseCompetencyViewQuery,
   parseDecisionBody,
   parseLevelBody,
   parsePositionTeamBody,
@@ -224,14 +228,18 @@ export function registerCompetencyRoutes(
   });
 
   // —— Leitura ——
-  app.get(`${base}/overview`, ...gate("view"), asyncRoute("GET competencies/overview", async (_req, res) => {
+  app.get(`${base}/overview`, ...gate("view"), asyncRoute("GET competencies/overview", async (req, res) => {
+    const filter = parseCompetencyViewQuery(req.query as Record<string, unknown>);
+    if (filter.ok === false) return badRequest(res, filter);
     noStore(res);
-    return res.json(await getCompetencyOverview(db, businessTodayIso(now()), await scopeOf(_req)));
+    return res.json(await getCompetencyOverview(db, businessTodayIso(now()), await scopeOf(req), filter.value));
   }));
 
-  app.get(`${base}/matrix`, ...gate("view"), asyncRoute("GET competencies/matrix", async (_req, res) => {
+  app.get(`${base}/matrix`, ...gate("view"), asyncRoute("GET competencies/matrix", async (req, res) => {
+    const filter = parseCompetencyViewQuery(req.query as Record<string, unknown>);
+    if (filter.ok === false) return badRequest(res, filter);
     noStore(res);
-    return res.json(await getCompetencyMatrix(db, businessTodayIso(now()), await scopeOf(_req)));
+    return res.json(await getCompetencyMatrix(db, businessTodayIso(now()), await scopeOf(req), filter.value));
   }));
 
   // Ficha do colaborador (aba Competências): mesma engine e mesmo escopo do módulo.
@@ -255,6 +263,27 @@ export function registerCompetencyRoutes(
   app.get(`${base}/options`, ...gate("view"), asyncRoute("GET competencies/options", async (_req, res) => {
     noStore(res);
     return res.json(await getCompetencyOptions(db, await scopeOf(_req)));
+  }));
+
+  app.get(`${base}/departments`, ...gate("view"), asyncRoute("GET competencies/departments", async (_req, res) => {
+    noStore(res);
+    return res.json(await listDepartmentCompetencies(db, await scopeOf(_req)));
+  }));
+
+  app.put(`${base}/departments/:id/competencies`, ...gate("manageCatalog"), asyncRoute("PUT competencies/department", async (req, res) => {
+    const id = param(req, "id");
+    if (!id) return invalidId(res);
+    const parsed = parseDepartmentCompetenciesBody(req.body);
+    if (parsed.ok === false) return badRequest(res, parsed);
+    const who = await actor(req);
+    await setDepartmentCompetencies(db, id, parsed.value.items, who);
+    logEmployeeHrAudit({
+      event: "competency.department.change",
+      actorUserId: who.userId,
+      details: { action: "set-competencies", departmentId: id, competencyCount: parsed.value.items.length },
+    });
+    noStore(res);
+    return res.json(await listDepartmentCompetencies(db, await scopeOf(req)));
   }));
 
   // —— Catálogo de competências ——

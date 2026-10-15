@@ -12,7 +12,7 @@ export type TrainingPreset = { competencyId?: string; title?: string; participan
 
 const MODALITY_OPTIONS = TRAINING_MODALITIES.map((m) => ({ value: m, label: TRAINING_MODALITY_LABELS[m] }));
 
-/** Novo treinamento — nasce "Agendado". Ponto vermelho = abaixo do mínimo (célula da matriz). */
+/** Novo treinamento — nasce "Agendado". Participantes são os colaboradores graváveis do escopo. */
 export function CompetencyTrainingOverlay({
   open,
   preset,
@@ -115,25 +115,20 @@ export function CompetencyTrainingOverlay({
       </div>
       <div>
         <p className="mb-1.5 text-xs font-semibold">
-          Participantes <span className="font-normal text-muted-foreground">· ponto vermelho = abaixo do mínimo</span>
+          Participantes
         </p>
         {eligible.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Nenhum colaborador alocado em posto na sua equipe.</p>
+          <p className="text-sm text-muted-foreground">Nenhum colaborador na sua equipe.</p>
         ) : (
           <div className="flex flex-wrap gap-2" data-testid="training-participants">
-            {eligible.map((r) => {
-              const cell = r.cells.find((c) => c.competencyId === competencyId);
-              return (
-                <ChipToggle
-                  key={r.employeeId}
-                  label={r.employeeName}
-                  selected={participants.includes(r.employeeId)}
-                  flagged={Boolean(cell?.belowMinimum)}
-                  flagTitle="Abaixo do mínimo do posto"
-                  onToggle={() => toggle(r.employeeId)}
-                />
-              );
-            })}
+            {eligible.map((r) => (
+              <ChipToggle
+                key={r.employeeId}
+                label={r.employeeName}
+                selected={participants.includes(r.employeeId)}
+                onToggle={() => toggle(r.employeeId)}
+              />
+            ))}
           </div>
         )}
       </div>

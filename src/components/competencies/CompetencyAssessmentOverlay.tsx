@@ -22,8 +22,8 @@ export type AssessmentPreset = {
 };
 
 /**
- * Nova avaliação (conclui e atualiza os níveis) ou agendamento (pendente, sem níveis).
- * Escopo e nível atual vêm das células da matriz (saída da engine) — nada é recalculado aqui.
+ * Nova avaliação ou agendamento. O departamento só sugere competências;
+ * o avaliador escolhe quais registrar. Não há nível mínimo.
  */
 export function CompetencyAssessmentOverlay({
   open,
@@ -51,27 +51,39 @@ export function CompetencyAssessmentOverlay({
   const [date, setDate] = useState(today);
   const [notes, setNotes] = useState("");
   const [levels, setLevels] = useState<Record<string, number>>({});
+  const [extraIds, setExtraIds] = useState<string[]>([]);
+  const [addId, setAddId] = useState("");
 
   useEffect(() => {
     if (!open) return;
-    setEmployeeId(preset?.employeeId ?? rows.find((r) => r.positionId && r.writable)?.employeeId ?? "");
+    setEmployeeId(preset?.employeeId ?? rows.find((r) => r.writable)?.employeeId ?? "");
     setEvaluatorId(preset?.evaluatorEmployeeId ?? "");
     setDate(preset?.assessmentDate ?? today);
     setNotes(preset?.notes ?? "");
     setLevels({});
+    setExtraIds([]);
+    setAddId("");
   }, [open, preset, rows, today]);
 
   const row = rows.find((r) => r.employeeId === employeeId) ?? null;
   const compName = useMemo(() => new Map(competencies.map((c) => [c.id, c.name])), [competencies]);
-  const scope = useMemo(() => (row ? row.cells.filter((c) => c.requiredLevel !== null) : []), [row]);
+  const shownIds = useMemo(() => {
+    const ids = [...(row?.linkedCompetencyIds ?? [])];
+    for (const id of extraIds) if (!ids.includes(id)) ids.push(id);
+    return ids;
+  }, [row, extraIds]);
+  const cellOf = useMemo(() => new Map(row?.cells.map((c) => [c.competencyId, c]) ?? []), [row]);
+  const available = competencies.filter((c) => !shownIds.includes(c.id));
+  const rated = shownIds.filter((id) => (levels[id] ?? 0) >= 1);
   const lockedEmployee = Boolean(preset?.assessmentId);
   const scheduling = mode === "schedule";
-  const allRated = scope.length > 0 && scope.every((c) => (levels[c.competencyId] ?? 0) >= 1);
-  const canSave = Boolean(employeeId && date && (scheduling || (evaluatorId && allRated)));
+  const canSave = Boolean(employeeId && date && (scheduling || (evaluatorId && rated.length > 0)));
 
   const changeEmployee = (id: string) => {
     setEmployeeId(id);
-    setLevels({}); // trocar o colaborador limpa as notas
+    setLevels({});
+    setExtraIds([]);
+    setAddId("");
   };
 
   const save = async () => {
@@ -81,7 +93,7 @@ export function CompetencyAssessmentOverlay({
       assessmentDate: date,
       status: scheduling ? ("PENDING" as const) : ("COMPLETED" as const),
       notes: notes.trim() || null,
-      items: scheduling ? [] : scope.map((c) => ({ competencyId: c.competencyId, level: levels[c.competencyId] })),
+      items: scheduling ? [] : rated.map((id) => ({ competencyId: id, level: levels[id] })),
     };
     if (preset?.assessmentId) await updateAssessment(preset.assessmentId, body);
     else await createAssessment(body);
@@ -96,10 +108,10 @@ export function CompetencyAssessmentOverlay({
       subtitle={
         scheduling
           ? "A avaliação fica pendente até o registro dos níveis"
-          : "Registre o nível observado em cada competência exigida pelo posto"
+          : "Registre as competências observadas. Não é obrigatório avaliar todas as do departamento."
       }
       saveLabel={scheduling ? "Agendar avaliação" : "Salvar avaliação"}
-      footerHint={scheduling ? "Conta como avaliação pendente" : "Os níveis salvos atualizam a matriz"}
+      footerHint={scheduling ? "Conta como avaliação pendente" : "Os níveis salvos atualizam a matriz e o histórico"}
       canSave={canSave}
       onSave={save}
       onClose={onClose}
@@ -110,9 +122,9 @@ export function CompetencyAssessmentOverlay({
             <OverlaySelect {...p} value={employeeId} disabled={lockedEmployee} onChange={(e) => changeEmployee(e.target.value)} data-testid="assessment-employee">
               <option value="">Selecione…</option>
               {rows.map((r) => (
-                <option key={r.employeeId} value={r.employeeId} disabled={!r.positionId || !r.writable}>
+                <option key={r.employeeId} value={r.employeeId} disabled={!r.writable}>
                   {r.employeeName}
-                  {!r.writable ? " (fora da sua equipe)" : r.positionId ? "" : " (sem posto)"}
+                  {!r.writable ? " (fora da sua equipe)" : ""}
                 </option>
               ))}
             </OverlaySelect>
@@ -135,40 +147,75 @@ export function CompetencyAssessmentOverlay({
             </OverlaySelect>
           )}
         </OverlayField>
-        <OverlayField label="Posto" description="Derivado da alocação do colaborador">
-          {(p) => <OverlayInput {...p} value={row?.positionName ?? "—"} readOnly disabled />}
+        <OverlayField label="Departamento" description="Contexto organizacional do colaborador">
+          {(p) => <OverlayInput {...p} value={row?.departmentName ?? "Sem departamento"} readOnly disabled />}
         </OverlayField>
       </OverlayFieldGrid>
 
       {scheduling ? null : (
         <section aria-label="Níveis por competência" data-testid="assessment-levels">
           <p className="mb-1.5 text-xs font-semibold text-foreground">
-            Competências exigidas pelo posto <span className="font-normal text-muted-foreground">· 1 a 4</span>
+            Competências <span className="font-normal text-muted-foreground">· as do departamento aparecem primeiro; inclua outras se quiser</span>
           </p>
-          {scope.length === 0 ? (
+          {shownIds.length === 0 ? (
             <p className="rounded-lg border border-dashed border-border px-3 py-4 text-center text-sm text-muted-foreground">
-              {row ? "O posto deste colaborador não exige competências." : "Selecione um colaborador com posto."}
+              {row ? "Este departamento ainda não tem competências associadas. Inclua uma abaixo." : "Selecione um colaborador."}
             </p>
           ) : (
             <ul className="divide-y divide-border/70 border-t border-border/70">
-              {scope.map((cell) => (
-                <li key={cell.competencyId} className="flex flex-wrap items-center justify-between gap-3 py-2.5">
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold">{compName.get(cell.competencyId) ?? "—"}</p>
-                    <p className="text-xs text-muted-foreground">
-                      mín. {cell.requiredLevel} · atual: {competencyLevelLabel(cell.level)}
-                    </p>
-                  </div>
-                  <LevelButtons
-                    from={1}
-                    value={levels[cell.competencyId] ?? 0}
-                    onChange={(n) => setLevels((prev) => ({ ...prev, [cell.competencyId]: n }))}
-                    ariaLabel={`Nível em ${compName.get(cell.competencyId) ?? "competência"}`}
-                  />
-                </li>
-              ))}
+              {shownIds.map((id) => {
+                const cell = cellOf.get(id);
+                const fromDepartment = row?.linkedCompetencyIds.includes(id) ?? false;
+                return (
+                  <li key={id} className="flex flex-wrap items-center justify-between gap-3 py-2.5">
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold">{compName.get(id) ?? "—"}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {fromDepartment ? "Do departamento" : "Outro departamento"}
+                        {cell ? ` · atual: ${competencyLevelLabel(cell.level)}` : ""}
+                      </p>
+                    </div>
+                    <LevelButtons
+                      from={1}
+                      value={levels[id] ?? 0}
+                      onChange={(n) => setLevels((prev) => ({ ...prev, [id]: n }))}
+                      ariaLabel={`Nível em ${compName.get(id) ?? "competência"}`}
+                    />
+                  </li>
+                );
+              })}
             </ul>
           )}
+          {row && available.length > 0 ? (
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <select
+                value={addId}
+                onChange={(e) => setAddId(e.target.value)}
+                className="h-9 min-w-[12rem] flex-1 rounded-md border border-border bg-background px-2 text-sm"
+                aria-label="Incluir competência"
+                data-testid="assessment-add-competency"
+              >
+                <option value="">Incluir outra competência…</option>
+                {available.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                className="h-9 rounded-md border border-border px-3 text-sm font-medium disabled:opacity-50"
+                disabled={!addId}
+                onClick={() => {
+                  if (!addId) return;
+                  setExtraIds((prev) => (prev.includes(addId) ? prev : [...prev, addId]));
+                  setAddId("");
+                }}
+              >
+                Incluir
+              </button>
+            </div>
+          ) : null}
         </section>
       )}
 

@@ -59,8 +59,32 @@ type MatrixCellWithGovernance = CompetencyMatrix["rows"][number]["cells"][number
 };
 
 export type CompetencyMatrixResponse = Omit<CompetencyMatrix, "rows"> & {
-  rows: (Omit<CompetencyMatrix["rows"][number], "cells"> & { writable: boolean; cells: MatrixCellWithGovernance[] })[];
+  rows: (Omit<CompetencyMatrix["rows"][number], "cells"> & {
+    writable: boolean;
+    departmentId: string | null;
+    departmentName: string | null;
+    /** Competências associadas ao departamento do colaborador. Não são obrigatórias. */
+    linkedCompetencyIds: string[];
+    cells: MatrixCellWithGovernance[];
+  })[];
   asOf: string;
+};
+
+export type DepartmentCompetencyLink = {
+  competencyId: string;
+  /** true = todos os turnos de configuração; senão `shifts` lista 1, 2 e/ou 3. */
+  appliesToAllShifts: boolean;
+  shifts: string[];
+};
+
+export type DepartmentCompetencyBoard = {
+  departments: {
+    id: string;
+    name: string;
+    competencyIds: string[];
+    links: DepartmentCompetencyLink[];
+    employees: { id: string; name: string; writable: boolean }[];
+  }[];
 };
 
 export type LevelRequestDto = {
@@ -124,6 +148,18 @@ export type EmployeeCompetencyProfileDto = {
   employeeName: string;
   /** O usuário pode avaliar / alterar níveis deste colaborador no módulo. */
   writable: boolean;
+  /** Departamento oficial do colaborador (`Employee.departmentId`). */
+  department: { id: string; name: string } | null;
+  /** Competências associadas a esse departamento, com o nível atual. Sem mínimo. */
+  associated: {
+    competencyId: string;
+    competencyName: string;
+    category: string;
+    currentLevel: number;
+    storedLevel: number;
+    recycling: string;
+    recyclingExpiresOn: string | null;
+  }[];
   position: { id: string; name: string; departmentName: string | null; shiftPattern: string } | null;
   coverage: { met: number; total: number; ratio: number | null; percentLabel: string };
   /** Apto no posto (atende 100%); falso sem posto ou sem requisitos. */
@@ -141,7 +177,7 @@ export type EmployeeCompetencyProfileDto = {
     recycling: string;
     recyclingExpiresOn: string | null;
   }[];
-  /** Competências com nível registrado que o posto atual não exige. */
+  /** Níveis registrados em competências que não estão associadas ao departamento atual. */
   otherLevels: {
     competencyId: string;
     competencyName: string;

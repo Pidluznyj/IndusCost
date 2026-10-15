@@ -211,7 +211,9 @@ describe("competencyRoutes — acesso cruzado de líder", () => {
   it("descendentes: a diretora vê a árvore inteira dela, mas não a outra diretoria", async () => {
     app.setScope({ accessScope: "DESCENDANTS", actorEmployeeId: id.d });
     const r = await requestJson(app, "GET", "/api/hr/competencies/matrix");
-    assert.deepEqual(names(r.json.rows), ["Ana", "Gestor G"]);
+    // Bruno saiu do posto e a Diretora nunca teve posto: os dois continuam visíveis.
+    // Xavier, Gestor H e a outra diretora continuam de fora.
+    assert.deepEqual(names(r.json.rows), ["Ana", "Bruno", "Diretora", "Gestor G"]);
     assert.equal((await requestJson(app, "PUT", `/api/hr/competencies/levels/${id.g}/${id.comp}`, { level: 2 })).status, 200);
     assert.equal((await requestJson(app, "PUT", `/api/hr/competencies/levels/${id.x}/${id.comp}`, { level: 2 })).status, 403);
     asLeader();

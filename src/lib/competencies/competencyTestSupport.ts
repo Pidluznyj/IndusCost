@@ -14,6 +14,8 @@ type Row = Record<string, unknown> & { id: string };
 const MODELS = [
   "employee",
   "hrDepartment",
+  "hrDepartmentCompetency",
+  "hrDepartmentCompetencyShift",
   "hrCompetency",
   "hrWorkPosition",
   "hrWorkPositionRequirement",
@@ -34,6 +36,7 @@ const CASCADES: Partial<Record<FakeModel, { model: FakeModel; fk: string }[]>> =
   hrCompetencyAssessment: [{ model: "hrCompetencyAssessmentItem", fk: "assessmentId" }],
   hrTraining: [{ model: "hrTrainingParticipant", fk: "trainingId" }],
   hrWorkPosition: [{ model: "hrWorkPositionRequirement", fk: "positionId" }],
+  hrDepartmentCompetency: [{ model: "hrDepartmentCompetencyShift", fk: "departmentCompetencyId" }],
 };
 
 /** Defaults de coluna relevantes para as consultas. */
@@ -48,6 +51,7 @@ const DEFAULTS: Partial<Record<FakeModel, Record<string, unknown>>> = {
   hrWorkPosition: { status: "ACTIVE", departmentId: null },
   hrEmployeeCompetencyLevelHistory: { assessmentId: null, importBatchId: null, requestId: null },
   hrCompetencyImportBatch: { conflictAppliedCount: 0, summary: null },
+  hrDepartmentCompetency: { appliesToAllShifts: true },
 };
 
 function matchValue(actual: unknown, cond: unknown): boolean {
