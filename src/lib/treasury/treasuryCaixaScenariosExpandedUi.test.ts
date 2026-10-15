@@ -27,13 +27,23 @@ import { computeTreasurySalesVolumeScenarios } from "@/src/lib/treasury/domain/t
 import { TREASURY_SALES_VOLUME_SCENARIO_POLICY_DEFAULTS } from "@/src/lib/treasury/contracts/treasurySalesVolumeScenarioPolicy.js";
 import { TREASURY_SCENARIO_POLICY_DEFAULTS } from "@/src/lib/treasury/contracts/treasuryScenarioPolicyContracts.js";
 import type { TreasuryScenarioPolicyDto } from "@/src/lib/treasury/contracts/treasuryScenarioPolicyContracts.js";
+import { buildRows } from "@/src/components/finance/treasury/TreasuryCaixaScenariosChart.tsx";
+import {
+  addCivilDays,
+  diffCivilDays,
+} from "@/src/lib/treasury/domain/treasuryCaixaScenarioDeltas.js";
 import {
   civilDateToScenarioIndex,
+  defaultScenarioExpandedPeriod,
   deriveScenarioExpandedKpis,
   matchScenarioExpandedPreset,
   normalizeScenarioExpandedRange,
+  planScenarioExpandedPeriod,
+  rangeCoveringCivilDates,
   resolveScenarioExpandedHorizon,
   resolveScenarioExpandedPresetRange,
+  scenarioExpandedDraftIsStale,
+  SCENARIO_EXPANDED_MAX_HORIZON_DAYS,
   TREASURY_SCENARIO_EXPANDED_PRESETS,
 } from "@/src/lib/treasury/treasuryCaixaScenariosExpandedUi.js";
 
@@ -153,7 +163,7 @@ function scenarioInput(days: number): TreasuryScenarioComputationInput {
 describe("visão ampliada — EQUIVALÊNCIA 30/60/90 (motor de cenários)", () => {
   const wide = computeTreasuryCaixaScenarios(scenarioInput(365));
 
-  for (const n of [30, 60, 90] as const) {
+  for (const n of [7, 15, 30, 60, 90] as const) {
     it(`${n} dias: prefixo da janela ampliada ≡ janela de ${n} dias (deepEqual dia a dia)`, () => {
       const narrow = computeTreasuryCaixaScenarios(scenarioInput(n));
       assert.equal(narrow.days.length, n);
@@ -669,10 +679,282 @@ describe("visão ampliada — presets da janela completa (passado+futuro)", () =
 });
 
 /* ------------------------------------------------------------------ */
+/*  Período personalizado                                              */
+/* ------------------------------------------------------------------ */
+
+const TODAY = "2026-10-15";
+
+describe("visão ampliada — período personalizado", () => {
+  it("1. padrão continua 01/01 → 31/12 do ano corrente e pede o mesmo horizonte de hoje", () => {
+    assert.deepEqual(defaultScenarioExpandedPeriod(TODAY), {
+      startCivil: "2026-01-01",
+      endCivil: "2026-12-31",
+    });
+    const plan = planScenarioExpandedPeriod({
+      todayCivil: TODAY,
+      startCivil: "2026-01-01",
+      endCivil: "2026-12-31",
+    });
+    assert.equal(plan.ok, true);
+    if (!plan.ok) return;
+    assert.deepEqual(plan.historyYears, [2026]);
+    assert.equal(plan.extendDueEstimatesBeyondAnchorYear, false);
+    assert.deepEqual(plan.estimateYears, []);
+    assert.equal(
+      plan.horizonDays,
+      resolveScenarioExpandedHorizon(TODAY).horizonDays
+    );
+  });
+
+  it("2. 01/07/2026 → 31/12/2026 recorta o passado e mantém a projeção até 31/12", () => {
+    const plan = planScenarioExpandedPeriod({
+      todayCivil: TODAY,
+      startCivil: "2026-07-01",
+      endCivil: "2026-12-31",
+    });
+    assert.equal(plan.ok, true);
+    if (!plan.ok) return;
+    assert.equal(
+      plan.horizonDays,
+      resolveScenarioExpandedHorizon(TODAY).horizonDays
+    );
+    assert.equal(plan.extendDueEstimatesBeyondAnchorYear, false);
+    const dates = ["2026-01-01", "2026-07-01", "2026-10-15", "2026-12-31"];
+    assert.deepEqual(
+      rangeCoveringCivilDates(dates, plan.startCivil, plan.endCivil),
+      { startIndex: 1, endIndex: 3 }
+    );
+  });
+
+  it("3. 01/07/2026 → 30/06/2027 cruza o ano dentro do teto e pede estimativas de 2027", () => {
+    const plan = planScenarioExpandedPeriod({
+      todayCivil: TODAY,
+      startCivil: "2026-07-01",
+      endCivil: "2027-06-30",
+    });
+    assert.equal(plan.ok, true);
+    if (!plan.ok) return;
+    assert.equal(plan.extendDueEstimatesBeyondAnchorYear, true);
+    assert.deepEqual(plan.estimateYears, [2027]);
+    assert.ok(
+      plan.horizonDays != null &&
+        plan.horizonDays <= SCENARIO_EXPANDED_MAX_HORIZON_DAYS
+    );
+    assert.equal(plan.horizonDays, 259);
+  });
+
+  it("4. 01/01/2025 → 31/12/2025 é só realizado: não pede projeção", () => {
+    const plan = planScenarioExpandedPeriod({
+      todayCivil: TODAY,
+      startCivil: "2025-01-01",
+      endCivil: "2025-12-31",
+    });
+    assert.equal(plan.ok, true);
+    if (!plan.ok) return;
+    assert.equal(plan.horizonDays, null);
+    assert.deepEqual(plan.historyYears, [2025]);
+    assert.equal(plan.extendDueEstimatesBeyondAnchorYear, false);
+    assert.deepEqual(plan.estimateYears, []);
+  });
+
+  it("5. intervalo exclusivamente futuro não carrega passado e continua projetado", () => {
+    const plan = planScenarioExpandedPeriod({
+      todayCivil: TODAY,
+      startCivil: "2027-01-01",
+      endCivil: "2027-03-31",
+    });
+    assert.equal(plan.ok, true);
+    if (!plan.ok) return;
+    assert.deepEqual(plan.historyYears, []);
+    assert.equal(plan.extendDueEstimatesBeyondAnchorYear, true);
+    assert.ok(plan.horizonDays != null && plan.horizonDays > 1);
+    const dates = ["2026-10-15", "2026-12-31", "2027-01-01", "2027-03-31"];
+    assert.deepEqual(
+      rangeCoveringCivilDates(dates, "2027-01-01", "2027-03-31"),
+      { startIndex: 2, endIndex: 3 }
+    );
+  });
+
+  it("6. intervalo inválido é recusado e não produz plano de carga", () => {
+    const missing = planScenarioExpandedPeriod({
+      todayCivil: TODAY,
+      startCivil: "",
+      endCivil: "2026-12-31",
+    });
+    assert.equal(missing.ok, false);
+    if (!missing.ok) assert.equal(missing.code, "MISSING_START");
+
+    const inverted = planScenarioExpandedPeriod({
+      todayCivil: TODAY,
+      startCivil: "2026-12-31",
+      endCivil: "2026-01-01",
+    });
+    assert.equal(inverted.ok, false);
+    if (!inverted.ok) {
+      assert.equal(inverted.code, "END_BEFORE_START");
+      assert.equal(inverted.proposal, null);
+    }
+
+    const leap = planScenarioExpandedPeriod({
+      todayCivil: TODAY,
+      startCivil: "2026-02-29",
+      endCivil: "2026-03-01",
+    });
+    assert.equal(leap.ok, false);
+    if (!leap.ok) assert.equal(leap.code, "INVALID_START");
+  });
+
+  it("7. virada de ano e de mês: 15/12 → 15/01 e 31/01 → 01/03", () => {
+    const turn = planScenarioExpandedPeriod({
+      todayCivil: TODAY,
+      startCivil: "2026-12-15",
+      endCivil: "2027-01-15",
+    });
+    assert.equal(turn.ok, true);
+    if (!turn.ok) return;
+    assert.equal(turn.extendDueEstimatesBeyondAnchorYear, true);
+    assert.deepEqual(turn.estimateYears, [2027]);
+    assert.equal(turn.horizonDays, 93);
+
+    const monthTurn = planScenarioExpandedPeriod({
+      todayCivil: "2026-01-15",
+      startCivil: "2026-01-31",
+      endCivil: "2026-03-01",
+    });
+    assert.equal(monthTurn.ok, true);
+    if (!monthTurn.ok) return;
+    assert.equal(monthTurn.horizonDays, 46);
+
+    const leapYear = planScenarioExpandedPeriod({
+      todayCivil: "2028-02-29",
+      startCivil: "2028-02-29",
+      endCivil: "2028-03-01",
+    });
+    assert.equal(leapYear.ok, true);
+    if (!leapYear.ok) return;
+    assert.equal(leapYear.horizonDays, 2);
+  });
+
+  it("8. alterar o período depois de gerar não é o período carregado", () => {
+    const loaded = { startCivil: "2026-01-01", endCivil: "2026-12-31" };
+    assert.equal(
+      scenarioExpandedDraftIsStale(
+        { startCivil: "2026-01-01", endCivil: "2026-12-31" },
+        loaded
+      ),
+      false
+    );
+    assert.equal(
+      scenarioExpandedDraftIsStale(
+        { startCivil: "2026-07-01", endCivil: "2026-12-31" },
+        loaded
+      ),
+      true
+    );
+    const next = planScenarioExpandedPeriod({
+      todayCivil: TODAY,
+      startCivil: "2026-07-01",
+      endCivil: "2026-12-31",
+    });
+    assert.equal(next.ok, true);
+    if (!next.ok) return;
+    assert.notEqual(next.startCivil, loaded.startCivil);
+  });
+
+  it("01/07/2026 → 31/07/2027 atravessa o ano e permanece dentro do teto", () => {
+    const endCivil = "2027-07-31";
+    const plan = planScenarioExpandedPeriod({
+      todayCivil: TODAY,
+      startCivil: "2026-07-01",
+      endCivil,
+    });
+    assert.equal(plan.ok, true);
+    if (!plan.ok) return;
+    assert.equal(plan.horizonDays, diffCivilDays(TODAY, endCivil) + 1);
+    assert.ok((plan.horizonDays ?? 0) > 90);
+    assert.ok((plan.horizonDays ?? 0) <= SCENARIO_EXPANDED_MAX_HORIZON_DAYS);
+    assert.equal(plan.extendDueEstimatesBeyondAnchorYear, true);
+    assert.deepEqual(plan.estimateYears, [2027]);
+    assert.deepEqual(plan.historyYears, [2026]);
+  });
+
+  it("01/12/2026 → 28/02/2027 e o ano seguinte inteiro também são aceitos", () => {
+    const turn = planScenarioExpandedPeriod({
+      todayCivil: TODAY,
+      startCivil: "2026-12-01",
+      endCivil: "2027-02-28",
+    });
+    assert.equal(turn.ok, true);
+    if (!turn.ok) return;
+    assert.equal(turn.horizonDays, diffCivilDays(TODAY, "2027-02-28") + 1);
+    assert.deepEqual(turn.estimateYears, [2027]);
+
+    const nextYear = planScenarioExpandedPeriod({
+      todayCivil: TODAY,
+      startCivil: "2027-01-01",
+      endCivil: "2027-12-31",
+    });
+    assert.equal(nextYear.ok, true);
+    if (!nextYear.ok) return;
+    const horizon = nextYear.horizonDays ?? 0;
+    assert.equal(horizon, diffCivilDays(TODAY, "2027-12-31") + 1);
+    assert.ok(horizon > 366, "o ano seguinte inteiro passa de um ano civil a partir de outubro");
+    assert.ok(horizon <= SCENARIO_EXPANDED_MAX_HORIZON_DAYS);
+    assert.deepEqual(nextYear.historyYears, []);
+    assert.deepEqual(nextYear.estimateYears, [2027]);
+  });
+
+  it("horizonte acima de dois anos civis é recusado com proposta, sem truncar", () => {
+    const maxEnd = addCivilDays(TODAY, SCENARIO_EXPANDED_MAX_HORIZON_DAYS - 1);
+    const plan = planScenarioExpandedPeriod({
+      todayCivil: TODAY,
+      startCivil: TODAY,
+      endCivil: addCivilDays(maxEnd, 1),
+    });
+    assert.equal(plan.ok, false);
+    if (plan.ok) return;
+    assert.equal(plan.code, "HORIZON_EXCEEDED");
+    assert.match(plan.message, /não foi truncada/);
+    assert.match(plan.message, new RegExp(maxEnd));
+    assert.ok(plan.proposal);
+  });
+
+  it("mais de 3 anos civis é recusado com proposta, sem truncar", () => {
+    const plan = planScenarioExpandedPeriod({
+      todayCivil: TODAY,
+      startCivil: "2023-01-01",
+      endCivil: "2026-12-31",
+    });
+    assert.equal(plan.ok, false);
+    if (plan.ok) return;
+    assert.equal(plan.code, "TOO_MANY_YEARS");
+    assert.match(plan.message, /não foi truncada/);
+    assert.ok(plan.proposal);
+  });
+
+  it("o card não envia a extensão de estimativas além do ano da âncora", () => {
+    const page = readFileSync(
+      fileURLToPath(
+        new URL(
+          "../../components/finance/treasury/TreasuryCaixaPage.tsx",
+          import.meta.url
+        )
+      ),
+      "utf8"
+    );
+    assert.equal(page.includes("extendDueEstimatesBeyondAnchorYear"), false);
+  });
+});
+
+/* ------------------------------------------------------------------ */
 /*  Semântica de horizonDays no SERVIÇO REAL (prova executável)        */
 /* ------------------------------------------------------------------ */
 
-import { createTreasuryCaixaScenariosService } from "@/src/lib/treasury/services/treasuryCaixaScenariosService.server.js";
+import {
+  createTreasuryCaixaScenariosService,
+  TREASURY_CAIXA_SCENARIOS_EXTENDED_MAX_HORIZON_DAYS,
+  TREASURY_CAIXA_SCENARIOS_MAX_HORIZON_DAYS,
+} from "@/src/lib/treasury/services/treasuryCaixaScenariosService.server.js";
 
 function fakeBoard(year: number, asOf: string) {
   return {
@@ -780,6 +1062,15 @@ describe("visão ampliada — horizonDays no serviço real (janela inclusiva)", 
     assert.equal(w.last, "2028-12-31");
   });
 
+  it("o teto da visão ampliada é o teto estendido do serviço; o card permanece em 366", () => {
+    assert.equal(TREASURY_CAIXA_SCENARIOS_MAX_HORIZON_DAYS, 366);
+    assert.equal(
+      SCENARIO_EXPANDED_MAX_HORIZON_DAYS,
+      TREASURY_CAIXA_SCENARIOS_EXTENDED_MAX_HORIZON_DAYS
+    );
+    assert.equal(TREASURY_CAIXA_SCENARIOS_EXTENDED_MAX_HORIZON_DAYS, 732);
+  });
+
   it("a visão ampliada nunca pede acima do teto: hoje→31/12 ≤ 366 em qualquer data", () => {
     for (const today of [
       "2026-01-01",
@@ -792,6 +1083,289 @@ describe("visão ampliada — horizonDays no serviço real (janela inclusiva)", 
       const h = resolveScenarioExpandedHorizon(today).horizonDays;
       assert.ok(h >= 1 && h <= 366, `${today} → ${h} fora do teto`);
     }
+  });
+});
+
+describe("visão ampliada — estimativas além do ano da âncora (opt-in)", () => {
+  async function runCrossing(extend: boolean) {
+    const calls: number[] = [];
+    const service = createTreasuryCaixaScenariosService({
+      prisma: fakePrisma(),
+      caixaService: {
+        getBoard: async (period: { year: number }) => {
+          calls.push(period.year);
+          const board = fakeBoard(period.year, "2026-12-20") as {
+            dailyDueEstimates: {
+              civilDate: string;
+              estimatedInflow: number;
+              estimatedOutflow: number;
+            }[];
+          };
+          if (period.year === 2026) {
+            board.dailyDueEstimates = [
+              {
+                civilDate: "2026-12-20",
+                estimatedInflow: 10,
+                estimatedOutflow: 0,
+              },
+            ];
+          }
+          if (period.year === 2027) {
+            board.dailyDueEstimates = [
+              {
+                civilDate: "2027-01-05",
+                estimatedInflow: 250,
+                estimatedOutflow: 40,
+              },
+            ];
+          }
+          return board as never;
+        },
+      } as never,
+      policyService: { getForEngine: async () => POLICY } as never,
+    });
+    const result = await service.getBoard({
+      asOfCivilDate: "2026-12-20",
+      horizonDays: 20,
+      extendDueEstimatesBeyondAnchorYear: extend,
+    });
+    return { result, calls };
+  }
+
+  it("sem o sinal, janeiro seguinte fica sem estimativa e o ano da âncora não lê outro board", async () => {
+    const off = await runCrossing(false);
+    assert.deepEqual(off.calls, [2026]);
+    const january = off.result.days.find((d) => d.civilDate === "2027-01-05");
+    assert.ok(january);
+    assert.equal(january.realistic.receivableInflows, 0);
+    assert.equal(january.realistic.payableOutflows, 0);
+  });
+
+  it("com o sinal, a estimativa de 2027 entra e os dias de 2026 permanecem iguais", async () => {
+    const off = await runCrossing(false);
+    const on = await runCrossing(true);
+    assert.deepEqual(on.calls, [2026, 2027]);
+
+    const before = off.result.days.filter((d) => d.civilDate <= "2026-12-31");
+    const after = on.result.days.filter((d) => d.civilDate <= "2026-12-31");
+    assert.deepEqual(after, before);
+
+    const januaryOff = off.result.days.find((d) => d.civilDate === "2027-01-05");
+    const januaryOn = on.result.days.find((d) => d.civilDate === "2027-01-05");
+    assert.ok(januaryOff && januaryOn);
+    assert.deepEqual(januaryOn.optimistic, januaryOff.optimistic);
+    assert.deepEqual(januaryOn.pessimistic, januaryOff.pessimistic);
+    assert.equal(januaryOn.realistic.receivableInflows, 250);
+    assert.equal(januaryOn.realistic.payableOutflows, 40);
+    assert.notEqual(
+      januaryOn.realistic.closingBalance,
+      januaryOff.realistic.closingBalance
+    );
+  });
+});
+
+describe("visão ampliada — intervalo contínuo entre anos", () => {
+  const asOf = "2026-10-15";
+  const end = "2027-07-31";
+  const horizon = diffCivilDays(asOf, end) + 1;
+
+  it("01/07/2026 → 31/07/2027 transporta o saldo e separa realizado de estimativa", () => {
+    const estimates = new Map<
+      string,
+      { estimatedInflow: number; estimatedOutflow: number }
+    >([
+      ["2026-12-10", { estimatedInflow: 500, estimatedOutflow: 100 }],
+      ["2027-01-05", { estimatedInflow: 2500, estimatedOutflow: 400 }],
+      ["2027-07-15", { estimatedInflow: 800, estimatedOutflow: 200 }],
+    ]);
+    const started = performance.now();
+    const result = computeTreasuryCaixaScenarios({
+      asOfCivilDate: asOf,
+      civilDatesInWindow: civilWindow(asOf, horizon),
+      canonicalDays: [],
+      openReceivables: [receivable(1, "2026-12-20", 800)],
+      openPayables: [payable(9, "2026-12-31", 300)],
+      policy: POLICY,
+      openingBalanceOfFirstDay: 10000,
+      dailyDueEstimatesByDate: estimates,
+    });
+    const engineMs = performance.now() - started;
+    console.log(
+      `computeTreasuryCaixaScenarios ${horizon} dias (01/07/2026→31/07/2027): ${engineMs.toFixed(1)} ms`
+    );
+    assert.ok(engineMs < 1500);
+    assert.equal(result.days.length, horizon);
+    assert.equal(result.days.at(-1)?.civilDate, end);
+
+    const at = (date: string) => {
+      const day = result.days.find((d) => d.civilDate === date);
+      assert.ok(day, date);
+      return day;
+    };
+    const dec31 = at("2026-12-31");
+    const jan1 = at("2027-01-01");
+    const jan4 = at("2027-01-04");
+    const jan5 = at("2027-01-05");
+    const jul15 = at("2027-07-15");
+
+    assert.equal(dec31.realistic.closingBalance, 10400);
+    assert.equal(jan1.realistic.closingBalance, dec31.realistic.closingBalance);
+    assert.equal(jan1.realistic.receivableInflows, 0);
+    assert.equal(jan1.realistic.payableOutflows, 0);
+    assert.notEqual(jan1.realistic.closingBalance, 10000);
+
+    assert.equal(jan5.realistic.receivableInflows, 2500);
+    assert.equal(jan5.realistic.payableOutflows, 400);
+    assert.equal(jan5.realistic.closingBalance, 12500);
+    assert.equal(jan4.realistic.closingBalance, 10400);
+    assert.notEqual(jan5.optimistic.receivableInflows, 2500);
+    assert.notEqual(jan5.pessimistic.payableOutflows, 400);
+    assert.equal(jan5.optimistic.closingBalance, jan4.optimistic.closingBalance);
+    assert.equal(jan5.pessimistic.closingBalance, jan4.pessimistic.closingBalance);
+
+    assert.equal(jul15.realistic.receivableInflows, 800);
+    assert.equal(jul15.realistic.payableOutflows, 200);
+    assert.equal(jul15.realistic.closingBalance, 13100);
+    assert.equal(at(end).realistic.closingBalance, 13100);
+
+    const salesStarted = performance.now();
+    const sales = computeTreasurySalesVolumeScenarios({
+      asOfCivilDate: asOf,
+      horizonEndCivilDate: end,
+      policy: TREASURY_SALES_VOLUME_SCENARIO_POLICY_DEFAULTS,
+      baseline: {
+        source: "SALES_HISTORY",
+        monthlyAverageAmount: 21000,
+        monthsUsed: ["2026-07", "2026-08", "2026-09"],
+        measure: "SALES_ORDER_TOTAL_NET_VALUE",
+        description: "fixture",
+      } as never,
+      receiptLagProfile: {
+        buckets: [{ lagDays: 5, weight: 1 }],
+        source: "fixture",
+        isFallback: false,
+      },
+      variableCosts: [
+        {
+          kind: "RAW_MATERIAL" as const,
+          ratio: 0.4,
+          ratioSource: "fixture",
+          outflowLagDays: 2,
+          lagSource: "fixture",
+          isFallbackLag: false,
+        },
+      ],
+      coverageWarnings: [],
+    });
+    const salesMs = performance.now() - salesStarted;
+    console.log(
+      `computeTreasurySalesVolumeScenarios até ${end}: ${salesMs.toFixed(1)} ms`
+    );
+    assert.ok(salesMs < 1500);
+
+    const timeline = new Map<
+      string,
+      { opening: number | null; closing: number | null }
+    >();
+    for (const day of result.days) {
+      if (day.civilDate === asOf || estimates.has(day.civilDate)) {
+        timeline.set(day.civilDate, {
+          opening: null,
+          closing: day.realistic.closingBalance,
+        });
+      }
+    }
+    const rows = buildRows(result.days, asOf, timeline, sales);
+    const row = (date: string) => {
+      const found = rows.find((r) => r.civilDate === date);
+      assert.ok(found, date);
+      return found;
+    };
+    assert.equal(row(asOf).real, 10000);
+    assert.equal(row("2026-12-31").real, 10400);
+    assert.equal(row("2027-01-01").real, 10400);
+    assert.equal(row("2027-01-05").real, 12500);
+    assert.equal(row("2027-07-15").real, 13100);
+    assert.equal(row(end).real, 13100);
+    const before = row("2027-01-04");
+    const after = row("2027-01-05");
+    assert.equal((after.real ?? 0) - (before.real ?? 0), 2100);
+    assert.equal(
+      (after.opt ?? 0) - (before.opt ?? 0),
+      2100 +
+        ((after.opt ?? 0) - (after.real ?? 0)) -
+        ((before.opt ?? 0) - (before.real ?? 0))
+    );
+    assert.equal(
+      (after.pes ?? 0) - (before.pes ?? 0),
+      2100 +
+        ((after.pes ?? 0) - (after.real ?? 0)) -
+        ((before.pes ?? 0) - (before.real ?? 0))
+    );
+    console.log(
+      `gráfico 05/01/2027 realista ${after.real} otimista ${after.opt} pessimista ${after.pes}`
+    );
+  });
+
+  it("o serviço honra o ano seguinte inteiro e recusa acima de 732 sem truncar", async () => {
+    const calls: number[] = [];
+    const service = createTreasuryCaixaScenariosService({
+      prisma: fakePrisma(),
+      caixaService: {
+        getBoard: async (period: { year: number }) => {
+          calls.push(period.year);
+          const board = fakeBoard(period.year, asOf) as {
+            dailyDueEstimates: {
+              civilDate: string;
+              estimatedInflow: number;
+              estimatedOutflow: number;
+            }[];
+          };
+          if (period.year === 2027) {
+            board.dailyDueEstimates = [
+              {
+                civilDate: "2027-07-15",
+                estimatedInflow: 800,
+                estimatedOutflow: 200,
+              },
+            ];
+          }
+          return board as never;
+        },
+      } as never,
+      policyService: { getForEngine: async () => POLICY } as never,
+    });
+    const fullNextYear = diffCivilDays(asOf, "2027-12-31") + 1;
+    const started = performance.now();
+    const result = await service.getBoard({
+      asOfCivilDate: asOf,
+      horizonDays: fullNextYear,
+      extendDueEstimatesBeyondAnchorYear: true,
+    });
+    const serviceMs = performance.now() - started;
+    console.log(
+      `getBoard fake ${fullNextYear} dias até 31/12/2027: ${serviceMs.toFixed(1)} ms`
+    );
+    assert.ok(serviceMs < 1500);
+    assert.equal(result.days.length, fullNextYear);
+    assert.equal(result.days.at(-1)?.civilDate, "2027-12-31");
+    assert.deepEqual(calls, [2026, 2027]);
+    const dec31 = result.days.find((d) => d.civilDate === "2026-12-31");
+    const jan1 = result.days.find((d) => d.civilDate === "2027-01-01");
+    const jul15 = result.days.find((d) => d.civilDate === "2027-07-15");
+    assert.equal(jan1?.realistic.closingBalance, dec31?.realistic.closingBalance);
+    assert.equal(jul15?.realistic.receivableInflows, 800);
+    assert.equal(jul15?.realistic.payableOutflows, 200);
+
+    await assert.rejects(
+      () =>
+        service.getBoard({
+          asOfCivilDate: asOf,
+          horizonDays: TREASURY_CAIXA_SCENARIOS_EXTENDED_MAX_HORIZON_DAYS + 1,
+          extendDueEstimatesBeyondAnchorYear: true,
+        }),
+      /não foi truncada/
+    );
   });
 });
 
@@ -867,7 +1441,7 @@ describe("visão ampliada — gates estruturais", () => {
       "prefix deve ser OPCIONAL no chart — card atual não passa a prop"
     );
     assert.ok(
-      modal.includes("presentationBridge: data.presentationBridge"),
+      modal.includes("presentationBridge: slice.presentationBridge"),
       "a visão ampliada aplica a ponte só no prefixo histórico"
     );
     assert.ok(
@@ -943,6 +1517,25 @@ describe("visão ampliada — gates estruturais", () => {
     assert.ok(
       chart.includes("export function buildRows"),
       "buildRows exportado do componente canônico"
+    );
+  });
+
+  it("data inicial e data final não disparam Gerar projeção", () => {
+    assert.match(
+      modal,
+      /setStartCivil\(e\.target\.value\)[\s\S]{0,160}caixa-scenarios-expanded-period-start/
+    );
+    assert.match(
+      modal,
+      /setEndCivil\(e\.target\.value\)[\s\S]{0,160}caixa-scenarios-expanded-period-end/
+    );
+    assert.equal(
+      /setStartCivil\([^)]*handleGenerate/.test(modal),
+      false
+    );
+    assert.ok(
+      modal.includes("plan.horizonDays != null"),
+      "período só no passado não chama o motor de cenários"
     );
   });
 

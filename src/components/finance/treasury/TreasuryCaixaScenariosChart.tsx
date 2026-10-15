@@ -1043,6 +1043,17 @@ export function TreasuryCaixaScenariosChart({
     return prefix && prefix.rows.length > 0 ? [...prefix.rows, ...built] : built;
   }, [data, timelineByDate, simDeltas, prefix]);
 
+  /**
+   * Janela desenhada. Com brush (visão ampliada), totais e simulação
+   * descrevem o recorte visível. O card não passa brush — usa a série inteira.
+   */
+  const summaryRows = useMemo(() => {
+    if (!brush || rows.length === 0) return rows;
+    const start = Math.max(0, Math.min(brush.startIndex, rows.length - 1));
+    const end = Math.max(start, Math.min(brush.endIndex, rows.length - 1));
+    return rows.slice(start, end + 1);
+  }, [rows, brush]);
+
   /** Resumo da simulação — seleção simples sobre a série já desenhada. */
   const simSummary = useMemo(() => {
     if (!simDeltas) return null;
@@ -1050,7 +1061,7 @@ export function TreasuryCaixaScenariosChart({
     let minDate: string | null = null;
     let firstNegative: string | null = null;
     let final: number | null = null;
-    for (const r of rows) {
+    for (const r of summaryRows) {
       if (r.sim == null) continue;
       final = r.sim;
       if (min == null || r.sim < min) {
@@ -1061,7 +1072,7 @@ export function TreasuryCaixaScenariosChart({
     }
     if (min == null) return null;
     return { min, minDate, firstNegative, final };
-  }, [rows, simDeltas]);
+  }, [summaryRows, simDeltas]);
 
   const labels = useMemo(
     () => buildScenarioLabels(data?.salesVolumeScenarios),
@@ -1095,7 +1106,7 @@ export function TreasuryCaixaScenariosChart({
       let minBalanceDate: string | null = null;
       let firstNegativeDate: string | null = null;
       let negativeDaysCount = 0;
-      for (const r of rows) {
+      for (const r of summaryRows) {
         const v = pick(r);
         if (v == null) continue;
         finalBalance = v;
@@ -1127,7 +1138,7 @@ export function TreasuryCaixaScenariosChart({
       realistic: summarize((r) => r.real, data.summaries.realistic),
       pessimistic: summarize((r) => r.pes, data.summaries.pessimistic),
     };
-  }, [data, rows, timelineByDate]);
+  }, [data, summaryRows, timelineByDate]);
 
   const diffs = useMemo(() => {
     if (!summaries) return { opt: null, pes: null };
@@ -1288,10 +1299,38 @@ export function TreasuryCaixaScenariosChart({
         <p className="py-8 text-center text-xs text-muted-foreground">
           Carregando cenários…
         </p>
-      ) : !data ? (
+      ) : !data && (prefix?.rows.length ?? 0) === 0 ? (
         <p className="py-8 text-center text-xs text-muted-foreground">
           Cenários indisponíveis.
         </p>
+      ) : !data ? (
+        <>
+          <p
+            className="mb-2 text-[11px] text-muted-foreground"
+            data-testid="caixa-scenarios-realized-only"
+          >
+            Intervalo anterior a hoje: somente o realizado da Linha do tempo.
+            Otimista, Realista e Pessimista coincidem com o realizado. Não há
+            projeção neste período.
+          </p>
+          {renderScenariosChart({
+            rows,
+            daysByLabel,
+            heightPx: brush ? 356 : 320,
+            visible,
+            onLegendClick: toggleSeries,
+            onPointClick: (civilDate) => setDrilldownDate(civilDate),
+            labels,
+            hasSimulation: false,
+            brush,
+          })}
+          {drilldownDay ? (
+            <ScenarioDayDrilldown
+              day={drilldownDay}
+              onClose={() => setDrilldownDate(null)}
+            />
+          ) : null}
+        </>
       ) : (
         <>
           {data.salesVolumeScenarios && simFields ? (
