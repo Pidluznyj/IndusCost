@@ -217,7 +217,12 @@ export function registerPeopleProfileRoutes(
         throw new PeopleProfileAccessError("FORBIDDEN", "Sem permissão para dados profissionais.");
       }
       noStore(res);
-      return res.json(await loadPeopleProfessional(prisma, id));
+      return res.json(
+        await loadPeopleProfessional(prisma, id, {
+          revealTerminationDetails: ctx.capabilities.canViewRestrictedNotes,
+          revealLeaveRecord: ctx.capabilities.canViewAbsences,
+        })
+      );
     } catch (error) {
       return sendError(res, error, "Erro ao carregar dados profissionais.");
     }
@@ -698,9 +703,12 @@ export function registerPeopleProfileRoutes(
         startDate,
         endDate: parseDate(body.endDate),
         expectedReturn: parseDate(body.expectedReturn),
-        status: typeof body.status === "string" ? body.status : "SCHEDULED",
+        status: typeof body.status === "string" && body.status ? body.status : undefined,
         reason: typeof body.reason === "string" ? body.reason : null,
         notes: typeof body.notes === "string" ? body.notes : null,
+        extendedLicense: body.extendedLicense === true || body.extendedLicense === "true",
+        inssBenefitNumber: typeof body.inssBenefitNumber === "string" ? body.inssBenefitNumber : null,
+        catNumber: typeof body.catNumber === "string" ? body.catNumber : null,
         actorUserId: ctx.user?.id,
       });
       noStore(res);

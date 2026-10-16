@@ -206,6 +206,7 @@ describe("loadPeopleProfileSummary — última promoção", () => {
         },
       },
       hrCompensationAdjustment: { findMany: async () => [] },
+      hrAbsence: { findMany: async () => [] },
     };
     const summary = await loadPeopleProfileSummary(
       prisma as never,

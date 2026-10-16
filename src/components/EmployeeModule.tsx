@@ -77,6 +77,10 @@ import { EmployeeSystemLinksPanel } from "@/src/components/employee/EmployeeSyst
 import { EmployeeOrgStructurePanel } from "@/src/components/employee/EmployeeOrgStructurePanel";
 import { motion } from "motion/react";
 import { SearchableSelect } from "./shared/SearchableSelect";
+import {
+  EmployeeSituationSection,
+  terminationWarningsFromError,
+} from "@/src/components/employee/lifecycle/EmployeeSituationSection";
 import { GuidedTour } from "@/src/components/tour/GuidedTour";
 import { TourHelpButton } from "@/src/components/tour/TourHelpButton";
 import { EMPLOYEE_TOUR_STEPS } from "@/src/tours/employeeTourSteps";
@@ -425,7 +429,7 @@ export const EmployeeModule = () => {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [listClassificationFilter, setListClassificationFilter] = useState<"" | CreateEmployeeInput["classification"]>("");
-  const [listStatusFilter, setListStatusFilter] = useState<"" | "ACTIVE" | "INACTIVE">("");
+  const [listStatusFilter, setListStatusFilter] = useState<"" | "ACTIVE" | "ON_LEAVE" | "INACTIVE">("");
   const [listGapFilter, setListGapFilter] = useState<"" | EmployeeListGapKey>("");
   const [showLegacyEstimates, setShowLegacyEstimates] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -443,6 +447,9 @@ export const EmployeeModule = () => {
 
   // Form State
   const [formData, setFormData] = useState<CreateEmployeeInput>(createEmptyEmployeeForm());
+  // Desligamento: avisos legais devolvidos pelo servidor (409) e a ciência do usuário.
+  const [terminationWarnings, setTerminationWarnings] = useState<string[] | null>(null);
+  const [terminationAcknowledged, setTerminationAcknowledged] = useState(false);
 
   const [compFormData, setCompFormData] = useState({
     name: "",
@@ -660,7 +667,7 @@ export const EmployeeModule = () => {
 
   useEffect(() => {
     const status = searchParams.get("status");
-    if (status === "ACTIVE" || status === "INACTIVE") {
+    if (status === "ACTIVE" || status === "INACTIVE" || status === "ON_LEAVE") {
       setListStatusFilter(status);
     }
     const classification = searchParams.get("classification");
@@ -732,6 +739,8 @@ export const EmployeeModule = () => {
     setPersonConflicts([]);
     setCorporateEmailHint(null);
     setCorporateEmailError(null);
+    setTerminationWarnings(null);
+    setTerminationAcknowledged(false);
     if (employee) {
       // Linha com dados ocultos: abrir o formulário gravaria vazio por cima do que o usuário não vê.
       if (isEmployeeRowRedacted(employee)) {
@@ -977,6 +986,7 @@ export const EmployeeModule = () => {
           personSourceId: formData.personSourceId || null,
           createNewPerson: formData.createNewPerson !== false && !formData.personId && !formData.personSourceId,
           personFieldResolutions: formData.personFieldResolutions || undefined,
+          acknowledgeTerminationWarnings: terminationAcknowledged,
         }),
       });
       setIsModalOpen(false);
@@ -986,6 +996,12 @@ export const EmployeeModule = () => {
       const msg =
         error instanceof Error ? error.message : "Não foi possível salvar o colaborador.";
       setFormError(msg);
+      const legalWarnings = terminationWarningsFromError(error);
+      if (legalWarnings) {
+        setTerminationWarnings(legalWarnings);
+        setTerminationAcknowledged(false);
+        setEmployeeFichaTab("professional");
+      }
       if (
         error instanceof HttpError &&
         (error.code === "DUPLICATE_CORPORATE_EMAIL" ||
@@ -1057,12 +1073,21 @@ export const EmployeeModule = () => {
   };
 
   const toggleStatus = async (id: string, currentStatus: string) => {
-    const newStatus = currentStatus === "ACTIVE" ? "INACTIVE" : "ACTIVE";
+    if (currentStatus === "ACTIVE") {
+      // Desligar exige data de demissão, motivo e aviso prévio: abre o cadastro na seção Situação.
+      const employee = employees.find((e) => e.id === id);
+      if (employee) {
+        handleOpenModal(employee);
+        setFormData((prev) => ({ ...prev, status: "INACTIVE" }) as CreateEmployeeInput);
+      }
+      return;
+    }
+    if (!window.confirm("Reativar o colaborador? A data e os dados do desligamento serão removidos do cadastro (o histórico registra a reativação).")) return;
     try {
       await fetchOk(`/api/employees/${id}/status`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: newStatus }),
+        body: JSON.stringify({ status: "ACTIVE" }),
       });
       fetchData();
     } catch (error) {
@@ -1103,7 +1128,9 @@ export const EmployeeModule = () => {
     const q = searchTerm.trim().toLowerCase();
     return employees.filter((emp) => {
       if (listClassificationFilter && emp.classification !== listClassificationFilter) return false;
-      if (listStatusFilter && emp.status !== listStatusFilter) return false;
+      // "Ativo" = vínculo ativo (inclui afastados); "Afastado" = afastamento em andamento.
+      if (listStatusFilter === "ON_LEAVE" && emp.situation?.code !== "ON_LEAVE") return false;
+      if (listStatusFilter && listStatusFilter !== "ON_LEAVE" && emp.status !== listStatusFilter) return false;
       if (listGapFilter === "withoutAppUser" && emp.appUser) return false;
       if (listGapFilter === "withoutCorporateEmail" && emp.corporateEmail?.trim()) return false;
       if (listGapFilter === "withoutCostCenter" && emp.costCenterId) return false;
@@ -1274,9 +1301,10 @@ export const EmployeeModule = () => {
               value={listStatusFilter}
               onChange={(e) => setListStatusFilter(e.target.value as any)}
             >
-              <option value="">Todos os status</option>
-              <option value="ACTIVE">Ativo</option>
-              <option value="INACTIVE">Inativo</option>
+              <option value="">Todas as situações</option>
+              <option value="ACTIVE">Ativos (vínculo)</option>
+              <option value="ON_LEAVE">Afastados</option>
+              <option value="INACTIVE">Desligados</option>
             </select>
 
             <button
@@ -1437,13 +1465,31 @@ export const EmployeeModule = () => {
                       </>
                     )}
                     <td className="p-4">
-                      <div className={cn(
-                        "inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider",
-                        emp.status === "ACTIVE" ? "bg-green-500/10 text-green-600" : "bg-red-500/10 text-red-600"
-                      )}>
-                        <div className={cn("h-1.5 w-1.5 rounded-full", emp.status === "ACTIVE" ? "bg-green-600" : "bg-red-600")} />
-                        {emp.status === "ACTIVE" ? "Ativo" : "Inativo"}
-                      </div>
+                      {(() => {
+                        const code = emp.situation?.code ?? (emp.status === "ACTIVE" ? "ACTIVE" : "TERMINATED");
+                        const tone =
+                          code === "ACTIVE"
+                            ? ["bg-green-500/10 text-green-600", "bg-green-600"]
+                            : code === "ON_LEAVE"
+                              ? ["bg-amber-500/10 text-amber-700", "bg-amber-600"]
+                              : code === "VACATION"
+                                ? ["bg-sky-500/10 text-sky-700", "bg-sky-600"]
+                                : ["bg-red-500/10 text-red-600", "bg-red-600"];
+                        const label = emp.situation?.label ?? (code === "ACTIVE" ? "Ativo" : "Desligado");
+                        const since = emp.situation?.since
+                          ? new Date(`${emp.situation.since}T12:00:00Z`).toLocaleDateString("pt-BR")
+                          : null;
+                        return (
+                          <div
+                            className={cn("inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider", tone[0])}
+                            title={since ? `${label} desde ${since}` : label}
+                            data-testid="employee-situation-badge"
+                          >
+                            <div className={cn("h-1.5 w-1.5 rounded-full", tone[1])} />
+                            {label}
+                          </div>
+                        );
+                      })()}
                     </td>
                     <td className="p-4 text-right">
                       <div className="flex items-center justify-end gap-2">
@@ -1469,7 +1515,7 @@ export const EmployeeModule = () => {
                                 "p-2 rounded-md hover:bg-accent transition-all",
                                 emp.status === "ACTIVE" ? "text-red-500" : "text-green-500"
                               )}
-                              title={emp.status === "ACTIVE" ? "Inativar" : "Ativar"}
+                              title={emp.status === "ACTIVE" ? "Desligar (abre o cadastro)" : "Reativar"}
                             >
                               {emp.status === "ACTIVE" ? <UserMinus className="h-4 w-4" /> : <UserCheck className="h-4 w-4" />}
                             </button>
@@ -1921,36 +1967,19 @@ export const EmployeeModule = () => {
                               }
                             />
                           </div>
-                          <div className="space-y-1.5">
-                            <label className="text-xs font-bold text-muted-foreground uppercase">
-                              Data de desligamento
-                            </label>
-                            <input
-                              type="date"
-                              className={INPUT_CLASS}
-                              value={formData.terminationDate ?? ""}
-                              onChange={(e) =>
-                                setFormData({ ...formData, terminationDate: e.target.value })
-                              }
+                          <div className="md:col-span-2 xl:col-span-3" key={editingEmployee?.id ?? "novo"}>
+                            <EmployeeSituationSection
+                              employeeId={editingEmployee?.id ?? null}
+                              value={formData}
+                              onChange={(patch) => {
+                                setTerminationWarnings(null);
+                                setFormData((prev) => ({ ...prev, ...patch }) as CreateEmployeeInput);
+                              }}
+                              warnings={terminationWarnings}
+                              acknowledged={terminationAcknowledged}
+                              onAcknowledge={setTerminationAcknowledged}
+                              onLeaveChanged={() => fetchData()}
                             />
-                          </div>
-                          <div className="space-y-1.5">
-                            <label className="text-xs font-bold text-muted-foreground uppercase">
-                              Status
-                            </label>
-                            <select
-                              className={INPUT_CLASS}
-                              value={formData.status ?? "ACTIVE"}
-                              onChange={(e) =>
-                                setFormData({
-                                  ...formData,
-                                  status: e.target.value as CreateEmployeeInput["status"],
-                                })
-                              }
-                            >
-                              <option value="ACTIVE">Ativo</option>
-                              <option value="INACTIVE">Inativo</option>
-                            </select>
                           </div>
                           <div className="space-y-1.5 md:col-span-2 xl:col-span-3">
                             <label className="text-xs font-bold text-muted-foreground uppercase">

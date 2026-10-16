@@ -750,6 +750,15 @@ describe("afastamentos — enums e espelho do histórico", () => {
           notes: null,
         }),
         updateMany: async () => ({ count: 1 }),
+        findMany: async () => [],
+      },
+      // Afastamento (não férias) valida as regras legais contra o vínculo do colaborador.
+      employee: {
+        findUnique: async () => ({
+          status: "ACTIVE",
+          admissionDate: new Date("2020-01-01T00:00:00.000Z"),
+          terminationDate: null,
+        }),
       },
       hrEmployeeHistory: {
         findFirst: async () => ({ id: "hist-abs" }),
@@ -765,7 +774,12 @@ describe("afastamentos — enums e espelho do histórico", () => {
     await updateEmployeeAbsence(prisma, {
       employeeId: EMP,
       recordId: REC,
-      patch: { type: "SICK_LEAVE", startDate: "2026-01-06", status: "IN_PROGRESS" },
+      patch: {
+        type: "SICK_LEAVE",
+        startDate: "2026-01-06",
+        status: "IN_PROGRESS",
+        reason: "Atestado médico de 10 dias apresentado",
+      },
     });
     assert.deepEqual(historyUpdate?.where, { id: "hist-abs", employeeId: EMP });
     assert.equal(historyUpdate?.data.eventType, "LEAVE_START");
@@ -776,8 +790,9 @@ describe("afastamentos — enums e espelho do histórico", () => {
     assert.equal(historyUpdate?.data.metadata, undefined);
   });
 
-  it("PATCH só de situação não procura evento no histórico", async () => {
+  it("PATCH de retorno não procura o evento de início e grava o retorno no histórico", async () => {
     let absenceUpdate: AnyArgs | null = null;
+    let historyCreate: AnyArgs | null = null;
     const prisma = fakePrisma({
       hrAbsence: {
         findFirst: async () => ({
@@ -793,7 +808,18 @@ describe("afastamentos — enums e espelho do histórico", () => {
           return { count: 1 };
         },
       },
-      hrEmployeeHistory: untouchable("hrEmployeeHistory"),
+      hrEmployeeHistory: {
+        findFirst: async () => {
+          throw new Error("retorno não sincroniza o evento de início");
+        },
+        findMany: async () => {
+          throw new Error("retorno não sincroniza o evento de início");
+        },
+        create: async (args: AnyArgs) => {
+          historyCreate = args;
+          return { id: "hist-ret" };
+        },
+      },
     });
     await updateEmployeeAbsence(prisma, {
       employeeId: EMP,
@@ -805,6 +831,8 @@ describe("afastamentos — enums e espelho do histórico", () => {
       (absenceUpdate?.data.actualReturn as Date).toISOString(),
       "2026-01-21T00:00:00.000Z"
     );
+    assert.equal(historyCreate?.data.eventType, "VACATION_END");
+    assert.deepEqual(historyCreate?.data.metadata, { recordType: "absenceReturn", recordId: REC });
   });
 });
 

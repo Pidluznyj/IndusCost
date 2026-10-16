@@ -114,6 +114,11 @@ model Employee {
   emergencyContactRelationship String?
   admissionDate                DateTime?                  @db.Timestamptz(6)
   terminationDate              DateTime?                  @db.Timestamptz(6)
+  /// Desligamento (status INACTIVE): motivo, aviso prévio e descrição — regras em src/lib/employeeLifecycle.ts.
+  terminationReason            String?
+  terminationNoticeType        String?
+  terminationNoticeDate        DateTime?                  @db.Timestamptz(6)
+  terminationDetails           String?
   contractType                 String?
   managerName                  String?
   /// Gestor = outro Employee (ativos na seleção; histórico preserva inativos).
@@ -428,9 +433,16 @@ model HrAbsence {
   expectedReturn  DateTime? @db.Timestamptz(6)
   actualReturn    DateTime? @db.Timestamptz(6)
   status          String    @default("SCHEDULED")
+  /// Justificativa (obrigatória para afastamentos; regras em src/lib/employeeLifecycle.ts).
   reason          String?
   notes           String?
   documentId      String?   @db.Uuid
+  /// Prorrogação Empresa Cidadã (maternidade/adoção +60; paternidade +15).
+  extendedLicense Boolean   @default(false)
+  /// Número do benefício no INSS (afastamentos acima de 15 dias).
+  inssBenefitNumber String?
+  /// Número da CAT (acidente de trabalho).
+  catNumber       String?
   createdByUserId String?   @db.Uuid
   createdAt       DateTime  @default(now()) @db.Timestamptz(6)
   updatedAt       DateTime  @default(now()) @updatedAt @db.Timestamptz(6)

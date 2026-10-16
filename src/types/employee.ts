@@ -26,6 +26,11 @@ export interface EmployeeHrProfileFields {
   emergencyContactRelationship?: string | null;
   admissionDate?: string | null;
   terminationDate?: string | null;
+  /** Desligamento: motivo, aviso prévio e descrição (regras em src/lib/employeeLifecycle.ts). */
+  terminationReason?: string | null;
+  terminationNoticeType?: string | null;
+  terminationNoticeDate?: string | null;
+  terminationDetails?: string | null;
   contractType?: string | null;
   managerName?: string | null;
   managerId?: string | null;
@@ -71,6 +76,8 @@ export interface Employee extends EmployeeHrProfileFields {
   monthlyHours: number;
   productivity: number;
   status: "ACTIVE" | "INACTIVE";
+  /** Situação calculada no servidor (afastado vem do afastamento em andamento). */
+  situation?: { code: "ACTIVE" | "ON_LEAVE" | "VACATION" | "TERMINATED"; label: string; since: string | null } | null;
   EmployeePayrollComponent: { PayrollComponent: PayrollComponent }[];
   financialCostCenter?: {
     id: string;

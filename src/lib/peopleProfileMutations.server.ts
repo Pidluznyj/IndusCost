@@ -16,6 +16,7 @@ import {
 } from "./peopleProfileHistory.js";
 import { assertNoManagerCycleCte } from "./peopleProfileHierarchy.server.js";
 import { PeopleProfileAccessError } from "./peopleProfileErrors.js";
+import { addDaysIso, isLeaveType, legalLeaveEnd, toIsoDay, validateLeave } from "./employeeLifecycle.js";
 import { saveAppLocalFile, readAppLocalFile, deleteAppLocalFile } from "./appLocalFileStorage.js";
 import {
   PEOPLE_CAREER_POST_EVENT_TYPES,
@@ -66,6 +67,12 @@ function asNumber(value: unknown): number | null {
   }
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
+}
+
+/** Estado atual para o diff do histórico (null = colaborador inexistente). */
+export async function loadEmployeeHistorySnapshot(db: Db, employeeId: string): Promise<SnapshotForDiff | null> {
+  const exists = await db.employee.findUnique({ where: { id: employeeId }, select: { id: true } });
+  return exists ? loadSnapshot(db, employeeId) : null;
 }
 
 async function loadSnapshot(db: Db, employeeId: string): Promise<SnapshotForDiff & { name: string }> {
@@ -379,7 +386,9 @@ export async function recordSnapshotDiffHistory(
     await writeHistoryEvent(db, {
       employeeId: input.employeeId,
       eventType: event.eventType,
-      effectiveDate,
+      // Desligamento vale na data de demissão informada, não no dia em que foi lançado.
+      effectiveDate:
+        event.eventType === "TERMINATION" && input.next.terminationDate ? new Date(input.next.terminationDate) : effectiveDate,
       source: input.source ?? "USER",
       createdByUserId: input.actorUserId,
       previousRoleId: event.previousRoleId,
@@ -1283,6 +1292,71 @@ export async function deleteEmployeeBenefit(
   });
 }
 
+/**
+ * Regras legais do afastamento (justificativa, datas, limites, sobreposição) — ver
+ * src/lib/employeeLifecycle.ts. Férias seguem as regras antigas.
+ */
+async function assertLeaveRules(
+  db: Db,
+  input: {
+    employeeId: string;
+    selfId: string | null;
+    type: string;
+    startDate: Date;
+    endDate: Date | null;
+    expectedReturn: Date | null;
+    actualReturn: Date | null;
+    reason: string | null;
+    extendedLicense: boolean;
+  }
+) {
+  if (!isLeaveType(input.type)) return;
+  const [employee, others] = await Promise.all([
+    db.employee.findUnique({
+      where: { id: input.employeeId },
+      select: { status: true, admissionDate: true, terminationDate: true },
+    }),
+    db.hrAbsence.findMany({
+      where: { employeeId: input.employeeId },
+      select: { id: true, type: true, startDate: true, endDate: true, expectedReturn: true, actualReturn: true, status: true },
+    }),
+  ]);
+  if (!employee) throw new PeopleProfileAccessError("NOT_FOUND", "Colaborador não encontrado.", 404);
+  const errors = validateLeave({
+    type: input.type,
+    startDate: toIsoDay(input.startDate),
+    endDate: toIsoDay(input.endDate),
+    expectedReturn: toIsoDay(input.expectedReturn),
+    actualReturn: toIsoDay(input.actualReturn),
+    justification: input.reason,
+    extendedLicense: input.extendedLicense,
+    employee: {
+      status: employee.status,
+      admissionDate: toIsoDay(employee.admissionDate),
+      terminationDate: toIsoDay(employee.terminationDate),
+    },
+    others: others.map((o) => ({
+      id: o.id,
+      type: o.type,
+      status: o.status,
+      startDate: toIsoDay(o.startDate)!,
+      endDate: toIsoDay(o.endDate),
+      expectedReturn: toIsoDay(o.expectedReturn),
+      actualReturn: toIsoDay(o.actualReturn),
+    })),
+    selfId: input.selfId,
+  });
+  if (errors.length > 0) throw new PeopleProfileAccessError("INVALID_LEAVE", errors.join(" "), 400);
+}
+
+/** Retorno previsto padrão para afastamentos de prazo legal fixo (maternidade, paternidade…). */
+function defaultLeaveReturn(type: string, startDate: Date, extended: boolean): Date | null {
+  if (!isLeaveType(type)) return null;
+  const start = toIsoDay(startDate);
+  const end = start ? legalLeaveEnd(type, start, extended) : null;
+  return end ? new Date(`${addDaysIso(end, 1)}T12:00:00.000Z`) : null;
+}
+
 export async function createEmployeeAbsence(
   prisma: PrismaClient,
   input: {
@@ -1294,25 +1368,49 @@ export async function createEmployeeAbsence(
     status?: string;
     reason?: string | null;
     notes?: string | null;
+    extendedLicense?: boolean;
+    inssBenefitNumber?: string | null;
+    catNumber?: string | null;
     actorUserId?: string | null;
   }
 ) {
   const type = normalizeAbsenceType(input.type);
-  const status = normalizeAbsenceStatus(input.status ?? "SCHEDULED");
+  const extendedLicense = input.extendedLicense === true;
+  // Sem status informado: em andamento se já começou, programado se é futuro.
+  const status = normalizeAbsenceStatus(
+    input.status ?? (toIsoDay(input.startDate)! <= toIsoDay(new Date())! ? "IN_PROGRESS" : "SCHEDULED")
+  );
   const reason = normalizeOptionalText(input.reason, "Motivo", PEOPLE_RECORD_TEXT_LIMITS.reason);
   const notes = normalizeOptionalText(input.notes, "Observações", PEOPLE_RECORD_TEXT_LIMITS.notes);
+  const inssBenefitNumber = normalizeOptionalText(input.inssBenefitNumber, "Número do benefício INSS", 40);
+  const catNumber = normalizeOptionalText(input.catNumber, "Número da CAT", 40);
   assertDateRange(input.startDate, input.endDate);
+  const expectedReturn = input.expectedReturn ?? defaultLeaveReturn(type, input.startDate, extendedLicense);
   return prisma.$transaction(async (tx) => {
+    await assertLeaveRules(tx, {
+      employeeId: input.employeeId,
+      selfId: null,
+      type,
+      startDate: input.startDate,
+      endDate: input.endDate ?? null,
+      expectedReturn,
+      actualReturn: null,
+      reason,
+      extendedLicense,
+    });
     const row = await tx.hrAbsence.create({
       data: {
         employeeId: input.employeeId,
         type,
         startDate: input.startDate,
         endDate: input.endDate ?? null,
-        expectedReturn: input.expectedReturn ?? null,
+        expectedReturn,
         status,
         reason,
         notes,
+        extendedLicense,
+        inssBenefitNumber,
+        catNumber,
         createdByUserId: input.actorUserId ?? null,
       },
     });
@@ -1345,7 +1443,18 @@ export async function updateEmployeeAbsence(
   return prisma.$transaction(async (tx) => {
     const row = await tx.hrAbsence.findFirst({
       where: { id: input.recordId, employeeId: input.employeeId },
-      select: { id: true, type: true, startDate: true, endDate: true, reason: true, notes: true },
+      select: {
+        id: true,
+        type: true,
+        startDate: true,
+        endDate: true,
+        expectedReturn: true,
+        actualReturn: true,
+        status: true,
+        reason: true,
+        notes: true,
+        extendedLicense: true,
+      },
     });
     if (!row) throw new PeopleProfileAccessError("NOT_FOUND", "Afastamento não encontrado.", 404);
 
@@ -1357,6 +1466,23 @@ export async function updateEmployeeAbsence(
     if (patch.startDate !== undefined || patch.endDate !== undefined) {
       assertDateRange(startDate, endDate);
     }
+    const expectedReturn = patch.expectedReturn !== undefined ? patch.expectedReturn : row.expectedReturn;
+    const actualReturn = patch.actualReturn !== undefined ? patch.actualReturn : row.actualReturn;
+    const extendedLicense = patch.extendedLicense !== undefined ? patch.extendedLicense : row.extendedLicense;
+    await assertLeaveRules(tx, {
+      employeeId: input.employeeId,
+      selfId: row.id,
+      type,
+      startDate,
+      endDate,
+      expectedReturn,
+      actualReturn,
+      reason,
+      extendedLicense,
+    });
+    // Retorno registrado agora: encerra o afastamento (se o status não veio) e grava no histórico.
+    const returnRegistered = patch.actualReturn != null && row.actualReturn == null;
+    if (returnRegistered && patch.status === undefined) patch.status = "COMPLETED";
 
     const data: Prisma.HrAbsenceUncheckedUpdateManyInput = {};
     if (patch.type !== undefined) data.type = patch.type;
@@ -1367,6 +1493,9 @@ export async function updateEmployeeAbsence(
     if (patch.status !== undefined) data.status = patch.status;
     if (patch.reason !== undefined) data.reason = patch.reason;
     if (patch.notes !== undefined) data.notes = patch.notes;
+    if (patch.extendedLicense !== undefined) data.extendedLicense = patch.extendedLicense;
+    if (patch.inssBenefitNumber !== undefined) data.inssBenefitNumber = patch.inssBenefitNumber;
+    if (patch.catNumber !== undefined) data.catNumber = patch.catNumber;
     if (Object.keys(data).length > 0) {
       await tx.hrAbsence.updateMany({
         where: { id: row.id, employeeId: input.employeeId },
@@ -1393,6 +1522,18 @@ export async function updateEmployeeAbsence(
           reason: row.reason,
         },
         data: { eventType: nextEventType, effectiveDate: startDate, reason, notes },
+      });
+    }
+
+    if (returnRegistered && patch.actualReturn) {
+      await writeHistoryEvent(tx, {
+        employeeId: input.employeeId,
+        eventType: type === "VACATION" ? "VACATION_END" : "RETURN_TO_WORK",
+        effectiveDate: patch.actualReturn,
+        source: "USER",
+        notes: type === "VACATION" ? "Retorno de férias" : "Retorno do afastamento",
+        createdByUserId: input.actorUserId,
+        metadata: { recordType: "absenceReturn", recordId: row.id },
       });
     }
 
@@ -1426,6 +1567,14 @@ export async function deleteEmployeeAbsence(
         effectiveDate: row.startDate,
         notes: row.notes,
         reason: row.reason,
+      },
+    });
+    // O evento de retorno (se houver) sai junto com o afastamento.
+    await tx.hrEmployeeHistory.deleteMany({
+      where: {
+        employeeId: input.employeeId,
+        eventType: { in: ["RETURN_TO_WORK", "VACATION_END"] },
+        metadata: { path: ["recordId"], equals: row.id },
       },
     });
     await tx.hrAbsence.deleteMany({ where: { id: row.id, employeeId: input.employeeId } });

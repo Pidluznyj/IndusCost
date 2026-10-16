@@ -3,6 +3,7 @@
  * Sem motor paralelo: reutiliza Role, FinancialCostCenter e vínculo AppUser↔Employee.
  */
 
+import { toIsoDay, validateTermination, type NoticeType, type TerminationReason } from "./employeeLifecycle.js";
 import type { PrismaClient } from "@prisma/client";
 import {
   assertCorporateEmailFormat as assertCorporateEmailFormatPure,
@@ -31,14 +32,25 @@ const UUID_RE =
 export class EmployeeRegistrationError extends Error {
   readonly code: string;
   readonly status: number;
+  /** Dados extras para a interface (ex.: avisos legais que exigem ciência). */
+  readonly details?: unknown;
 
-  constructor(code: string, message: string, status = 400) {
+  constructor(code: string, message: string, status = 400, details?: unknown) {
     super(message);
     this.name = "EmployeeRegistrationError";
     this.code = code;
     this.status = status;
+    this.details = details;
   }
 }
+
+/** Desligamento normalizado para gravar: null = limpar (ativo); undefined = manter o gravado. */
+export type PersistedTermination = {
+  reason: TerminationReason;
+  noticeType: NoticeType;
+  noticeDate: Date | null;
+  details: string | null;
+};
 
 function rethrowCorporateEmail(err: unknown): never {
   if (err instanceof CorporateEmailError) {
@@ -385,6 +397,9 @@ export async function prepareEmployeePersistedFields(
     requireCostCenterId?: boolean;
     /** Update: permite manter contractType legado inalterado. */
     allowLegacyContractType?: boolean;
+    /** Update: status e data de demissão gravados (decide se o desligamento precisa ser informado). */
+    existingStatus?: string | null;
+    existingTerminationDate?: Date | null;
   }
 ): Promise<{
   corporateEmail: string | null;
@@ -397,6 +412,7 @@ export async function prepareEmployeePersistedFields(
   admissionDate: Date | null;
   terminationDate: Date | null;
   status: string;
+  termination: PersistedTermination | null | undefined;
   appUserEmailHint: string | null;
 }> {
   const corporateEmail = normalizeCorporateEmail(body.corporateEmail);
@@ -485,6 +501,13 @@ export async function prepareEmployeePersistedFields(
     throw new EmployeeRegistrationError("INVALID_STATUS", "Status inválido.");
   }
   assertStatusTerminationConsistency({ status, terminationDate });
+  const termination = resolvePersistedTermination(body, {
+    status,
+    admissionDate,
+    terminationDate,
+    existingStatus: options?.existingStatus,
+    existingTerminationDate: options?.existingTerminationDate,
+  });
 
   return {
     corporateEmail,
@@ -497,6 +520,55 @@ export async function prepareEmployeePersistedFields(
     admissionDate,
     terminationDate,
     status,
+    termination,
     appUserEmailHint: describeCorporateEmailAppUserHint(appUserHint),
+  };
+}
+
+const TERMINATION_BODY_KEYS = ["terminationReason", "terminationNoticeType", "terminationNoticeDate", "terminationDetails"] as const;
+
+/**
+ * Desligamento (status INACTIVE): obrigatório ao desligar (ativo → inativo, cadastro novo inativo)
+ * ou ao mudar a data de demissão. Registro legado já inativo, editado em outro campo e sem os
+ * dados de desligamento no corpo, mantém o que está gravado.
+ */
+export function resolvePersistedTermination(
+  body: Record<string, unknown>,
+  ctx: {
+    status: string;
+    admissionDate: Date | null;
+    terminationDate: Date | null;
+    existingStatus?: string | null;
+    existingTerminationDate?: Date | null;
+  }
+): PersistedTermination | null | undefined {
+  if (ctx.status !== "INACTIVE") return null;
+  const provided = TERMINATION_BODY_KEYS.some((k) => body[k] !== undefined && body[k] !== null && body[k] !== "");
+  const wasInactive = (ctx.existingStatus ?? "").toUpperCase() === "INACTIVE";
+  const dateChanged =
+    (ctx.existingTerminationDate?.getTime() ?? null) !== (ctx.terminationDate?.getTime() ?? null);
+  const required = !wasInactive || dateChanged;
+  if (!provided && !required) return undefined;
+  const text = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : null);
+  const result = validateTermination(
+    {
+      status: ctx.status,
+      terminationDate: toIsoDay(ctx.terminationDate),
+      reason: text(body.terminationReason),
+      noticeType: text(body.terminationNoticeType),
+      noticeDate: toIsoDay(normalizeOptionalDateInput(body.terminationNoticeDate)),
+      details: text(body.terminationDetails),
+    },
+    { admissionDate: toIsoDay(ctx.admissionDate), required: true }
+  );
+  if (result.ok === false) {
+    throw new EmployeeRegistrationError("TERMINATION_INVALID", result.errors.join(" "));
+  }
+  const value = result.value!;
+  return {
+    reason: value.reason,
+    noticeType: value.noticeType,
+    noticeDate: value.noticeDate ? new Date(`${value.noticeDate}T12:00:00.000Z`) : null,
+    details: value.details,
   };
 }

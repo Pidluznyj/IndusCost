@@ -3,6 +3,9 @@
  * Nunca serializa salário sem permissão de valores.
  */
 
+import { describeLeave, isLeaveType } from "./employeeLifecycle.js";
+import { loadEmployeeLifecycle, redactLifecycle, toLeaveFacts } from "./employeeLifecycle.server.js";
+import { businessTodayIso } from "./competencies/competencyDomain.js";
 import type { Prisma, PrismaClient } from "@prisma/client";
 import type { EmployeePermissionBag } from "./employeesPermissions.js";
 import { logEmployeeHrAudit } from "./employeeHrAudit.js";
@@ -29,9 +32,7 @@ import {
 } from "./peopleProfileHistory.js";
 import { omitMonetaryFields } from "./peopleProfileSanitize.js";
 import {
-  HR_EMPLOYEE_STATUS_LABELS,
   PEOPLE_PROFILE_HISTORY_PAGE_SIZE,
-  type HrEmployeeStatus,
   type PeopleCareerItemDto,
   type PeopleHistoryEventDto,
   type PeopleProfileCapabilities,
@@ -75,6 +76,10 @@ const EMPLOYEE_SUMMARY_SELECT = {
   classification: true,
   admissionDate: true,
   terminationDate: true,
+  terminationReason: true,
+  terminationNoticeType: true,
+  terminationNoticeDate: true,
+  terminationDetails: true,
   personId: true,
   photoStorageKey: true,
   monthlyHours: true,
@@ -88,19 +93,6 @@ const EMPLOYEE_SUMMARY_SELECT = {
   manager: { select: { id: true, name: true, socialName: true, status: true } },
   person: { select: { id: true, displayName: true, socialName: true, status: true } },
 } as const;
-
-function displayStatus(status: string | null | undefined, terminationDate: Date | null): {
-  status: string;
-  label: string;
-} {
-  const raw = (status ?? "ACTIVE").toUpperCase();
-  const mapped = raw === "INACTIVE" && terminationDate ? "TERMINATED" : raw;
-  const known = mapped as HrEmployeeStatus;
-  return {
-    status: mapped,
-    label: HR_EMPLOYEE_STATUS_LABELS[known] ?? mapped,
-  };
-}
 
 function costCenterLabel(row: {
   financialCostCenter?: { code: string; name: string } | null;
@@ -268,7 +260,11 @@ export async function loadPeopleProfileSummary(
     }))
   );
 
-  const situation = displayStatus(row.status, row.terminationDate);
+  const lifecycle = redactLifecycle(await loadEmployeeLifecycle(prisma, row, businessTodayIso(now)), {
+    terminationDetails: capabilities.canViewRestrictedNotes,
+    leaveRecord: capabilities.canViewAbsences,
+  });
+  const situation = { status: lifecycle.situation.code, label: lifecycle.situation.label };
   const tenureLabel = formatTenureLabel(row.admissionDate, now);
   const lastPromotionDate = lastPromo ? toIsoDateString(lastPromo.effectiveDate) : null;
   const lastAdjustmentDate = lastAdj ? toIsoDateString(lastAdj.effectiveDate) : null;
@@ -346,6 +342,7 @@ export async function loadPeopleProfileSummary(
     overview: {
       situation: situation.status,
       situationLabel: situation.label,
+      lifecycle,
       roleName: row.Role?.name ?? null,
       department: row.orgDepartment?.name ?? row.department ?? null,
       costCenterLabel: costCenterLabel(row),
@@ -368,7 +365,8 @@ export async function loadPeopleProfileSummary(
 
 export async function loadPeopleProfessional(
   prisma: PrismaClient,
-  employeeId: string
+  employeeId: string,
+  opts: { revealTerminationDetails: boolean; revealLeaveRecord: boolean } = { revealTerminationDetails: false, revealLeaveRecord: false }
 ) {
   const row = await prisma.employee.findUnique({
     where: { id: employeeId },
@@ -378,8 +376,13 @@ export async function loadPeopleProfessional(
     },
   });
   if (!row) throw new PeopleProfileAccessError("NOT_FOUND", "Colaborador não encontrado.", 404);
-  const situation = displayStatus(row.status, row.terminationDate);
+  const lifecycle = redactLifecycle(await loadEmployeeLifecycle(prisma, row, businessTodayIso(new Date())), {
+    terminationDetails: opts.revealTerminationDetails,
+    leaveRecord: opts.revealLeaveRecord,
+  });
+  const situation = { status: lifecycle.situation.code, label: lifecycle.situation.label };
   return {
+    lifecycle,
     employeeId: row.id,
     registrationId: row.id,
     fullName: row.name,
@@ -682,6 +685,7 @@ export async function loadPeopleBenefits(
 }
 
 export async function loadPeopleAbsences(prisma: PrismaClient, employeeId: string) {
+  const today = businessTodayIso(new Date());
   const rows = await prisma.hrAbsence.findMany({
     where: { employeeId },
     orderBy: [{ startDate: "desc" }, { createdAt: "desc" }],
@@ -698,6 +702,10 @@ export async function loadPeopleAbsences(prisma: PrismaClient, employeeId: strin
     reason: row.reason,
     notes: row.notes,
     documentId: row.documentId,
+    extendedLicense: row.extendedLicense,
+    inssBenefitNumber: row.inssBenefitNumber,
+    catNumber: row.catNumber,
+    legal: isLeaveType(row.type) ? describeLeave(toLeaveFacts(row), today) : null,
   }));
 }
 

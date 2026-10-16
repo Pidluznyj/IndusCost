@@ -3,6 +3,8 @@
  * Browser-safe — sem Prisma/fs.
  */
 
+import type { EmployeeLifecycleDto } from "./employeeLifecycle.js";
+
 export const PEOPLE_PROFILE_HISTORY_PAGE_SIZE = 50;
 
 export const HR_EMPLOYEE_HISTORY_EVENT_TYPES = [
@@ -150,7 +152,11 @@ export const HR_ABSENCE_TYPES = [
   "SICK_LEAVE",
   "ACCIDENT",
   "MATERNITY",
+  "ADOPTION",
+  "MISCARRIAGE",
   "PATERNITY",
+  "MILITARY",
+  "SUSPENSION",
   "UNPAID",
   "OTHER",
 ] as const;
@@ -159,13 +165,17 @@ export type HrAbsenceType = (typeof HR_ABSENCE_TYPES)[number];
 
 export const HR_ABSENCE_TYPE_LABELS: Record<HrAbsenceType, string> = {
   VACATION: "Férias",
-  LEAVE: "Licença",
-  SICK_LEAVE: "Afastamento médico",
-  ACCIDENT: "Acidente",
-  MATERNITY: "Maternidade",
-  PATERNITY: "Paternidade",
-  UNPAID: "Não remunerado",
-  OTHER: "Outro",
+  LEAVE: "Licença remunerada (falta legal)",
+  SICK_LEAVE: "Doença (afastamento médico)",
+  ACCIDENT: "Acidente de trabalho / doença ocupacional",
+  MATERNITY: "Licença-maternidade",
+  ADOPTION: "Licença-maternidade por adoção",
+  MISCARRIAGE: "Aborto não criminoso",
+  PATERNITY: "Licença-paternidade",
+  MILITARY: "Serviço militar",
+  SUSPENSION: "Suspensão disciplinar",
+  UNPAID: "Licença não remunerada",
+  OTHER: "Outro afastamento",
 };
 
 export const HR_ABSENCE_STATUSES = ["SCHEDULED", "IN_PROGRESS", "COMPLETED", "CANCELLED"] as const;
@@ -195,6 +205,8 @@ export const PEOPLE_HISTORY_LINKED_RECORD_TYPES = [
   /** Verba oficial (PayrollComponent) marcada/desmarcada no cadastro. */
   "payrollComponent",
   "absence",
+  /** Retorno de afastamento/férias registrado (evento RETURN_TO_WORK / VACATION_END). */
+  "absenceReturn",
   "epiDelivery",
   "document",
   "note",
@@ -280,6 +292,8 @@ export type PeopleProfileSummaryDto = {
   overview: {
     situation: string;
     situationLabel: string;
+    /** Situação (ativo/afastado/férias/desligado) com nuances legais e dados do desligamento. */
+    lifecycle?: EmployeeLifecycleDto;
     roleName: string | null;
     department: string | null;
     costCenterLabel: string | null;

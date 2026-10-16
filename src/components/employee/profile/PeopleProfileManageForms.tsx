@@ -1,3 +1,4 @@
+import { LEAVE_JUSTIFICATION_MIN, LEAVE_RULES, isLeaveType, type LeaveInsight } from "@/src/lib/employeeLifecycle";
 import React, { useEffect, useRef, useState } from "react";
 import {
   HR_ABSENCE_STATUS_LABELS,
@@ -813,6 +814,10 @@ export type AbsenceRecord = {
   status: string;
   reason: string | null;
   notes?: string | null;
+  extendedLicense?: boolean;
+  inssBenefitNumber?: string | null;
+  catNumber?: string | null;
+  legal?: LeaveInsight | null;
 };
 
 export function AbsencesManageForm({
@@ -838,6 +843,10 @@ export function AbsencesManageForm({
   const [status, setStatus] = useState<string>(record?.status || "SCHEDULED");
   const [reason, setReason] = useState(record?.reason ?? "");
   const [notes, setNotes] = useState(record?.notes ?? "");
+  const [extendedLicense, setExtendedLicense] = useState(record?.extendedLicense ?? false);
+  const [inssBenefitNumber, setInssBenefitNumber] = useState(record?.inssBenefitNumber ?? "");
+  const [catNumber, setCatNumber] = useState(record?.catNumber ?? "");
+  const leaveRule = isLeaveType(type) ? LEAVE_RULES[type] : null;
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ok, setOk] = useState(false);
@@ -851,6 +860,9 @@ export function AbsencesManageForm({
     status,
     reason: trimOrNull(reason),
     notes: trimOrNull(notes),
+    extendedLicense,
+    inssBenefitNumber: trimOrNull(inssBenefitNumber),
+    catNumber: trimOrNull(catNumber),
   });
   const initialPayload = useInitialPayload(isEdit, buildEditPayload);
 
@@ -885,6 +897,9 @@ export function AbsencesManageForm({
               status,
               reason: trimOrNull(reason),
               notes: trimOrNull(notes),
+              extendedLicense,
+              inssBenefitNumber: trimOrNull(inssBenefitNumber),
+              catNumber: trimOrNull(catNumber),
             });
             setOk(true);
             setReason("");
@@ -956,9 +971,38 @@ export function AbsencesManageForm({
             ))}
           </select>
         </Field>
-        <Field label="Motivo">
-          <input className={PROFILE_INPUT_CLASS} value={reason} onChange={(e) => setReason(e.target.value)} />
+        {leaveRule?.extendedDays ? (
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={extendedLicense} onChange={(e) => setExtendedLicense(e.target.checked)} />
+            {leaveRule.extendedLabel} ({leaveRule.extendedDays} dias no total)
+          </label>
+        ) : null}
+        {type === "SICK_LEAVE" || type === "ACCIDENT" ? (
+          <Field label="Nº do benefício INSS">
+            <input className={PROFILE_INPUT_CLASS} value={inssBenefitNumber} maxLength={40} onChange={(e) => setInssBenefitNumber(e.target.value)} />
+          </Field>
+        ) : null}
+        {type === "ACCIDENT" ? (
+          <Field label="Nº da CAT">
+            <input className={PROFILE_INPUT_CLASS} value={catNumber} maxLength={40} onChange={(e) => setCatNumber(e.target.value)} />
+          </Field>
+        ) : null}
+        <Field label={leaveRule ? "Justificativa (obrigatória)" : "Motivo"}>
+          <textarea
+            rows={leaveRule ? 3 : 1}
+            className={PROFILE_INPUT_CLASS}
+            value={reason}
+            required={Boolean(leaveRule)}
+            minLength={leaveRule ? LEAVE_JUSTIFICATION_MIN : undefined}
+            placeholder={leaveRule ? "Motivo do afastamento e documento apresentado (atestado, certidão, CAT)." : undefined}
+            onChange={(e) => setReason(e.target.value)}
+          />
         </Field>
+        {leaveRule ? (
+          <p className="text-xs text-muted-foreground">
+            {leaveRule.label}: {leaveRule.legalBasis}. {leaveRule.payment}
+          </p>
+        ) : null}
         <Field label="Observação">
           <textarea
             rows={2}
