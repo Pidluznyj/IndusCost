@@ -377,6 +377,7 @@ src/lib/competencies/competencyEngine.test.ts
 src/lib/competencies/competencyRoutes.test.ts
 src/lib/competencies/competencyOfficialEngineGuard.test.ts
 src/lib/competencies/competencyScope.test.ts
+src/lib/competencies/competencyScopePolicy.test.ts
 src/lib/competencies/competencyImport.test.ts
 src/lib/competencies/competencyImportRoutes.test.ts
 src/lib/competencies/competencyGovernance.test.ts

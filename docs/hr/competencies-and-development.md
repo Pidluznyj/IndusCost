@@ -200,25 +200,52 @@ O perfil de acesso persiste 3 eixos por recurso (ver / executar / gerenciar). Po
 
 ### Escopo hierárquico (quem o usuário pode ver e alterar)
 
-A permissão de recurso diz **o que** o usuário pode fazer; o escopo diz **sobre quem**. É a mesma régua da ficha do RH (`resolvePeopleAccessScope`), resolvida no servidor a cada requisição (`getScopeInput` em `server.ts` → `buildCompetencyScope`, `src/lib/competencies/competencyScope.ts`). Nunca vem do cliente.
+A permissão de recurso (`admin.employees.competencies…`) diz **o que** o usuário pode fazer no módulo. O escopo diz **sobre quem**. São coisas separadas: ter o menu não dá acesso a nenhum colaborador por si só.
 
-| Perfil | Escopo | Vê | Altera |
+O escopo é resolvido no servidor a cada requisição:
+- `getScopeInput` em `server.ts` chama `resolveCompetencyAccessScope`.
+- Em seguida, `resolveCompetencyScope` (`competency.server.ts`) chama `buildCompetencyScope`.
+- Usa só a sessão e a hierarquia oficial `Employee.managerId`. Para DESCENDANTS, usa a CTE `loadDescendantEmployeeIds`.
+- Nenhum id de gestor, colaborador ou departamento enviado pelo cliente amplia o acesso.
+
+**Política oficial (2026-10-16):** o líder vê **somente os subordinados autorizados**. Nunca vê a própria matriz ou as próprias avaliações, pares, superiores ou outras equipes.
+
+| Perfil (permissões efetivas) | Escopo | Vê | Altera |
 |---|---|---|---|
-| RH (`employees.view` / `employees.edit`) e SUPER_ADMIN | ALL | todos | todos |
-| Líder com `employees.team.descendants.view` | DESCENDANTS | ele + toda a árvore abaixo (CTE `loadDescendantEmployeeIds`) | só a árvore |
-| Líder com `employees.team.view` | DIRECT_REPORTS | ele + liderados diretos | só os liderados |
-| Só ficha própria | SELF | só ele | ninguém |
-| Sem colaborador vinculado ao usuário, ou sem escopo | NONE | ninguém | ninguém |
+| Editor de RH (`employees.edit`; canônico `admin.employees` executar/criar) e SUPER_ADMIN | ALL | todos | todos |
+| Líder com `employees.team.descendants.view` | DESCENDANTS | a árvore abaixo dele, **sem ele** | a mesma árvore |
+| Líder com `employees.team.view` | DIRECT_REPORTS | os liderados diretos, **sem ele** | os mesmos |
+| Só `employees.profile.view` | SELF | **ninguém** (nem os próprios dados) | ninguém |
+| Sem chave de equipe, sem colaborador vinculado ou sem escopo | NONE | ninguém | ninguém |
 
-O líder nunca altera o próprio nível nem se autoavalia: isso continua com o RH.
+**Por que `employees.view` não dá ALL em Competências.** A política global de RH (`resolvePeopleAccessScope`, usada pela ficha e por outros módulos) continua igual. Em Competências, porém, `employees.view` chega a quem não é RH administrativo:
+- pelo **Organograma** (`admin.employees.org_chart:view` materializa `employees.view`);
+- pelo **editor legado de permissões**, que adiciona `employees.view` como "pai" ao marcar "Ver equipe direta".
+
+Por isso `resolveCompetencyAccessScope` (`competencyScope.ts`) exige `employees.edit` para ALL e ignora `employees.view`.
+
+O líder aparece só como **avaliador possível**, em `options.selfEvaluator`: apenas o nome, sem dados de competência. Ele nunca altera o próprio nível nem se autoavalia.
 
 O que o escopo filtra ou bloqueia:
-- **Leituras:** matriz, Visão geral (KPIs, lacunas, aptidão, contadores), busca de colaboradores (`/options`), equipe dos postos, avaliações e treinamentos. A lista de treinamentos mostra as turmas com ao menos um liderado; os participantes de outras equipes aparecem só como contagem (`hiddenParticipantCount`).
-- **Escritas (403 `OUT_OF_SCOPE`):** nível manual; avaliação de quem não é liderado ou com avaliador de fora da equipe; inscrição em treinamento; alterar, concluir ou excluir turma que tenha participante de outra equipe; alocar ou retirar alguém no posto; arquivar posto com membro de fora.
-- **Registro de outra equipe:** avaliação ou treinamento que o líder não vê → 404, sem confirmar que existe.
-- **Equipe do posto:** quem o líder não enxerga é **preservado** quando ele salva a equipe. Nunca sai por omissão.
+- **Leituras:**
+  - matriz e Visão geral (KPIs, lacunas, aptidão, contadores, aprovações pendentes);
+  - busca de colaboradores (`/options`), equipe dos postos e departamentos;
+  - avaliações, treinamentos, aprovações, ficha (`/employees/:id`);
+  - certificados: painel, documento e `/employees/:id/certificates`;
+  - modelo e prévia da importação XLSX.
+  - Turma com participantes de fora: só `hasParticipantsOutsideScope` (sem nomes e sem contagem).
+- **Escritas (403 `OUT_OF_SCOPE`):**
+  - nível manual;
+  - avaliação de quem não é liderado, autoavaliação, ou avaliador de fora da equipe ou superior;
+  - inscrição em treinamento;
+  - alterar, concluir ou excluir turma com participante de outra equipe;
+  - equipe do posto com **qualquer** id fora do escopo, mesmo já alocado (a resposta não revela alocação);
+  - lista de signatários dos certificados (todas as pessoas): só ALL.
+- **Registro fora do escopo** (avaliação, treinamento, solicitação, ficha, certificado, inclusive os do próprio líder): 404, sem confirmar que existe. Na importação, nomes de fora viram "não encontrado".
+- **Filtros** de departamento e turno só restringem o conjunto autorizado.
+- **Exportações futuras (PDF):** devem resolver o escopo com `resolveCompetencyScope` e partir de `authorizedEmployeeIds` / `restrictToScope`. Nunca de ids enviados sem validação nem de print da tela.
 
-A interface usa `writable` (por linha da matriz e por colaborador em `/options`) para esconder o que o servidor recusaria, e mostra um aviso quando a visão é restrita (`overview.scope`).
+Testes: `competencyScope.test.ts` e `competencyScopePolicy.test.ts`. O segundo monta o cenário completo: diretoria, gerente, dois supervisores, diretos, indiretos, outra equipe e usuário sem colaborador. Também varre todas as respostas do supervisor atrás de nomes e ids de fora do escopo.
 
 ## UI
 
@@ -527,3 +554,4 @@ Quando essa etapa for autorizada, a gravação substitui apenas as associações
 - 2026-10-16: aba Certificados na ficha funcional (sistema + anexados, com arquivo no dossiê). Migration `20261017120000_hr_employee_external_certificates`.
 - 2026-10-16: assinatura por pessoa do sistema (nome e cargo do cadastro) ou manual; local fixo Curitiba – PR; prefixo da numeração gerado e imutável. Migration `20261018120000_hr_certificate_signer_employee`.
 - 2026-10-16: layout premium do certificado com a logo oficial embutida no sistema.
+- 2026-10-16: escopo hierárquico revisado — o líder vê só subordinados autorizados (nunca a si); SELF/NONE sem dados; ALL só com editor de RH (`employees.edit`), não mais com `employees.view`; equipe do posto sem oráculo de alocação; signatários só para RH; turmas mistas sem contagem.

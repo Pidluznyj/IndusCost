@@ -157,7 +157,8 @@ describe("competencyImport — rotas", () => {
       assert.deepEqual(names, ["Ana Ribeiro", "José Silva", "José Silva"]);
       const file = xlsx([["Colaborador", "Leitura de desenho"], ["Xavier", 4], ["Gestor", 4], ["Ana Ribeiro", 4]]);
       const preview = await upload(app, "/api/hr/competencies/import/preview", file);
-      assert.deepEqual(preview.json.plan.rows.map((r: any) => r.status), ["NOT_FOUND", "OUT_OF_SCOPE", "MATCHED"]);
+      // O próprio líder (Gestor) não está no escopo: "não encontrado", sem confirmar que existe.
+      assert.deepEqual(preview.json.plan.rows.map((r: any) => r.status), ["NOT_FOUND", "NOT_FOUND", "MATCHED"]);
       assert.ok(!preview.json.assignable.some((e: any) => e.id === id.x || e.id === id.g));
       // Tentar associar a linha do Xavier ao próprio Xavier não funciona (não é visível).
       const forced = await upload(app, "/api/hr/competencies/import/preview", file, {

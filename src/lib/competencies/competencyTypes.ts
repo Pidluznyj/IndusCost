@@ -41,6 +41,8 @@ export type CompetencyDepartmentOptionDto = { id: string; name: string };
 export type CompetencyOptionsResponse = {
   employees: CompetencyEmployeeOptionDto[];
   departments: CompetencyDepartmentOptionDto[];
+  /** Líder: ele mesmo como avaliador possível (só o nome; nunca entra em `employees`). */
+  selfEvaluator: { id: string; name: string } | null;
 };
 
 /** `scope`: ALL (RH), TEAM (líder: a própria equipe), SELF ou NONE (sem colaborador vinculado / sem escopo). */
@@ -137,8 +139,8 @@ export type TrainingDto = {
   validityMonths: number;
   status: string;
   completedOn: string | null;
-  /** Participantes de outras equipes (não exibidos ao líder). */
-  hiddenParticipantCount: number;
+  /** Há participantes fora do escopo (não exibidos nem contados para o líder). */
+  hasParticipantsOutsideScope: boolean;
   participants: { employeeId: string; employeeName: string; completedOn: string | null }[];
   /** Instrutor e conteúdo programático (usados no certificado). */
   instructorName: string | null;

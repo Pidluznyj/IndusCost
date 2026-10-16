@@ -267,7 +267,7 @@ import { registerEmployeeLookupRoutes } from "./src/lib/employeeLookupRoutes.js"
 import { registerHrOrgStructureRoutes } from "./src/lib/hrOrgStructureRoutes.js";
 import { registerEmployeesDashboardRoutes } from "./src/lib/employeesDashboardRoutes.js";
 import { registerCompetencyRoutes } from "./src/lib/competencies/competencyRoutes.js";
-import { resolvePeopleAccessScope } from "./src/lib/peopleProfileCapabilities.js";
+import { resolveCompetencyAccessScope } from "./src/lib/competencies/competencyScope.js";
 import { loadDescendantEmployeeIds } from "./src/lib/peopleProfileHierarchy.server.js";
 import { buildEmployeeCosts } from "./src/lib/employeeCostEngine.js";
 import {
@@ -15354,7 +15354,8 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
         const authUser =
           (req as { appAuth?: AppAuthContext }).appAuth ?? (await getCurrentAppUser(req));
         return {
-          accessScope: resolvePeopleAccessScope(employeePermCheck(authUser)),
+          // Escopo próprio de Competências: `employees.view` (Organograma / editor legado) não é ALL.
+          accessScope: resolveCompetencyAccessScope(employeePermCheck(authUser)),
           actorEmployeeId: (authUser as { employeeId?: string | null } | null)?.employeeId ?? null,
         };
       },

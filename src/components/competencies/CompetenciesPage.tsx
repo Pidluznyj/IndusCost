@@ -206,10 +206,10 @@ function CompetenciesModule() {
       {ws.overview.data && ws.overview.data.scope !== "ALL" ? (
         <div role="status" data-testid="competencies-scope-notice" className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-900">
           {ws.overview.data.scope === "TEAM"
-            ? "Você está vendo a sua equipe. Avaliações, níveis e treinamentos valem só para os seus liderados."
+            ? "Você está vendo somente os seus liderados autorizados. A sua própria matriz e as suas avaliações não aparecem aqui."
             : ws.overview.data.scope === "SELF"
-              ? "Você está vendo apenas o seu próprio registro, sem permissão de alteração."
-              : "Seu usuário não está vinculado a um colaborador com equipe. Não há dados no seu escopo."}
+              ? "Seu perfil não tem equipe autorizada. Competências mostra apenas dados de liderados; os seus próprios dados não aparecem aqui."
+              : "Seu usuário não tem equipe autorizada (ou não está vinculado a um colaborador). Não há dados no seu escopo."}
         </div>
       ) : null}
 
@@ -278,7 +278,12 @@ function CompetenciesModule() {
         today={today}
         rows={rows}
         competencies={competencies}
-        evaluators={ws.options.data?.employees ?? []}
+        evaluators={[
+          ...(ws.options.data?.selfEvaluator
+            ? [{ id: ws.options.data.selfEvaluator.id, name: `${ws.options.data.selfEvaluator.name} (você)`, departmentName: null, positionId: null, writable: false }]
+            : []),
+          ...(ws.options.data?.employees ?? []),
+        ]}
         onClose={() => setModal(null)}
         onSaved={afterSave}
       />

@@ -480,7 +480,7 @@ describe("competencyRoutes — departamentos e competências", () => {
     const ids = (matrix.rows as { employeeId: string }[]).map((r) => r.employeeId);
     assert.equal(ids.includes(mine), true);
     assert.equal(ids.includes(other), false);
-    assert.equal(ids.includes(leader), true);
+    assert.equal(ids.includes(leader), false, "o líder não vê a própria linha");
     assert.equal((await requestJson(app, "GET", `/api/hr/competencies/employees/${other}`)).status, 404);
   });
 

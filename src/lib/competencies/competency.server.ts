@@ -46,11 +46,15 @@ import type {
 import { businessTodayIso, type CompetencyLevel, type TrainingStatus } from "./competencyDomain";
 import { readStoredSyllabus } from "./trainingCertificate";
 import { decideLevelWrite, validateDecision, type LevelChangeSource } from "./competencyGovernance";
+import type { PeopleAccessScope } from "../peopleProfileTypes";
 import {
   COMPETENCY_SCOPE_ALL,
+  buildCompetencyScope,
   canSeeEmployee,
+  canUseAsEvaluator,
   canWriteEmployee,
   competencyScopeView,
+  isTeamAccessScope,
   outOfWriteScope,
   type CompetencyScope,
 } from "./competencyScope";
@@ -110,6 +114,27 @@ export function fromIsoDate(iso: string): Date {
  */
 export function trainingValidityExpiresOn(completedOn: string, validityMonths: number): string | null {
   return validityMonths > 0 ? addMonthsIso(completedOn, validityMonths) : null;
+}
+
+/**
+ * Escopo efetivo do ator, resolvido SEMPRE no servidor a partir da sessão e da hierarquia
+ * oficial (`Employee.managerId`): DIRECT_REPORTS = liderados diretos; DESCENDANTS = árvore
+ * oficial (CTE recursiva). Nenhum id vindo do cliente entra aqui. Reutilizar em exportações.
+ */
+export async function resolveCompetencyScope(
+  db: CompetencyDb,
+  input: { accessScope: PeopleAccessScope; actorEmployeeId: string | null },
+  loadDescendantIds: (managerEmployeeId: string) => Promise<string[]>,
+): Promise<CompetencyScope> {
+  const { accessScope, actorEmployeeId } = input;
+  let teamIds: string[] = [];
+  if (actorEmployeeId && accessScope === "DIRECT_REPORTS") {
+    const rows = (await db.employee.findMany({ where: { managerId: actorEmployeeId } })) as { id: string }[];
+    teamIds = rows.map((r) => r.id);
+  } else if (actorEmployeeId && accessScope === "DESCENDANTS") {
+    teamIds = await loadDescendantIds(actorEmployeeId);
+  }
+  return buildCompetencyScope({ accessScope, actorEmployeeId, teamIds });
 }
 
 export function toIsoDate(value: Date | string | null | undefined): string | null {
@@ -694,6 +719,9 @@ export async function setWorkPositionTeam(
   scope: CompetencyScope = COMPETENCY_SCOPE_ALL,
 ): Promise<{ added: string[]; removed: string[] }> {
   await findActivePosition(db, positionId);
+  // Qualquer id fora do escopo no pedido → 403, esteja ou não alocado: a resposta não pode
+  // revelar se alguém de outra equipe ocupa o posto.
+  assertWritable(scope, employeeIds);
   const employees = await loadActiveEmployees(db, employeeIds);
   if (employees.size !== employeeIds.length) {
     throw new CompetencyServiceError("INVALID_EMPLOYEES", "Colaborador inexistente ou inativo.", 400);
@@ -774,6 +802,11 @@ export async function getCompetencyOptions(
       }))
       .sort(byName),
     departments: departments.map((d) => ({ id: d.id, name: d.name })).sort(byName),
+    selfEvaluator: (() => {
+      if (scope.kind === "ALL" || !scope.actorEmployeeId || !isTeamAccessScope(scope.accessScope)) return null;
+      const self = employees.find((e) => e.id === scope.actorEmployeeId && isActiveEmployee(e));
+      return self ? { id: self.id, name: self.name } : null;
+    })(),
   };
 }
 
@@ -1256,9 +1289,9 @@ export async function listAssessments(
 }
 
 async function resolveAssessmentContext(db: CompetencyDb, input: AssessmentInput, asOf: string, scope: CompetencyScope) {
-  // Líder: avalia só liderados; o avaliador é ele mesmo ou alguém da equipe dele.
+  // Líder: avalia só liderados; o avaliador é ele mesmo (só referência) ou alguém da equipe dele.
   assertWritable(scope, [input.employeeId]);
-  if (input.evaluatorEmployeeId && !canSeeEmployee(scope, input.evaluatorEmployeeId)) {
+  if (input.evaluatorEmployeeId && !canUseAsEvaluator(scope, input.evaluatorEmployeeId)) {
     throw new CompetencyServiceError("OUT_OF_SCOPE", "Avaliador fora da sua equipe.", 403);
   }
   const people = await loadActiveEmployees(
@@ -1515,7 +1548,7 @@ export async function listTrainings(
       validityMonths: r.validityMonths,
       status: r.status,
       completedOn: toIsoDate(r.completedAt),
-      hiddenParticipantCount: participants.filter((p) => p.trainingId === r.id && !canSeeEmployee(scope, p.employeeId)).length,
+      hasParticipantsOutsideScope: participants.some((p) => p.trainingId === r.id && !canSeeEmployee(scope, p.employeeId)),
       participants: participants
         .filter((p) => p.trainingId === r.id && canSeeEmployee(scope, p.employeeId))
         .map((p) => ({ employeeId: p.employeeId, employeeName: names.get(p.employeeId) ?? "—", completedOn: toIsoDate(p.completedAt) }))

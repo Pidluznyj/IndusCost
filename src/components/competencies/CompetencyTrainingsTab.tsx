@@ -67,8 +67,8 @@ export function CompetencyTrainingsTab({
                 <OverlayTable.Cell mono>{formatIsoDateBr(t.startDate)}</OverlayTable.Cell>
                 <OverlayTable.Cell align="right" title={t.participants.map((p) => p.employeeName).join(", ")}>
                   {t.participants.length} {t.participants.length === 1 ? "pessoa" : "pessoas"}
-                  {t.hiddenParticipantCount > 0 ? (
-                    <span className="block text-xs text-muted-foreground">+{t.hiddenParticipantCount} de outras equipes</span>
+                  {t.hasParticipantsOutsideScope ? (
+                    <span className="block text-xs text-muted-foreground">Turma com outras equipes</span>
                   ) : null}
                 </OverlayTable.Cell>
                 <OverlayTable.Cell>
@@ -87,7 +87,7 @@ export function CompetencyTrainingsTab({
                 </OverlayTable.Cell>
                 {canManage ? (
                   <OverlayTable.Cell align="right" nowrap>
-                    {t.status !== "COMPLETED" && t.hiddenParticipantCount > 0 ? (
+                    {t.status !== "COMPLETED" && t.hasParticipantsOutsideScope ? (
                       <span className="text-xs text-muted-foreground" title="A turma tem participantes de outras equipes">
                         Gerida pelo RH
                       </span>

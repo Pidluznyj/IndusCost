@@ -9,7 +9,7 @@ import multer from "multer";
 import type { RequestHandler } from "express";
 import { logEmployeeHrAudit } from "../employeeHrAudit";
 import type { PeopleAccessScope } from "../peopleProfileTypes";
-import { buildCompetencyScope, type CompetencyScope } from "./competencyScope";
+import type { CompetencyScope } from "./competencyScope";
 import { isCompetenciesEnabled, requireCompetenciesEnabled } from "./competencyFeatureFlags";
 import { IMPORT_MAX_FILE_BYTES, type ImportResolutions } from "./competencyImport";
 import {
@@ -48,6 +48,7 @@ import {
   updateCompetency,
   updateTraining,
   updateWorkPosition,
+  resolveCompetencyScope,
   type CompetencyDb,
 } from "./competency.server";
 import {
@@ -215,15 +216,7 @@ export function registerCompetencyRoutes(
 
   /** Escopo resolvido por requisição — nunca vem do corpo nem do cliente. */
   async function scopeOf(req: express.Request): Promise<CompetencyScope> {
-    const { accessScope, actorEmployeeId } = await guards.getScopeInput(req);
-    let teamIds: string[] = [];
-    if (actorEmployeeId && accessScope === "DIRECT_REPORTS") {
-      const rows = (await db.employee.findMany({ where: { managerId: actorEmployeeId } })) as { id: string }[];
-      teamIds = rows.map((r) => r.id);
-    } else if (actorEmployeeId && accessScope === "DESCENDANTS") {
-      teamIds = await deps.loadDescendantIds(actorEmployeeId);
-    }
-    return buildCompetencyScope({ accessScope, actorEmployeeId, teamIds });
+    return resolveCompetencyScope(db, await guards.getScopeInput(req), deps.loadDescendantIds);
   }
 
   /** Autoria sempre da sessão autenticada — nunca do corpo. */
@@ -639,7 +632,11 @@ export function registerCompetencyRoutes(
     return res.json(await loadCertificateSettings(db));
   }));
 
-  app.get(`${base}/certificate-settings/signers`, ...gate("manageTrainings"), asyncRoute("GET competencies/certificate-settings/signers", async (_req, res) => {
+  app.get(`${base}/certificate-settings/signers`, ...gate("manageTrainings"), asyncRoute("GET competencies/certificate-settings/signers", async (req, res) => {
+    // Lista todas as pessoas ativas: só para quem altera a configuração global (escopo RH).
+    if ((await scopeOf(req)).kind !== "ALL") {
+      return res.status(403).json({ error: "OUT_OF_SCOPE", message: "Só o RH altera a configuração dos certificados." });
+    }
     noStore(res);
     return res.json({ signers: await listCertificateSigners(db) });
   }));
