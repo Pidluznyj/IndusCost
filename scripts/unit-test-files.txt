@@ -287,6 +287,7 @@ src/lib/finance/fiscalRegression.t08.test.ts
 src/lib/finance/fiscalSettlement.test.ts
 src/lib/employeeRegistration.test.ts
 src/lib/employeeLifecycle.test.ts
+src/lib/employeeTurnover.test.ts
 src/lib/adminUserEmployeeLink.test.ts
 src/lib/operationsAdminPermissions.test.ts
 src/lib/canonicalPerson.test.ts

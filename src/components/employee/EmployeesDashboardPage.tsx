@@ -9,6 +9,8 @@ import {
   RefreshCw,
   Scale,
   Search,
+  UserMinus,
+  UserX,
   Users,
   Wallet,
 } from "lucide-react";
@@ -99,6 +101,20 @@ const DEFAULT_FILTERS: UiFilters = {
 function formatMoney(value: number | null | undefined): string {
   if (value == null || !Number.isFinite(value)) return "—";
   return formatCompactCurrency(value);
+}
+
+/** Fração (0.053) → pontos percentuais (5.3) para o card em "percent". */
+function toPercentPoints(ratio: number | null | undefined): number | null {
+  return ratio == null ? null : Math.round(ratio * 1000) / 10;
+}
+
+function formatDayBr(iso: string): string {
+  const [y, m, d] = iso.split("-");
+  return `${d}/${m}/${y}`;
+}
+
+function formatDecimal(value: number): string {
+  return value.toLocaleString("pt-BR", { maximumFractionDigits: 1 });
 }
 
 function formatPct(ratio: number | null | undefined): string {
@@ -532,6 +548,81 @@ export function EmployeesDashboardPage() {
             loading={loading}
           />
         </SummaryKpiGrid>
+      </SalesOrderKpiSection>
+
+      <SalesOrderKpiSection
+        testId="employees-dashboard-turnover"
+        title={`Turnover acumulado no ano (YTD ${summary?.turnoverYtd.year ?? new Date().getFullYear()})`}
+        subtitle={
+          summary
+            ? `${formatDayBr(summary.turnoverYtd.from)} a ${formatDayBr(summary.turnoverYtd.to)} · desligamentos ÷ headcount médio (${formatDecimal(summary.turnoverYtd.averageHeadcount)}) · recorte estrutural dos filtros, sem status nem período de admissão`
+            : "Desligamentos do ano ÷ headcount médio"
+        }
+      >
+        <SummaryKpiGrid minColumnWidth={168} className={SYSTEM_TOTALIZER_GRID_CLASS}>
+          <SystemTotalizerCard
+            className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
+            label="Turnover geral"
+            amount={loading ? null : toPercentPoints(summary?.turnoverYtd.rate)}
+            amountFormat="percent"
+            value={!loading && summary?.turnoverYtd.rate == null ? "Sem headcount" : undefined}
+            tone="info"
+            icon={Users}
+            helperText={
+              summary
+                ? `${summary.turnoverYtd.terminations} desligamento(s) no ano${
+                    summary.turnoverYtd.unclassified
+                      ? ` · ${summary.turnoverYtd.unclassified} sem classificação (motivo "Outro" ou legado)`
+                      : ""
+                  }`
+                : "Todos os desligamentos do ano"
+            }
+            loading={loading}
+          />
+          <SystemTotalizerCard
+            className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
+            label="Turnover voluntário"
+            amount={loading ? null : toPercentPoints(summary?.turnoverYtd.voluntaryRate)}
+            amountFormat="percent"
+            value={!loading && summary?.turnoverYtd.voluntaryRate == null ? "Sem headcount" : undefined}
+            tone="warning"
+            icon={UserMinus}
+            helperText={
+              summary
+                ? `${summary.turnoverYtd.voluntary} saída(s) por iniciativa do colaborador`
+                : "Pedido de demissão, acordo, rescisão indireta…"
+            }
+            loading={loading}
+          />
+          <SystemTotalizerCard
+            className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
+            label="Turnover involuntário"
+            amount={loading ? null : toPercentPoints(summary?.turnoverYtd.involuntaryRate)}
+            amountFormat="percent"
+            value={!loading && summary?.turnoverYtd.involuntaryRate == null ? "Sem headcount" : undefined}
+            tone="danger"
+            icon={UserX}
+            helperText={
+              summary
+                ? `${summary.turnoverYtd.involuntary} saída(s) por iniciativa da empresa ou fim do contrato`
+                : "Dispensas, término de contrato, falecimento"
+            }
+            loading={loading}
+          />
+        </SummaryKpiGrid>
+        {summary ? (
+          <p className="mt-2 text-xs text-muted-foreground" data-testid="employees-dashboard-turnover-counts">
+            <strong className="text-foreground">{summary.turnoverYtd.terminations}</strong> desligamento(s) no ano:{" "}
+            <strong className="text-foreground">{summary.turnoverYtd.voluntary}</strong> voluntário(s) ·{" "}
+            <strong className="text-foreground">{summary.turnoverYtd.involuntary}</strong> involuntário(s)
+            {summary.turnoverYtd.unclassified > 0
+              ? ` · ${summary.turnoverYtd.unclassified} sem classificação (motivo "Outro" ou desligamento antigo sem motivo; conta só no geral)`
+              : ""}
+            {summary.turnoverYtd.excludedWithoutTerminationDate > 0
+              ? `. ${summary.turnoverYtd.excludedWithoutTerminationDate} desligado(s) sem data de demissão ficaram fora do cálculo.`
+              : "."}
+          </p>
+        ) : null}
       </SalesOrderKpiSection>
 
       <div className="grid gap-4 lg:grid-cols-2">

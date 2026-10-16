@@ -51,12 +51,35 @@ Motivos: dispensa sem justa causa, por justa causa (art. 482), pedido de demiss�
 
 `PATCH /api/employees/:id/status` só aceita `ACTIVE` (reativação: limpa data e dados do desligamento, registra no histórico). Desligar pelo atalho da lista abre o cadastro na seção Situação → `400 TERMINATION_DETAILS_REQUIRED` se chamado com `INACTIVE`.
 
+### Voluntário × involuntário (automático)
+
+A classe vem do motivo (`TERMINATION_RULES[motivo].turnover`, `terminationTurnoverClass`), sem campo digitado nem coluna no banco. Por isso vale também para desligamentos já gravados.
+
+| Classe | Motivos |
+|--------|---------|
+| Voluntário (a saída parte do colaborador) | Pedido de demissão; rescisão antecipada pelo empregado; rescisão indireta (o colaborador decide sair por falta grave do empregador); acordo (CLT, art. 484-A, exige a concordância do colaborador) |
+| Involuntário (empresa ou fato alheio à vontade dele) | Dispensa sem justa causa; dispensa por justa causa; rescisão antecipada pelo empregador; término do contrato a prazo/experiência; falecimento |
+| Não classificado (entra só no geral) | "Outro motivo"; desligamento antigo sem motivo |
+
+O cartão do desligamento (cadastro e ficha) mostra o campo **Turnover**.
+
+## Turnover YTD (Dashboard de Pessoas)
+
+`src/lib/employeeTurnover.ts` (`computeTurnoverYtd`), chamado por `buildEmployeesDashboardSummary` → `summary.turnoverYtd`.
+
+- **Período:** de 01/01 do ano corrente até hoje (fuso do negócio).
+- **Taxa:** desligamentos no período ÷ headcount médio. Geral, voluntário e involuntário usam o mesmo denominador. A soma voluntário + involuntário só fica abaixo do geral quando há desligamentos não classificados.
+- **Headcount médio:** média dos headcounts no fim de cada mês fechado do ano mais o de hoje. Conta numa data quem foi admitido até ela (ou não tem admissão) e não foi desligado até ela. Quem sai no dia não conta naquele fechamento.
+- **Desligamentos:** `status = INACTIVE` com data de demissão no período. Desligado sem data de demissão fica fora, e a tela informa quantos.
+- **Recorte:** os filtros estruturais do dashboard (classificação, contrato, diretoria, departamento, centro de custo, busca). Status e período de admissão são ignorados, como na movimentação.
+
 ## Telas
 
 - **Cadastro › Situação do colaborador** (`EmployeeSituationSection`): Ativo / Afastado / Desligado. Afastado mostra o afastamento em andamento (nuances legais, justificativa, nº INSS/CAT, alertas) com **Registrar retorno**, ou o formulário de afastamento com prévia legal e **Registrar afastamento** (gravado na hora). Desligado mostra data de demissão, motivo, aviso, comunicação, descrição, prévia (aviso proporcional, projeção, verbas), bloqueio e avisos.
 - **Ficha › Profissional**: Data de demissão, Situação ("Afastado desde …"), cartões do afastamento em andamento e do desligamento.
 - **Ficha › Férias & afastamentos**: justificativa, INSS, CAT, base legal, estabilidade; cartão legal para o afastamento em andamento.
 - **Lista**: filtro Ativos (vínculo) / Afastados / Desligados e selo de situação com "desde".
+- **Dashboard de Pessoas**: seção "Turnover acumulado no ano" com Turnover geral, voluntário e involuntário. Abaixo dos cards, as contagens (voluntários, involuntários, sem classificação, desligados fora do cálculo).
 
 ## Dados sensíveis
 

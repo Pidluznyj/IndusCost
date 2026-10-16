@@ -14,6 +14,7 @@ import {
   NOTICE_TYPE_LABELS,
   TERMINATION_REASONS,
   TERMINATION_RULES,
+  TURNOVER_CLASS_LABELS,
   addDaysIso,
   describeLeave,
   describeTermination,
@@ -146,6 +147,11 @@ export function TerminationInsightCard({
         <Fact label="Aviso prévio" value={insight.noticeTypeLabel} />
         {insight.noticeDays ? <Fact label="Dias de aviso" value={`${insight.noticeDays} dias`} /> : null}
         {insight.yearsOfService != null ? <Fact label="Tempo de casa" value={`${insight.yearsOfService} ano(s) completo(s)`} /> : null}
+        <Fact
+          label="Turnover"
+          value={insight.turnover ? TURNOVER_CLASS_LABELS[insight.turnover] : "Não classificado"}
+          tone={insight.turnover === "INVOLUNTARY" ? "warn" : undefined}
+        />
         {insight.noticeEnd ? <Fact label="Fim do aviso trabalhado" value={formatDateBr(insight.noticeEnd)} /> : null}
         {insight.projectedEnd ? <Fact label="Projeção do aviso indenizado" value={formatDateBr(insight.projectedEnd)} /> : null}
       </dl>

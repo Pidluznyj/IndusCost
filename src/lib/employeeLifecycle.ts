@@ -533,10 +533,23 @@ export const NOTICE_TYPE_LABELS: Record<NoticeType, string> = {
   NOT_APPLICABLE: "Não se aplica",
 };
 
+/**
+ * Turnover: classificação automática pelo motivo (não é digitada).
+ * Voluntário = a saída parte do colaborador; involuntário = da empresa ou de fato alheio à vontade dele.
+ * null = não classificado (entra só no turnover geral).
+ */
+export type TurnoverClass = "VOLUNTARY" | "INVOLUNTARY";
+
+export const TURNOVER_CLASS_LABELS: Record<TurnoverClass, string> = {
+  VOLUNTARY: "Voluntário",
+  INVOLUNTARY: "Involuntário",
+};
+
 export type TerminationRule = {
   label: string;
   legalBasis: string;
   initiative: "EMPLOYER" | "EMPLOYEE" | "BOTH" | "NONE";
+  turnover: TurnoverClass | null;
   /** Aviso prévio: tipos aceitos (o 1º é o padrão). */
   noticeTypes: NoticeType[];
   /** Exige descrição detalhada (falta grave, base legal). */
@@ -553,6 +566,7 @@ export const TERMINATION_RULES: Record<TerminationReason, TerminationRule> = {
     label: "Dispensa sem justa causa",
     legalBasis: "CLT, arts. 477 e 487; Lei 12.506/2011; Lei 8.036/1990, art. 18, § 1º",
     initiative: "EMPLOYER",
+    turnover: "INVOLUNTARY",
     noticeTypes: ["WORKED", "INDEMNIFIED"],
     requiresDetails: false,
     rights: [
@@ -568,6 +582,7 @@ export const TERMINATION_RULES: Record<TerminationReason, TerminationRule> = {
     label: "Dispensa por justa causa",
     legalBasis: "CLT, art. 482",
     initiative: "EMPLOYER",
+    turnover: "INVOLUNTARY",
     noticeTypes: ["NOT_APPLICABLE"],
     requiresDetails: true,
     rights: ["Saldo de salário e férias vencidas + 1/3", "Sem aviso prévio, multa do FGTS ou seguro-desemprego"],
@@ -578,6 +593,7 @@ export const TERMINATION_RULES: Record<TerminationReason, TerminationRule> = {
     label: "Pedido de demissão",
     legalBasis: "CLT, art. 487, § 2º",
     initiative: "EMPLOYEE",
+    turnover: "VOLUNTARY",
     noticeTypes: ["WORKED", "WAIVED", "INDEMNIFIED"],
     requiresDetails: false,
     rights: [
@@ -592,6 +608,7 @@ export const TERMINATION_RULES: Record<TerminationReason, TerminationRule> = {
     label: "Acordo entre as partes",
     legalBasis: "CLT, art. 484-A",
     initiative: "BOTH",
+    turnover: "VOLUNTARY",
     noticeTypes: ["INDEMNIFIED", "WORKED"],
     requiresDetails: false,
     rights: [
@@ -606,6 +623,7 @@ export const TERMINATION_RULES: Record<TerminationReason, TerminationRule> = {
     label: "Término do contrato por prazo determinado / experiência",
     legalBasis: "CLT, arts. 443 e 445",
     initiative: "NONE",
+    turnover: "INVOLUNTARY",
     noticeTypes: ["NOT_APPLICABLE"],
     requiresDetails: false,
     rights: ["Saldo de salário, férias proporcionais + 1/3 e 13º proporcional", "Saque do FGTS, sem multa"],
@@ -616,6 +634,7 @@ export const TERMINATION_RULES: Record<TerminationReason, TerminationRule> = {
     label: "Rescisão antecipada do contrato a prazo pelo empregador",
     legalBasis: "CLT, art. 479",
     initiative: "EMPLOYER",
+    turnover: "INVOLUNTARY",
     noticeTypes: ["NOT_APPLICABLE"],
     requiresDetails: false,
     rights: ["Indenização de metade da remuneração devida até o fim do contrato", "Multa de 40% do FGTS e saque"],
@@ -626,6 +645,7 @@ export const TERMINATION_RULES: Record<TerminationReason, TerminationRule> = {
     label: "Rescisão antecipada do contrato a prazo pelo empregado",
     legalBasis: "CLT, art. 480",
     initiative: "EMPLOYEE",
+    turnover: "VOLUNTARY",
     noticeTypes: ["NOT_APPLICABLE"],
     requiresDetails: false,
     rights: ["O empregado pode ser obrigado a indenizar os prejuízos (limitado ao que receberia, art. 480, § 1º)"],
@@ -636,6 +656,7 @@ export const TERMINATION_RULES: Record<TerminationReason, TerminationRule> = {
     label: "Rescisão indireta (falta grave do empregador)",
     legalBasis: "CLT, art. 483",
     initiative: "EMPLOYEE",
+    turnover: "VOLUNTARY",
     noticeTypes: ["INDEMNIFIED"],
     requiresDetails: true,
     rights: ["Mesmas verbas da dispensa sem justa causa (normalmente reconhecida judicialmente)"],
@@ -646,6 +667,7 @@ export const TERMINATION_RULES: Record<TerminationReason, TerminationRule> = {
     label: "Falecimento do empregado",
     legalBasis: "Lei 6.858/1980 (pagamento aos dependentes)",
     initiative: "NONE",
+    turnover: "INVOLUNTARY",
     noticeTypes: ["NOT_APPLICABLE"],
     requiresDetails: false,
     rights: ["Verbas pagas aos dependentes habilitados no INSS ou sucessores (Lei 6.858/1980)"],
@@ -656,6 +678,7 @@ export const TERMINATION_RULES: Record<TerminationReason, TerminationRule> = {
     label: "Outro motivo",
     legalBasis: "Descrever a base legal",
     initiative: "NONE",
+    turnover: null,
     noticeTypes: ["NOT_APPLICABLE", "WORKED", "INDEMNIFIED", "WAIVED"],
     requiresDetails: true,
     rights: [],
@@ -768,7 +791,13 @@ export type TerminationInsight = {
   noticeEnd: string | null;
   projectedEnd: string | null;
   yearsOfService: number | null;
+  turnover: TurnoverClass | null;
 };
+
+/** Classe de turnover do motivo; motivo ausente/desconhecido = não classificado. */
+export function terminationTurnoverClass(reason: string | null | undefined): TurnoverClass | null {
+  return isTerminationReason(reason) ? TERMINATION_RULES[reason].turnover : null;
+}
 
 export function describeTermination(
   t: ParsedTermination & { terminationDate: string },
@@ -788,6 +817,7 @@ export function describeTermination(
     noticeEnd: t.noticeType === "WORKED" && days ? addDaysIso(base, days - 1) : null,
     projectedEnd: t.noticeType === "INDEMNIFIED" && days ? addDaysIso(base, days - 1) : null,
     yearsOfService: admissionIso ? completedYears(admissionIso, t.terminationDate) : null,
+    turnover: rule.turnover,
   };
 }
 
