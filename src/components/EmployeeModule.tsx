@@ -686,6 +686,22 @@ export const EmployeeModule = () => {
     if (q) setSearchTerm(q);
   }, [searchParams]);
 
+  // Deep link (ex.: Dashboard › Controle de EPIs): ?edit=<id>&tab=epi abre a edição já na guia.
+  const deepLinkOpenedRef = useRef<string | null>(null);
+  useEffect(() => {
+    const editId = searchParams.get("edit");
+    if (!editId || deepLinkOpenedRef.current === editId || employees.length === 0) return;
+    const employee = employees.find((e) => e.id === editId);
+    if (!employee) return;
+    deepLinkOpenedRef.current = editId;
+    handleOpenModal(employee);
+    const tab = searchParams.get("tab");
+    if (tab && visibleFichaTabs.includes(tab as EmployeeFichaTabId)) {
+      setEmployeeFichaTab(tab as EmployeeFichaTabId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams, employees, visibleFichaTabs]);
+
   useEffect(() => {
     return () => {
       if (lookupDebounceRef.current) clearTimeout(lookupDebounceRef.current);

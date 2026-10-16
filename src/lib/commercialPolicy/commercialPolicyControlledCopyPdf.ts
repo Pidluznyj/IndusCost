@@ -282,7 +282,7 @@ export class Flow {
   }
 
   /** Tabela com bordas; células quebram por largura; o cabeçalho repete ao virar a página. */
-  table(rows: string[][], options: { header: boolean; boldFirstColumn?: boolean }): void {
+  table(rows: string[][], options: { header: boolean; boldFirstColumn?: boolean; boldColumns?: readonly number[] }): void {
     const columns = Math.max(...rows.map((row) => row.length), 1);
     const size = 9;
     const leading = 11.6;
@@ -297,7 +297,9 @@ export class Flow {
     widths = widths.map((value) => value * scale);
 
     const drawRow = (row: string[], isHeader: boolean) => {
-      const fonts: Font[] = row.map((_, col) => (isHeader || (options.boldFirstColumn && col === 0) ? "F2" : "F1"));
+      const fonts: Font[] = row.map((_, col) =>
+        isHeader || (options.boldFirstColumn && col === 0) || options.boldColumns?.includes(col) ? "F2" : "F1"
+      );
       const cells = row.map((cell, col) => wrapPdfText(cell, fonts[col], size, widths[col] - pad * 2));
       const height = Math.max(...cells.map((lines) => lines.length)) * leading + pad + 3;
       if (this.y - height < BOTTOM) {

@@ -21,6 +21,8 @@ import {
   updateEmergencyContact,
   updateEmployeeAbsence,
   updateEmployeeNote,
+  setEpiDeliveryStatus,
+  createEpiDeliveryEvent,
   updateEpiDelivery,
 } from "./peopleProfileMutations.server.ts";
 import { PeopleProfileAccessError } from "./peopleProfileErrors.ts";
@@ -692,7 +694,15 @@ describe("IDOR — registro de outro colaborador", () => {
     assert.deepEqual(capturedWhere, { id: REC, employeeId: EMP });
   });
 
-  it("DELETE de entrega de EPI alheia → 404", async () => {
+  it("DELETE de entrega de EPI (própria ou alheia) → 405 sem tocar o banco", async () => {
+    const prisma = fakePrisma({ hrEpiDelivery: untouchable("hrEpiDelivery") });
+    await assert.rejects(
+      () => deleteEpiDelivery(prisma, { employeeId: EMP, recordId: REC }),
+      expectAccessError("EPI_DELETE_NOT_ALLOWED", 405)
+    );
+  });
+
+  it("cancelar entrega de EPI alheia → 404", async () => {
     let capturedWhere: unknown;
     const prisma = fakePrisma({
       hrEpiDelivery: {
@@ -700,13 +710,13 @@ describe("IDOR — registro de outro colaborador", () => {
           capturedWhere = args.where;
           return null;
         },
-        deleteMany: async () => {
-          throw new Error("não deveria excluir");
+        updateMany: async () => {
+          throw new Error("não deveria alterar");
         },
       },
     });
     await assert.rejects(
-      () => deleteEpiDelivery(prisma, { employeeId: EMP, recordId: REC }),
+      () => setEpiDeliveryStatus(prisma, { employeeId: EMP, recordId: REC, action: "CANCEL", reason: "Lançamento duplicado" }),
       expectAccessError("NOT_FOUND", 404)
     );
     assert.deepEqual(capturedWhere, { id: REC, employeeId: EMP });
@@ -1018,167 +1028,328 @@ describe("contatos de emergência", () => {
   });
 });
 
-describe("EPI — validação e vínculo com o histórico", () => {
-  it("quantidade precisa ser inteiro >= 1 (POST e PATCH)", async () => {
-    const prisma = fakePrisma({ hrEpiDelivery: untouchable("hrEpiDelivery") });
-    await assert.rejects(
-      () =>
-        createEpiDelivery(prisma, {
-          employeeId: EMP,
-          item: "Luva",
-          deliveredAt: new Date("2026-01-01"),
-          quantity: 0,
-        }),
-      expectAccessError("INVALID_QUANTITY", 400)
-    );
-    await assert.rejects(
-      () => updateEpiDelivery(prisma, { employeeId: EMP, recordId: REC, patch: { quantity: 2.5 } }),
-      expectAccessError("INVALID_QUANTITY", 400)
-    );
-    await assert.rejects(
-      () => updateEpiDelivery(prisma, { employeeId: EMP, recordId: REC, patch: { item: "" } }),
-      expectAccessError("REQUIRED_FIELD", 400)
-    );
+describe("EPI — entregas do catálogo, substituição e cancelamento", () => {
+  const ITEM = "55555555-5555-4555-8555-555555555555";
+  const PREV = "66666666-6666-4666-8666-666666666666";
+  const TODAY = "2026-10-16";
+  const catalogItem = (over: AnyArgs = {}) => ({
+    id: ITEM,
+    code: "EPI-0007",
+    description: "Protetor auricular plug",
+    type: "EPI",
+    caNumber: "5745",
+    unit: "PAIR",
+    replacementDays: 180,
+    active: true,
+    ...over,
   });
-
-  it("a criação grava metadata { recordType, recordId } no evento", async () => {
-    let historyData: AnyArgs | null = null;
-    const prisma = fakePrisma({
-      hrEpiDelivery: { create: async (args: AnyArgs) => ({ id: REC, ...args.data }) },
+  function deliveryPrisma(sink: AnyArgs, over: AnyArgs = {}) {
+    return fakePrisma({
+      employee: { findUnique: async () => ({ status: over.employeeStatus ?? "ACTIVE" }) },
+      hrEpiItem: { findUnique: async () => catalogItem(over.item) },
+      appUser: { findUnique: async () => ({ name: "Analista de RH" }) },
+      hrEpiDeliveryEvent: {
+        create: async (args: AnyArgs) => {
+          sink.event = args.data;
+          return { id: "ev-1", ...args.data };
+        },
+      },
+      hrEpiDelivery: {
+        create: async (args: AnyArgs) => {
+          sink.created = args.data;
+          sink.items = [...(sink.items ?? []), args.data];
+          return { id: REC, ...args.data };
+        },
+        findFirst: async () => over.previous ?? null,
+        updateMany: async (args: AnyArgs) => {
+          sink.updates = [...(sink.updates ?? []), args];
+          return { count: over.updateCount ?? 1 };
+        },
+      },
       hrEmployeeHistory: {
         create: async (args: AnyArgs) => {
-          historyData = args.data;
+          sink.history = args.data;
           return { id: "hist-epi" };
         },
       },
     });
-    await createEpiDelivery(prisma, {
+  }
+
+  it("grava o retrato do item, o responsável autenticado e calcula a próxima troca", async () => {
+    const sink: AnyArgs = {};
+    await createEpiDelivery(deliveryPrisma(sink), {
       employeeId: EMP,
-      item: "  Luva nitrílica ",
-      deliveredAt: new Date("2026-01-01"),
+      todayIso: TODAY,
+      actorUserId: "77777777-7777-4777-8777-777777777777",
+      body: { itemId: ITEM, deliveredOn: "2026-10-16", quantity: 2 },
     });
-    assert.deepEqual(historyData?.metadata, { recordType: "epiDelivery", recordId: REC });
-    assert.equal(historyData?.notes, "Luva nitrílica");
+    assert.equal(sink.created.itemCode, "EPI-0007");
+    assert.equal(sink.created.item, "Protetor auricular plug");
+    assert.equal(sink.created.itemCaNumber, "5745");
+    assert.equal(sink.created.itemUnit, "PAIR");
+    assert.equal(sink.created.replacementDays, 180);
+    assert.equal((sink.created.replacementDueDate as Date).toISOString().slice(0, 10), "2027-04-14");
+    assert.equal((sink.created.deliveredAt as Date).toISOString(), "2026-10-16T12:00:00.000Z");
+    assert.equal(sink.created.responsibleName, "Analista de RH");
+    assert.equal(sink.created.replacementAdjustReason, null);
+    assert.deepEqual(sink.history.metadata, { recordType: "epiDelivery", recordId: REC });
+    assert.equal(sink.history.notes, "EPI-0007 · Protetor auricular plug");
   });
 
-  it("DELETE remove o evento vinculado por metadata", async () => {
-    let linkedWhere: AnyArgs | null = null;
-    const deleted: AnyArgs[] = [];
+  it("evento com vários itens: um evento, um registro por item, prazos independentes", async () => {
+    const sink: AnyArgs = {};
+    const result = await createEpiDeliveryEvent(deliveryPrisma(sink), {
+      employeeId: EMP,
+      todayIso: TODAY,
+      body: {
+        deliveredOn: "2026-10-16",
+        notes: "Integração da célula 4",
+        items: [
+          { itemId: ITEM, quantity: 1 },
+          { itemId: ITEM, quantity: 2, replacementDays: 90, adjustReason: "Uso em ambiente com óleo" },
+        ],
+      },
+    });
+    assert.equal(sink.event.notes, "Integração da célula 4");
+    assert.equal((sink.event.deliveredAt as Date).toISOString(), "2026-10-16T12:00:00.000Z");
+    assert.equal(sink.items.length, 2);
+    assert.ok(sink.items.every((i: AnyArgs) => i.eventId === "ev-1"));
+    assert.equal((sink.items[0].replacementDueDate as Date).toISOString().slice(0, 10), "2027-04-14");
+    assert.equal((sink.items[1].replacementDueDate as Date).toISOString().slice(0, 10), "2027-01-14");
+    assert.equal(result.deliveries.length, 2);
+  });
+
+  it("evento: sem itens, item repetido na substituição ou item inválido recusam tudo", async () => {
+    const make = (body: AnyArgs) => createEpiDeliveryEvent(deliveryPrisma({}), { employeeId: EMP, todayIso: TODAY, body });
+    await assert.rejects(() => make({ deliveredOn: TODAY, items: [] }), expectAccessError("INVALID_EPI_DELIVERY", 400));
+    await assert.rejects(
+      () => make({ deliveredOn: TODAY, items: [{ itemId: ITEM, replacesDeliveryId: PREV }, { itemId: ITEM, replacesDeliveryId: PREV }] }),
+      expectAccessError("INVALID_EPI_DELIVERY", 400)
+    );
+    const sink: AnyArgs = {};
+    await assert.rejects(
+      () =>
+        createEpiDeliveryEvent(deliveryPrisma(sink), {
+          employeeId: EMP,
+          todayIso: TODAY,
+          body: { deliveredOn: TODAY, items: [{ itemId: ITEM }, { itemId: ITEM, quantity: 0 }] },
+        }),
+      (err: unknown) => err instanceof PeopleProfileAccessError && err.status === 400 && /Item 2/.test(err.message)
+    );
+  });
+
+  it("item sem prazo: entrega válida, sem troca programada", async () => {
+    const sink: AnyArgs = {};
+    await createEpiDelivery(deliveryPrisma(sink, { item: { replacementDays: null } }), {
+      employeeId: EMP,
+      todayIso: TODAY,
+      body: { itemId: ITEM, deliveredOn: "2026-10-10" },
+    });
+    assert.equal(sink.created.replacementDays, null);
+    assert.equal(sink.created.replacementDueDate, null);
+  });
+
+  it("valida quantidade, data futura, item inativo, desligado e prazo ajustado sem justificativa", async () => {
+    const create = (body: AnyArgs, over: AnyArgs = {}) =>
+      createEpiDelivery(deliveryPrisma({}, over), { employeeId: EMP, todayIso: TODAY, body: { itemId: ITEM, deliveredOn: TODAY, ...body } });
+    await assert.rejects(() => create({ quantity: 0 }), expectAccessError("INVALID_EPI_DELIVERY", 400));
+    await assert.rejects(() => create({ quantity: 1.5 }), expectAccessError("INVALID_EPI_DELIVERY", 400));
+    await assert.rejects(() => create({ deliveredOn: "2026-10-17" }), expectAccessError("INVALID_EPI_DELIVERY", 400));
+    await assert.rejects(() => create({}, { item: { active: false } }), expectAccessError("EPI_ITEM_INACTIVE", 400));
+    await assert.rejects(() => create({}, { employeeStatus: "INACTIVE" }), expectAccessError("EMPLOYEE_TERMINATED", 409));
+    await assert.rejects(() => create({ replacementDays: 90 }), expectAccessError("INVALID_EPI_DELIVERY", 400));
+    await assert.rejects(() => create({ replacementDueDate: "2027-01-01" }), expectAccessError("INVALID_EPI_DELIVERY", 400));
+  });
+
+  it("prazo ajustado com justificativa é aceito e registrado", async () => {
+    const sink: AnyArgs = {};
+    await createEpiDelivery(deliveryPrisma(sink), {
+      employeeId: EMP,
+      todayIso: TODAY,
+      body: { itemId: ITEM, deliveredOn: "2026-10-16", replacementDays: 90, adjustReason: "Uso em ambiente com óleo, troca mais frequente" },
+    });
+    assert.equal(sink.created.replacementDays, 90);
+    assert.equal((sink.created.replacementDueDate as Date).toISOString().slice(0, 10), "2027-01-14");
+    assert.match(sink.created.replacementAdjustReason, /óleo/);
+  });
+
+  it("substituição: encerra a vigente como Substituído com guarda de concorrência", async () => {
+    const sink: AnyArgs = {};
+    const previous = { id: PREV, deliveredAt: new Date("2026-04-20T12:00:00.000Z"), status: "ACTIVE" };
+    await createEpiDelivery(deliveryPrisma(sink, { previous }), {
+      employeeId: EMP,
+      todayIso: TODAY,
+      body: { itemId: ITEM, deliveredOn: "2026-10-16", replacesDeliveryId: PREV },
+    });
+    const [upd] = sink.updates;
+    assert.deepEqual(upd.where, { id: PREV, employeeId: EMP, status: "ACTIVE", replacedByDeliveryId: null });
+    assert.equal(upd.data.status, "REPLACED");
+    assert.equal(upd.data.replacedByDeliveryId, REC);
+    assert.match(sink.history.notes, /substituição/);
+  });
+
+  it("substituição perde a corrida (já substituída) → 409 e a transação desfaz", async () => {
+    const previous = { id: PREV, deliveredAt: new Date("2026-04-20T12:00:00.000Z"), status: "ACTIVE" };
+    await assert.rejects(
+      () =>
+        createEpiDelivery(deliveryPrisma({}, { previous, updateCount: 0 }), {
+          employeeId: EMP,
+          todayIso: TODAY,
+          body: { itemId: ITEM, deliveredOn: "2026-10-16", replacesDeliveryId: PREV },
+        }),
+      expectAccessError("EPI_NOT_ACTIVE", 409)
+    );
+    await assert.rejects(
+      () =>
+        createEpiDelivery(deliveryPrisma({}, { previous: { ...previous, status: "CANCELLED" } }), {
+          employeeId: EMP,
+          todayIso: TODAY,
+          body: { itemId: ITEM, deliveredOn: "2026-10-16", replacesDeliveryId: PREV },
+        }),
+      expectAccessError("EPI_NOT_ACTIVE", 409)
+    );
+  });
+
+  it("cancelar exige motivo; cancelar uma substituição devolve a anterior a Vigente", async () => {
+    const updates: AnyArgs[] = [];
+    let historyUpdate: AnyArgs | null = null;
     const prisma = fakePrisma({
       hrEpiDelivery: {
         findFirst: async () => ({
           id: REC,
-          item: "Luva",
-          deliveredAt: new Date("2026-01-01T00:00:00.000Z"),
+          item: "Protetor auricular plug",
+          itemCode: "EPI-0007",
+          deliveredAt: new Date("2026-10-16T12:00:00.000Z"),
+          status: "ACTIVE",
+          replaces: { id: PREV },
         }),
-        deleteMany: async (args: AnyArgs) => {
-          deleted.push({ model: "epi", where: args.where });
+        updateMany: async (args: AnyArgs) => {
+          updates.push(args);
           return { count: 1 };
         },
       },
       hrEmployeeHistory: {
-        findFirst: async (args: AnyArgs) => {
-          linkedWhere = args.where;
-          return { id: "hist-linked" };
-        },
-        findMany: async () => {
-          throw new Error("vínculo por metadata dispensa o casamento legado");
-        },
-        deleteMany: async (args: AnyArgs) => {
-          deleted.push({ model: "history", where: args.where });
+        findFirst: async () => ({ id: "hist-epi" }),
+        updateMany: async (args: AnyArgs) => {
+          historyUpdate = args;
           return { count: 1 };
         },
       },
     });
-    const result = await deleteEpiDelivery(prisma, { employeeId: EMP, recordId: REC });
-    assert.deepEqual(result, { ok: true });
-    assert.deepEqual(linkedWhere, {
+    await assert.rejects(
+      () => setEpiDeliveryStatus(prisma, { employeeId: EMP, recordId: REC, action: "CANCEL", reason: "erro" }),
+      expectAccessError("INVALID_REASON", 400)
+    );
+    const result = await setEpiDeliveryStatus(prisma, {
       employeeId: EMP,
-      AND: [
-        { metadata: { path: ["recordType"], equals: "epiDelivery" } },
-        { metadata: { path: ["recordId"], equals: REC } },
-      ],
+      recordId: REC,
+      action: "CANCEL",
+      reason: "Lançado no colaborador errado",
     });
-    assert.deepEqual(deleted, [
-      { model: "history", where: { id: "hist-linked", employeeId: EMP } },
-      { model: "epi", where: { id: REC, employeeId: EMP } },
-    ]);
+    assert.equal(result.status, "CANCELLED");
+    assert.equal(updates[0].where.status, "ACTIVE");
+    assert.equal(updates[0].data.status, "CANCELLED");
+    assert.deepEqual(updates[1].where, { id: PREV, employeeId: EMP, status: "REPLACED", replacedByDeliveryId: REC });
+    assert.equal(updates[1].data.status, "ACTIVE");
+    assert.equal(result.restoredDeliveryId, PREV);
+    assert.match(historyUpdate?.data.notes, /cancelada: Lançado no colaborador errado/);
   });
 
-  it("DELETE de registro antigo cai no casamento exato legado (no máximo uma linha)", async () => {
-    let legacyArgs: AnyArgs | null = null;
-    const deleted: AnyArgs[] = [];
-    const deliveredAt = new Date("2025-03-10T00:00:00.000Z");
+  it("encerrar/cancelar só a partir de Vigente", async () => {
     const prisma = fakePrisma({
       hrEpiDelivery: {
-        findFirst: async () => ({ id: REC, item: "Botina", deliveredAt }),
-        deleteMany: async (args: AnyArgs) => {
-          deleted.push({ model: "epi", where: args.where });
-          return { count: 1 };
-        },
-      },
-      hrEmployeeHistory: {
-        findFirst: async () => null,
-        findMany: async (args: AnyArgs) => {
-          legacyArgs = args;
-          return [
-            // Mesmo item/data, mas já vinculado a OUTRA entrega: não pode ser reaproveitado.
-            { id: "hist-other", metadata: { recordType: "epiDelivery", recordId: "outra" } },
-            { id: "hist-legacy-1", metadata: null },
-            { id: "hist-legacy-2", metadata: null },
-          ];
-        },
-        deleteMany: async (args: AnyArgs) => {
-          deleted.push({ model: "history", where: args.where });
-          return { count: 1 };
-        },
+        findFirst: async () => ({ id: REC, item: "Botina", deliveredAt: new Date(), status: "REPLACED", replaces: null }),
+        updateMany: async () => ({ count: 0 }),
       },
     });
-    await deleteEpiDelivery(prisma, { employeeId: EMP, recordId: REC });
-    assert.deepEqual(legacyArgs?.where, {
+    await assert.rejects(
+      () => setEpiDeliveryStatus(prisma, { employeeId: EMP, recordId: REC, action: "CLOSE", reason: "Colaborador mudou de função" }),
+      expectAccessError("EPI_NOT_ACTIVE", 409)
+    );
+  });
+
+  it("entrega não é excluída fisicamente", async () => {
+    await assert.rejects(
+      () => deleteEpiDelivery(fakePrisma({ hrEpiDelivery: untouchable("hrEpiDelivery") }), { employeeId: EMP, recordId: REC }),
+      expectAccessError("EPI_DELETE_NOT_ALLOWED", 405)
+    );
+  });
+
+  it("retificação de entrega do catálogo: item imutável; cancelada não muda; prazo diferente exige justificativa", async () => {
+    const row = (over: AnyArgs = {}) => ({
+      id: REC,
+      item: "Protetor auricular plug",
+      itemCode: "EPI-0007",
+      itemId: ITEM,
+      deliveredAt: new Date("2026-10-16T12:00:00.000Z"),
+      quantity: 1,
+      size: null,
+      notes: null,
+      status: "ACTIVE",
+      replacementDays: 180,
+      replacementDueDate: new Date("2027-04-14T00:00:00.000Z"),
+      eventId: "ev-1",
+      catalogItem: { replacementDays: 180 },
+      ...over,
+    });
+    const updates: AnyArgs[] = [];
+    const eventUpdates: AnyArgs[] = [];
+    const prismaFor = (r: AnyArgs) =>
+      fakePrisma({
+        hrEpiDelivery: {
+          findFirst: async () => r,
+          count: async () => 1,
+          updateMany: async (args: AnyArgs) => {
+            updates.push(args);
+            return { count: 1 };
+          },
+        },
+        hrEpiDeliveryEvent: { updateMany: async (args: AnyArgs) => ({ count: (eventUpdates.push(args), 1) }) },
+        hrEmployeeHistory: { findFirst: async () => ({ id: "h" }), updateMany: async () => ({ count: 1 }) },
+      });
+    await assert.rejects(
+      () => updateEpiDelivery(prismaFor(row()), { employeeId: EMP, recordId: REC, todayIso: TODAY, patch: { itemId: PREV } }),
+      expectAccessError("EPI_ITEM_IMMUTABLE", 400)
+    );
+    await assert.rejects(
+      () => updateEpiDelivery(prismaFor(row({ status: "CANCELLED" })), { employeeId: EMP, recordId: REC, todayIso: TODAY, patch: { quantity: 2 } }),
+      expectAccessError("EPI_CANCELLED", 409)
+    );
+    await assert.rejects(
+      () => updateEpiDelivery(prismaFor(row()), { employeeId: EMP, recordId: REC, todayIso: TODAY, patch: { replacementDueDate: "2027-01-10" } }),
+      expectAccessError("INVALID_EPI_DELIVERY", 400)
+    );
+    // Data já ajustada (com justificativa gravada): corrigir outro campo não exige nova justificativa.
+    await updateEpiDelivery(
+      prismaFor(row({ replacementDueDate: new Date("2027-01-01T00:00:00.000Z"), replacementAdjustReason: "Desgaste acelerado na linha 3" })),
+      { employeeId: EMP, recordId: REC, todayIso: TODAY, patch: { notes: "Entregue no vestiário" } }
+    );
+    const kept = updates[updates.length - 1];
+    assert.equal((kept.data.replacementDueDate as Date).toISOString().slice(0, 10), "2027-01-01");
+    assert.equal(kept.data.replacementAdjustReason, "Desgaste acelerado na linha 3");
+    await updateEpiDelivery(prismaFor(row()), {
       employeeId: EMP,
-      eventType: { in: ["EPI_DELIVERY"] },
-      effectiveDate: deliveredAt,
-      notes: "Botina",
+      recordId: REC,
+      todayIso: TODAY,
+      patch: { quantity: 3, deliveredOn: "2026-10-15" },
     });
-    assert.deepEqual(deleted, [
-      { model: "history", where: { id: "hist-legacy-1", employeeId: EMP } },
-      { model: "epi", where: { id: REC, employeeId: EMP } },
-    ]);
+    const last = updates[updates.length - 1];
+    assert.equal(last.data.quantity, 3);
+    // Evento de um item: a data do evento acompanha.
+    assert.equal((eventUpdates[eventUpdates.length - 1].data.deliveredAt as Date).toISOString(), "2026-10-15T12:00:00.000Z");
+    // Mudou a data da entrega: a próxima troca é recalculada pelo prazo aplicado.
+    assert.equal((last.data.replacementDueDate as Date).toISOString().slice(0, 10), "2027-04-13");
   });
 
-  it("sem evento correspondente segue em silêncio", async () => {
-    let historyDeleted = false;
-    let epiDeleted = false;
-    const prisma = fakePrisma({
-      hrEpiDelivery: {
-        findFirst: async () => ({ id: REC, item: "Botina", deliveredAt: new Date("2025-03-10") }),
-        deleteMany: async () => {
-          epiDeleted = true;
-          return { count: 1 };
-        },
-      },
-      hrEmployeeHistory: {
-        findFirst: async () => null,
-        findMany: async () => [],
-        deleteMany: async () => {
-          historyDeleted = true;
-          return { count: 0 };
-        },
-      },
-    });
-    await deleteEpiDelivery(prisma, { employeeId: EMP, recordId: REC });
-    assert.equal(epiDeleted, true);
-    assert.equal(historyDeleted, false);
-  });
-
-  it("PATCH em linha legada sincroniza o evento e grava o vínculo", async () => {
+  it("PATCH em linha legada (texto livre) sincroniza o evento e grava o vínculo", async () => {
     let historyUpdate: AnyArgs | null = null;
     const prisma = fakePrisma({
       hrEpiDelivery: {
         findFirst: async () => ({
           id: REC,
           item: "Botina",
+          itemId: null,
+          status: "ACTIVE",
           deliveredAt: new Date("2025-03-10T00:00:00.000Z"),
         }),
         updateMany: async () => ({ count: 1 }),
@@ -1195,6 +1366,7 @@ describe("EPI — validação e vínculo com o histórico", () => {
     await updateEpiDelivery(prisma, {
       employeeId: EMP,
       recordId: REC,
+      todayIso: TODAY,
       patch: { item: "Botina de segurança", returnedAt: "2025-09-01" },
     });
     assert.deepEqual(historyUpdate?.where, { id: "hist-legacy", employeeId: EMP });
@@ -1241,6 +1413,7 @@ describe("documentos e foto", () => {
           return { count: 1 };
         },
       },
+      hrEpiDeliveryReceipt: { count: async () => 0 },
       hrEmployeeHistory: {
         findFirst: async () => null,
         findMany: async (args: AnyArgs) => {
@@ -1261,6 +1434,23 @@ describe("documentos e foto", () => {
     assert.equal(legacyWhere?.createdByUserId, "u1");
     assert.ok(legacyWhere?.effectiveDate.gte.getTime() < createdAt.getTime());
     assert.ok(legacyWhere?.effectiveDate.lte.getTime() > createdAt.getTime());
+  });
+
+  it("documento que é comprovante de entrega de EPI não é excluído → 409", async () => {
+    const prisma = fakePrisma({
+      hrEmployeeDocument: {
+        findFirst: async () => ({ id: REC, displayName: "Ficha EPI", storageKey: "k", createdAt: new Date(), uploadedByUserId: null }),
+        deleteMany: async () => {
+          throw new Error("não deveria excluir");
+        },
+      },
+      hrEpiDeliveryReceipt: { count: async (args: AnyArgs) => (args.where.documentId === REC ? 1 : 0) },
+      hrEmployeeHistory: untouchable("hrEmployeeHistory"),
+    });
+    await assert.rejects(
+      () => deleteEmployeeDocument(prisma, { employeeId: EMP, recordId: REC }),
+      expectAccessError("DOCUMENT_IN_USE", 409)
+    );
   });
 
   it("foto que não é JPEG/PNG/WebP → 400 antes de gravar arquivo ou banco", async () => {

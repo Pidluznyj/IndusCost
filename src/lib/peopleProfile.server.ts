@@ -6,6 +6,8 @@
 import { describeLeave, isLeaveType } from "./employeeLifecycle.js";
 import { loadEmployeeLifecycle, redactLifecycle, toLeaveFacts } from "./employeeLifecycle.server.js";
 import { businessTodayIso } from "./competencies/competencyDomain.js";
+import { daysUntil, epiDueBand } from "./epi/epiRules.js";
+import { epiEventDocumentState } from "./epi/epiForms.server.js";
 import type { Prisma, PrismaClient } from "@prisma/client";
 import type { EmployeePermissionBag } from "./employeesPermissions.js";
 import { logEmployeeHrAudit } from "./employeeHrAudit.js";
@@ -564,27 +566,146 @@ export async function loadPeopleEpi(prisma: PrismaClient, employeeId: string) {
     },
   });
   if (!row) throw new PeopleProfileAccessError("NOT_FOUND", "Colaborador não encontrado.", 404);
-  const deliveries = await prisma.hrEpiDelivery.findMany({
+  // Entregas = eventos (ocasião, data, ficha, comprovantes) com seus itens (vencimento e situação próprios).
+  const events = await prisma.hrEpiDeliveryEvent.findMany({
     where: { employeeId },
-    orderBy: { deliveredAt: "desc" },
-    take: 50,
+    orderBy: [{ deliveredAt: "desc" }, { createdAt: "desc" }],
+    take: 200,
     select: {
       id: true,
-      item: true,
       deliveredAt: true,
-      quantity: true,
-      size: true,
-      validUntil: true,
       responsibleName: true,
-      returnedAt: true,
       notes: true,
+      createdAt: true,
       createdByUserId: true,
+      deliveries: {
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+        select: {
+          id: true,
+          eventId: true,
+          item: true,
+          deliveredAt: true,
+          quantity: true,
+          size: true,
+          validUntil: true,
+          responsibleName: true,
+          returnedAt: true,
+          notes: true,
+          createdByUserId: true,
+          createdAt: true,
+          itemId: true,
+          itemCode: true,
+          itemType: true,
+          itemCaNumber: true,
+          itemUnit: true,
+          replacementDays: true,
+          replacementDueDate: true,
+          replacementAdjustReason: true,
+          status: true,
+          statusReason: true,
+          statusChangedAt: true,
+          statusChangedByUserId: true,
+          replacedByDeliveryId: true,
+        },
+      },
+      forms: {
+        orderBy: { revision: "desc" },
+        select: {
+          id: true,
+          documentNumber: true,
+          revision: true,
+          status: true,
+          issuedAt: true,
+          issuedByName: true,
+          printCount: true,
+          lastPrintedAt: true,
+        },
+      },
+      receipts: {
+        orderBy: { uploadedAt: "desc" },
+        select: {
+          id: true,
+          formId: true,
+          documentId: true,
+          originalFileName: true,
+          mimeType: true,
+          fileSize: true,
+          fileSha256: true,
+          status: true,
+          supersededAt: true,
+          uploadedAt: true,
+          uploadedByUserId: true,
+          batchId: true,
+          validationResult: true,
+          validatedAt: true,
+          validatedByUserId: true,
+          validationNote: true,
+          form: { select: { documentNumber: true } },
+        },
+      },
     },
   });
+  const todayIso = businessTodayIso(new Date());
   const names = await resolveActorNames(
     prisma,
-    deliveries.map((d) => d.createdByUserId)
+    events.flatMap((e) => [
+      e.createdByUserId,
+      ...e.deliveries.flatMap((d) => [d.createdByUserId, d.statusChangedByUserId]),
+      ...e.receipts.flatMap((r) => [r.uploadedByUserId, r.validatedByUserId]),
+    ])
   );
+  const iso = (d: Date | null) => (d ? d.toISOString() : null);
+  const day = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : null);
+  const deliveryDto = (d: (typeof events)[number]["deliveries"][number]) => ({
+    ...d,
+    deliveredAt: d.deliveredAt.toISOString(),
+    validUntil: iso(d.validUntil),
+    returnedAt: iso(d.returnedAt),
+    createdAt: d.createdAt.toISOString(),
+    createdByName: d.createdByUserId ? names.get(d.createdByUserId) ?? null : null,
+    replacementDueDate: day(d.replacementDueDate),
+    statusChangedAt: iso(d.statusChangedAt),
+    statusChangedByName: d.statusChangedByUserId ? names.get(d.statusChangedByUserId) ?? null : null,
+    // Vencimento só vale para entrega vigente com troca programada (o status não muda sozinho).
+    dueBand: d.status === "ACTIVE" && d.replacementDueDate ? epiDueBand(day(d.replacementDueDate)!, todayIso) : null,
+    daysLeft: d.status === "ACTIVE" && d.replacementDueDate ? daysUntil(day(d.replacementDueDate)!, todayIso) : null,
+  });
+  const eventDtos = events.map((e) => {
+    const items = e.deliveries.map(deliveryDto);
+    return {
+      id: e.id,
+      deliveredAt: e.deliveredAt.toISOString(),
+      responsibleName: e.responsibleName,
+      notes: e.notes,
+      createdAt: e.createdAt.toISOString(),
+      createdByName: e.createdByUserId ? names.get(e.createdByUserId) ?? null : null,
+      itemCount: items.length,
+      activeItemCount: items.filter((i) => i.status !== "CANCELLED").length,
+      items,
+      // Ficha emitida (revisões) e comprovantes (histórico): emitir ≠ comprovar; anexar ≠ validar.
+      forms: e.forms.map((f) => ({ ...f, issuedAt: f.issuedAt.toISOString(), lastPrintedAt: f.lastPrintedAt.toISOString() })),
+      receipts: e.receipts.map((r) => ({
+        id: r.id,
+        formId: r.formId,
+        formDocumentNumber: r.form?.documentNumber ?? null,
+        documentId: r.documentId,
+        originalFileName: r.originalFileName,
+        mimeType: r.mimeType,
+        fileSize: r.fileSize,
+        fileSha256: r.fileSha256,
+        status: r.status,
+        supersededAt: iso(r.supersededAt),
+        uploadedAt: r.uploadedAt.toISOString(),
+        uploadedByName: r.uploadedByUserId ? names.get(r.uploadedByUserId) ?? null : null,
+        batchId: r.batchId,
+        validationResult: r.validationResult,
+        validatedAt: iso(r.validatedAt),
+        validatedByName: r.validatedByUserId ? names.get(r.validatedByUserId) ?? null : null,
+        validationNote: r.validationNote,
+      })),
+      document: epiEventDocumentState(e.forms, e.receipts),
+    };
+  });
   return {
     // Rótulos da escala anterior (XGG / EXGG) aparecem na escala atual.
     sizes: row
@@ -597,13 +718,10 @@ export async function loadPeopleEpi(prisma: PrismaClient, employeeId: string) {
           shoeSize: canonicalEpiSize(row.shoeSize, EPI_SHOE_SIZE_OPTIONS) || null,
         }
       : row,
-    deliveries: deliveries.map((d) => ({
-      ...d,
-      deliveredAt: d.deliveredAt.toISOString(),
-      validUntil: d.validUntil ? d.validUntil.toISOString() : null,
-      returnedAt: d.returnedAt ? d.returnedAt.toISOString() : null,
-      createdByName: d.createdByUserId ? names.get(d.createdByUserId) ?? null : null,
-    })),
+    events: eventDtos,
+    /** Lista plana dos itens (compatibilidade). */
+    deliveries: eventDtos.flatMap((e) => e.items),
+    todayIso,
   };
 }
 

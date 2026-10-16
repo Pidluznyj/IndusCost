@@ -36,6 +36,7 @@ import {
   EMPLOYEES_ACTIONS,
   EMPLOYEES_RESOURCE_KEYS,
 } from "@/src/lib/employeesAccess";
+import { canManageEmployeeEpi } from "@/src/lib/employeesPermissions";
 import { fetchJsonOk } from "@/src/lib/http";
 import { formatCompactCurrency } from "@/src/lib/formatFinancialMetric";
 import { CONTRACT_TYPE_OPTIONS } from "@/src/lib/employeeHrUi";
@@ -49,6 +50,7 @@ import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
 import { SalesOrderKpiSection } from "@/src/components/sales/SalesOrderKpiSection";
 import { cn } from "@/src/lib/utils";
 import { EmployeeEvaluationPendenciesCard } from "@/src/components/employee/EmployeeEvaluationPendenciesCard";
+import { EpiReplacementsSection } from "@/src/components/employee/epi/EpiReplacementsSection";
 import "./employees-dashboard.css";
 
 const CLASSIFICATION_OPTIONS = [
@@ -187,6 +189,10 @@ export function EmployeesDashboardPage() {
       EMPLOYEES_RESOURCE_KEYS.sensitiveData,
       EMPLOYEES_ACTIONS.view
     );
+
+  const canManageEpi =
+    canManageEmployeeEpi(auth) ||
+    permissions.canPerformAction(EMPLOYEES_RESOURCE_KEYS.epi, EMPLOYEES_ACTIONS.manage);
 
   const [draft, setDraft] = useState<UiFilters>(DEFAULT_FILTERS);
   const [applied, setApplied] = useState<UiFilters>(DEFAULT_FILTERS);
@@ -624,6 +630,8 @@ export function EmployeesDashboardPage() {
           </p>
         ) : null}
       </SalesOrderKpiSection>
+
+      <EpiReplacementsSection canManage={canManageEpi} />
 
       <div className="grid gap-4 lg:grid-cols-2">
         <div className="employees-dashboard__panel" data-testid="employees-dashboard-composition">

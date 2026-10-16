@@ -10,7 +10,8 @@
 | Conceito | Neste cadastro? | Fonte |
 |----------|-----------------|-------|
 | Preferência / tamanho | **Sim** | enums UI (`EPI_*_SIZE_OPTIONS`) |
-| Necessidade / entrega / estoque / devolução / validade | **Não** | Inventário tem `PPE`, mas **sem** vínculo Employee |
+| Catálogo de EPIs/uniformes, entregas, substituição e troca programada | **Sim** (2026-10-16) | `HrEpiItem` + `HrEpiDelivery`, ver [`epi-uniforms.md`](./epi-uniforms.md) |
+| Estoque / lote / fornecedor / validade do CA | **Não** | Inventário tem `PPE`, mas **sem** vínculo Employee |
 | Dados bancários / matrícula / folha oficial | **Não** no modelo Employee |
 | Códigos externos | — | sem campos |
 | Observações gerais | **Sim** | `professionalNotes` / `adminNotes` / `epiNotes` |

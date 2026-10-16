@@ -16,7 +16,8 @@ import {
 } from "./peopleProfileHistory.js";
 import { assertNoManagerCycleCte } from "./peopleProfileHierarchy.server.js";
 import { PeopleProfileAccessError } from "./peopleProfileErrors.js";
-import { addDaysIso, isLeaveType, legalLeaveEnd, toIsoDay, validateLeave } from "./employeeLifecycle.js";
+import { addDaysIso, isIsoDate, isLeaveType, legalLeaveEnd, toIsoDay, validateLeave } from "./employeeLifecycle.js";
+import { validateEpiDeliveryInput, validateStatusReason, type EpiDeliveryInput } from "./epi/epiRules.js";
 import { saveAppLocalFile, readAppLocalFile, deleteAppLocalFile } from "./appLocalFileStorage.js";
 import {
   PEOPLE_CAREER_POST_EVENT_TYPES,
@@ -1751,141 +1752,532 @@ export async function deleteEmployeeNote(
   });
 }
 
-export async function createEpiDelivery(
+/** Meio-dia UTC: a data de calendário da entrega não "volta um dia" em nenhum fuso do Brasil. */
+function epiDayToDate(iso: string): Date {
+  return new Date(`${iso}T12:00:00.000Z`);
+}
+
+function epiHistoryLabel(row: { item: string; itemCode?: string | null }): string {
+  return row.itemCode ? `${row.itemCode} · ${row.item}` : row.item;
+}
+
+async function actorDisplayName(db: Db, actorUserId: string | null | undefined): Promise<string | null> {
+  if (!actorUserId || !isEmployeeUuid(actorUserId)) return null;
+  const user = await db.appUser.findUnique({ where: { id: actorUserId }, select: { name: true } });
+  return user?.name ?? null;
+}
+
+/** Itens por evento de entrega (uma ficha). */
+export const EPI_EVENT_MAX_ITEMS = 30;
+
+/**
+ * Registra um EVENTO de entrega (uma ocasião, uma data) com um ou mais itens do catálogo (só ativos).
+ * Cada item guarda o retrato do catálogo e tem prazo, troca e situação próprios. Um item com
+ * `replacesDeliveryId` é uma substituição: a entrega anterior vigente passa a "Substituído" na mesma
+ * transação. O responsável é o usuário autenticado. Tudo ou nada: um item inválido desfaz o evento.
+ */
+export async function createEpiDeliveryEvent(
   prisma: PrismaClient,
   input: {
     employeeId: string;
-    item: string;
-    deliveredAt: Date;
-    quantity?: number;
-    size?: string | null;
-    validUntil?: Date | null;
-    responsibleName?: string | null;
-    notes?: string | null;
+    body: Record<string, unknown>;
+    todayIso: string;
     actorUserId?: string | null;
   }
 ) {
-  const item = normalizeRequiredText(input.item, "Item", PEOPLE_RECORD_TEXT_LIMITS.epiItem);
-  const quantity = normalizeQuantity(input.quantity ?? 1);
-  const size = normalizeOptionalText(input.size, "Tamanho", PEOPLE_RECORD_TEXT_LIMITS.epiSize);
-  const responsibleName = normalizeOptionalText(
-    input.responsibleName,
-    "Responsável",
-    PEOPLE_RECORD_TEXT_LIMITS.responsibleName
-  );
-  const notes = normalizeOptionalText(input.notes, "Observações", PEOPLE_RECORD_TEXT_LIMITS.notes);
+  if (!isEmployeeUuid(input.employeeId)) throw new PeopleProfileAccessError("INVALID_ID", "Registro inválido.", 400);
+  const invalid = (message: string): never => {
+    throw new PeopleProfileAccessError("INVALID_EPI_DELIVERY", message, 400);
+  };
+  const rawItems = Array.isArray(input.body.items) ? (input.body.items as unknown[]) : [];
+  if (rawItems.length === 0) invalid("Inclua ao menos um EPI / uniforme na entrega.");
+  if (rawItems.length > EPI_EVENT_MAX_ITEMS) invalid(`No máximo ${EPI_EVENT_MAX_ITEMS} itens por entrega.`);
+  const items = rawItems.map((raw, index) => {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) invalid(`Item ${index + 1}: dados inválidos.`);
+    const it = raw as Record<string, unknown>;
+    if (typeof it.itemId !== "string" || !isEmployeeUuid(it.itemId)) invalid(`Item ${index + 1}: selecione o EPI / uniforme.`);
+    if (it.replacesDeliveryId != null && it.replacesDeliveryId !== "") {
+      if (typeof it.replacesDeliveryId !== "string" || !isEmployeeUuid(it.replacesDeliveryId)) invalid(`Item ${index + 1}: substituição inválida.`);
+    }
+    return it;
+  });
+  const replaced = items.map((it) => it.replacesDeliveryId).filter((v): v is string => typeof v === "string" && v !== "");
+  if (new Set(replaced).size !== replaced.length) invalid("A mesma entrega não pode ser substituída duas vezes na mesma ocasião.");
+  const deliveredOn = typeof input.body.deliveredOn === "string" ? input.body.deliveredOn.slice(0, 10) : "";
+  if (!isIsoDate(deliveredOn)) invalid("Data da entrega é obrigatória.");
+  if (deliveredOn > input.todayIso) invalid("A data da entrega não pode ser futura.");
+  const eventNotes = normalizeOptionalText(input.body.notes, "Observações", PEOPLE_RECORD_TEXT_LIMITS.notes);
+
   return prisma.$transaction(async (tx) => {
-    const row = await tx.hrEpiDelivery.create({
+    const employee = await tx.employee.findUnique({ where: { id: input.employeeId }, select: { status: true } });
+    if (!employee) throw new PeopleProfileAccessError("NOT_FOUND", "Colaborador não encontrado.", 404);
+    if ((employee.status ?? "ACTIVE").toUpperCase() === "INACTIVE") {
+      throw new PeopleProfileAccessError("EMPLOYEE_TERMINATED", "Colaborador desligado não recebe novas entregas.", 409);
+    }
+    const responsibleName = await actorDisplayName(tx, input.actorUserId);
+    const deliveredAt = epiDayToDate(deliveredOn);
+    const event = await tx.hrEpiDeliveryEvent.create({
       data: {
         employeeId: input.employeeId,
-        item,
-        deliveredAt: input.deliveredAt,
-        quantity,
-        size,
-        validUntil: input.validUntil ?? null,
+        deliveredAt,
         responsibleName,
-        notes,
+        notes: eventNotes,
         createdByUserId: input.actorUserId ?? null,
       },
     });
-    await writeHistoryEvent(tx, {
-      employeeId: input.employeeId,
-      eventType: "EPI_DELIVERY",
-      effectiveDate: input.deliveredAt,
-      source: "USER",
-      notes: item,
-      createdByUserId: input.actorUserId,
-      metadata: { recordType: "epiDelivery", recordId: row.id },
-    });
+
+    const created: Array<{ id: string; item: string; itemCode: string | null; replacedDeliveryId: string | null }> = [];
+    for (const [index, raw] of items.entries()) {
+      const label = `Item ${index + 1}`;
+      const item = await tx.hrEpiItem.findUnique({ where: { id: raw.itemId as string } });
+      if (!item) throw new PeopleProfileAccessError("NOT_FOUND", `${label}: EPI / uniforme não encontrado.`, 404);
+      if (!item.active) {
+        throw new PeopleProfileAccessError("EPI_ITEM_INACTIVE", `${label} (${item.description}): item inativo não pode ser usado em novas entregas.`, 400);
+      }
+      const parsed = validateEpiDeliveryInput(
+        { ...raw, deliveredOn },
+        { todayIso: input.todayIso, catalogReplacementDays: item.replacementDays }
+      );
+      if (parsed.ok === false) invalid(`${label} (${item.description}): ${parsed.errors.join(" ")}`);
+      const v = (parsed as { ok: true; value: EpiDeliveryInput }).value;
+
+      const replacesId = typeof raw.replacesDeliveryId === "string" && raw.replacesDeliveryId ? raw.replacesDeliveryId : null;
+      if (replacesId) {
+        const previous = await tx.hrEpiDelivery.findFirst({
+          where: { id: replacesId, employeeId: input.employeeId },
+          select: { id: true, deliveredAt: true, status: true },
+        });
+        if (!previous) throw new PeopleProfileAccessError("NOT_FOUND", `${label}: entrega a substituir não encontrada.`, 404);
+        if (previous.status !== "ACTIVE") {
+          throw new PeopleProfileAccessError("EPI_NOT_ACTIVE", `${label}: só uma entrega vigente pode ser substituída.`, 409);
+        }
+        if (toIsoDay(previous.deliveredAt)! > deliveredOn) {
+          invalid(`${label}: a substituição não pode ter data anterior à entrega substituída.`);
+        }
+      }
+
+      const row = await tx.hrEpiDelivery.create({
+        data: {
+          employeeId: input.employeeId,
+          eventId: event.id,
+          itemId: item.id,
+          item: item.description,
+          itemCode: item.code,
+          itemType: item.type,
+          itemCaNumber: item.caNumber,
+          itemUnit: item.unit,
+          deliveredAt,
+          quantity: v.quantity,
+          size: v.size,
+          notes: v.notes,
+          replacementDays: v.replacementDays,
+          replacementDueDate: v.replacementDueDate ? epiDayToDate(v.replacementDueDate) : null,
+          replacementAdjustReason: v.adjustReason,
+          responsibleName,
+          createdByUserId: input.actorUserId ?? null,
+        },
+      });
+
+      if (replacesId) {
+        // Guarda de concorrência: só substitui se ainda estiver vigente (outra substituição perde e desfaz tudo).
+        const done = await tx.hrEpiDelivery.updateMany({
+          where: { id: replacesId, employeeId: input.employeeId, status: "ACTIVE", replacedByDeliveryId: null },
+          data: {
+            status: "REPLACED",
+            replacedByDeliveryId: row.id,
+            statusReason: `Substituída pela entrega de ${deliveredOn.split("-").reverse().join("/")}`,
+            statusChangedAt: new Date(),
+            statusChangedByUserId: input.actorUserId ?? null,
+          },
+        });
+        if (done.count !== 1) {
+          throw new PeopleProfileAccessError("EPI_NOT_ACTIVE", `${label}: a entrega já foi substituída ou encerrada por outra operação.`, 409);
+        }
+      }
+
+      await writeHistoryEvent(tx, {
+        employeeId: input.employeeId,
+        eventType: "EPI_DELIVERY",
+        effectiveDate: deliveredAt,
+        source: "USER",
+        notes: replacesId ? `${epiHistoryLabel(row)} (substituição)` : epiHistoryLabel(row),
+        createdByUserId: input.actorUserId,
+        metadata: { recordType: "epiDelivery", recordId: row.id },
+      });
+      logEmployeeHrAudit({
+        event: replacesId ? "employee.epi.replace" : "employee.epi.delivery",
+        actorUserId: input.actorUserId,
+        employeeId: input.employeeId,
+        details: {
+          deliveryId: row.id,
+          eventId: event.id,
+          itemId: item.id,
+          itemCode: item.code,
+          quantity: v.quantity,
+          replacedDeliveryId: replacesId,
+          adjusted: v.adjustReason != null,
+        },
+      });
+      created.push({ id: row.id, item: row.item, itemCode: row.itemCode, replacedDeliveryId: replacesId });
+    }
     logEmployeeHrAudit({
-      event: "employee.epi.delivery",
+      event: "employee.epi.event.create",
       actorUserId: input.actorUserId,
       employeeId: input.employeeId,
-      details: { item },
+      details: { eventId: event.id, items: created.length, deliveredOn },
     });
-    return row;
+    return { event: { id: event.id, deliveredOn }, deliveries: created };
   });
 }
 
+/**
+ * Entrega de um único item (ex.: "Substituir" na linha do item): um evento de 1 item.
+ * Corpo como o de um item, com `deliveredOn` e, opcionalmente, `replacesDeliveryId`.
+ */
+export async function createEpiDelivery(
+  prisma: PrismaClient,
+  input: { employeeId: string; body: Record<string, unknown>; todayIso: string; actorUserId?: string | null }
+) {
+  const { deliveredOn, ...item } = input.body;
+  const result = await createEpiDeliveryEvent(prisma, {
+    employeeId: input.employeeId,
+    todayIso: input.todayIso,
+    actorUserId: input.actorUserId,
+    body: { deliveredOn, items: [item] },
+  });
+  return { id: result.deliveries[0].id, eventId: result.event.id };
+}
+
+/**
+ * Retificação auditável de um item. Itens do catálogo: quantidade, tamanho, observações e prazo/data de troca
+ * (com justificativa); a data só aqui quando o evento tem um único item (senão, corrija a entrega/evento).
+ * O item não muda: cancele e registre outro. Entregas antigas (texto livre) seguem a edição de antes.
+ */
 export async function updateEpiDelivery(
   prisma: PrismaClient,
-  input: { employeeId: string; recordId: string; patch: unknown; actorUserId?: string | null }
+  input: { employeeId: string; recordId: string; patch: unknown; todayIso: string; actorUserId?: string | null }
 ) {
   assertRecordIds(input.employeeId, input.recordId);
-  const patch = parseEpiDeliveryPatch(input.patch);
   return prisma.$transaction(async (tx) => {
     const row = await tx.hrEpiDelivery.findFirst({
       where: { id: input.recordId, employeeId: input.employeeId },
-      select: { id: true, item: true, deliveredAt: true },
+      select: {
+        id: true,
+        eventId: true,
+        item: true,
+        itemCode: true,
+        itemId: true,
+        deliveredAt: true,
+        quantity: true,
+        size: true,
+        notes: true,
+        status: true,
+        replacementDays: true,
+        replacementDueDate: true,
+        replacementAdjustReason: true,
+        catalogItem: { select: { replacementDays: true } },
+      },
     });
     if (!row) throw new PeopleProfileAccessError("NOT_FOUND", "Entrega de EPI não encontrada.", 404);
+    if (row.status === "CANCELLED") {
+      throw new PeopleProfileAccessError("EPI_CANCELLED", "Entrega cancelada não pode ser alterada.", 409);
+    }
+    const body = (input.patch && typeof input.patch === "object" && !Array.isArray(input.patch) ? input.patch : {}) as Record<
+      string,
+      unknown
+    >;
+    /** Data do item = data do evento: só muda aqui quando o evento tem um único item. */
+    const syncEventDate = async (deliveredAt: Date) => {
+      const siblings = await tx.hrEpiDelivery.count({ where: { eventId: row.eventId } });
+      if (siblings > 1) {
+        throw new PeopleProfileAccessError(
+          "EPI_EVENT_DATE",
+          "Esta entrega tem vários itens: corrija a data na própria entrega (vale para todos os itens).",
+          400
+        );
+      }
+      await tx.hrEpiDeliveryEvent.updateMany({ where: { id: row.eventId, employeeId: input.employeeId }, data: { deliveredAt } });
+    };
 
-    const item = patch.item ?? row.item;
-    const deliveredAt = patch.deliveredAt ?? row.deliveredAt;
-
-    const data: Prisma.HrEpiDeliveryUncheckedUpdateManyInput = {};
-    if (patch.item !== undefined) data.item = patch.item;
-    if (patch.deliveredAt !== undefined) data.deliveredAt = patch.deliveredAt;
-    if (patch.quantity !== undefined) data.quantity = patch.quantity;
-    if (patch.size !== undefined) data.size = patch.size;
-    if (patch.validUntil !== undefined) data.validUntil = patch.validUntil;
-    if (patch.returnedAt !== undefined) data.returnedAt = patch.returnedAt;
-    if (patch.responsibleName !== undefined) data.responsibleName = patch.responsibleName;
-    if (patch.notes !== undefined) data.notes = patch.notes;
-    if (Object.keys(data).length > 0) {
-      await tx.hrEpiDelivery.updateMany({
-        where: { id: row.id, employeeId: input.employeeId },
-        data,
+    if (!row.itemId) {
+      const patch = parseEpiDeliveryPatch(body);
+      const item = patch.item ?? row.item;
+      const deliveredAt = patch.deliveredAt ?? row.deliveredAt;
+      if (!sameInstant(deliveredAt, row.deliveredAt)) await syncEventDate(deliveredAt);
+      const data: Prisma.HrEpiDeliveryUncheckedUpdateManyInput = {};
+      if (patch.item !== undefined) data.item = patch.item;
+      if (patch.deliveredAt !== undefined) data.deliveredAt = patch.deliveredAt;
+      if (patch.quantity !== undefined) data.quantity = patch.quantity;
+      if (patch.size !== undefined) data.size = patch.size;
+      if (patch.validUntil !== undefined) data.validUntil = patch.validUntil;
+      if (patch.returnedAt !== undefined) data.returnedAt = patch.returnedAt;
+      if (patch.responsibleName !== undefined) data.responsibleName = patch.responsibleName;
+      if (patch.notes !== undefined) data.notes = patch.notes;
+      if (Object.keys(data).length > 0) {
+        await tx.hrEpiDelivery.updateMany({ where: { id: row.id, employeeId: input.employeeId }, data });
+      }
+      if (item !== row.item || !sameInstant(deliveredAt, row.deliveredAt)) {
+        await syncLinkedHistoryEvent(tx, {
+          employeeId: input.employeeId,
+          link: { recordType: "epiDelivery", recordId: row.id },
+          legacy: { eventTypes: ["EPI_DELIVERY"], effectiveDate: row.deliveredAt, notes: row.item },
+          data: { effectiveDate: deliveredAt, notes: item },
+        });
+      }
+      logEmployeeHrAudit({
+        event: "employee.epi.update",
+        actorUserId: input.actorUserId,
+        employeeId: input.employeeId,
+        details: { deliveryId: row.id, fields: Object.keys(patch) },
       });
+      return { id: row.id };
     }
 
-    // O evento EPI_DELIVERY espelha a data de entrega e o item (rótulo).
-    if (item !== row.item || !sameInstant(deliveredAt, row.deliveredAt)) {
+    if (Object.prototype.hasOwnProperty.call(body, "itemId") && body.itemId !== row.itemId) {
+      throw new PeopleProfileAccessError(
+        "EPI_ITEM_IMMUTABLE",
+        "O item de uma entrega não muda: cancele esta entrega e registre a correta.",
+        400
+      );
+    }
+    const has = (k: string) => Object.prototype.hasOwnProperty.call(body, k);
+    const currentDue = toIsoDay(row.replacementDueDate);
+    const merged: Record<string, unknown> = {
+      itemId: row.itemId,
+      deliveredOn: has("deliveredOn") ? body.deliveredOn : toIsoDay(row.deliveredAt),
+      quantity: has("quantity") ? body.quantity : row.quantity,
+      size: has("size") ? body.size : row.size,
+      notes: has("notes") ? body.notes : row.notes,
+      replacementDays: has("replacementDays") ? body.replacementDays : row.replacementDays,
+      // Ajuste já justificado continua valendo quando a correção não mexe no prazo.
+      adjustReason: has("adjustReason") ? body.adjustReason : row.replacementAdjustReason,
+    };
+    // Data prevista: a informada agora; senão a gravada (se o prazo e a data da entrega não mudaram).
+    if (has("replacementDueDate")) merged.replacementDueDate = body.replacementDueDate;
+    else if (!has("replacementDays") && !has("deliveredOn")) merged.replacementDueDate = currentDue;
+    const parsed = validateEpiDeliveryInput(merged, {
+      todayIso: input.todayIso,
+      catalogReplacementDays: row.catalogItem?.replacementDays ?? null,
+    });
+    if (parsed.ok === false) throw new PeopleProfileAccessError("INVALID_EPI_DELIVERY", parsed.errors.join(" "), 400);
+    const v = parsed.value;
+
+    const deliveredAt = epiDayToDate(v.deliveredOn);
+    const next = {
+      deliveredOn: v.deliveredOn,
+      quantity: v.quantity,
+      size: v.size,
+      notes: v.notes,
+      replacementDays: v.replacementDays,
+      replacementDueDate: v.replacementDueDate,
+    };
+    const prev = {
+      deliveredOn: toIsoDay(row.deliveredAt),
+      quantity: row.quantity,
+      size: row.size,
+      notes: row.notes,
+      replacementDays: row.replacementDays,
+      replacementDueDate: currentDue,
+    };
+    const changed = (Object.keys(next) as (keyof typeof next)[]).filter((k) => next[k] !== prev[k]);
+    if (changed.length === 0) return { id: row.id };
+    if (changed.includes("deliveredOn")) await syncEventDate(deliveredAt);
+    await tx.hrEpiDelivery.updateMany({
+      where: { id: row.id, employeeId: input.employeeId },
+      data: {
+        deliveredAt,
+        quantity: v.quantity,
+        size: v.size,
+        notes: v.notes,
+        replacementDays: v.replacementDays,
+        replacementDueDate: v.replacementDueDate ? epiDayToDate(v.replacementDueDate) : null,
+        replacementAdjustReason: v.adjustReason,
+      },
+    });
+    if (!sameInstant(deliveredAt, row.deliveredAt)) {
       await syncLinkedHistoryEvent(tx, {
         employeeId: input.employeeId,
         link: { recordType: "epiDelivery", recordId: row.id },
         legacy: { eventTypes: ["EPI_DELIVERY"], effectiveDate: row.deliveredAt, notes: row.item },
-        data: { effectiveDate: deliveredAt, notes: item },
+        data: { effectiveDate: deliveredAt },
       });
     }
-
+    // Valores anteriores dos campos alterados (sem observações, que podem ser longas/sensíveis).
+    const previousValues = Object.fromEntries(changed.filter((k) => k !== "notes").map((k) => [k, prev[k]]));
     logEmployeeHrAudit({
       event: "employee.epi.update",
       actorUserId: input.actorUserId,
       employeeId: input.employeeId,
-      details: { deliveryId: row.id, fields: Object.keys(patch) },
+      details: { deliveryId: row.id, fields: changed, previous: previousValues, adjustReason: v.adjustReason },
     });
     return { id: row.id };
   });
 }
 
-export async function deleteEpiDelivery(
+/**
+ * Correção da entrega (evento): data (vale para todos os itens; a próxima troca calculada acompanha,
+ * a ajustada com justificativa é mantida) e observações. A ficha emitida não muda: a próxima emissão
+ * gera nova revisão.
+ */
+export async function updateEpiDeliveryEvent(
   prisma: PrismaClient,
-  input: { employeeId: string; recordId: string; actorUserId?: string | null }
+  input: { employeeId: string; eventId: string; patch: unknown; todayIso: string; actorUserId?: string | null }
+) {
+  assertRecordIds(input.employeeId, input.eventId);
+  const body = (input.patch && typeof input.patch === "object" && !Array.isArray(input.patch) ? input.patch : {}) as Record<string, unknown>;
+  const has = (k: string) => Object.prototype.hasOwnProperty.call(body, k);
+  return prisma.$transaction(async (tx) => {
+    const event = await tx.hrEpiDeliveryEvent.findFirst({
+      where: { id: input.eventId, employeeId: input.employeeId },
+      select: {
+        id: true,
+        deliveredAt: true,
+        notes: true,
+        deliveries: {
+          select: { id: true, item: true, deliveredAt: true, status: true, replacementDays: true, replacementDueDate: true, replacementAdjustReason: true },
+        },
+      },
+    });
+    if (!event) throw new PeopleProfileAccessError("NOT_FOUND", "Entrega de EPI não encontrada.", 404);
+    const fields: string[] = [];
+    const data: Prisma.HrEpiDeliveryEventUncheckedUpdateManyInput = {};
+    if (has("notes")) {
+      const notes = normalizeOptionalText(body.notes, "Observações", PEOPLE_RECORD_TEXT_LIMITS.notes);
+      if (notes !== event.notes) {
+        data.notes = notes;
+        fields.push("notes");
+      }
+    }
+    const previousOn = toIsoDay(event.deliveredAt)!;
+    if (has("deliveredOn")) {
+      const on = typeof body.deliveredOn === "string" ? body.deliveredOn.slice(0, 10) : "";
+      if (!isIsoDate(on)) throw new PeopleProfileAccessError("INVALID_EPI_DELIVERY", "Data da entrega é obrigatória.", 400);
+      if (on > input.todayIso) throw new PeopleProfileAccessError("INVALID_EPI_DELIVERY", "A data da entrega não pode ser futura.", 400);
+      if (on !== previousOn) {
+        const deliveredAt = epiDayToDate(on);
+        data.deliveredAt = deliveredAt;
+        fields.push("deliveredOn");
+        for (const d of event.deliveries) {
+          const ownDue = toIsoDay(d.replacementDueDate);
+          const due = d.replacementDays && !d.replacementAdjustReason ? addDaysIso(on, d.replacementDays) : ownDue;
+          if (due && due <= on) {
+            throw new PeopleProfileAccessError(
+              "INVALID_EPI_DELIVERY",
+              `${d.item}: a próxima troca ajustada (${due.split("-").reverse().join("/")}) ficaria antes da nova data. Corrija o item antes.`,
+              400
+            );
+          }
+          await tx.hrEpiDelivery.updateMany({
+            where: { id: d.id, employeeId: input.employeeId },
+            data: { deliveredAt, replacementDueDate: due ? epiDayToDate(due) : null },
+          });
+          await syncLinkedHistoryEvent(tx, {
+            employeeId: input.employeeId,
+            link: { recordType: "epiDelivery", recordId: d.id },
+            legacy: { eventTypes: ["EPI_DELIVERY"], effectiveDate: d.deliveredAt, notes: d.item },
+            data: { effectiveDate: deliveredAt },
+          });
+        }
+      }
+    }
+    if (fields.length === 0) return { id: event.id };
+    await tx.hrEpiDeliveryEvent.updateMany({ where: { id: event.id, employeeId: input.employeeId }, data });
+    logEmployeeHrAudit({
+      event: "employee.epi.event.update",
+      actorUserId: input.actorUserId,
+      employeeId: input.employeeId,
+      details: { eventId: event.id, fields, previousDeliveredOn: fields.includes("deliveredOn") ? previousOn : undefined },
+    });
+    return { id: event.id };
+  });
+}
+
+/**
+ * Cancelar (lançamento incorreto) ou encerrar (ciclo finalizado sem nova entrega).
+ * Ambos só a partir de "Vigente" e com motivo. Cancelar uma substituição devolve
+ * a entrega anterior a "Vigente".
+ */
+export async function setEpiDeliveryStatus(
+  prisma: PrismaClient,
+  input: {
+    employeeId: string;
+    recordId: string;
+    action: "CANCEL" | "CLOSE";
+    reason: unknown;
+    actorUserId?: string | null;
+  }
 ) {
   assertRecordIds(input.employeeId, input.recordId);
+  const reason = validateStatusReason(input.reason);
+  if (reason.ok === false) throw new PeopleProfileAccessError("INVALID_REASON", reason.errors.join(" "), 400);
+  const status = input.action === "CANCEL" ? "CANCELLED" : "CLOSED";
   return prisma.$transaction(async (tx) => {
     const row = await tx.hrEpiDelivery.findFirst({
       where: { id: input.recordId, employeeId: input.employeeId },
-      select: { id: true, item: true, deliveredAt: true },
+      select: { id: true, item: true, itemCode: true, deliveredAt: true, status: true, replaces: { select: { id: true } } },
     });
     if (!row) throw new PeopleProfileAccessError("NOT_FOUND", "Entrega de EPI não encontrada.", 404);
-
-    await deleteLinkedHistoryEvent(tx, {
-      employeeId: input.employeeId,
-      link: { recordType: "epiDelivery", recordId: row.id },
-      legacy: { eventTypes: ["EPI_DELIVERY"], effectiveDate: row.deliveredAt, notes: row.item },
+    const done = await tx.hrEpiDelivery.updateMany({
+      where: { id: row.id, employeeId: input.employeeId, status: "ACTIVE" },
+      data: {
+        status,
+        statusReason: reason.value,
+        statusChangedAt: new Date(),
+        statusChangedByUserId: input.actorUserId ?? null,
+      },
     });
-    await tx.hrEpiDelivery.deleteMany({ where: { id: row.id, employeeId: input.employeeId } });
-
+    if (done.count !== 1) {
+      throw new PeopleProfileAccessError(
+        "EPI_NOT_ACTIVE",
+        input.action === "CANCEL"
+          ? "Só uma entrega vigente pode ser cancelada (cancele antes a entrega que a substituiu)."
+          : "Só uma entrega vigente pode ser encerrada.",
+        409
+      );
+    }
+    let restoredId: string | null = null;
+    if (status === "CANCELLED" && row.replaces) {
+      await tx.hrEpiDelivery.updateMany({
+        where: { id: row.replaces.id, employeeId: input.employeeId, status: "REPLACED", replacedByDeliveryId: row.id },
+        data: {
+          status: "ACTIVE",
+          replacedByDeliveryId: null,
+          statusReason: null,
+          statusChangedAt: new Date(),
+          statusChangedByUserId: input.actorUserId ?? null,
+        },
+      });
+      restoredId = row.replaces.id;
+    }
+    if (status === "CANCELLED") {
+      await syncLinkedHistoryEvent(tx, {
+        employeeId: input.employeeId,
+        link: { recordType: "epiDelivery", recordId: row.id },
+        legacy: { eventTypes: ["EPI_DELIVERY"], effectiveDate: row.deliveredAt, notes: row.item },
+        data: { notes: `${epiHistoryLabel(row)} — cancelada: ${reason.value}` },
+      });
+    }
     logEmployeeHrAudit({
-      event: "employee.epi.delete",
+      event: status === "CANCELLED" ? "employee.epi.cancel" : "employee.epi.close",
       actorUserId: input.actorUserId,
       employeeId: input.employeeId,
-      details: { deliveryId: row.id },
+      details: { deliveryId: row.id, reason: reason.value, restoredDeliveryId: restoredId },
     });
-    return { ok: true as const };
+    return { id: row.id, status, restoredDeliveryId: restoredId };
   });
+}
+
+/** Entregas não são excluídas: o histórico é preservado (cancelar com motivo). */
+export async function deleteEpiDelivery(
+  _prisma: PrismaClient,
+  input: { employeeId: string; recordId: string; actorUserId?: string | null }
+): Promise<never> {
+  assertRecordIds(input.employeeId, input.recordId);
+  throw new PeopleProfileAccessError(
+    "EPI_DELETE_NOT_ALLOWED",
+    "Entregas de EPI não são excluídas. Use Cancelar (lançamento incorreto) ou Encerrar, informando o motivo.",
+    405
+  );
 }
 
 export async function createEmergencyContact(
@@ -2155,6 +2547,15 @@ export async function deleteEmployeeDocument(
       },
     });
     if (!row) throw new PeopleProfileAccessError("NOT_FOUND", "Documento não encontrado.", 404);
+    // Comprovante de entrega de EPI é registro histórico (a FK também impede a exclusão).
+    const epiReceipts = await tx.hrEpiDeliveryReceipt.count({ where: { documentId: row.id } });
+    if (epiReceipts > 0) {
+      throw new PeopleProfileAccessError(
+        "DOCUMENT_IN_USE",
+        "Este documento é o comprovante de uma entrega de EPI e não pode ser excluído.",
+        409
+      );
+    }
 
     await deleteLinkedHistoryEvent(tx, {
       employeeId: input.employeeId,

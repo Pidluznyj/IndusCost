@@ -162,6 +162,8 @@ model Employee {
   employeeBenefits             HrEmployeeBenefit[]
   extraEmergencyContacts       HrEmergencyContact[]
   epiDeliveries                HrEpiDelivery[]
+  epiDeliveryForms             HrEpiDeliveryForm[]
+  epiDeliveryEvents            HrEpiDeliveryEvent[]
   hrDocuments                  HrEmployeeDocument[]
   absences                     HrAbsence[]
   hrNotes                      HrEmployeeNote[]
@@ -378,23 +380,172 @@ model HrEmergencyContact {
   @@index([employeeId, priority])
 }
 
-/// Entrega histórica de EPI/uniforme (tamanhos atuais continuam em Employee).
+/// Catálogo global de EPIs e uniformes (sem estoque). Regras em src/lib/epi/epiRules.ts.
+/// Código automático e imutável (trigger); item com entrega não é excluído (FK Restrict).
+model HrEpiItem {
+  id               String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  /// Numeração sequencial global; o código (EPI-0001 / UNI-0001) é gravado na criação.
+  number           Int             @unique @default(autoincrement())
+  code             String          @unique
+  description      String
+  /// EPI | UNIFORM
+  type             String
+  /// Certificado de Aprovação (MTE). Não é validade nem vida útil.
+  caNumber         String?
+  /// UNIT | PAIR | KIT
+  unit             String          @default("UNIT")
+  /// Periodicidade de troca definida pela empresa (dias). Vazio = sem troca programada.
+  replacementDays  Int?
+  notes            String?
+  active           Boolean         @default(true)
+  createdByUserId  String?         @db.Uuid
+  updatedByUserId  String?         @db.Uuid
+  createdAt        DateTime        @default(now()) @db.Timestamptz(6)
+  updatedAt        DateTime        @default(now()) @updatedAt @db.Timestamptz(6)
+  deliveries       HrEpiDelivery[]
+
+  @@index([active, description])
+}
+
+/// Evento de entrega de EPI/uniforme: uma ocasião (data) com um ou mais itens e uma ficha documental.
+/// Cada item (HrEpiDelivery) mantém prazo, troca e situação próprios. Ver docs/hr/epi-uniforms.md.
+model HrEpiDeliveryEvent {
+  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  employeeId       String    @db.Uuid
+  /// Data da entrega (meio-dia UTC = data de calendário).
+  deliveredAt      DateTime  @db.Timestamptz(6)
+  responsibleName  String?
+  notes            String?
+  createdByUserId  String?   @db.Uuid
+  createdAt        DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt        DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+  employee         Employee  @relation(fields: [employeeId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  deliveries       HrEpiDelivery[]
+  forms            HrEpiDeliveryForm[]
+  receipts         HrEpiDeliveryReceipt[]
+
+  /// Alvo das FKs compostas (evento + colaborador): item, ficha e comprovante nunca apontam outro colaborador.
+  @@unique([id, employeeId])
+  @@index([employeeId, deliveredAt(sort: Desc)])
+}
+
+/// Item entregue (EPI/uniforme) dentro de um evento de entrega (tamanhos atuais continuam em Employee).
+/// Não é excluído: cancelamento/encerramento/substituição mudam `status` com motivo e autor.
+/// Os campos `item*` são o retrato do catálogo no momento da entrega.
 model HrEpiDelivery {
   id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   employeeId       String    @db.Uuid
+  /// Evento de entrega (ocasião). Entregas anteriores ao recurso viraram eventos de 1 item (mesmo id).
+  eventId          String    @db.Uuid
+  /// Descrição do item no momento da entrega (texto livre nas entregas antigas).
   item             String
   deliveredAt      DateTime  @db.Timestamptz(6)
   quantity         Int       @default(1)
   size             String?
+  /// Legado: "validade" informada antes do catálogo. Entregas novas usam replacementDueDate.
   validUntil       DateTime? @db.Timestamptz(6)
   responsibleName  String?
   returnedAt       DateTime? @db.Timestamptz(6)
   notes            String?
   createdByUserId  String?   @db.Uuid
   createdAt        DateTime  @default(now()) @db.Timestamptz(6)
+  itemId           String?   @db.Uuid
+  itemCode         String?
+  itemType         String?
+  itemCaNumber     String?
+  itemUnit         String?
+  /// Prazo de troca aplicado nesta entrega (dias); null = sem troca programada.
+  replacementDays  Int?
+  /// Data prevista de substituição (data de calendário, sem fuso).
+  replacementDueDate DateTime? @db.Date
+  /// Justificativa quando o prazo/data difere do cadastro do item.
+  replacementAdjustReason String?
+  /// ACTIVE (vigente) | REPLACED | CLOSED | CANCELLED
+  status           String    @default("ACTIVE")
+  statusReason     String?
+  statusChangedAt  DateTime? @db.Timestamptz(6)
+  statusChangedByUserId String? @db.Uuid
+  /// Entrega que substituiu esta (status REPLACED).
+  replacedByDeliveryId String? @unique @db.Uuid
+  updatedAt        DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
   employee         Employee  @relation(fields: [employeeId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  event            HrEpiDeliveryEvent @relation(fields: [eventId, employeeId], references: [id, employeeId], onDelete: Restrict, onUpdate: NoAction)
+  catalogItem      HrEpiItem? @relation(fields: [itemId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  replacedBy       HrEpiDelivery? @relation("HrEpiDeliveryReplacement", fields: [replacedByDeliveryId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  replaces         HrEpiDelivery? @relation("HrEpiDeliveryReplacement")
 
   @@index([employeeId, deliveredAt(sort: Desc)])
+  @@index([eventId])
+  @@index([itemId])
+  @@index([status, replacementDueDate])
+}
+
+/// Ficha de entrega emitida para o EVENTO (PDF regenerado do conteúdo congelado `payload`).
+/// `formCode` (FE-2026-00001) identifica a ficha do evento; cada revisão tem `documentNumber` único (…-R01).
+/// Reemissão sem mudança de conteúdo reaproveita a revisão vigente; conteúdo alterado gera nova revisão
+/// e a anterior fica SUPERSEDED (nunca sobrescrita). Ver docs/hr/epi-uniforms.md.
+model HrEpiDeliveryForm {
+  id               String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  eventId          String        @db.Uuid
+  employeeId       String        @db.Uuid
+  formCode         String
+  revision         Int
+  documentNumber   String        @unique
+  /// ACTIVE | SUPERSEDED
+  status           String        @default("ACTIVE")
+  payload          Json
+  payloadSha256    String
+  /// Hash só do conteúdo (colaborador + itens + declaração): decide se a reemissão muda a revisão.
+  contentSha256    String
+  issuedAt         DateTime      @default(now()) @db.Timestamptz(6)
+  issuedByUserId   String?       @db.Uuid
+  issuedByName     String?
+  printCount       Int           @default(1)
+  lastPrintedAt    DateTime      @default(now()) @db.Timestamptz(6)
+  lastPrintedByUserId String?    @db.Uuid
+  supersededAt     DateTime?     @db.Timestamptz(6)
+  event            HrEpiDeliveryEvent @relation(fields: [eventId, employeeId], references: [id, employeeId], onDelete: Restrict, onUpdate: NoAction)
+  employee         Employee      @relation(fields: [employeeId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  receipts         HrEpiDeliveryReceipt[]
+
+  @@unique([eventId, revision])
+  @@unique([formCode, revision])
+  /// Alvo da FK composta do comprovante (ficha do mesmo evento).
+  @@unique([id, eventId])
+  @@index([employeeId])
+}
+
+/// Comprovante digitalizado (ficha assinada) do evento. Histórico: anexar de novo marca o anterior SUPERSEDED.
+/// O arquivo fica em Documentos do colaborador (HrEmployeeDocument); conferência = APPROVED/REJECTED com autor.
+model HrEpiDeliveryReceipt {
+  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  eventId          String    @db.Uuid
+  employeeId       String    @db.Uuid
+  /// Revisão da ficha a que o arquivo corresponde (null = evento sem ficha emitida).
+  formId           String?   @db.Uuid
+  documentId       String    @db.Uuid
+  fileSha256       String
+  originalFileName String
+  mimeType         String?
+  fileSize         Int
+  /// CURRENT | SUPERSEDED
+  status           String    @default("CURRENT")
+  supersededAt     DateTime? @db.Timestamptz(6)
+  uploadedByUserId String?   @db.Uuid
+  uploadedAt       DateTime  @default(now()) @db.Timestamptz(6)
+  /// Lote de envio (upload de várias fichas de uma vez), quando houver.
+  batchId          String?   @db.Uuid
+  /// APPROVED | REJECTED (conferência manual); null = não conferido.
+  validationResult String?
+  validatedAt      DateTime? @db.Timestamptz(6)
+  validatedByUserId String?  @db.Uuid
+  validationNote   String?
+  event            HrEpiDeliveryEvent @relation(fields: [eventId, employeeId], references: [id, employeeId], onDelete: Restrict, onUpdate: NoAction)
+  form             HrEpiDeliveryForm? @relation(fields: [formId, eventId], references: [id, eventId], onDelete: Restrict, onUpdate: NoAction)
+  document         HrEmployeeDocument @relation(fields: [documentId, employeeId], references: [id, employeeId], onDelete: Restrict, onUpdate: NoAction)
+
+  @@index([eventId, uploadedAt(sort: Desc)])
+  @@index([fileSha256])
 }
 
 /// Metadata de documentos da ficha. Arquivo no storage oficial (`storageKey`).
@@ -418,9 +569,12 @@ model HrEmployeeDocument {
   employee         Employee  @relation(fields: [employeeId], references: [id], onDelete: Restrict, onUpdate: NoAction)
   evaluation       HrEmployeeEvaluation? @relation(fields: [evaluationId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   externalCertificate HrEmployeeExternalCertificate?
+  epiDeliveryReceipts HrEpiDeliveryReceipt[]
 
   @@index([employeeId, createdAt(sort: Desc)])
   @@index([evaluationId])
+  /// Alvo da FK composta do comprovante de EPI (documento do mesmo colaborador).
+  @@unique([id, employeeId])
 }
 
 /// Férias / afastamentos — histórico próprio (status atual do Employee não substitui).

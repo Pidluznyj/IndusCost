@@ -326,6 +326,7 @@ import {
   EMPLOYEES_RESOURCE_KEYS,
 } from "./src/lib/employeesAccess.js";
 import { registerPeopleProfileRoutes } from "./src/lib/peopleProfileRoutes.js";
+import { registerEpiRoutes } from "./src/lib/epi/epiRoutes.js";
 import { buildVisibleEmployeeWhere } from "./src/lib/peopleProfile.server.js";
 import { canViewCompensationValues } from "./src/lib/peopleProfileCapabilities.js";
 import {
@@ -15406,6 +15407,18 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   });
 
   registerPeopleProfileRoutes(app, {
+    requireAppAuth,
+    requireResource,
+    getCurrentAppUser,
+    getPermissionCheck: async (req) => {
+      const authUser =
+        (req as { appAuth?: AppAuthContext }).appAuth ?? (await getCurrentAppUser(req));
+      return employeePermCheck(authUser);
+    },
+  });
+
+  // Catálogo global de EPIs e uniformes (docs/hr/epi-uniforms.md).
+  registerEpiRoutes(app, {
     requireAppAuth,
     requireResource,
     getCurrentAppUser,
