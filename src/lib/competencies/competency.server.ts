@@ -77,6 +77,7 @@ export type CompetencyDb = Pick<
   | "hrTrainingCertificate"
   | "hrTrainingCertificateSettings"
   | "brandingSettings"
+  | "role"
 > & {
   $transaction: PrismaClient["$transaction"];
 };

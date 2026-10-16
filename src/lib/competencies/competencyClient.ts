@@ -24,7 +24,7 @@ import type {
   WorkPositionDto,
 } from "./competencyTypes";
 import type { EmployeeCertificateItemDto } from "../hrEmployeeCertificates";
-import type { CertificateSettingsDto, CertificateSettingsInput, SyllabusModule } from "./trainingCertificate";
+import type { CertificateSettingsDto, CertificateSettingsInput, CertificateSignerOptionDto, SyllabusModule } from "./trainingCertificate";
 
 const NO_STORE: RequestInit = { cache: "no-store" };
 
@@ -182,6 +182,9 @@ export const fetchEmployeeTrainingCertificates = (employeeId: string, signal?: A
 
 export const fetchCertificateSettings = (signal?: AbortSignal) =>
   fetchJsonOk<CertificateSettingsDto>(`${COMPETENCY_API_BASE}/certificate-settings`, { ...NO_STORE, signal });
+
+export const fetchCertificateSigners = (signal?: AbortSignal) =>
+  fetchJsonOk<{ signers: CertificateSignerOptionDto[] }>(`${COMPETENCY_API_BASE}/certificate-settings/signers`, { ...NO_STORE, signal });
 
 export const saveCertificateSettings = (body: CertificateSettingsInput) =>
   fetchJsonOk<CertificateSettingsDto>(`${COMPETENCY_API_BASE}/certificate-settings`, jsonInit("PUT", body));

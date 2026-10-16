@@ -9,6 +9,7 @@ import {
   type CompetencyTestApp,
 } from "./competencyTestSupport";
 import { hashCertificatePayload } from "./trainingCertificate.server";
+import { CERTIFICATE_BRAND_LOGO_DATA_URL } from "./trainingCertificateBrand";
 
 const LOGO = "data:image/png;base64,iVBORw0KGgo=";
 const SETTINGS = { signerName: "Diretor Exemplo", signerRole: "Diretor Executivo", issuePlace: "Curitiba – PR", numberPrefix: "lk-tr" };
@@ -74,17 +75,82 @@ describe("certificados de treinamento — rotas", () => {
 
   it("configuração: começa vazia, valida e grava com autoria da sessão", async () => {
     const empty = await requestJson(app, "GET", "/api/hr/competencies/certificate-settings");
-    assert.deepEqual(empty.json, { signerName: null, signerRole: null, issuePlace: null, numberPrefix: null, updatedAt: null, updatedByName: null });
-    const bad = await requestJson(app, "PUT", "/api/hr/competencies/certificate-settings", { ...SETTINGS, numberPrefix: "LK_TR" });
+    assert.deepEqual(empty.json, {
+      signerSource: null,
+      signerEmployeeId: null,
+      signerName: null,
+      signerRole: null,
+      signerInactive: false,
+      issuePlace: "Curitiba – PR",
+      numberPrefix: null,
+      updatedAt: null,
+      updatedByName: null,
+    });
+    const bad = await requestJson(app, "PUT", "/api/hr/competencies/certificate-settings", { signerName: "Só nome" });
     assert.equal(bad.status, 400);
-    assert.equal(bad.json.error, "INVALID_PREFIX");
-    const saved = await requestJson(app, "PUT", "/api/hr/competencies/certificate-settings", SETTINGS);
+    assert.equal(bad.json.error, "INVALID_SIGNER_ROLE");
+    // Sem nome da empresa na Identidade Visual não há como gerar o prefixo.
+    const noCompany = await requestJson(app, "PUT", "/api/hr/competencies/certificate-settings", SETTINGS);
+    assert.equal(noCompany.status, 400);
+    assert.equal(noCompany.json.error, "COMPANY_REQUIRED");
+    app.db.tables.brandingSettings.push({ id: "b1", companyName: "Lazarios Koppetel", updatedAt: new Date() });
+    const saved = await requestJson(app, "PUT", "/api/hr/competencies/certificate-settings", { ...SETTINGS, issuePlace: "São Paulo – SP", numberPrefix: "XX" });
     assert.equal(saved.status, 200);
-    assert.equal(saved.json.numberPrefix, "LK-TR");
+    assert.equal(saved.json.signerSource, "MANUAL");
+    assert.equal(saved.json.numberPrefix, "LK-TR"); // gerado; o enviado é ignorado
+    assert.equal(saved.json.issuePlace, "Curitiba – PR"); // fixo; o enviado é ignorado
     assert.equal(saved.json.updatedByName, TEST_USER_NAME);
+    // Prefixo nunca muda depois de gravado, mesmo se a empresa mudar de nome.
+    app.db.tables.brandingSettings[0].companyName = "Outra Razão Social";
     const again = await requestJson(app, "PUT", "/api/hr/competencies/certificate-settings", { ...SETTINGS, signerName: "Outro" });
     assert.equal(again.json.signerName, "Outro");
+    assert.equal(again.json.numberPrefix, "LK-TR");
     assert.equal(app.db.tables.hrTrainingCertificateSettings.length, 1);
+    assert.equal(app.db.tables.hrTrainingCertificateSettings[0].issuePlace, "Curitiba – PR");
+  });
+
+  it("quem assina pode ser uma pessoa do sistema: nome e cargo vêm do cadastro (vivos); inativa bloqueia a emissão", async () => {
+    const s = await seed(app);
+    const roleId = "77777777-7777-4777-8777-777777777777";
+    app.db.tables.role.push({ id: roleId, name: "Diretor Executivo" });
+    const semCargo = seedEmployee(app.db, "Sem Cargo");
+    const diretor = seedEmployee(app.db, "Paulo Diretor", { roleId, departmentId: null });
+    seedEmployee(app.db, "Desligado", { roleId, status: "INACTIVE" });
+
+    const list = await requestJson(app, "GET", "/api/hr/competencies/certificate-settings/signers");
+    assert.equal(list.status, 200);
+    const names = list.json.signers.map((p: any) => p.name);
+    assert.ok(names.includes("Paulo Diretor") && !names.includes("Desligado"));
+    assert.equal(list.json.signers.find((p: any) => p.employeeId === diretor).roleName, "Diretor Executivo");
+
+    assert.equal((await requestJson(app, "PUT", "/api/hr/competencies/certificate-settings", { signerEmployeeId: semCargo })).json.error, "SIGNER_WITHOUT_ROLE");
+    const saved = await requestJson(app, "PUT", "/api/hr/competencies/certificate-settings", { signerEmployeeId: diretor, signerName: "ignorado" });
+    assert.equal(saved.status, 200);
+    assert.equal(saved.json.signerSource, "EMPLOYEE");
+    assert.equal(saved.json.signerName, "Paulo Diretor");
+    assert.equal(saved.json.signerRole, "Diretor Executivo");
+
+    // Cargo atualizado no cadastro → vale para as próximas emissões.
+    app.db.tables.role[0].name = "Diretor Presidente";
+    const issued = await requestJson(app, "POST", `/api/hr/competencies/trainings/${s.trainingId}/certificates`, { employeeIds: [s.ana] });
+    assert.equal(issued.json.issued[0].number, "LK-TR-2026/0001");
+    const doc = await requestJson(app, "GET", `/api/hr/competencies/trainings/${s.trainingId}/certificates/document`);
+    assert.deepEqual(doc.json.certificates[0].payload.signer, { name: "Paulo Diretor", role: "Diretor Presidente" });
+    assert.equal(doc.json.certificates[0].payload.issuePlace, "Curitiba – PR");
+
+    // Pessoa desligada → impedimento até trocar quem assina.
+    app.db.tables.employee.find((e) => e.id === diretor)!.status = "INACTIVE";
+    const board = await requestJson(app, "GET", `/api/hr/competencies/trainings/${s.trainingId}/certificates`);
+    assert.equal(board.json.settings.signerInactive, true);
+    assert.match(board.json.blockers.join(" "), /não está mais ativa/);
+    assert.equal((await requestJson(app, "POST", `/api/hr/competencies/trainings/${s.trainingId}/certificates`, { employeeIds: [s.bruno] })).status, 409);
+
+    app.setGranted(["admin.employees.competencies.trainings:view"]);
+    try {
+      assert.equal((await requestJson(app, "GET", "/api/hr/competencies/certificate-settings/signers")).status, 403);
+    } finally {
+      app.setGranted("all");
+    }
   });
 
   it("líder (escopo limitado) não altera o signatário da empresa", async () => {
@@ -100,7 +166,7 @@ describe("certificados de treinamento — rotas", () => {
     assert.equal(board.status, 200);
     assert.equal(board.json.blockers.length, 2);
     assert.match(board.json.blockers[0], /não foi concluído/);
-    assert.match(board.json.blockers[1], /signatário/);
+    assert.match(board.json.blockers[1], /quem assina/);
     const issue = await requestJson(app, "POST", `/api/hr/competencies/trainings/${s.trainingId}/certificates`, {});
     assert.equal(issue.status, 409);
     assert.equal(issue.json.error, "CERTIFICATE_BLOCKED");
@@ -134,7 +200,8 @@ describe("certificados de treinamento — rotas", () => {
       version: 1,
       number: "LK-TR-2026/0001",
       issuedOn: "2026-10-15",
-      company: { name: "Lazarios Koppetel", slogan: "Soluções e qualidade em plásticos", website: "https://lazarios.com.br", logoDataUrl: LOGO },
+      // Logo oficial embutida (não a da Identidade Visual), congelada no certificado.
+      company: { name: "Lazarios Koppetel", slogan: "Soluções e qualidade em plásticos", website: "https://lazarios.com.br", logoDataUrl: CERTIFICATE_BRAND_LOGO_DATA_URL },
       participant: { employeeId: s.ana, name: "Ana Ribeiro" },
       training: {
         id: s.trainingId,

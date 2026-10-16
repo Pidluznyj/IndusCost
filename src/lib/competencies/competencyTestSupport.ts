@@ -31,6 +31,7 @@ const MODELS = [
   "hrTrainingCertificate",
   "hrTrainingCertificateSettings",
   "brandingSettings",
+  "role",
 ] as const;
 export type FakeModel = (typeof MODELS)[number];
 

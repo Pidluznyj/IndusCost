@@ -7,6 +7,7 @@
  *   signatário/local/prefixo (HrTrainingCertificateSettings), instrutor e conteúdo programático
  *   (HrTraining). Emitir congela tudo em `payload` + sha256; reabrir devolve o gravado.
  */
+import { CERTIFICATE_BRAND_LOGO_DATA_URL } from "./trainingCertificateBrand";
 import { sha256Hex, stableStringify } from "../commercialPolicy/commercialPolicyRules";
 import {
   CompetencyServiceError,
@@ -20,6 +21,9 @@ import {
 import { businessTodayIso } from "./competencyDomain";
 import { canSeeEmployee, canWriteEmployee, COMPETENCY_SCOPE_ALL, type CompetencyScope } from "./competencyScope";
 import {
+  CERTIFICATE_ISSUE_PLACE,
+  deriveCertificatePrefix,
+  type CertificateSignerOptionDto,
   TRAINING_CERTIFICATE_PAYLOAD_VERSION,
   formatCertificateNumber,
   readStoredSyllabus,
@@ -77,6 +81,7 @@ type CertificateRow = {
 };
 
 type SettingsRow = {
+  signerEmployeeId?: string | null;
   signerName: string;
   signerRole: string;
   issuePlace: string;
@@ -118,16 +123,65 @@ export function hashCertificatePayload(payload: unknown): string {
   return sha256Hex(stableStringify(payload));
 }
 
+type SignerEmployeeRow = { id: string; name: string; status: string | null; roleId: string | null; departmentId?: string | null };
+
+/** Nome e cargo atuais da pessoa (cargo = Role do cadastro). null = inexistente ou inativa. */
+async function resolveSignerEmployee(db: CompetencyDb, employeeId: string): Promise<{ name: string; role: string | null } | null> {
+  const emp = (await db.employee.findUnique({ where: { id: employeeId } })) as SignerEmployeeRow | null;
+  if (!emp || (emp.status ?? ACTIVE) !== ACTIVE) return null;
+  const role = emp.roleId ? ((await db.role.findUnique({ where: { id: emp.roleId } })) as { name: string } | null) : null;
+  return { name: emp.name.trim(), role: clean(role?.name) };
+}
+
+/**
+ * Configuração vigente. Pessoa do sistema: nome e cargo saem do cadastro na hora (o que for
+ * emitido fica congelado no certificado). Local sempre Curitiba – PR.
+ */
 export async function loadCertificateSettings(db: CompetencyDb): Promise<CertificateSettingsDto> {
   const row = (await db.hrTrainingCertificateSettings.findUnique({ where: { id: SETTINGS_ID } })) as SettingsRow | null;
+  let signerName = row?.signerName ?? null;
+  let signerRole = row?.signerRole ?? null;
+  let signerInactive = false;
+  if (row?.signerEmployeeId) {
+    const live = await resolveSignerEmployee(db, row.signerEmployeeId);
+    if (live) {
+      signerName = live.name;
+      signerRole = live.role ?? row.signerRole;
+    } else {
+      signerInactive = true;
+    }
+  }
   return {
-    signerName: row?.signerName ?? null,
-    signerRole: row?.signerRole ?? null,
-    issuePlace: row?.issuePlace ?? null,
+    signerSource: row ? (row.signerEmployeeId ? "EMPLOYEE" : "MANUAL") : null,
+    signerEmployeeId: row?.signerEmployeeId ?? null,
+    signerName,
+    signerRole,
+    signerInactive,
+    issuePlace: CERTIFICATE_ISSUE_PLACE,
     numberPrefix: row?.numberPrefix ?? null,
     updatedAt: row?.updatedAt ? new Date(row.updatedAt).toISOString() : null,
     updatedByName: row?.updatedByName ?? null,
   };
+}
+
+/** Pessoas ativas que podem assinar (com o cargo do cadastro). */
+export async function listCertificateSigners(db: CompetencyDb): Promise<CertificateSignerOptionDto[]> {
+  const [employees, roles, departments] = await Promise.all([
+    db.employee.findMany({ where: { status: ACTIVE } }) as Promise<SignerEmployeeRow[]>,
+    db.role.findMany({}) as Promise<{ id: string; name: string }[]>,
+    db.hrDepartment.findMany({}) as Promise<{ id: string; name: string }[]>,
+  ]);
+  const roleName = new Map(roles.map((r) => [r.id, r.name]));
+  const depName = new Map(departments.map((d) => [d.id, d.name]));
+  return employees
+    .filter((e) => (e.status ?? ACTIVE) === ACTIVE)
+    .map((e) => ({
+      employeeId: e.id,
+      name: e.name.trim(),
+      roleName: e.roleId ? clean(roleName.get(e.roleId)) : null,
+      departmentName: e.departmentId ? depName.get(e.departmentId) ?? null : null,
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
 }
 
 /** Configuração global: só o RH (escopo ALL) altera — líder não troca o signatário da empresa. */
@@ -140,8 +194,38 @@ export async function updateCertificateSettings(
   if (scope.kind !== "ALL") {
     throw new CompetencyServiceError("OUT_OF_SCOPE", "Só o RH altera a configuração dos certificados.", 403);
   }
-  const data = { ...input, updatedByUserId: actor.userId, updatedByName: actor.name };
-  const existing = await db.hrTrainingCertificateSettings.findUnique({ where: { id: SETTINGS_ID } });
+  let signerName: string;
+  let signerRole: string;
+  if (input.signerEmployeeId) {
+    const live = await resolveSignerEmployee(db, input.signerEmployeeId);
+    if (!live) throw new CompetencyServiceError("INVALID_SIGNER", "Pessoa inexistente ou inativa.", 400);
+    if (!live.role) {
+      throw new CompetencyServiceError("SIGNER_WITHOUT_ROLE", "A pessoa selecionada não tem cargo no cadastro. Ajuste o cadastro ou informe manualmente.", 400);
+    }
+    signerName = live.name;
+    signerRole = live.role;
+  } else {
+    signerName = input.signerName;
+    signerRole = input.signerRole;
+  }
+  const existing = (await db.hrTrainingCertificateSettings.findUnique({ where: { id: SETTINGS_ID } })) as SettingsRow | null;
+  // Prefixo gerado uma vez (iniciais da empresa) e nunca mais alterado.
+  let numberPrefix = existing?.numberPrefix ?? null;
+  if (!numberPrefix) {
+    numberPrefix = deriveCertificatePrefix(companyFromBranding(await loadBranding(db)).name);
+    if (!numberPrefix) {
+      throw new CompetencyServiceError("COMPANY_REQUIRED", "Cadastre o nome da empresa em Administração › Identidade Visual.", 400);
+    }
+  }
+  const data = {
+    signerEmployeeId: input.signerEmployeeId,
+    signerName,
+    signerRole,
+    issuePlace: CERTIFICATE_ISSUE_PLACE,
+    numberPrefix,
+    updatedByUserId: actor.userId,
+    updatedByName: actor.name,
+  };
   if (existing) {
     await db.hrTrainingCertificateSettings.update({ where: { id: SETTINGS_ID }, data: { ...data, updatedAt: new Date() } });
   } else {
@@ -197,7 +281,7 @@ export async function getTrainingCertificateBoard(
       contentLocked: activeCount > 0,
     },
     settings,
-    company: { name: company.name, hasLogo: Boolean(company.logoDataUrl) },
+    company: { name: company.name, hasLogo: true },
     blockers: trainingCertificateBlockers({
       training: { status: training.status, workloadHours: training.workloadHours, syllabus },
       settings,
@@ -371,7 +455,8 @@ async function issueOnce(
         version: TRAINING_CERTIFICATE_PAYLOAD_VERSION,
         number,
         issuedOn,
-        company: { name: company.name!, slogan: company.slogan, website: company.website, logoDataUrl: company.logoDataUrl },
+        // Logo oficial da marca (embutida no sistema), congelada no certificado.
+        company: { name: company.name!, slogan: company.slogan, website: company.website, logoDataUrl: CERTIFICATE_BRAND_LOGO_DATA_URL },
         participant: { employeeId, name },
         training: {
           id: training.id,
@@ -386,7 +471,7 @@ async function issueOnce(
         },
         syllabus,
         signer: { name: settings.signerName!, role: settings.signerRole! },
-        issuePlace: settings.issuePlace!,
+        issuePlace: CERTIFICATE_ISSUE_PLACE,
       };
       const row = (await t.hrTrainingCertificate.create({
         data: {

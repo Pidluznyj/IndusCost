@@ -4,7 +4,6 @@ import {
   Overlay,
   OverlayBody,
   OverlayField,
-  OverlayFieldGrid,
   OverlayFooter,
   OverlayHeader,
   OverlayInput,
@@ -15,22 +14,18 @@ import {
   cancelTrainingCertificate,
   fetchTrainingCertificateBoard,
   issueTrainingCertificates,
-  saveCertificateSettings,
   saveTrainingCertificateContent,
 } from "@/src/lib/competencies/competencyClient";
 import { formatIsoDateBr } from "@/src/lib/competencies/competencyDomain";
 import type { TrainingCertificateBoardDto } from "@/src/lib/competencies/competencyTypes";
 import {
   CERTIFICATE_INSTRUCTOR_MAX,
-  CERTIFICATE_PLACE_MAX,
-  CERTIFICATE_SIGNER_MAX,
-  formatCertificateNumber,
   formatHoursShort,
-  parseCertificateSettingsBody,
 } from "@/src/lib/competencies/trainingCertificate";
 import { BTN_GHOST, BTN_PRIMARY, BTN_SECONDARY, PanelState, TrainingStatusBadge } from "../competencyUi";
 import { TrainingSyllabusEditor, draftToSyllabus, syllabusToDraft, type SyllabusDraftRow } from "./TrainingSyllabusEditor";
 import { printTrainingCertificates } from "./trainingCertificatePrint";
+import { CertificateSettingsSection } from "./CertificateSettingsSection";
 
 function errorMessage(error: unknown, fallback: string): string {
   return error instanceof Error && error.message ? error.message : fallback;
@@ -42,7 +37,6 @@ function formatDateTimeBr(iso: string | null): string {
   return Number.isNaN(d.getTime()) ? "—" : d.toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" });
 }
 
-type SettingsDraft = { signerName: string; signerRole: string; issuePlace: string; numberPrefix: string };
 
 /**
  * Certificados de um treinamento: dados vêm do sistema (participantes, conclusão, competência,
@@ -71,7 +65,6 @@ export function CompetencyTrainingCertificatesOverlay({
   const [instructor, setInstructor] = useState("");
   const [syllabus, setSyllabus] = useState<SyllabusDraftRow[]>([]);
   const [contentDirty, setContentDirty] = useState(false);
-  const [settingsDraft, setSettingsDraft] = useState<SettingsDraft | null>(null);
 
   const load = useCallback(async () => {
     if (!trainingId) return;
@@ -92,7 +85,6 @@ export function CompetencyTrainingCertificatesOverlay({
     setBoard(null);
     setError(null);
     setNotice(null);
-    setSettingsDraft(null);
     void load();
   }, [open, load]);
 
@@ -161,21 +153,6 @@ export function CompetencyTrainingCertificatesOverlay({
       onChanged("Dados do certificado salvos");
       return "Instrutor e conteúdo programático salvos.";
     });
-
-  const settingsCheck = settingsDraft ? parseCertificateSettingsBody(settingsDraft) : null;
-  const saveSettings = () =>
-    run("settings", async () => {
-      if (!settingsCheck) return null;
-      if (settingsCheck.ok === false) throw new Error(settingsCheck.message);
-      await saveCertificateSettings(settingsCheck.value);
-      setSettingsDraft(null);
-      await load();
-      return "Configuração dos certificados salva.";
-    });
-
-  const s = board?.settings;
-  const nextNumberExample =
-    settingsCheck?.ok === true ? formatCertificateNumber(settingsCheck.value.numberPrefix, new Date().getFullYear(), 1) : null;
 
   return (
     <Overlay open={open} onClose={close} size="xl" ariaLabelledBy={titleId} testId="training-certificates-overlay">
@@ -338,102 +315,23 @@ export function CompetencyTrainingCertificatesOverlay({
               </div>
             </OverlaySection>
 
-            <OverlaySection
-              title="Assinatura e numeração"
-              description="Configuração única para todos os certificados da empresa."
-              actions={
-                canManage && !settingsDraft ? (
-                  <button
-                    type="button"
-                    className={BTN_SECONDARY}
-                    onClick={() =>
-                      setSettingsDraft({
-                        signerName: s?.signerName ?? "",
-                        signerRole: s?.signerRole ?? "",
-                        issuePlace: s?.issuePlace ?? "",
-                        numberPrefix: s?.numberPrefix ?? "",
-                      })
-                    }
-                    data-testid="certificate-settings-edit"
-                  >
-                    {s?.signerName ? "Editar" : "Configurar"}
-                  </button>
-                ) : null
-              }
-            >
-              {settingsDraft ? (
-                <div className="space-y-3" data-testid="certificate-settings-form">
-                  <OverlayFieldGrid columns={2}>
-                    <OverlayField label="Quem assina" required>
-                      {(fp) => (
-                        <OverlayInput {...fp} value={settingsDraft.signerName} maxLength={CERTIFICATE_SIGNER_MAX} onChange={(e) => setSettingsDraft({ ...settingsDraft, signerName: e.target.value })} />
-                      )}
-                    </OverlayField>
-                    <OverlayField label="Cargo" required>
-                      {(fp) => (
-                        <OverlayInput {...fp} value={settingsDraft.signerRole} maxLength={CERTIFICATE_SIGNER_MAX} onChange={(e) => setSettingsDraft({ ...settingsDraft, signerRole: e.target.value })} />
-                      )}
-                    </OverlayField>
-                    <OverlayField label="Local de emissão" required description="Ex.: cidade – UF">
-                      {(fp) => (
-                        <OverlayInput {...fp} value={settingsDraft.issuePlace} maxLength={CERTIFICATE_PLACE_MAX} onChange={(e) => setSettingsDraft({ ...settingsDraft, issuePlace: e.target.value })} />
-                      )}
-                    </OverlayField>
-                    <OverlayField
-                      label="Prefixo da numeração"
-                      required
-                      description={nextNumberExample ? `Primeiro número do ano: ${nextNumberExample}` : "Letras, números e hífen"}
-                    >
-                      {(fp) => (
-                        <OverlayInput
-                          {...fp}
-                          value={settingsDraft.numberPrefix}
-                          maxLength={16}
-                          onChange={(e) => setSettingsDraft({ ...settingsDraft, numberPrefix: e.target.value.toUpperCase() })}
-                        />
-                      )}
-                    </OverlayField>
-                  </OverlayFieldGrid>
-                  <div className="flex justify-end gap-2">
-                    <button type="button" className={BTN_SECONDARY} onClick={() => setSettingsDraft(null)} disabled={busy === "settings"}>
-                      Cancelar
-                    </button>
-                    <button type="button" className={BTN_PRIMARY} onClick={() => void saveSettings()} disabled={!settingsCheck?.ok || Boolean(busy)} data-testid="certificate-settings-save">
-                      {busy === "settings" ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : null}
-                      Salvar configuração
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <dl className="grid gap-x-6 gap-y-2 text-sm sm:grid-cols-2" data-testid="certificate-settings-summary">
-                  <div>
-                    <dt className="text-xs text-muted-foreground">Quem assina</dt>
-                    <dd className="font-medium">{s?.signerName ? `${s.signerName} · ${s.signerRole}` : "Não configurado"}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-xs text-muted-foreground">Local de emissão</dt>
-                    <dd className="font-medium">{s?.issuePlace ?? "Não configurado"}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-xs text-muted-foreground">Numeração</dt>
-                    <dd className="font-mono font-medium">{s?.numberPrefix ? `${s.numberPrefix}-AAAA/0001` : "Não configurada"}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-xs text-muted-foreground">Empresa (Identidade Visual)</dt>
-                    <dd className="font-medium">
-                      {board.company.name ?? "Não cadastrada"}
-                      <span className="text-xs font-normal text-muted-foreground"> · {board.company.hasLogo ? "com logo" : "sem logo (usa o nome)"}</span>
-                    </dd>
-                  </div>
-                  {s?.updatedAt ? (
-                    <p className="text-xs text-muted-foreground sm:col-span-2">
-                      Atualizado em {formatDateTimeBr(s.updatedAt)}
-                      {s.updatedByName ? ` por ${s.updatedByName}` : ""}
-                    </p>
-                  ) : null}
-                </dl>
-              )}
-            </OverlaySection>
+            <CertificateSettingsSection
+              settings={board.settings}
+              companyName={board.company.name}
+              hasLogo={board.company.hasLogo}
+              canManage={canManage}
+              busy={busy}
+              setBusy={setBusy}
+              onError={(message) => {
+                setNotice(null);
+                setError(message);
+              }}
+              onSaved={async (message) => {
+                setError(null);
+                await load();
+                setNotice(message);
+              }}
+            />
 
             {board.canceled.length > 0 ? (
               <OverlaySection title="Cancelados" description="Histórico: números cancelados não são reutilizados.">

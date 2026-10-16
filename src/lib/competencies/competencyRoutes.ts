@@ -71,6 +71,7 @@ import {
   getTrainingCertificateBoard,
   getTrainingCertificatesDocument,
   issueTrainingCertificates,
+  listCertificateSigners,
   listEmployeeTrainingCertificates,
   loadCertificateSettings,
   updateCertificateSettings,
@@ -638,6 +639,11 @@ export function registerCompetencyRoutes(
     return res.json(await loadCertificateSettings(db));
   }));
 
+  app.get(`${base}/certificate-settings/signers`, ...gate("manageTrainings"), asyncRoute("GET competencies/certificate-settings/signers", async (_req, res) => {
+    noStore(res);
+    return res.json({ signers: await listCertificateSigners(db) });
+  }));
+
   app.put(`${base}/certificate-settings`, ...gate("manageTrainings"), asyncRoute("PUT competencies/certificate-settings", async (req, res) => {
     const parsed = parseCertificateSettingsBody(req.body);
     if (parsed.ok === false) return badRequest(res, parsed);
@@ -646,7 +652,7 @@ export function registerCompetencyRoutes(
     logEmployeeHrAudit({
       event: "competency.certificate.settings",
       actorUserId: who.userId,
-      details: { numberPrefix: parsed.value.numberPrefix },
+      details: { source: saved.signerSource, signerEmployeeId: saved.signerEmployeeId, numberPrefix: saved.numberPrefix },
     });
     return res.json(saved);
   }));

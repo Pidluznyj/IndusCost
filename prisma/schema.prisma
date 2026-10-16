@@ -172,6 +172,7 @@ model Employee {
   hrTrainingParticipations     HrTrainingParticipant[]            @relation("HrTrainingParticipantEmployee")
   hrTrainingCertificates       HrTrainingCertificate[]            @relation("HrTrainingCertificateEmployee")
   hrExternalCertificates       HrEmployeeExternalCertificate[]    @relation("HrExternalCertificateEmployee")
+  hrCertificateSignerSettings  HrTrainingCertificateSettings[]    @relation("HrCertificateSigner")
   hrCompetencyLevelRequests    HrCompetencyLevelRequest[]         @relation("HrCompetencyLevelRequestEmployee")
 
   @@unique([personId])
@@ -853,9 +854,12 @@ model HrTrainingParticipant {
 }
 
 /// Configuração global dos certificados de treinamento (linha única id = "GLOBAL").
-/// Sem valores padrão: a emissão fica bloqueada até o RH configurar.
+/// Sem valores padrão: a emissão fica bloqueada até o RH configurar quem assina.
+/// signerEmployeeId: pessoa do sistema (nome/cargo vêm do cadastro) ou NULL = digitado manualmente.
+/// issuePlace é sempre "Curitiba – PR"; numberPrefix é gerado na 1ª gravação e nunca muda.
 model HrTrainingCertificateSettings {
   id              String   @id
+  signerEmployeeId String?  @db.Uuid
   signerName      String
   signerRole      String
   issuePlace      String
@@ -863,6 +867,7 @@ model HrTrainingCertificateSettings {
   updatedByUserId String?  @db.Uuid
   updatedByName   String?
   updatedAt       DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+  signerEmployee  Employee? @relation("HrCertificateSigner", fields: [signerEmployeeId], references: [id], onDelete: SetNull, onUpdate: NoAction)
 }
 
 /// Certificado emitido (imutável). payload = conteúdo congelado na emissão; payloadSha256 confere a integridade.

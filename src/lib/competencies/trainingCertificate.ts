@@ -9,6 +9,8 @@
  * A emissão congela esse conteúdo (payload + sha256); reabrir nunca reconsulta o cadastro.
  */
 
+import { CERTIFICATE_BRAND_LOGO_DATA_URL, CERTIFICATE_BRAND_SYMBOL_DATA_URL } from "./trainingCertificateBrand";
+
 export const CERTIFICATE_SYLLABUS_MAX_MODULES = 12;
 export const CERTIFICATE_SYLLABUS_TITLE_MAX = 90;
 export const CERTIFICATE_INSTRUCTOR_MAX = 120;
@@ -21,21 +23,59 @@ export const TRAINING_CERTIFICATE_PAYLOAD_VERSION = 1;
 
 export type SyllabusModule = { title: string; hours: number };
 
-export type CertificateSettingsInput = {
-  signerName: string;
-  signerRole: string;
-  issuePlace: string;
-  numberPrefix: string;
-};
+/** Local de emissão: sempre Curitiba – PR (não configurável). */
+export const CERTIFICATE_ISSUE_PLACE = "Curitiba – PR";
+
+/**
+ * Quem assina: uma pessoa do sistema (nome e cargo vêm do cadastro) ou digitado manualmente.
+ * Local e numeração não são informados: o local é fixo e o prefixo é gerado pelo sistema.
+ */
+export type CertificateSettingsInput =
+  | { signerEmployeeId: string; signerName: null; signerRole: null }
+  | { signerEmployeeId: null; signerName: string; signerRole: string };
 
 export type CertificateSettingsDto = {
+  signerSource: "EMPLOYEE" | "MANUAL" | null;
+  signerEmployeeId: string | null;
   signerName: string | null;
   signerRole: string | null;
-  issuePlace: string | null;
+  /** Pessoa selecionada que deixou de estar ativa: emissão bloqueada até trocar. */
+  signerInactive: boolean;
+  issuePlace: string;
+  /** Gerado na 1ª gravação e nunca mais alterado (numeração única e sequencial). */
   numberPrefix: string | null;
   updatedAt: string | null;
   updatedByName: string | null;
 };
+
+export type CertificateSignerOptionDto = {
+  employeeId: string;
+  name: string;
+  roleName: string | null;
+  departmentName: string | null;
+};
+
+const PREFIX_STOPWORDS = new Set(["da", "de", "do", "das", "dos", "e", "ltda", "me", "sa", "s/a", "eireli"]);
+
+/**
+ * Prefixo da numeração a partir do nome da empresa (Identidade Visual):
+ * iniciais sem acento + "-TR". "Lazarios Koppetel" → "LK-TR".
+ */
+export function deriveCertificatePrefix(companyName: string | null | undefined): string | null {
+  const words = (companyName ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .split(/[^A-Za-z0-9/]+/)
+    .filter((w) => w && !PREFIX_STOPWORDS.has(w.toLowerCase()));
+  const initials = words
+    .map((w) => w[0]!.toUpperCase())
+    .filter((c) => /[A-Z0-9]/.test(c))
+    .join("")
+    .slice(0, 6);
+  if (!initials) return null;
+  const prefix = `${initials}-TR`;
+  return CERTIFICATE_PREFIX_PATTERN.test(prefix) ? prefix : null;
+}
 
 type Parsed<T> = { ok: true; value: T } | { ok: false; code: string; message: string };
 
@@ -118,21 +158,19 @@ export function parseCertificateSettingsBody(body: unknown): Parsed<CertificateS
     return { ok: false, code: "INVALID_BODY", message: "Corpo da requisição inválido." };
   }
   const b = body as Record<string, unknown>;
+  // Local e prefixo não são aceitos do cliente (fixo / gerado pelo sistema): campos extras são ignorados.
+  if (b.signerEmployeeId !== undefined && b.signerEmployeeId !== null && b.signerEmployeeId !== "") {
+    const id = typeof b.signerEmployeeId === "string" ? b.signerEmployeeId.trim().toLowerCase() : "";
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(id)) {
+      return { ok: false, code: "INVALID_SIGNER", message: "Pessoa inválida." };
+    }
+    return { ok: true, value: { signerEmployeeId: id, signerName: null, signerRole: null } };
+  }
   const signerName = cleanText(b.signerName, CERTIFICATE_SIGNER_MAX);
-  if (!signerName) return { ok: false, code: "INVALID_SIGNER", message: "Informe o nome de quem assina o certificado." };
+  if (!signerName) return { ok: false, code: "INVALID_SIGNER", message: "Selecione uma pessoa ou informe o nome de quem assina." };
   const signerRole = cleanText(b.signerRole, CERTIFICATE_SIGNER_MAX);
   if (!signerRole) return { ok: false, code: "INVALID_SIGNER_ROLE", message: "Informe o cargo de quem assina." };
-  const issuePlace = cleanText(b.issuePlace, CERTIFICATE_PLACE_MAX);
-  if (!issuePlace) return { ok: false, code: "INVALID_PLACE", message: "Informe o local de emissão (ex.: cidade – UF)." };
-  const numberPrefix = typeof b.numberPrefix === "string" ? b.numberPrefix.trim().toUpperCase() : "";
-  if (!CERTIFICATE_PREFIX_PATTERN.test(numberPrefix)) {
-    return {
-      ok: false,
-      code: "INVALID_PREFIX",
-      message: "Prefixo da numeração: até 16 caracteres entre letras, números e hífen (ex.: LK-TR).",
-    };
-  }
-  return { ok: true, value: { signerName, signerRole, issuePlace, numberPrefix } };
+  return { ok: true, value: { signerEmployeeId: null, signerName, signerRole } };
 }
 
 export function parseCancelReason(body: unknown): Parsed<string> {
@@ -219,7 +257,7 @@ export type CertificateTrainingFacts = {
 /** Impedimentos de emissão do treinamento (iguais para todos os participantes). */
 export function trainingCertificateBlockers(input: {
   training: CertificateTrainingFacts;
-  settings: Pick<CertificateSettingsDto, "signerName" | "signerRole" | "issuePlace" | "numberPrefix"> | null;
+  settings: Pick<CertificateSettingsDto, "signerName" | "signerRole" | "signerInactive" | "numberPrefix"> | null;
   companyName: string | null;
 }): string[] {
   const out: string[] = [];
@@ -231,8 +269,10 @@ export function trainingCertificateBlockers(input: {
     );
   }
   const s = input.settings;
-  if (!s?.signerName || !s.signerRole || !s.issuePlace || !s.numberPrefix) {
-    out.push("Configure o signatário, o local de emissão e o prefixo da numeração dos certificados.");
+  if (s?.signerInactive) {
+    out.push("A pessoa selecionada para assinar não está mais ativa. Escolha outra em Assinatura e numeração.");
+  } else if (!s?.signerName || !s.signerRole || !s.numberPrefix) {
+    out.push("Configure quem assina os certificados (Assinatura e numeração).");
   }
   if (!input.companyName) out.push("Cadastre o nome da empresa em Administração › Identidade Visual.");
   return out;
@@ -245,8 +285,26 @@ export function websiteLabel(website: string | null | undefined): string | null 
 }
 
 // ---------------------------------------------------------------------------
-// HTML do certificado (fiel ao modelo "Certificado Lazarios Koppetel")
+// HTML do certificado — layout premium na identidade Lazarios Koppetel
+// (azul profundo #1455E0 → azul #0A8CFF → ciano #00BDFF, Ubuntu + Lato, logo oficial).
 // ---------------------------------------------------------------------------
+
+const BRAND = {
+  deep: "#1455E0",
+  blue: "#0A8CFF",
+  cyan: "#00BDFF",
+  navy: "#0B2A6F",
+  ink: "#2B3240",
+  muted: "#6B7383",
+  hair: "#D6E3FA",
+  mist: "#F4F8FF",
+};
+
+const MODALITY_LABELS: Record<string, string> = {
+  IN_PERSON: "Presencial",
+  ONLINE: "Online",
+  ON_THE_JOB: "No posto de trabalho",
+};
 
 function esc(value: string): string {
   return value
@@ -263,9 +321,14 @@ function safeImageSrc(src: string | null): string | null {
 }
 
 function participantNameSize(name: string): number {
-  if (name.length > 48) return 32;
-  if (name.length > 34) return 38;
-  return 44;
+  if (name.length > 48) return 34;
+  if (name.length > 34) return 40;
+  return 48;
+}
+
+function formatShortDateBr(iso: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : iso;
 }
 
 type AsideRow = { n: string; title: string; hours: string };
@@ -285,124 +348,180 @@ function asideRows(p: TrainingCertificatePayload): { heading: string; rows: Asid
   };
 }
 
+/** Borda recortada do selo (roseta): `teeth` dentes entre os raios `outer` e `inner`. */
+function rosettePath(cx: number, cy: number, outer: number, inner: number, teeth: number): string {
+  const pts: string[] = [];
+  for (let i = 0; i < teeth * 2; i++) {
+    const r = i % 2 === 0 ? outer : inner;
+    const a = (Math.PI * i) / teeth - Math.PI / 2;
+    pts.push(`${(cx + r * Math.cos(a)).toFixed(2)},${(cy + r * Math.sin(a)).toFixed(2)}`);
+  }
+  return `M${pts.join("L")}Z`;
+}
+
+/** Guilhoché: elipses finas girando em torno do centro (fundo de segurança, bem discreto). */
+function guillochePattern(id: string): string {
+  const rings: string[] = [];
+  for (let i = 0; i < 36; i++) {
+    rings.push(`<ellipse cx="0" cy="0" rx="150" ry="58" transform="rotate(${i * 5})" />`);
+  }
+  return `<svg viewBox="-160 -160 320 320" preserveAspectRatio="xMidYMid slice" style="position:absolute;left:96mm;top:22mm;width:150mm;height:150mm;opacity:0.35" aria-hidden="true">
+      <defs><linearGradient id="${id}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${BRAND.cyan}" /><stop offset="1" stop-color="${BRAND.deep}" /></linearGradient></defs>
+      <g fill="none" stroke="url(#${id})" stroke-width="0.3" opacity="0.12">${rings.join("")}</g>
+    </svg>`;
+}
+
+function renderSeal(p: TrainingCertificatePayload, idx: number): string {
+  const hours = formatHoursShort(p.training.workloadHours);
+  const ring = `sealRing-${idx}`;
+  const grad = `sealGrad-${idx}`;
+  const seal = `${p.company.name.toUpperCase()} ◆ DESENVOLVIMENTO DE PESSOAS ◆ `;
+  return `<div style="position:relative;width:34mm;height:34mm;justify-self:center">
+          <svg viewBox="0 0 200 200" style="position:absolute;inset:0;width:100%;height:100%;overflow:visible" aria-hidden="true">
+            <defs>
+              <linearGradient id="${grad}" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0" stop-color="${BRAND.cyan}" />
+                <stop offset="0.5" stop-color="${BRAND.blue}" />
+                <stop offset="1" stop-color="${BRAND.deep}" />
+              </linearGradient>
+              <path id="${ring}" d="M100,100 m-74,0 a74,74 0 1,1 148,0 a74,74 0 1,1 -148,0"></path>
+            </defs>
+            <path d="${rosettePath(100, 100, 99, 92, 36)}" fill="url(#${grad})" />
+            <circle cx="100" cy="100" r="88" fill="none" stroke="#FFFFFF" stroke-opacity="0.75" stroke-width="0.8" />
+            <circle cx="100" cy="100" r="60" fill="${BRAND.navy}" fill-opacity="0.25" />
+            <circle cx="100" cy="100" r="58" fill="none" stroke="#FFFFFF" stroke-width="0.8" stroke-dasharray="1.5 2.5" />
+            <text style="font-family:Ubuntu,sans-serif;font-size:11.5px;font-weight:500;letter-spacing:1.6px;fill:#FFFFFF"><textPath href="#${ring}" textLength="462" lengthAdjust="spacingAndGlyphs">${esc(seal)}</textPath></text>
+          </svg>
+          <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#FFFFFF">
+            <span style="font-family:Ubuntu,sans-serif;font-size:${hours.length > 4 ? 18 : 25}px;font-weight:700;line-height:1">${esc(hours)}</span>
+            <span style="margin-top:2px;font-family:Ubuntu,sans-serif;font-size:6px;font-weight:500;letter-spacing:0.28em;text-transform:uppercase">formação</span>
+          </div>
+        </div>`;
+}
+
+function fact(label: string, value: string, field: string): string {
+  return `<div style="display:flex;flex-direction:column;gap:1.2mm;padding:0 6mm;border-left:1px solid ${BRAND.hair}">
+            <span style="font-family:Ubuntu,sans-serif;font-size:7px;font-weight:500;letter-spacing:0.24em;text-transform:uppercase;color:${BRAND.muted}">${esc(label)}</span>
+            <span data-field="${field}-fact" style="font-family:Ubuntu,sans-serif;font-size:12.5px;font-weight:500;color:${BRAND.navy}">${esc(value)}</span>
+          </div>`;
+}
+
+function signature(name: string, role: string, field?: string): string {
+  return `<div style="display:flex;flex-direction:column;align-items:center;gap:1mm;text-align:center">
+          <span style="width:100%;height:1px;background:linear-gradient(90deg,transparent,${BRAND.navy} 18%,${BRAND.navy} 82%,transparent);margin-bottom:2mm"></span>
+          <span ${field ? `data-field="${field}" ` : ""}style="font-family:Ubuntu,sans-serif;font-size:12.5px;font-weight:500;color:${BRAND.ink}">${esc(name)}</span>
+          <span style="font-size:8px;letter-spacing:0.2em;text-transform:uppercase;color:${BRAND.muted}">${esc(role)}</span>
+        </div>`;
+}
+
 function renderCertificatePage(p: TrainingCertificatePayload, index: number): string {
-  const ringId = `sealRing-${index + 1}`;
-  const logo = safeImageSrc(p.company.logoDataUrl);
-  const hoursShort = formatHoursShort(p.training.workloadHours);
+  const idx = index + 1;
+  const logo = safeImageSrc(p.company.logoDataUrl) ?? CERTIFICATE_BRAND_LOGO_DATA_URL;
+  const symbol = CERTIFICATE_BRAND_SYMBOL_DATA_URL;
   const issueLine = `${p.issuePlace}, ${formatLongDatePtBr(p.issuedOn)}`;
   const footerIssueLine = `${p.issuePlace} · ${formatLongDatePtBr(p.issuedOn)}`;
-  const seal = `${p.company.name.toUpperCase()} ◆ DESENVOLVIMENTO DE PESSOAS ◆ `;
   const aside = asideRows(p);
   const site = websiteLabel(p.company.website);
   const nameSize = participantNameSize(p.participant.name);
+  const modality = MODALITY_LABELS[p.training.modality] ?? p.training.modality;
 
-  const brand = logo
-    ? `<img src="${esc(logo)}" alt="${esc(p.company.name)}" style="height:12mm;width:auto;max-width:70mm;object-fit:contain;display:block">`
-    : `<span style="font-family:Ubuntu,sans-serif;font-size:18px;font-weight:500;letter-spacing:0.04em;color:#1254E0">${esc(p.company.name)}</span>`;
-
-  const secondSignature = p.training.instructorName
-    ? `<span style="font-family:Ubuntu,sans-serif;font-size:12px;font-weight:500;color:#343434">${esc(p.training.instructorName)}</span>
-          <span style="font-size:9px;letter-spacing:0.16em;text-transform:uppercase;color:#7A8290">Instrutor responsável</span>`
-    : `<span style="font-family:Ubuntu,sans-serif;font-size:12px;font-weight:500;color:#343434">${esc(issueLine)}</span>
-          <span style="font-size:9px;letter-spacing:0.16em;text-transform:uppercase;color:#7A8290">Local e data</span>`;
+  const second = p.training.instructorName
+    ? signature(p.training.instructorName, "Instrutor responsável")
+    : signature(issueLine, "Local e data");
 
   const rows = aside.rows
     .map(
-      (r) => `<div style="display:grid;grid-template-columns:7mm minmax(0,1fr) auto;gap:2.5mm;align-items:baseline;padding:2.6mm 0;border-bottom:1px solid #E2EAFA">
-            <span style="font-family:Ubuntu,sans-serif;font-size:10px;font-weight:500;color:#0A87F0">${esc(r.n)}</span>
-            <span style="font-size:10.5px;line-height:1.35;color:#343434">${esc(r.title)}</span>
-            <span style="font-family:Ubuntu,sans-serif;font-size:9.5px;color:#7A8290">${esc(r.hours)}</span>
+      (r) => `<div style="display:grid;grid-template-columns:8mm minmax(0,1fr) auto;gap:2.5mm;align-items:baseline;padding:2.4mm 0;border-bottom:1px solid ${BRAND.hair}">
+            <span style="font-family:Ubuntu,sans-serif;font-size:9.5px;font-weight:700;color:${BRAND.blue}">${esc(r.n)}</span>
+            <span style="font-size:10.5px;line-height:1.35;color:${BRAND.ink}">${esc(r.title)}</span>
+            <span style="font-family:Ubuntu,sans-serif;font-size:9.5px;font-weight:500;color:${BRAND.muted}">${esc(r.hours)}</span>
           </div>`,
     )
     .join("\n          ");
   const note = aside.note
-    ? `<p style="margin:3mm 0 0;font-size:9.5px;line-height:1.5;color:#5E6570">${esc(aside.note)}</p>`
+    ? `<p style="margin:3mm 0 0;font-size:9.5px;line-height:1.55;color:${BRAND.muted}">${esc(aside.note)}</p>`
     : "";
 
-  return `<section class="page" data-certificate-number="${esc(p.number)}" style="position:relative;display:flex;flex-direction:column;width:297mm;height:210mm;padding:9mm 9mm 0;box-sizing:border-box;background-color:#0D3FB0;background-image:repeating-radial-gradient(circle at 0% 100%, rgba(255,255,255,0.07) 0 1px, transparent 1px 5px),repeating-radial-gradient(circle at 100% 0%, rgba(0,189,255,0.10) 0 1px, transparent 1px 5px);font-family:Lato,sans-serif;color:#343434;overflow:hidden">
-  <div style="position:relative;flex:1;background:#FFFFFF;display:grid;grid-template-columns:minmax(0,1fr) 70mm;overflow:hidden;box-shadow:0 0 0 1px rgba(0,0,0,0.05)">
-    <div style="position:absolute;inset:4.5mm;border:1px solid #C7D5F4;pointer-events:none"></div>
-    <div style="position:absolute;inset:5.5mm;border:0.5px solid #E2EAFA;pointer-events:none"></div>
-    <div style="position:absolute;left:4.5mm;top:4.5mm;width:2.4mm;height:2.4mm;background:#1254E0;transform:translate(-50%,-50%) rotate(45deg)"></div>
-    <div style="position:absolute;right:4.5mm;top:4.5mm;width:2.4mm;height:2.4mm;background:#1254E0;transform:translate(50%,-50%) rotate(45deg)"></div>
-    <div style="position:absolute;left:4.5mm;bottom:4.5mm;width:2.4mm;height:2.4mm;background:#1254E0;transform:translate(-50%,50%) rotate(45deg)"></div>
-    <div style="position:absolute;right:4.5mm;bottom:4.5mm;width:2.4mm;height:2.4mm;background:#1254E0;transform:translate(50%,50%) rotate(45deg)"></div>
-    <div style="position:absolute;left:-38mm;bottom:-38mm;width:90mm;height:90mm;border:1px solid #E2EAFA;transform:rotate(45deg)"></div>
-    <div style="position:absolute;left:-30mm;bottom:-30mm;width:74mm;height:74mm;border:1px solid #EDF2F5;background:#F5F8FD;transform:rotate(45deg)"></div>
+  return `<section class="page" data-certificate-number="${esc(p.number)}" style="position:relative;width:297mm;height:210mm;box-sizing:border-box;overflow:hidden;background:#FFFFFF;font-family:Lato,sans-serif;color:${BRAND.ink}">
+  ${guillochePattern(`guilloche-${idx}`)}
+  <img src="${esc(symbol)}" alt="" aria-hidden="true" style="position:absolute;right:-14mm;bottom:-30mm;height:150mm;width:auto;opacity:0.045">
 
-    <div style="position:relative;display:flex;flex-direction:column;padding:13mm 12mm 11mm 18mm;min-width:0">
-      <div style="position:relative;display:flex;justify-content:space-between;align-items:center;gap:24px">
-        ${brand}
-        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px">
-          <span style="font-family:Ubuntu,sans-serif;font-size:8px;font-weight:500;letter-spacing:0.22em;text-transform:uppercase;color:#7A8290">Registro nº</span>
-          <span data-field="number" style="font-family:Ubuntu,sans-serif;font-size:11.5px;font-weight:500;color:#1254E0;letter-spacing:0.06em">${esc(p.number)}</span>
+  <!-- faixa da marca -->
+  <div style="position:absolute;left:0;top:0;bottom:0;width:13mm;background:linear-gradient(0deg,${BRAND.deep} 0%,${BRAND.blue} 55%,${BRAND.cyan} 100%)">
+    <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center">
+      <span style="writing-mode:vertical-rl;transform:rotate(180deg);font-family:Ubuntu,sans-serif;font-size:7.5px;font-weight:500;letter-spacing:0.5em;text-transform:uppercase;color:rgba(255,255,255,0.9);white-space:nowrap">${esc(p.company.name)} · Desenvolvimento de pessoas</span>
+    </div>
+  </div>
+  <div style="position:absolute;left:13mm;top:0;bottom:0;width:1.1mm;background:linear-gradient(0deg,${BRAND.cyan},rgba(0,189,255,0.15))"></div>
+
+  <!-- moldura fina -->
+  <div style="position:absolute;top:8mm;right:8mm;bottom:8mm;left:21mm;border:0.35mm solid rgba(20,85,224,0.45);pointer-events:none"></div>
+  <div style="position:absolute;top:9.6mm;right:9.6mm;bottom:9.6mm;left:22.6mm;border:0.2mm solid rgba(0,189,255,0.35);pointer-events:none"></div>
+
+  <div style="position:absolute;top:8mm;right:8mm;bottom:8mm;left:21mm;display:grid;grid-template-columns:minmax(0,1fr) 66mm">
+    <div style="position:relative;display:flex;flex-direction:column;padding:11mm 12mm 8mm 14mm;min-width:0">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:24px">
+        <img src="${esc(logo)}" alt="${esc(p.company.name)}" style="height:16mm;width:auto;max-width:80mm;object-fit:contain;display:block">
+        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:1.2mm;text-align:right">
+          <span style="font-family:Ubuntu,sans-serif;font-size:7px;font-weight:500;letter-spacing:0.28em;text-transform:uppercase;color:${BRAND.muted}">Registro nº</span>
+          <span data-field="number" style="font-family:Ubuntu,sans-serif;font-size:12.5px;font-weight:700;letter-spacing:0.08em;color:${BRAND.deep}">${esc(p.number)}</span>
+          <span style="font-size:8px;color:${BRAND.muted}">Emitido em ${esc(formatShortDateBr(p.issuedOn))}</span>
         </div>
       </div>
 
-      <div style="position:relative;flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:4.5mm">
-        <div style="display:flex;flex-direction:column;align-items:center;gap:2mm">
-          <span style="font-family:Ubuntu,sans-serif;font-size:42px;font-weight:300;line-height:1;letter-spacing:0.3em;text-transform:uppercase;color:#1254E0;padding-left:0.3em">Certificado</span>
-          <span style="font-family:Ubuntu,sans-serif;font-size:11px;font-weight:500;letter-spacing:0.42em;text-transform:uppercase;color:#0A87F0;padding-left:0.42em">de conclusão de curso</span>
+      <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:3.6mm">
+        <div style="display:flex;flex-direction:column;align-items:center;gap:2.2mm">
+          <span style="font-family:Ubuntu,sans-serif;font-size:46px;font-weight:300;line-height:1;letter-spacing:0.32em;text-transform:uppercase;padding-left:0.32em;background:linear-gradient(90deg,${BRAND.deep},${BRAND.blue} 55%,${BRAND.cyan});-webkit-background-clip:text;background-clip:text;color:transparent">Certificado</span>
+          <span style="font-family:Ubuntu,sans-serif;font-size:10.5px;font-weight:500;letter-spacing:0.46em;text-transform:uppercase;padding-left:0.46em;color:${BRAND.blue}">de conclusão de curso</span>
         </div>
-        <div style="display:flex;align-items:center;gap:3mm;width:70mm">
-          <span style="flex:1;height:1px;background:#C7D5F4"></span>
-          <span style="width:1.8mm;height:1.8mm;background:#00BDFF;transform:rotate(45deg)"></span>
-          <span style="width:2.6mm;height:2.6mm;background:#1254E0;transform:rotate(45deg)"></span>
-          <span style="width:1.8mm;height:1.8mm;background:#00BDFF;transform:rotate(45deg)"></span>
-          <span style="flex:1;height:1px;background:#C7D5F4"></span>
+        <div style="display:flex;align-items:center;gap:2.5mm;width:84mm" aria-hidden="true">
+          <span style="flex:1;height:1px;background:linear-gradient(90deg,transparent,${BRAND.hair})"></span>
+          <span style="width:1.6mm;height:1.6mm;background:${BRAND.cyan};transform:rotate(45deg)"></span>
+          <span style="width:2.4mm;height:2.4mm;background:${BRAND.deep};transform:rotate(45deg)"></span>
+          <span style="width:1.6mm;height:1.6mm;background:${BRAND.cyan};transform:rotate(45deg)"></span>
+          <span style="flex:1;height:1px;background:linear-gradient(90deg,${BRAND.hair},transparent)"></span>
         </div>
-        <span style="font-size:13.5px;font-style:italic;color:#5E6570">A ${esc(p.company.name)} certifica que</span>
-        <span data-field="participant" style="font-family:Lato,sans-serif;font-size:${nameSize}px;font-weight:300;line-height:1.05;letter-spacing:-0.01em;color:#0D2F80;text-wrap:balance;max-width:170mm">${esc(p.participant.name)}</span>
-        <p style="margin:0;font-size:13px;line-height:1.7;color:#4A4F57;max-width:160mm;text-wrap:pretty">concluiu com êxito o curso <strong data-field="title" style="font-family:Ubuntu,sans-serif;font-weight:500;color:#1254E0">${esc(p.training.title)}</strong>, com carga horária total de <strong data-field="workload" style="font-weight:700;color:#343434">${esc(formatHoursLong(p.training.workloadHours))}</strong>, concluído em <strong data-field="completed" style="font-weight:700;color:#343434">${esc(formatLongDatePtBr(p.training.completedOn))}</strong>, demonstrando dedicação e compromisso com a excelência.</p>
+        <span style="font-size:13px;font-style:italic;letter-spacing:0.02em;color:${BRAND.muted}">A ${esc(p.company.name)} certifica que</span>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:2.4mm">
+          <span data-field="participant" style="font-family:Lato,sans-serif;font-size:${nameSize}px;font-weight:300;line-height:1.05;letter-spacing:-0.01em;color:${BRAND.navy};text-wrap:balance;max-width:168mm">${esc(p.participant.name)}</span>
+          <span style="width:96mm;height:0.5mm;border-radius:1mm;background:linear-gradient(90deg,transparent,${BRAND.blue} 20%,${BRAND.cyan} 80%,transparent)" aria-hidden="true"></span>
+        </div>
+        <p style="margin:0;font-size:12.5px;line-height:1.75;color:#4A5160;max-width:158mm;text-wrap:pretty">concluiu com êxito o curso <strong data-field="title" style="font-family:Ubuntu,sans-serif;font-weight:500;color:${BRAND.deep}">${esc(p.training.title)}</strong>, com carga horária total de <strong data-field="workload" style="font-weight:700;color:${BRAND.ink}">${esc(formatHoursLong(p.training.workloadHours))}</strong>, concluído em <strong data-field="completed" style="font-weight:700;color:${BRAND.ink}">${esc(formatLongDatePtBr(p.training.completedOn))}</strong>, demonstrando dedicação e compromisso com a excelência.</p>
+        <div style="display:flex;align-items:stretch;justify-content:center;margin-top:1mm">
+          ${fact("Carga horária", formatHoursLong(p.training.workloadHours), "workload")}
+          ${fact("Concluído em", formatShortDateBr(p.training.completedOn), "completed")}
+          ${fact("Modalidade", modality, "modality")}
+          <span style="border-left:1px solid ${BRAND.hair}"></span>
+        </div>
       </div>
 
-      <div style="position:relative;display:grid;grid-template-columns:minmax(0,1fr) 30mm minmax(0,1fr);gap:8mm;align-items:end">
-        <div style="display:flex;flex-direction:column;align-items:center;gap:3px;padding-top:8px;border-top:1px solid #343434;text-align:center">
-          <span data-field="signer" style="font-family:Ubuntu,sans-serif;font-size:12px;font-weight:500;color:#343434">${esc(p.signer.name)}</span>
-          <span style="font-size:9px;letter-spacing:0.16em;text-transform:uppercase;color:#7A8290">${esc(p.signer.role)}</span>
-        </div>
+      <div style="display:grid;grid-template-columns:minmax(0,1fr) 34mm minmax(0,1fr);gap:9mm;align-items:end">
+        ${signature(p.signer.name, p.signer.role, "signer")}
+        ${renderSeal(p, idx)}
+        ${second}
+      </div>
 
-        <div style="position:relative;width:30mm;height:30mm;justify-self:center">
-          <svg viewBox="0 0 200 200" style="position:absolute;inset:0;width:100%;height:100%;overflow:visible">
-            <defs><path id="${ringId}" d="M100,100 m-78,0 a78,78 0 1,1 156,0 a78,78 0 1,1 -156,0"></path></defs>
-            <circle cx="100" cy="100" r="98" fill="#1254E0"></circle>
-            <circle cx="100" cy="100" r="92" fill="none" stroke="#00BDFF" stroke-width="1.2"></circle>
-            <circle cx="100" cy="100" r="64" fill="#0D3FB0"></circle>
-            <circle cx="100" cy="100" r="60" fill="none" stroke="#FFFFFF" stroke-width="0.8" stroke-dasharray="2 3"></circle>
-            <text style="font-family:Ubuntu,sans-serif;font-size:12.5px;font-weight:500;letter-spacing:2px;fill:#FFFFFF"><textPath href="#${ringId}" textLength="486" lengthAdjust="spacingAndGlyphs">${esc(seal)}</textPath></text>
-          </svg>
-          <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;color:#FFFFFF">
-            <span style="font-family:Ubuntu,sans-serif;font-size:${hoursShort.length > 4 ? 18 : 24}px;font-weight:700;line-height:1">${esc(hoursShort)}</span>
-            <span style="font-size:6.5px;letter-spacing:0.2em;text-transform:uppercase">formação</span>
-          </div>
-        </div>
-
-        <div style="display:flex;flex-direction:column;align-items:center;gap:3px;padding-top:8px;border-top:1px solid #343434;text-align:center">
-          ${secondSignature}
-        </div>
+      <div style="margin-top:5mm;display:flex;justify-content:space-between;align-items:center;gap:12px;font-family:Ubuntu,sans-serif;font-size:7px;font-weight:500;letter-spacing:0.22em;text-transform:uppercase;color:${BRAND.muted}">
+        <span>${esc(p.company.slogan ?? "")}</span>
+        <span>${esc(footerIssueLine)}</span>
+        <span style="color:${BRAND.deep}">${esc(site ?? "")}</span>
       </div>
     </div>
-    <aside style="position:relative;background:#F5F8FD;border-left:1px solid #E2EAFA;padding:13mm 9mm 11mm 9mm;display:flex;flex-direction:column;gap:5mm;overflow:hidden">
-      <div style="position:absolute;right:-26mm;top:-26mm;width:56mm;height:56mm;border:1px solid #DCE5F7;transform:rotate(45deg)"></div>
-      <div style="position:relative;display:flex;flex-direction:column;gap:2.5mm">
-        <span style="font-family:Ubuntu,sans-serif;font-size:8px;font-weight:500;letter-spacing:0.28em;text-transform:uppercase;color:#0A87F0">${esc(aside.heading)}</span>
-        <div style="display:flex;gap:1.6mm;align-items:center"><span style="width:1.8mm;height:1.8mm;background:#1254E0;transform:rotate(45deg)"></span><span style="width:1.3mm;height:1.3mm;background:#00BDFF;transform:rotate(45deg)"></span></div>
+
+    <aside style="position:relative;display:flex;flex-direction:column;gap:5mm;padding:12mm 8mm 10mm 8mm;background:linear-gradient(180deg,${BRAND.mist},#EAF2FF);border-left:1px solid ${BRAND.hair};overflow:hidden">
+      <div style="display:flex;flex-direction:column;gap:2.5mm">
+        <span style="font-family:Ubuntu,sans-serif;font-size:7.5px;font-weight:700;letter-spacing:0.3em;text-transform:uppercase;color:${BRAND.blue}">${esc(aside.heading)}</span>
+        <span style="width:12mm;height:0.6mm;background:linear-gradient(90deg,${BRAND.deep},${BRAND.cyan})" aria-hidden="true"></span>
       </div>
-      <div style="position:relative;flex:1;display:flex;flex-direction:column;justify-content:center">
+      <div style="flex:1;display:flex;flex-direction:column;justify-content:flex-start;padding-top:3mm">
           ${rows}
           ${note}
       </div>
-      <div style="position:relative;display:flex;justify-content:space-between;align-items:baseline;gap:3mm;padding-top:2mm;border-top:2px solid #1254E0">
-        <span style="font-family:Ubuntu,sans-serif;font-size:8px;font-weight:500;letter-spacing:0.2em;text-transform:uppercase;color:#343434">Total</span>
-        <span style="font-family:Ubuntu,sans-serif;font-size:14px;font-weight:700;color:#1254E0">${esc(hoursShort)}</span>
+      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:3mm;padding-top:2.5mm;border-top:0.5mm solid ${BRAND.deep}">
+        <span style="font-family:Ubuntu,sans-serif;font-size:7.5px;font-weight:700;letter-spacing:0.24em;text-transform:uppercase;color:${BRAND.ink}">Total</span>
+        <span style="font-family:Ubuntu,sans-serif;font-size:15px;font-weight:700;color:${BRAND.deep}">${esc(formatHoursShort(p.training.workloadHours))}</span>
       </div>
     </aside>
-  </div>
-
-  <div style="height:9mm;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:0 2mm;font-family:Ubuntu,sans-serif;font-size:7.5px;font-weight:500;letter-spacing:0.24em;text-transform:uppercase;color:#FFFFFF">
-    <span>${esc(p.company.slogan ?? "")}</span>
-    ${p.training.instructorName ? `<span>${esc(footerIssueLine)}</span>` : ""}
-    <span>${esc(site ?? "")}</span>
   </div>
 </section>`;
 }

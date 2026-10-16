@@ -311,14 +311,18 @@ Treinamentos › **Certificados** abre o painel do treinamento. Ele emite, impri
 | Competência desenvolvida (lateral, sem conteúdo programático) | `HrCompetency.name` + `description` |
 | Conteúdo programático (lateral) | `HrTraining.syllabus` (módulos com horas; soma = carga horária) |
 | 2ª assinatura | `HrTraining.instructorName`. Sem instrutor, a linha traz local e data |
-| Signatário, cargo, local de emissão, prefixo da numeração | `HrTrainingCertificateSettings` (configuração única, editada no painel) |
-| Empresa, logo, slogan, site, texto do selo | `BrandingSettings` (Administração › Identidade Visual). Logo: proposta → expandido → compacto, igual aos documentos de projeto |
+| Quem assina e cargo | `HrTrainingCertificateSettings`. **Pessoa do sistema**: escolhida numa lista de colaboradores ativos; nome e cargo (`Role`) vêm do cadastro e são lidos na hora da emissão. Ou **digitado manualmente** (nome + cargo). |
+| Local de emissão | Fixo: **Curitiba – PR** (CHECK no banco; não configurável) |
+| Prefixo da numeração | Gerado pelo sistema na 1ª gravação, com as iniciais da empresa na Identidade Visual + `-TR` (ex.: `LK-TR`). **Nunca mais muda**: trigger no banco. |
+| Empresa, slogan, site, texto do selo | `BrandingSettings` (Administração › Identidade Visual) |
+| Logo | **Logo oficial Lazarios Koppetel embutida no sistema** (`trainingCertificateBrand.ts`, WebP recortado do arquivo oficial da marca). Também traz o símbolo usado na marca d’água. Não depende do logo da Identidade Visual e fica congelada no certificado. |
 | Registro nº | `{prefixo}-{ano da emissão}/{sequência de 4 dígitos}`, sequencial por ano, nunca reutilizado |
 | Data de emissão | Data de negócio (São Paulo) do clique em Emitir |
 
 **Regras** (`src/lib/competencies/trainingCertificate.ts` e `trainingCertificate.server.ts`)
 
-- **Emissão bloqueada** se: treinamento não concluído, carga 0, conteúdo que não fecha a carga, configuração incompleta, ou empresa sem nome na Identidade Visual. Os impedimentos aparecem no painel e voltam no 409 `CERTIFICATE_BLOCKED`.
+- **Emissão bloqueada** se: treinamento não concluído, carga 0, conteúdo que não fecha a carga, quem assina não configurado, pessoa selecionada que deixou de estar ativa, ou empresa sem nome na Identidade Visual.
+- **Registro nº**: único (índice) e sequencial por ano. É gerado na emissão e **não é editável** em nenhuma tela. Os impedimentos aparecem no painel e voltam no 409 `CERTIFICATE_BLOCKED`.
 - **Um certificado vigente** por participante do treinamento (índice parcial `HrTrainingCertificate_active_participant_uidx`). Emitir de novo não duplica: devolve `ALREADY_ISSUED`. Participante sem conclusão devolve `NOT_COMPLETED`.
 - **Conteúdo congelado**: a emissão grava o conteúdo inteiro (inclusive o logo) em `payload` com `payloadSha256`. Imprimir usa só o gravado. Mudar o cadastro do colaborador, a Identidade Visual ou o signatário depois **não altera** certificados emitidos. A impressão é recusada se o hash não conferir.
 - **Imutável no banco**: trigger `HrTrainingCertificate_immutable` bloqueia DELETE e todo UPDATE, exceto ACTIVE → CANCELED com data, autor e motivo (CHECK exige motivo). `HrTraining` com certificado não pode ser excluído (FK RESTRICT).
@@ -327,6 +331,8 @@ Treinamentos › **Certificados** abre o painel do treinamento. Ele emite, impri
 - **Escopo**: o líder vê e emite apenas para a própria equipe. A configuração global só é alterada com escopo RH (ALL).
 - **Concorrência**: a numeração usa o maior número do ano + 1 dentro da transação. Em colisão (`P2002` no número único ou no índice parcial), a emissão é refeita até 3 vezes.
 
+**Layout** (premium, identidade da marca): faixa lateral no degradê da marca (#1455E0 → #0A8CFF → #00BDFF), moldura fina dupla, guilhoché discreto e símbolo em marca d’água, título em degradê, faixa de informações (carga, conclusão, modalidade), selo em roseta com as horas, assinaturas e painel lateral com o conteúdo programático. Fontes Ubuntu e Lato.
+
 **Impressão**: `src/components/competencies/certificate/trainingCertificatePrint.ts` monta o HTML (`renderTrainingCertificatesHtml`, uma página por certificado) num iframe isolado do CSS do app e chama a impressão do navegador. O usuário salva em PDF por ali. Fontes Lato e Ubuntu (subconjunto latino) estão embutidas: 400/500/700 vêm da arte de Comunicados, 300 fica em `certificate/assets`. O diálogo espera as fontes e o logo carregarem.
 
 **API**
@@ -334,7 +340,8 @@ Treinamentos › **Certificados** abre o painel do treinamento. Ele emite, impri
 | Método e rota | Capacidade |
 |---|---|
 | `GET /api/hr/competencies/certificate-settings` | `viewTrainings` |
-| `PUT /api/hr/competencies/certificate-settings` | `manageTrainings` + escopo RH |
+| `GET /api/hr/competencies/certificate-settings/signers` (pessoas ativas + cargo) | `manageTrainings` |
+| `PUT /api/hr/competencies/certificate-settings` (`{ signerEmployeeId }` ou `{ signerName, signerRole }`; local e prefixo enviados são ignorados) | `manageTrainings` + escopo RH |
 | `GET /api/hr/competencies/trainings/:id/certificates` (painel) | `viewTrainings` |
 | `PUT /api/hr/competencies/trainings/:id/certificate-content` | `manageTrainings` |
 | `POST /api/hr/competencies/trainings/:id/certificates` (`{ employeeIds? }`) | `manageTrainings` |
@@ -411,7 +418,7 @@ A aba aparece com qualquer uma das duas permissões. Cada origem carrega sozinha
 1. Aplicar a migration `20261008120000_hr_competencies` **antes** do código: a página consulta as tabelas novas.
 2. Rodar `npm run permissions:seed` para criar os 3 recursos novos.
 3. Liberar os perfis desejados na tela de perfis de acesso.
-4. Certificados: aplicar a migration `20261016120000_hr_training_certificates` **antes** do código (a lista de treinamentos consulta `HrTrainingCertificate`). Depois, no painel de certificados, configurar signatário, cargo, local e prefixo. Conferir nome, logo, slogan e site em Identidade Visual. Sem permissão nova: usa as de Treinamentos.
+4. Certificados: aplicar a migration `20261016120000_hr_training_certificates` **antes** do código (a lista de treinamentos consulta `HrTrainingCertificate`). Aplicar também `20261018120000_hr_certificate_signer_employee` (pessoa que assina, local fixo e prefixo imutável). Depois, no painel de certificados, escolher quem assina (pessoa do sistema ou manual); o local e a numeração são automáticos. Conferir nome, logo, slogan e site em Identidade Visual. Sem permissão nova: usa as de Treinamentos.
    Ficha › Certificados: aplicar também a migration `20261017120000_hr_employee_external_certificates` antes do código. Usa as permissões de documentos da ficha.
 5. Cadastrar competências e postos e alocar as equipes. Os níveis começam em 0 e são preenchidos pelas avaliações, pela edição da matriz ou pela importação por planilha (carga inicial: Baixar modelo → preencher → Importar).
 
@@ -518,3 +525,5 @@ Quando essa etapa for autorizada, a gravação substitui apenas as associações
 - 2026-10-16: certificados de treinamento com dados do sistema (instrutor e conteúdo programático no treinamento, configuração de assinatura e numeração, emissão congelada com sha256, cancelamento com motivo, impressão A4 no modelo Lazarios Koppetel). Migration `20261016120000_hr_training_certificates`.
 - 2026-10-16: modal da matriz com nome completo, filtros em chips e cabeçalho fixo opaco.
 - 2026-10-16: aba Certificados na ficha funcional (sistema + anexados, com arquivo no dossiê). Migration `20261017120000_hr_employee_external_certificates`.
+- 2026-10-16: assinatura por pessoa do sistema (nome e cargo do cadastro) ou manual; local fixo Curitiba – PR; prefixo da numeração gerado e imutável. Migration `20261018120000_hr_certificate_signer_employee`.
+- 2026-10-16: layout premium do certificado com a logo oficial embutida no sistema.

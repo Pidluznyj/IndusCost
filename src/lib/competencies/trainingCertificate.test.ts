@@ -6,6 +6,8 @@ import {
   formatHoursShort,
   formatLongDatePtBr,
   parseCertificateSettingsBody,
+  CERTIFICATE_ISSUE_PLACE,
+  deriveCertificatePrefix,
   parseInstructorName,
   parseSyllabus,
   renderTrainingCertificatesHtml,
@@ -14,6 +16,7 @@ import {
   websiteLabel,
   type TrainingCertificatePayload,
 } from "./trainingCertificate";
+import { CERTIFICATE_BRAND_LOGO_DATA_URL } from "./trainingCertificateBrand";
 
 const LOGO = "data:image/png;base64,iVBORw0KGgo=";
 
@@ -82,20 +85,22 @@ describe("conteúdo programático", () => {
 });
 
 describe("configuração dos certificados", () => {
-  it("exige signatário, cargo, local e prefixo; prefixo vira maiúsculo", () => {
-    const ok = parseCertificateSettingsBody({ signerName: "Diretor", signerRole: "Diretor Executivo", issuePlace: "Curitiba – PR", numberPrefix: "lk-tr" });
-    assert.ok(ok.ok);
-    assert.equal(ok.value.numberPrefix, "LK-TR");
-    for (const bad of [
-      { signerRole: "x", issuePlace: "x", numberPrefix: "LK" },
-      { signerName: "x", issuePlace: "x", numberPrefix: "LK" },
-      { signerName: "x", signerRole: "x", numberPrefix: "LK" },
-      { signerName: "x", signerRole: "x", issuePlace: "x", numberPrefix: "LK_TR" },
-      { signerName: "x", signerRole: "x", issuePlace: "x", numberPrefix: "-LK" },
-      { signerName: "x", signerRole: "x", issuePlace: "x", numberPrefix: "" },
-    ]) {
+  it("quem assina: pessoa do sistema (só o id) ou manual (nome + cargo); local e prefixo do cliente são ignorados", () => {
+    const person = parseCertificateSettingsBody({ signerEmployeeId: "AAAAAAAA-1111-4111-8111-111111111111", signerName: "ignorado", issuePlace: "Outra", numberPrefix: "XX" });
+    assert.deepEqual(person, { ok: true, value: { signerEmployeeId: "aaaaaaaa-1111-4111-8111-111111111111", signerName: null, signerRole: null } });
+    const manual = parseCertificateSettingsBody({ signerName: " Diretor  Exemplo ", signerRole: "Diretor Executivo", issuePlace: "Outra", numberPrefix: "XX" });
+    assert.deepEqual(manual, { ok: true, value: { signerEmployeeId: null, signerName: "Diretor Exemplo", signerRole: "Diretor Executivo" } });
+    for (const bad of [{}, { signerEmployeeId: "x" }, { signerRole: "x" }, { signerName: "x" }]) {
       assert.equal(parseCertificateSettingsBody(bad).ok, false, JSON.stringify(bad));
     }
+    assert.equal(CERTIFICATE_ISSUE_PLACE, "Curitiba – PR");
+  });
+
+  it("prefixo da numeração vem das iniciais da empresa (sem acento e sem conectivos)", () => {
+    assert.equal(deriveCertificatePrefix("Lazarios Koppetel"), "LK-TR");
+    assert.equal(deriveCertificatePrefix("Indústria Ávila de Plásticos Ltda"), "IAP-TR");
+    assert.equal(deriveCertificatePrefix("  "), null);
+    assert.equal(deriveCertificatePrefix(null), null);
   });
 });
 
@@ -114,7 +119,7 @@ describe("formatação", () => {
 });
 
 describe("impedimentos de emissão", () => {
-  const settings = { signerName: "D", signerRole: "R", issuePlace: "P", numberPrefix: "LK" };
+  const settings = { signerName: "D", signerRole: "R", signerInactive: false, numberPrefix: "LK" };
   it("sem impedimentos quando concluído, configurado e com empresa", () => {
     assert.deepEqual(
       trainingCertificateBlockers({ training: { status: "COMPLETED", workloadHours: 8, syllabus: [] }, settings, companyName: "Empresa" }),
@@ -130,7 +135,7 @@ describe("impedimentos de emissão", () => {
     assert.equal(out.length, 4);
     assert.match(out[0], /não foi concluído/);
     assert.match(out[1], /3h.*8h/);
-    assert.match(out[2], /signatário/);
+    assert.match(out[2], /quem assina/);
     assert.match(out[3], /Identidade Visual/);
     assert.match(
       trainingCertificateBlockers({ training: { status: "COMPLETED", workloadHours: 0, syllabus: [] }, settings, companyName: "E" })[0],
@@ -200,6 +205,8 @@ describe("HTML do certificado", () => {
     assert.equal(html.match(/<section class="page"/g)?.length, 2);
     assert.ok(html.includes('id="sealRing-1"') && html.includes('id="sealRing-2"'));
     assert.ok(!html.includes("evil.example"));
-    assert.equal(html.match(/<img /g)?.length, 1);
+    // Logo externo é trocado pela logo oficial embutida; cada página tem logo + marca d’água.
+    assert.equal(html.match(/<img src="data:image\/[a-z]+;base64,[^"]+" alt="Lazarios Koppetel"/g)?.length, 2);
+    assert.ok(html.includes(CERTIFICATE_BRAND_LOGO_DATA_URL));
   });
 });
