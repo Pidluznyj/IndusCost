@@ -1,5 +1,5 @@
 import React, { useMemo } from "react";
-import { ChevronLeft } from "lucide-react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { COMPETENCY_LEVEL_LABELS, competencyLevelLabel, formatIsoDateBr } from "@/src/lib/competencies/competencyDomain";
 import type { CompetencyMatrixResponse } from "@/src/lib/competencies/competencyTypes";
 import { cn } from "@/src/lib/utils";
@@ -28,7 +28,16 @@ export function MatrixLevelLegend() {
   );
 }
 
-const NAME_COL = "w-36 min-w-36 max-w-36";
+/** Largura que cabe o nome completo em até duas linhas (sem reticências). */
+const NAME_COL = "w-44 min-w-44 max-w-44 sm:w-72 sm:min-w-72 sm:max-w-72";
+
+function initials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "?";
+  const first = parts[0][0] ?? "";
+  const last = parts.length > 1 ? (parts[parts.length - 1][0] ?? "") : "";
+  return (first + last).toUpperCase();
+}
 const COMPETENCY_ROW = "top-9";
 
 function cellTitle(row: MatrixRow, competencyName: string, cell: MatrixCell): string {
@@ -86,6 +95,14 @@ function LevelCell({
     <div className={cls} title={cellTitle(row, competencyName, cell)} data-below-minimum={cell.belowMinimum || undefined} data-testid="competency-matrix-cell">
       {content}
     </div>
+  );
+}
+
+function GroupCount({ n }: { n: number }) {
+  return (
+    <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-background px-1.5 text-[10px] font-semibold tabular-nums text-muted-foreground ring-1 ring-border">
+      {n}
+    </span>
   );
 }
 
@@ -157,7 +174,7 @@ export function CompetencyMatrixGrid({
             scope="col"
             rowSpan={2}
             className={cn(
-              "sticky left-0 top-0 z-40 border-b border-r border-border bg-card px-3 text-left text-xs font-semibold text-muted-foreground",
+              "sticky left-0 top-0 z-40 border-b border-r border-border bg-card px-4 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground",
               NAME_COL,
             )}
           >
@@ -172,28 +189,36 @@ export function CompetencyMatrixGrid({
                 rowSpan={expanded ? 1 : 2}
                 colSpan={expanded ? group.columns.length : 1}
                 className={cn(
-                  "sticky top-0 z-20 border-b border-r border-border bg-muted p-0",
+                  "sticky top-0 z-20 border-b border-r border-border p-0",
+                  // Opaco: o cabeçalho é sticky e não pode deixar as células aparecerem por trás.
+                  expanded ? "bg-[color-mix(in_srgb,var(--color-primary)_7%,var(--color-card))]" : "bg-muted",
                   expanded ? "left-auto h-9" : "w-9 min-w-9 max-w-9",
                 )}
               >
                 <button
                   type="button"
                   aria-expanded={expanded}
-                  title={expanded ? `Recolher ${group.label}` : `Expandir ${group.label}`}
-                  className="flex h-full w-full items-center justify-center gap-1 px-2 text-[11px] font-semibold uppercase tracking-wide text-foreground hover:bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary"
+                  title={`${expanded ? "Recolher" : "Expandir"} ${group.label} (${group.columns.length})`}
+                  className={cn(
+                    "flex h-full w-full items-center justify-center gap-1.5 px-2 text-[11px] font-semibold uppercase tracking-wide transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary",
+                    expanded ? "text-primary hover:bg-primary/10" : "text-foreground hover:bg-background",
+                  )}
                   onClick={() => onToggleGroup(group.key)}
                   data-testid={`competency-matrix-group-${group.key}`}
                 >
                   {expanded ? (
                     <>
                       <ChevronLeft className="h-3.5 w-3.5 shrink-0" aria-hidden />
-                      <span className="truncate">
-                        {group.label} ({group.columns.length})
-                      </span>
+                      <span className="truncate">{group.label}</span>
+                      <GroupCount n={group.columns.length} />
                     </>
                   ) : (
-                    <span className="inline-block max-h-16 overflow-hidden py-1 [writing-mode:vertical-rl] rotate-180">
-                      {group.label} ({group.columns.length})
+                    <span className="flex flex-col items-center gap-1.5 py-2">
+                      <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
+                      <span className="inline-block max-h-44 overflow-hidden text-ellipsis whitespace-nowrap [writing-mode:vertical-rl] rotate-180">
+                        {group.label}
+                      </span>
+                      <GroupCount n={group.columns.length} />
                     </span>
                   )}
                 </button>
@@ -231,25 +256,35 @@ export function CompetencyMatrixGrid({
         {data.rows.map((row) => {
           const cells = cellsByEmployee.get(row.employeeId);
           return (
-            <tr key={row.employeeId} data-testid="competency-matrix-row">
+            <tr key={row.employeeId} className="group" data-testid="competency-matrix-row">
               <th
                 scope="row"
                 className={cn(
-                  "sticky left-0 z-30 border-b border-r border-border bg-card px-3 py-2 text-left font-normal",
+                  "sticky left-0 z-30 border-b border-r border-border bg-card px-3 py-2 text-left font-normal transition-colors group-hover:bg-muted sm:px-4",
                   NAME_COL,
                 )}
               >
-                <span className="block truncate text-sm font-semibold" title={row.employeeName}>
-                  {row.employeeName}
+                <span className="flex items-center gap-3">
+                  <span
+                    className="hidden h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[11px] font-semibold text-primary sm:flex"
+                    aria-hidden
+                  >
+                    {initials(row.employeeName)}
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block whitespace-normal break-words text-sm font-semibold leading-snug text-foreground" data-testid="competency-matrix-employee-name">
+                      {row.employeeName}
+                    </span>
+                    <span className="block truncate text-xs text-muted-foreground">{row.departmentName ?? "Sem departamento"}</span>
+                  </span>
                 </span>
-                <span className="block truncate text-xs text-muted-foreground">{row.departmentName ?? "Sem departamento"}</span>
               </th>
               {groups.map((group) => {
                 if (!expandedKeys.has(group.key)) {
                   return (
                     <td
                       key={group.key}
-                      className="border-b border-r border-border bg-muted"
+                      className="border-b border-r border-border bg-muted/70 bg-[repeating-linear-gradient(135deg,transparent_0,transparent_6px,rgba(148,163,184,0.12)_6px,rgba(148,163,184,0.12)_7px)]"
                       data-testid="competency-matrix-group-collapsed"
                       data-group={group.key}
                     >
@@ -266,7 +301,7 @@ export function CompetencyMatrixGrid({
                       key={column.columnKey}
                       data-column={column.columnKey}
                       data-competency-id={column.competency.id}
-                      className="border-b border-border/70 bg-card px-1.5 py-1.5"
+                      className="border-b border-border/70 bg-card px-1.5 py-1.5 transition-colors group-hover:bg-muted/50"
                     >
                       {cell ? (
                         <LevelCell
