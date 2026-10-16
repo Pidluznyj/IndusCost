@@ -120,6 +120,9 @@ Migration: `20261008120000_hr_competencies`. É aditiva: só cria tabelas, não 
 | `HrCompetencyAssessmentItem` | Nível 1–4 (CHECK) por competência e o mínimo vigente no momento (`requiredLevel`). |
 | `HrTraining` | `title`, `competencyId`, `modality` (`IN_PERSON`/`ONLINE`/`ON_THE_JOB`), `workloadHours`, `startDate`, `validityMonths` (0 = sem validade), `status` (`SCHEDULED`/`IN_PROGRESS`/`COMPLETED`), `completedAt`. |
 | `HrTrainingParticipant` | Participante e `completedAt`, que é a base da reciclagem. |
+| `HrTraining.instructorName` / `syllabus` | Instrutor (opcional) e conteúdo programático `[{ title, hours }]` do certificado. Migration `20261016120000_hr_training_certificates`. |
+| `HrTrainingCertificateSettings` | Linha única `GLOBAL` (CHECK): signatário, cargo, local de emissão e prefixo da numeração (CHECK de formato), com autor da última alteração. Sem valores padrão. |
+| `HrTrainingCertificate` | Certificado emitido: número único, `year` + `sequence` únicos, treinamento, colaborador, `status` (`ACTIVE`/`CANCELED`), emissão (data/autor), `payload` congelado + `payloadSha256`, cancelamento (data/autor/motivo). Imutável por trigger. |
 | `HrCompetencyImportBatch` | Uma linha por importação por planilha **que alterou algo**: nome e SHA-256 do arquivo, linhas, alterações, conflitos aplicados, resumo (JSON só com contagens) e autor. O histórico de níveis aponta para o lote (`importBatchId`, origem `IMPORT`). |
 
 Datas de negócio são gravadas como meia-noite UTC e trafegam como `AAAA-MM-DD`. O "hoje" da engine segue o fuso de São Paulo.
@@ -295,6 +298,60 @@ Conteúdo da aba:
 - treinamentos;
 - histórico de níveis.
 
+## Certificados de treinamento
+
+Treinamentos › **Certificados** abre o painel do treinamento. Ele emite, imprime e cancela certificados de conclusão no modelo visual "Certificado Lazarios Koppetel" (A4 paisagem). **Nada é digitado no certificado.** Cada campo vem do sistema:
+
+| Campo do certificado | Origem |
+|---|---|
+| Nome do participante | `Employee.name`, no momento da emissão |
+| Curso, carga horária, modalidade, início | `HrTraining` |
+| "Concluído em" | `HrTrainingParticipant.completedAt` (gravado ao concluir o treinamento) |
+| Competência desenvolvida (lateral, sem conteúdo programático) | `HrCompetency.name` + `description` |
+| Conteúdo programático (lateral) | `HrTraining.syllabus` (módulos com horas; soma = carga horária) |
+| 2ª assinatura | `HrTraining.instructorName`. Sem instrutor, a linha traz local e data |
+| Signatário, cargo, local de emissão, prefixo da numeração | `HrTrainingCertificateSettings` (configuração única, editada no painel) |
+| Empresa, logo, slogan, site, texto do selo | `BrandingSettings` (Administração › Identidade Visual). Logo: proposta → expandido → compacto, igual aos documentos de projeto |
+| Registro nº | `{prefixo}-{ano da emissão}/{sequência de 4 dígitos}`, sequencial por ano, nunca reutilizado |
+| Data de emissão | Data de negócio (São Paulo) do clique em Emitir |
+
+**Regras** (`src/lib/competencies/trainingCertificate.ts` e `trainingCertificate.server.ts`)
+
+- **Emissão bloqueada** se: treinamento não concluído, carga 0, conteúdo que não fecha a carga, configuração incompleta, ou empresa sem nome na Identidade Visual. Os impedimentos aparecem no painel e voltam no 409 `CERTIFICATE_BLOCKED`.
+- **Um certificado vigente** por participante do treinamento (índice parcial `HrTrainingCertificate_active_participant_uidx`). Emitir de novo não duplica: devolve `ALREADY_ISSUED`. Participante sem conclusão devolve `NOT_COMPLETED`.
+- **Conteúdo congelado**: a emissão grava o conteúdo inteiro (inclusive o logo) em `payload` com `payloadSha256`. Imprimir usa só o gravado. Mudar o cadastro do colaborador, a Identidade Visual ou o signatário depois **não altera** certificados emitidos. A impressão é recusada se o hash não conferir.
+- **Imutável no banco**: trigger `HrTrainingCertificate_immutable` bloqueia DELETE e todo UPDATE, exceto ACTIVE → CANCELED com data, autor e motivo (CHECK exige motivo). `HrTraining` com certificado não pode ser excluído (FK RESTRICT).
+- **Cancelar → reemitir**: o cancelamento fica no histórico do painel e a nova emissão recebe outro número.
+- **Instrutor e conteúdo programático** podem ser informados no "Novo treinamento" ou no painel, inclusive depois da conclusão. Ficam **travados** enquanto houver certificado vigente (409 `CERTIFICATE_CONTENT_LOCKED`).
+- **Escopo**: o líder vê e emite apenas para a própria equipe. A configuração global só é alterada com escopo RH (ALL).
+- **Concorrência**: a numeração usa o maior número do ano + 1 dentro da transação. Em colisão (`P2002` no número único ou no índice parcial), a emissão é refeita até 3 vezes.
+
+**Impressão**: `src/components/competencies/certificate/trainingCertificatePrint.ts` monta o HTML (`renderTrainingCertificatesHtml`, uma página por certificado) num iframe isolado do CSS do app e chama a impressão do navegador. O usuário salva em PDF por ali. Fontes Lato e Ubuntu (subconjunto latino) estão embutidas: 400/500/700 vêm da arte de Comunicados, 300 fica em `certificate/assets`. O diálogo espera as fontes e o logo carregarem.
+
+**API**
+
+| Método e rota | Capacidade |
+|---|---|
+| `GET /api/hr/competencies/certificate-settings` | `viewTrainings` |
+| `PUT /api/hr/competencies/certificate-settings` | `manageTrainings` + escopo RH |
+| `GET /api/hr/competencies/trainings/:id/certificates` (painel) | `viewTrainings` |
+| `PUT /api/hr/competencies/trainings/:id/certificate-content` | `manageTrainings` |
+| `POST /api/hr/competencies/trainings/:id/certificates` (`{ employeeIds? }`) | `manageTrainings` |
+| `GET /api/hr/competencies/trainings/:id/certificates/document?ids=` | `viewTrainings` |
+| `POST /api/hr/competencies/certificates/:id/cancel` (`{ reason }`) | `manageTrainings` |
+
+Auditoria: `competency.certificate.settings`, `competency.certificate.issue`, `competency.certificate.cancel`.
+
+**Validação (2026-10-16, sem banco real)**
+
+- Testes: `trainingCertificate.test.ts` (12) e `trainingCertificateRoutes.test.ts` (9).
+- PostgreSQL descartável (PGlite) com DDL da main + migration:
+  - 18 verificações de CHECK, índice parcial, trigger e FK;
+  - `migrate diff` vazio contra o schema;
+  - 17 verificações com rotas reais + Prisma, incluindo duas emissões simultâneas sem número repetido.
+- Fluxo completo na UI real (configurar → emitir → cancelar → reemitir → imprimir). PDF do Chrome: 6 páginas A4 paisagem.
+- Limite do teste: o logo real (≈330 KB) derruba o servidor PGlite. Por isso, nas rotas reais o logo foi validado com um PNG pequeno; o logo real foi usado no harness.
+
 ## Diferenças em relação ao protótipo
 
 | Protótipo | Implementação | Motivo |
@@ -314,7 +371,8 @@ Conteúdo da aba:
 1. Aplicar a migration `20261008120000_hr_competencies` **antes** do código: a página consulta as tabelas novas.
 2. Rodar `npm run permissions:seed` para criar os 3 recursos novos.
 3. Liberar os perfis desejados na tela de perfis de acesso.
-4. Cadastrar competências e postos e alocar as equipes. Os níveis começam em 0 e são preenchidos pelas avaliações, pela edição da matriz ou pela importação por planilha (carga inicial: Baixar modelo → preencher → Importar).
+4. Certificados: aplicar a migration `20261016120000_hr_training_certificates` **antes** do código (a lista de treinamentos consulta `HrTrainingCertificate`). Depois, no painel de certificados, configurar signatário, cargo, local e prefixo. Conferir nome, logo, slogan e site em Identidade Visual. Sem permissão nova: usa as de Treinamentos.
+5. Cadastrar competências e postos e alocar as equipes. Os níveis começam em 0 e são preenchidos pelas avaliações, pela edição da matriz ou pela importação por planilha (carga inicial: Baixar modelo → preencher → Importar).
 
 ## Testes
 
@@ -416,3 +474,4 @@ Quando essa etapa for autorizada, a gravação substitui apenas as associações
 - 2026-10-15: importação assistida de níveis por planilha (modelo, prévia, conciliação, conflitos, idempotência), com a tabela `HrCompetencyImportBatch` na mesma migration.
 - 2026-10-15: governança de níveis (competência crítica, aprovação, versão otimista, decisões condicionais), com `HrCompetencyLevelRequest` na mesma migration.
 - 2026-10-15: feature flag `COMPETENCIES_ENABLED` (fail closed) para API, menu, rota e aba da ficha.
+- 2026-10-16: certificados de treinamento com dados do sistema (instrutor e conteúdo programático no treinamento, configuração de assinatura e numeração, emissão congelada com sha256, cancelamento com motivo, impressão A4 no modelo Lazarios Koppetel). Migration `20261016120000_hr_training_certificates`.

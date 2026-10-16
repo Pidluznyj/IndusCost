@@ -23,6 +23,7 @@ import { CompetencyViewFilters } from "./CompetencyViewFilters";
 import { CompetencyOverviewTab } from "./CompetencyOverviewTab";
 import { CompetencyTrainingOverlay, type TrainingPreset } from "./CompetencyTrainingOverlay";
 import { CompetencyTrainingsTab } from "./CompetencyTrainingsTab";
+import { CompetencyTrainingCertificatesOverlay } from "./certificate/CompetencyTrainingCertificatesOverlay";
 import { BTN_PRIMARY, BTN_SECONDARY, PanelState, Toast } from "./competencyUi";
 import { useCompetencyWorkspace } from "./useCompetencyWorkspace";
 import { useCompetenciesFeature } from "./useCompetenciesFeature";
@@ -32,6 +33,7 @@ type TabId = "visao" | "matriz" | "avaliacoes" | "treinamentos" | "aprovacoes" |
 type Modal =
   | { kind: "assessment"; mode: "complete" | "schedule"; preset: AssessmentPreset | null }
   | { kind: "training"; preset: TrainingPreset | null }
+  | { kind: "certificates"; trainingId: string }
   | { kind: "competency" }
   | { kind: "import" }
   | null;
@@ -253,6 +255,7 @@ function CompetenciesModule() {
           canManage={caps.manageTrainings}
           onStatus={onTrainingStatus}
           onDelete={onDeleteTraining}
+          onCertificates={(t) => setModal({ kind: "certificates", trainingId: t.id })}
           onRetry={() => void reload(["trainings"])}
         />
       ) : null}
@@ -287,6 +290,13 @@ function CompetenciesModule() {
         competencies={competencies}
         onClose={() => setModal(null)}
         onSaved={afterSave}
+      />
+      <CompetencyTrainingCertificatesOverlay
+        open={modal?.kind === "certificates"}
+        trainingId={modal?.kind === "certificates" ? modal.trainingId : null}
+        canManage={caps.manageTrainings}
+        onClose={() => setModal(null)}
+        onChanged={() => void reload(["trainings"])}
       />
       <CompetencyCatalogOverlay open={modal?.kind === "competency"} onClose={() => setModal(null)} onSaved={afterSave} />
       <CompetencyImportOverlay open={modal?.kind === "import"} onClose={() => setModal(null)} onSaved={afterSave} />

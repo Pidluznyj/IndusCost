@@ -28,6 +28,9 @@ const MODELS = [
   "hrTrainingParticipant",
   "hrCompetencyImportBatch",
   "hrCompetencyLevelRequest",
+  "hrTrainingCertificate",
+  "hrTrainingCertificateSettings",
+  "brandingSettings",
 ] as const;
 export type FakeModel = (typeof MODELS)[number];
 
@@ -43,7 +46,8 @@ const CASCADES: Partial<Record<FakeModel, { model: FakeModel; fk: string }[]>> =
 const DEFAULTS: Partial<Record<FakeModel, Record<string, unknown>>> = {
   hrEmployeeWorkPosition: { endedAt: null },
   hrTrainingParticipant: { completedAt: null },
-  hrTraining: { completedAt: null, validityMonths: 0, status: "SCHEDULED" },
+  hrTraining: { completedAt: null, validityMonths: 0, status: "SCHEDULED", instructorName: null, syllabus: null },
+  hrTrainingCertificate: { status: "ACTIVE", canceledAt: null, canceledByUserId: null, canceledByName: null, cancelReason: null },
   hrCompetencyAssessment: { status: "PENDING", averageLevel: null, completedAt: null, notes: null },
   hrCompetency: { status: "ACTIVE", sortOrder: 0, description: null, requiresRecycling: false, critical: false },
   hrEmployeeCompetencyLevel: { version: 1 },
@@ -153,6 +157,7 @@ export function createFakeDb(): FakeDb {
 }
 
 export const TEST_USER_ID = "00000000-0000-4000-8000-0000000000aa";
+export const TEST_USER_NAME = "Usuária do RH";
 
 export function seedEmployee(db: FakeDb, name: string, extra: Record<string, unknown> = {}): string {
   const id = randomUUID();
@@ -241,7 +246,7 @@ export async function startCompetencyTestApp(options: {
           next();
         };
       },
-      getCurrentAppUser: async () => ({ id: currentUserId }),
+      getCurrentAppUser: async () => ({ id: currentUserId, name: TEST_USER_NAME }),
       getScopeInput: async () => scope,
       canApprove: async () => granted === "all" || granted.includes("admin.employees.competencies.approvals:manage"),
     },

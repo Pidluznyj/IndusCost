@@ -22,6 +22,7 @@ import {
   type TrainingModality,
   type TrainingStatus,
 } from "./competencyDomain";
+import { parseInstructorName, parseSyllabus, syllabusMatchesWorkload, type SyllabusModule } from "./trainingCertificate";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const ISO_DATE_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
@@ -318,7 +319,23 @@ export type TrainingInput = {
   startDate: string;
   validityMonths: number;
   participantIds: string[];
+  /** Ausente = mantém o gravado. */
+  instructorName?: string | null;
+  /** Ausente = mantém o gravado. Com módulos, a soma fecha com `workloadHours`. */
+  syllabus?: SyllabusModule[];
 };
+
+/** Instrutor e conteúdo programático do certificado (também editáveis após a conclusão). */
+export function parseTrainingCertificateContentBody(
+  body: unknown,
+): ParseResult<{ instructorName: string | null; syllabus: SyllabusModule[] }> {
+  if (!isRecord(body)) return fail("INVALID_BODY", "Corpo da requisição inválido.");
+  const instructor = parseInstructorName(body.instructorName);
+  if (instructor.ok === false) return fail(instructor.code, instructor.message);
+  const syllabus = parseSyllabus(body.syllabus);
+  if (syllabus.ok === false) return fail(syllabus.code, syllabus.message);
+  return { ok: true, value: { instructorName: instructor.value, syllabus: syllabus.value } };
+}
 
 export function parseTrainingBody(body: unknown): ParseResult<TrainingInput> {
   if (!isRecord(body)) return fail("INVALID_BODY", "Corpo da requisição inválido.");
@@ -338,6 +355,24 @@ export function parseTrainingBody(body: unknown): ParseResult<TrainingInput> {
   const participantIds = readUuidList(body.participantIds, TRAINING_MAX_PARTICIPANTS);
   if (!participantIds) return fail("INVALID_PARTICIPANTS", "Participantes inválidos.");
   if (participantIds.length === 0) return fail("PARTICIPANTS_REQUIRED", "Selecione pelo menos 1 participante.");
+  let instructorName: string | null | undefined;
+  if (body.instructorName !== undefined) {
+    const parsed = parseInstructorName(body.instructorName);
+    if (parsed.ok === false) return fail(parsed.code, parsed.message);
+    instructorName = parsed.value;
+  }
+  let syllabus: SyllabusModule[] | undefined;
+  if (body.syllabus !== undefined) {
+    const parsed = parseSyllabus(body.syllabus);
+    if (parsed.ok === false) return fail(parsed.code, parsed.message);
+    if (!syllabusMatchesWorkload(parsed.value, workloadHours)) {
+      return fail(
+        "SYLLABUS_WORKLOAD_MISMATCH",
+        `A soma dos módulos precisa ser igual à carga horária do treinamento (${workloadHours} h).`,
+      );
+    }
+    syllabus = parsed.value;
+  }
   return {
     ok: true,
     value: {
@@ -348,6 +383,8 @@ export function parseTrainingBody(body: unknown): ParseResult<TrainingInput> {
       startDate: body.startDate,
       validityMonths,
       participantIds,
+      ...(instructorName !== undefined ? { instructorName } : {}),
+      ...(syllabus !== undefined ? { syllabus } : {}),
     },
   };
 }

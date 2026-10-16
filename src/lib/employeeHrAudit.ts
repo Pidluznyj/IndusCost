@@ -54,6 +54,9 @@ export type EmployeeHrAuditEvent =
   | "competency.position.change"
   | "competency.department.change"
   | "competency.training.change"
+  | "competency.certificate.settings"
+  | "competency.certificate.issue"
+  | "competency.certificate.cancel"
   | "competency.import.apply"
   | "employee.competency.level.request"
   | "employee.competency.level.decision";

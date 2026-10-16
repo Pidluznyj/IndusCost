@@ -170,6 +170,7 @@ model Employee {
   hrCompetencyAssessments      HrCompetencyAssessment[]           @relation("HrCompetencyAssessmentSubject")
   hrCompetencyAssessmentsAsEvaluator HrCompetencyAssessment[]     @relation("HrCompetencyAssessmentEvaluator")
   hrTrainingParticipations     HrTrainingParticipant[]            @relation("HrTrainingParticipantEmployee")
+  hrTrainingCertificates       HrTrainingCertificate[]            @relation("HrTrainingCertificateEmployee")
   hrCompetencyLevelRequests    HrCompetencyLevelRequest[]         @relation("HrCompetencyLevelRequestEmployee")
 
   @@unique([personId])
@@ -818,12 +819,17 @@ model HrTraining {
   validityMonths  Int       @default(0)
   status          String    @default("SCHEDULED")
   completedAt     DateTime? @db.Timestamptz(6)
+  /// Instrutor responsável (2ª assinatura do certificado). Opcional.
+  instructorName  String?
+  /// Conteúdo programático do certificado: [{ title, hours }]; soma = workloadHours. Vazio = competência.
+  syllabus        Json?
   createdByUserId String?   @db.Uuid
   updatedByUserId String?   @db.Uuid
   createdAt       DateTime  @default(now()) @db.Timestamptz(6)
   updatedAt       DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
   competency      HrCompetency @relation(fields: [competencyId], references: [id], onDelete: Restrict, onUpdate: NoAction)
   participants    HrTrainingParticipant[]
+  certificates    HrTrainingCertificate[]
 
   @@index([competencyId])
   @@index([status, startDate])
@@ -840,6 +846,47 @@ model HrTrainingParticipant {
   employee    Employee   @relation("HrTrainingParticipantEmployee", fields: [employeeId], references: [id], onDelete: Restrict, onUpdate: NoAction)
 
   @@unique([trainingId, employeeId])
+  @@index([employeeId])
+}
+
+/// Configuração global dos certificados de treinamento (linha única id = "GLOBAL").
+/// Sem valores padrão: a emissão fica bloqueada até o RH configurar.
+model HrTrainingCertificateSettings {
+  id              String   @id
+  signerName      String
+  signerRole      String
+  issuePlace      String
+  numberPrefix    String
+  updatedByUserId String?  @db.Uuid
+  updatedByName   String?
+  updatedAt       DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+}
+
+/// Certificado emitido (imutável). payload = conteúdo congelado na emissão; payloadSha256 confere a integridade.
+/// status: ACTIVE | CANCELED. Um ACTIVE por participante do treinamento (índice parcial escrito na migration).
+/// Única alteração permitida (trigger): ACTIVE → CANCELED com autoria e motivo.
+model HrTrainingCertificate {
+  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  number           String    @unique
+  year             Int
+  sequence         Int
+  trainingId       String    @db.Uuid
+  employeeId       String    @db.Uuid
+  status           String    @default("ACTIVE")
+  issuedAt         DateTime  @default(now()) @db.Timestamptz(6)
+  issuedByUserId   String?   @db.Uuid
+  issuedByName     String
+  payload          Json
+  payloadSha256    String
+  canceledAt       DateTime? @db.Timestamptz(6)
+  canceledByUserId String?   @db.Uuid
+  canceledByName   String?
+  cancelReason     String?
+  training         HrTraining @relation(fields: [trainingId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  employee         Employee   @relation("HrTrainingCertificateEmployee", fields: [employeeId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@unique([year, sequence])
+  @@index([trainingId])
   @@index([employeeId])
 }
 

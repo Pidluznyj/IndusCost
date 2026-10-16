@@ -43,6 +43,7 @@ import type {
   WorkPositionInput,
 } from "./competencyValidation";
 import { businessTodayIso, type CompetencyLevel, type TrainingStatus } from "./competencyDomain";
+import { readStoredSyllabus } from "./trainingCertificate";
 import { decideLevelWrite, validateDecision, type LevelChangeSource } from "./competencyGovernance";
 import {
   COMPETENCY_SCOPE_ALL,
@@ -72,6 +73,9 @@ export type CompetencyDb = Pick<
   | "hrTrainingParticipant"
   | "hrCompetencyImportBatch"
   | "hrCompetencyLevelRequest"
+  | "hrTrainingCertificate"
+  | "hrTrainingCertificateSettings"
+  | "brandingSettings"
 > & {
   $transaction: PrismaClient["$transaction"];
 };
@@ -314,7 +318,7 @@ export async function loadCompetencyEngineInput(
 }
 
 /** Treinamentos visíveis: RH vê todos; líder vê os que têm ao menos um participante do escopo. */
-async function visibleTrainingIds(db: CompetencyDb, scope: CompetencyScope, trainingIds: string[]): Promise<Set<string>> {
+export async function visibleTrainingIds(db: CompetencyDb, scope: CompetencyScope, trainingIds: string[]): Promise<Set<string>> {
   if (scope.kind === "ALL") return new Set(trainingIds);
   if (trainingIds.length === 0 || scope.visible.size === 0) return new Set();
   const parts = (await db.hrTrainingParticipant.findMany({
@@ -1448,6 +1452,8 @@ type TrainingRow = {
   validityMonths: number;
   status: string;
   completedAt: Date | null;
+  instructorName?: string | null;
+  syllabus?: unknown;
 };
 
 export async function listTrainings(
@@ -1468,13 +1474,18 @@ export async function listTrainings(
   const seen = await visibleTrainingIds(db, scope, all.map((r) => r.id));
   const rows = all.filter((r) => seen.has(r.id));
   const ids = rows.map((r) => r.id);
-  const [participants, competencies] = await Promise.all([
+  const [participants, competencies, certificates] = await Promise.all([
     ids.length
       ? (db.hrTrainingParticipant.findMany({ where: { trainingId: { in: ids } } }) as Promise<
           { trainingId: string; employeeId: string; completedAt: Date | null }[]
         >)
       : Promise.resolve([]),
     db.hrCompetency.findMany({}) as Promise<{ id: string; name: string }[]>,
+    ids.length
+      ? (db.hrTrainingCertificate.findMany({ where: { trainingId: { in: ids }, status: "ACTIVE" } }) as Promise<
+          { trainingId: string; employeeId: string }[]
+        >)
+      : Promise.resolve([]),
   ]);
   const employeeIds = [...new Set(participants.map((p) => p.employeeId))];
   const employeeRows = employeeIds.length
@@ -1499,6 +1510,9 @@ export async function listTrainings(
         .filter((p) => p.trainingId === r.id && canSeeEmployee(scope, p.employeeId))
         .map((p) => ({ employeeId: p.employeeId, employeeName: names.get(p.employeeId) ?? "—", completedOn: toIsoDate(p.completedAt) }))
         .sort((a, b) => a.employeeName.localeCompare(b.employeeName, "pt-BR")),
+      instructorName: r.instructorName ?? null,
+      syllabus: readStoredSyllabus(r.syllabus),
+      activeCertificateCount: certificates.filter((c) => c.trainingId === r.id && canSeeEmployee(scope, c.employeeId)).length,
     }))
     .sort((a, b) => b.startDate.localeCompare(a.startDate) || a.title.localeCompare(b.title, "pt-BR"));
 }
@@ -1521,6 +1535,9 @@ function trainingData(input: TrainingInput) {
     workloadHours: input.workloadHours,
     startDate: fromIsoDate(input.startDate),
     validityMonths: input.validityMonths,
+    // Ausentes no corpo = mantém o gravado (instrutor e conteúdo programático são opcionais).
+    ...(input.instructorName !== undefined ? { instructorName: input.instructorName } : {}),
+    ...(input.syllabus !== undefined ? { syllabus: input.syllabus } : {}),
   };
 }
 

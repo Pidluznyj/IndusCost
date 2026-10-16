@@ -60,15 +60,26 @@ import {
   parseLevelBody,
   parsePositionTeamBody,
   parseTrainingBody,
+  parseTrainingCertificateContentBody,
   parseTrainingStatusBody,
   parseWorkPositionBody,
   type ParseResult,
 } from "./competencyValidation";
+import { parseCancelReason, parseCertificateSettingsBody } from "./trainingCertificate";
+import {
+  cancelTrainingCertificate,
+  getTrainingCertificateBoard,
+  getTrainingCertificatesDocument,
+  issueTrainingCertificates,
+  loadCertificateSettings,
+  updateCertificateSettings,
+  updateTrainingCertificateContent,
+} from "./trainingCertificate.server";
 
 export type CompetencyRouteGuards = {
   requireAppAuth: RequestHandler;
   requireResource: (resourceKey: string, action?: string) => RequestHandler;
-  getCurrentAppUser: (req: express.Request) => Promise<{ id: string } | null>;
+  getCurrentAppUser: (req: express.Request) => Promise<{ id: string; name?: string | null } | null>;
   /**
    * Escopo hierárquico do ator (mesma régua do RH: `resolvePeopleAccessScope`) e o colaborador
    * vinculado ao usuário. Autorização efetiva: toda leitura e escrita passa por ele.
@@ -216,7 +227,7 @@ export function registerCompetencyRoutes(
   /** Autoria sempre da sessão autenticada — nunca do corpo. */
   async function actor(req: express.Request) {
     const user = await getCurrentAppUser(req);
-    return { userId: user && isUuidString(user.id) ? user.id : null };
+    return { userId: user && isUuidString(user.id) ? user.id : null, name: user?.name?.trim() || null };
   }
 
   const base = "/api/hr/competencies";
@@ -611,5 +622,92 @@ export function registerCompetencyRoutes(
     await deleteTraining(db, id, await scopeOf(req));
     logEmployeeHrAudit({ event: "competency.training.change", actorUserId: who.userId, details: { action: "delete", trainingId: id } });
     return res.status(204).end();
+  }));
+
+  // —— Certificados de treinamento ——
+  app.get(`${base}/certificate-settings`, ...gate("viewTrainings"), asyncRoute("GET competencies/certificate-settings", async (_req, res) => {
+    noStore(res);
+    return res.json(await loadCertificateSettings(db));
+  }));
+
+  app.put(`${base}/certificate-settings`, ...gate("manageTrainings"), asyncRoute("PUT competencies/certificate-settings", async (req, res) => {
+    const parsed = parseCertificateSettingsBody(req.body);
+    if (parsed.ok === false) return badRequest(res, parsed);
+    const who = await actor(req);
+    const saved = await updateCertificateSettings(db, parsed.value, who, await scopeOf(req));
+    logEmployeeHrAudit({
+      event: "competency.certificate.settings",
+      actorUserId: who.userId,
+      details: { numberPrefix: parsed.value.numberPrefix },
+    });
+    return res.json(saved);
+  }));
+
+  app.get(`${base}/trainings/:id/certificates`, ...gate("viewTrainings"), asyncRoute("GET competencies/trainings/certificates", async (req, res) => {
+    const id = param(req, "id");
+    if (!id) return invalidId(res);
+    noStore(res);
+    return res.json(await getTrainingCertificateBoard(db, id, await scopeOf(req)));
+  }));
+
+  app.put(`${base}/trainings/:id/certificate-content`, ...gate("manageTrainings"), asyncRoute("PUT competencies/trainings/certificate-content", async (req, res) => {
+    const id = param(req, "id");
+    if (!id) return invalidId(res);
+    const parsed = parseTrainingCertificateContentBody(req.body);
+    if (parsed.ok === false) return badRequest(res, parsed);
+    const who = await actor(req);
+    await updateTrainingCertificateContent(db, id, parsed.value, who, await scopeOf(req));
+    logEmployeeHrAudit({
+      event: "competency.training.change",
+      actorUserId: who.userId,
+      details: { action: "certificate-content", trainingId: id, modules: parsed.value.syllabus.length },
+    });
+    return res.json({ id });
+  }));
+
+  app.post(`${base}/trainings/:id/certificates`, ...gate("manageTrainings"), asyncRoute("POST competencies/trainings/certificates", async (req, res) => {
+    const id = param(req, "id");
+    if (!id) return invalidId(res);
+    const raw = (req.body ?? {}) as { employeeIds?: unknown };
+    let employeeIds: string[] | null = null;
+    if (raw.employeeIds !== undefined && raw.employeeIds !== null) {
+      if (!Array.isArray(raw.employeeIds) || raw.employeeIds.length === 0 || raw.employeeIds.length > 500 || !raw.employeeIds.every(isUuidString)) {
+        return res.status(400).json({ error: "INVALID_PARTICIPANTS", message: "Participantes inválidos." });
+      }
+      employeeIds = [...new Set(raw.employeeIds.map((e: string) => e.trim().toLowerCase()))];
+    }
+    const who = await actor(req);
+    const result = await issueTrainingCertificates(db, id, { employeeIds }, who, now(), await scopeOf(req));
+    logEmployeeHrAudit({
+      event: "competency.certificate.issue",
+      actorUserId: who.userId,
+      details: { trainingId: id, issued: result.issued.map((c) => c.number), skipped: result.skipped.length },
+    });
+    return res.status(result.issued.length > 0 ? 201 : 200).json(result);
+  }));
+
+  app.get(`${base}/trainings/:id/certificates/document`, ...gate("viewTrainings"), asyncRoute("GET competencies/trainings/certificates/document", async (req, res) => {
+    const id = param(req, "id");
+    if (!id) return invalidId(res);
+    const rawIds = typeof req.query.ids === "string" && req.query.ids.trim() !== "" ? req.query.ids.split(",") : null;
+    if (rawIds && (rawIds.length > 500 || !rawIds.every(isUuidString))) return invalidId(res);
+    noStore(res);
+    const ids = rawIds ? [...new Set(rawIds.map((v) => v.trim().toLowerCase()))] : null;
+    return res.json(await getTrainingCertificatesDocument(db, id, { ids }, await scopeOf(req)));
+  }));
+
+  app.post(`${base}/certificates/:id/cancel`, ...gate("manageTrainings"), asyncRoute("POST competencies/certificates/cancel", async (req, res) => {
+    const id = param(req, "id");
+    if (!id) return invalidId(res);
+    const parsed = parseCancelReason(req.body);
+    if (parsed.ok === false) return badRequest(res, parsed);
+    const who = await actor(req);
+    const result = await cancelTrainingCertificate(db, id, parsed.value, who, now(), await scopeOf(req));
+    logEmployeeHrAudit({
+      event: "competency.certificate.cancel",
+      actorUserId: who.userId,
+      details: { certificateId: id, number: result.number },
+    });
+    return res.json(result);
   }));
 }

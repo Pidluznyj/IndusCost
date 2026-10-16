@@ -6,6 +6,7 @@
 import type { CompetencyMatrix, CompetencyOverview } from "./competencyEngine";
 import type { CompetencyScopeView } from "./competencyScope";
 import type { ImportPlan, ImportSummary } from "./competencyImport";
+import type { CertificateSettingsDto, SyllabusModule, TrainingCertificatePayload } from "./trainingCertificate";
 
 export type CompetencyDto = {
   id: string;
@@ -139,6 +140,61 @@ export type TrainingDto = {
   /** Participantes de outras equipes (não exibidos ao líder). */
   hiddenParticipantCount: number;
   participants: { employeeId: string; employeeName: string; completedOn: string | null }[];
+  /** Instrutor e conteúdo programático (usados no certificado). */
+  instructorName: string | null;
+  syllabus: SyllabusModule[];
+  /** Certificados vigentes emitidos para participantes visíveis. */
+  activeCertificateCount: number;
+};
+
+/** Painel de certificados de um treinamento. */
+export type TrainingCertificateBoardDto = {
+  training: {
+    id: string;
+    title: string;
+    status: string;
+    competencyName: string;
+    workloadHours: number;
+    completedOn: string | null;
+    instructorName: string | null;
+    syllabus: SyllabusModule[];
+    /** Há certificado vigente: instrutor e conteúdo ficam travados. */
+    contentLocked: boolean;
+  };
+  settings: CertificateSettingsDto;
+  company: { name: string | null; hasLogo: boolean };
+  /** Impedimentos comuns a toda a turma (vazio = pode emitir). */
+  blockers: string[];
+  participants: {
+    employeeId: string;
+    employeeName: string;
+    completedOn: string | null;
+    writable: boolean;
+    certificate: { id: string; number: string; issuedAt: string; issuedByName: string } | null;
+  }[];
+  canceled: {
+    id: string;
+    number: string;
+    employeeName: string;
+    canceledAt: string | null;
+    canceledByName: string | null;
+    reason: string;
+  }[];
+};
+
+export type TrainingCertificateIssueResult = {
+  issued: { id: string; number: string; employeeId: string }[];
+  skipped: { employeeId: string; reason: "ALREADY_ISSUED" | "NOT_COMPLETED" | "EMPLOYEE_NOT_FOUND" }[];
+};
+
+export type TrainingCertificateDocumentDto = {
+  certificates: {
+    id: string;
+    number: string;
+    status: string;
+    payload: TrainingCertificatePayload;
+    integrity: { sha256: string; verified: boolean };
+  }[];
 };
 
 /** Aba Competências da ficha do colaborador (somente leitura; mesma engine do módulo). */
