@@ -122,7 +122,7 @@ function managerDisplay(row: {
   return name || null;
 }
 
-async function resolveActorNames(
+export async function resolveActorNames(
   prisma: PrismaClient,
   userIds: Array<string | null | undefined>
 ): Promise<Map<string, string>> {

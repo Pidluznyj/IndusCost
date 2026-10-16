@@ -71,6 +71,7 @@ import {
   getTrainingCertificateBoard,
   getTrainingCertificatesDocument,
   issueTrainingCertificates,
+  listEmployeeTrainingCertificates,
   loadCertificateSettings,
   updateCertificateSettings,
   updateTrainingCertificateContent,
@@ -625,6 +626,13 @@ export function registerCompetencyRoutes(
   }));
 
   // —— Certificados de treinamento ——
+  app.get(`${base}/employees/:employeeId/certificates`, ...gate("viewTrainings"), asyncRoute("GET competencies/employees/certificates", async (req, res) => {
+    const employeeId = param(req, "employeeId");
+    if (!employeeId) return invalidId(res);
+    noStore(res);
+    return res.json({ items: await listEmployeeTrainingCertificates(db, employeeId, businessTodayIso(now()), await scopeOf(req)) });
+  }));
+
   app.get(`${base}/certificate-settings`, ...gate("viewTrainings"), asyncRoute("GET competencies/certificate-settings", async (_req, res) => {
     noStore(res);
     return res.json(await loadCertificateSettings(db));

@@ -114,6 +114,7 @@ export const COMPETENCY_ENDPOINTS = [
   { method: "PUT", path: "/api/hr/competencies/trainings/:id", capability: "manageTrainings" },
   { method: "PATCH", path: "/api/hr/competencies/trainings/:id/status", capability: "manageTrainings" },
   { method: "DELETE", path: "/api/hr/competencies/trainings/:id", capability: "manageTrainings" },
+  { method: "GET", path: "/api/hr/competencies/employees/:employeeId/certificates", capability: "viewTrainings" },
   { method: "GET", path: "/api/hr/competencies/certificate-settings", capability: "viewTrainings" },
   { method: "PUT", path: "/api/hr/competencies/certificate-settings", capability: "manageTrainings" },
   { method: "GET", path: "/api/hr/competencies/trainings/:id/certificates", capability: "viewTrainings" },

@@ -23,6 +23,7 @@ import type {
   TrainingDto,
   WorkPositionDto,
 } from "./competencyTypes";
+import type { EmployeeCertificateItemDto } from "../hrEmployeeCertificates";
 import type { CertificateSettingsDto, CertificateSettingsInput, SyllabusModule } from "./trainingCertificate";
 
 const NO_STORE: RequestInit = { cache: "no-store" };
@@ -172,6 +173,12 @@ export const deleteTraining = (id: string) =>
   fetchOk(`${COMPETENCY_API_BASE}/trainings/${encodeURIComponent(id)}`, { method: "DELETE" });
 
 // —— Certificados de treinamento ——
+
+export const fetchEmployeeTrainingCertificates = (employeeId: string, signal?: AbortSignal) =>
+  fetchJsonOk<{ items: EmployeeCertificateItemDto[] }>(
+    `${COMPETENCY_API_BASE}/employees/${encodeURIComponent(employeeId)}/certificates`,
+    { ...NO_STORE, signal },
+  );
 
 export const fetchCertificateSettings = (signal?: AbortSignal) =>
   fetchJsonOk<CertificateSettingsDto>(`${COMPETENCY_API_BASE}/certificate-settings`, { ...NO_STORE, signal });

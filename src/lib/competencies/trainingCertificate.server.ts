@@ -13,6 +13,7 @@ import {
   assertWritable,
   notFound,
   toIsoDate,
+  trainingValidityExpiresOn,
   visibleTrainingIds,
   type CompetencyDb,
 } from "./competency.server";
@@ -29,6 +30,7 @@ import {
   type SyllabusModule,
   type TrainingCertificatePayload,
 } from "./trainingCertificate";
+import { certificateValidity, type EmployeeCertificateItemDto } from "../hrEmployeeCertificates";
 import type {
   TrainingCertificateBoardDto,
   TrainingCertificateDocumentDto,
@@ -462,4 +464,50 @@ export async function cancelTrainingCertificate(
     },
   });
   return { id: certificateId, number: row.number };
+}
+
+/**
+ * Ficha › Certificados: certificados vigentes emitidos pelo sistema para o colaborador.
+ * Dados do conteúdo congelado; a validade segue a do treinamento (meses a partir da conclusão).
+ */
+export async function listEmployeeTrainingCertificates(
+  db: CompetencyDb,
+  employeeId: string,
+  todayIso: string,
+  scope: CompetencyScope = COMPETENCY_SCOPE_ALL,
+): Promise<EmployeeCertificateItemDto[]> {
+  if (!canSeeEmployee(scope, employeeId)) notFound("Colaborador");
+  const rows = (await db.hrTrainingCertificate.findMany({ where: { employeeId, status: ACTIVE } })) as CertificateRow[];
+  const trainingIds = [...new Set(rows.map((r) => r.trainingId))];
+  const trainings = trainingIds.length
+    ? ((await db.hrTraining.findMany({ where: { id: { in: trainingIds } } })) as { id: string; validityMonths: number; competencyId: string }[])
+    : [];
+  const byId = new Map(trainings.map((t) => [t.id, t]));
+  return rows.map((r) => {
+    const p = r.payload as TrainingCertificatePayload;
+    const training = byId.get(r.trainingId);
+    const expiresOn = training ? trainingValidityExpiresOn(p.training.completedOn, training.validityMonths) : null;
+    return {
+      key: `system:${r.id}`,
+      origin: "SYSTEM" as const,
+      id: r.id,
+      title: p.training.title,
+      issuer: p.company.name,
+      number: r.number,
+      competencyId: training?.competencyId ?? null,
+      competencyName: p.training.competencyName,
+      workloadHours: p.training.workloadHours,
+      completedOn: p.training.completedOn,
+      expiresOn,
+      validity: certificateValidity(expiresOn, todayIso),
+      trainingId: r.trainingId,
+      documentId: null,
+      downloadUrl: null,
+      fileName: null,
+      mimeType: null,
+      notes: null,
+      createdByName: r.issuedByName,
+      createdAt: new Date(r.issuedAt).toISOString(),
+    };
+  });
 }

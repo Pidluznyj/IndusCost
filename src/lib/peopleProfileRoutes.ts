@@ -27,6 +27,7 @@ import {
   loadPeoplePersonal,
   loadPeopleProfessional,
   loadPeopleProfileSummary,
+  resolveActorNames,
   resolveProfileAccess,
 } from "@/src/lib/peopleProfile.server.js";
 import { PeopleProfileAccessError } from "@/src/lib/peopleProfileErrors.js";
@@ -58,12 +59,22 @@ import {
   updateEmployeeDocument,
   updateEmployeeNote,
   updateEpiDelivery,
+  writeHistoryEvent,
 } from "@/src/lib/peopleProfileMutations.server.js";
 import { buildPeopleProfileCapabilities } from "@/src/lib/peopleProfileCapabilities.js";
 import { listOfficialPayrollHrCatalogItems } from "@/src/lib/peopleOfficialPayrollCatalog.server.js";
 import { EmployeeRegistrationError } from "@/src/lib/employeeRegistration.js";
 import { registerHrEvaluationRoutes } from "@/src/lib/hrEvaluationRoutes.js";
 import { PEOPLE_PROFILE_PHOTO_MAX_BYTES } from "@/src/lib/peopleProfileRecordEdits.js";
+import { deleteAppLocalFile, saveAppLocalFile } from "@/src/lib/appLocalFileStorage.js";
+import { businessTodayIso } from "@/src/lib/competencies/competencyDomain.js";
+import { EXTERNAL_CERTIFICATE_MAX_BYTES, parseExternalCertificateInput } from "@/src/lib/hrEmployeeCertificates.js";
+import {
+  createExternalCertificate,
+  findExternalCertificateDocument,
+  listExternalCertificates,
+  updateExternalCertificate,
+} from "@/src/lib/hrEmployeeCertificates.server.js";
 
 type AuthGuards = {
   requireAppAuth: RequestHandler;
@@ -84,6 +95,24 @@ const photoUpload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: PEOPLE_PROFILE_PHOTO_MAX_BYTES, files: 1 },
 });
+
+/** Certificado externo: 1 arquivo de até 10 MB; erro do multer vira 400 em JSON. */
+const certificateUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: EXTERNAL_CERTIFICATE_MAX_BYTES, files: 1, fields: 20 },
+});
+
+const certificateUploadSingle: RequestHandler = (req, res, next) => {
+  certificateUpload.single("file")(req, res, (error: unknown) => {
+    if (!error) return next();
+    noStore(res);
+    const tooLarge = error instanceof multer.MulterError && error.code === "LIMIT_FILE_SIZE";
+    return res.status(400).json({
+      error: tooLarge ? "O certificado deve ter no máximo 10 MB." : "Não foi possível ler o arquivo enviado.",
+      code: tooLarge ? "FILE_TOO_LARGE" : "INVALID_FILE",
+    });
+  });
+};
 
 function noStore(res: express.Response) {
   res.setHeader("Cache-Control", "no-store");
@@ -1001,6 +1030,98 @@ export function registerPeopleProfileRoutes(
       return res.json(result);
     } catch (error) {
       return sendError(res, error, "Erro ao excluir documento.");
+    }
+  });
+
+  // —— Certificados (aba da ficha) ——
+  // Externos: arquivo no dossiê + dados estruturados. Os emitidos pelo sistema vêm da API de Competências.
+  app.get("/api/employees/:id/certificates", ...viewGuard, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const ctx = await context(req, id);
+      if (!ctx.capabilities.canViewDocuments) {
+        throw new PeopleProfileAccessError("FORBIDDEN", "Sem permissão para documentos.");
+      }
+      const items = await listExternalCertificates(prisma, id, businessTodayIso(new Date()), (ids) =>
+        resolveActorNames(prisma, ids)
+      );
+      noStore(res);
+      return res.json({ items, canManage: ctx.capabilities.canManageDocuments });
+    } catch (error) {
+      return sendError(res, error, "Erro ao carregar certificados.");
+    }
+  });
+
+  app.post("/api/employees/:id/certificates", ...viewGuard, certificateUploadSingle, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const ctx = await context(req, id);
+      if (!ctx.capabilities.canManageDocuments) {
+        throw new PeopleProfileAccessError("FORBIDDEN", "Sem permissão para documentos.");
+      }
+      const file = req.file;
+      if (!file) throw new PeopleProfileAccessError("FILE_REQUIRED", "Anexe o arquivo do certificado.", 400);
+      const parsed = parseExternalCertificateInput(req.body, businessTodayIso(new Date()));
+      if (parsed.ok === false) throw new PeopleProfileAccessError(parsed.code, parsed.message, 400);
+      const emp = await prisma.employee.findUnique({ where: { id }, select: { personId: true } });
+      const created = await createExternalCertificate({
+        prisma,
+        files: { save: saveAppLocalFile, remove: deleteAppLocalFile },
+        writeHistory: writeHistoryEvent,
+        employeeId: id,
+        personId: emp?.personId ?? null,
+        data: parsed.value,
+        file: { originalName: file.originalname, buffer: file.buffer },
+        actorUserId: ctx.user?.id ?? null,
+      });
+      noStore(res);
+      return res.status(201).json(created);
+    } catch (error) {
+      return sendError(res, error, "Erro ao anexar certificado.");
+    }
+  });
+
+  app.patch("/api/employees/:id/certificates/:recordId", ...viewGuard, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const ctx = await context(req, id);
+      if (!ctx.capabilities.canManageDocuments) {
+        throw new PeopleProfileAccessError("FORBIDDEN", "Sem permissão para documentos.");
+      }
+      const parsed = parseExternalCertificateInput(patchBody(req), businessTodayIso(new Date()));
+      if (parsed.ok === false) throw new PeopleProfileAccessError(parsed.code, parsed.message, 400);
+      const result = await updateExternalCertificate({
+        prisma,
+        employeeId: id,
+        certificateId: recordParam(req),
+        data: parsed.value,
+        actorUserId: ctx.user?.id ?? null,
+      });
+      noStore(res);
+      return res.json(result);
+    } catch (error) {
+      return sendError(res, error, "Erro ao atualizar certificado.");
+    }
+  });
+
+  // Exclui pelo fluxo oficial do dossiê (arquivo + histórico); o certificado sai junto (CASCADE).
+  app.delete("/api/employees/:id/certificates/:recordId", ...viewGuard, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const ctx = await context(req, id);
+      if (!ctx.capabilities.canManageDocuments) {
+        throw new PeopleProfileAccessError("FORBIDDEN", "Sem permissão para documentos.");
+      }
+      const documentId = await findExternalCertificateDocument(prisma, id, recordParam(req));
+      const result = await deleteEmployeeDocument(prisma, {
+        employeeId: id,
+        recordId: documentId,
+        actorUserId: ctx.user?.id,
+      });
+      noStore(res);
+      return res.json(result);
+    } catch (error) {
+      return sendError(res, error, "Erro ao excluir certificado.");
     }
   });
 

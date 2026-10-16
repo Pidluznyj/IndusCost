@@ -122,6 +122,7 @@ Migration: `20261008120000_hr_competencies`. É aditiva: só cria tabelas, não 
 | `HrTrainingParticipant` | Participante e `completedAt`, que é a base da reciclagem. |
 | `HrTraining.instructorName` / `syllabus` | Instrutor (opcional) e conteúdo programático `[{ title, hours }]` do certificado. Migration `20261016120000_hr_training_certificates`. |
 | `HrTrainingCertificateSettings` | Linha única `GLOBAL` (CHECK): signatário, cargo, local de emissão e prefixo da numeração (CHECK de formato), com autor da última alteração. Sem valores padrão. |
+| `HrEmployeeExternalCertificate` | Certificado externo (upload): `documentId` único → `HrEmployeeDocument` (CASCADE), curso, instituição, carga (numeric 7,1), conclusão, validade, competência (opcional, SET NULL), observações e autoria. Migration `20261017120000_hr_employee_external_certificates`. |
 | `HrTrainingCertificate` | Certificado emitido: número único, `year` + `sequence` únicos, treinamento, colaborador, `status` (`ACTIVE`/`CANCELED`), emissão (data/autor), `payload` congelado + `payloadSha256`, cancelamento (data/autor/motivo). Imutável por trigger. |
 | `HrCompetencyImportBatch` | Uma linha por importação por planilha **que alterou algo**: nome e SHA-256 do arquivo, linhas, alterações, conflitos aplicados, resumo (JSON só com contagens) e autor. O histórico de níveis aponta para o lote (`importBatchId`, origem `IMPORT`). |
 
@@ -352,6 +353,45 @@ Auditoria: `competency.certificate.settings`, `competency.certificate.issue`, `c
 - Fluxo completo na UI real (configurar → emitir → cancelar → reemitir → imprimir). PDF do Chrome: 6 páginas A4 paisagem.
 - Limite do teste: o logo real (≈330 KB) derruba o servidor PGlite. Por isso, nas rotas reais o logo foi validado com um PNG pequeno; o logo real foi usado no harness.
 
+### Ficha funcional › Certificados
+
+A aba **Certificados** (grupo Rotina, depois de Competências) reúne **todos** os certificados do colaborador numa lista só, da conclusão mais recente para a mais antiga. Indicadores no topo: total, horas de formação, a vencer em 30 dias e vencidos. Filtro por origem: Todos, Treinamentos do sistema ou Anexados.
+
+| Origem | De onde vem | Ações | Permissão |
+|---|---|---|---|
+| **Sistema** | Certificados **vigentes** emitidos nos treinamentos (`HrTrainingCertificate`), com o conteúdo congelado. A validade é a do treinamento: meses a partir da conclusão. | Imprimir (mesmo HTML do painel de certificados) | `viewTrainings` em Competências + módulo ligado + escopo hierárquico (`GET /api/hr/competencies/employees/:employeeId/certificates`) |
+| **Anexado** | Certificado externo enviado pelo RH: o arquivo fica no **dossiê** (`HrEmployeeDocument`, tipo `TRAINING_CERTIFICATE`) e os dados ficam em `HrEmployeeExternalCertificate` | Ver, baixar, editar e excluir | Ver: documentos da ficha (`canViewDocuments`); anexar, editar e excluir: `canManageDocuments` |
+
+A aba aparece com qualquer uma das duas permissões. Cada origem carrega sozinha: sem acesso a uma, a outra continua visível.
+
+**Certificado anexado** (`src/lib/hrEmployeeCertificates.ts` e `.server.ts`, rotas em `peopleProfileRoutes.ts`)
+
+- Campos obrigatórios: nome do curso, instituição e conclusão (não pode ser futura).
+- Campos opcionais: carga horária (passos de 0,5 h), validade (não anterior à conclusão), competência relacionada e observações.
+- O arquivo deve ser **PDF, JPG ou PNG de até 10 MB**. O tipo é conferido pelo conteúdo (magic bytes), e o MIME gravado é o real.
+- Gravação numa transação: documento do dossiê + certificado + evento `DOCUMENT_ADDED` no histórico. Se o banco falhar, o arquivo salvo é apagado (sem órfão).
+- A edição muda só os dados (o arquivo não é trocado) e atualiza o nome e as datas do documento no dossiê.
+- A exclusão usa o fluxo oficial do dossiê: apaga o arquivo e o evento do histórico, e o certificado sai junto (CASCADE).
+  - Excluir o documento pela aba Documentos também remove o certificado. Lá ele aparece como "Certificado de treinamento".
+- A competência relacionada é **só informativa**. Um certificado anexado **não** altera nível nem reciclagem na engine oficial; quem conta para a reciclagem continua sendo a conclusão de um treinamento do sistema.
+- API:
+  - `GET /api/employees/:id/certificates`
+  - `POST /api/employees/:id/certificates` (multipart: `file` + campos)
+  - `PATCH /api/employees/:id/certificates/:recordId`
+  - `DELETE /api/employees/:id/certificates/:recordId`
+  - Download pela rota de documentos já existente.
+- Auditoria: `employee.certificate.upload` e `employee.certificate.update`; a exclusão registra `employee.document.delete`.
+- Migration: `20261017120000_hr_employee_external_certificates` (aditiva). CHECKs: título e instituição não vazios, carga > 0, validade ≥ conclusão. `documentId` é único.
+
+**Validação (2026-10-16, sem banco real)**
+
+- `hrEmployeeCertificates.test.ts` (9) e um teste novo do endpoint do colaborador em `trainingCertificateRoutes.test.ts`.
+- PGlite com DDL da main + migration:
+  - 8 verificações de DDL (CHECKs, unicidade, CASCADE);
+  - `migrate diff` vazio;
+  - 18 verificações com as rotas reais da ficha e de Competências, cobrindo upload, arquivo disfarçado, conclusão futura, dossiê, download byte a byte, histórico, edição, somente leitura (403), IDOR (404) e exclusão sem arquivo órfão.
+- Harness da aba com os certificados do sistema vindos das rotas reais (banco simulado), em desktop, celular e somente leitura.
+
 ## Diferenças em relação ao protótipo
 
 | Protótipo | Implementação | Motivo |
@@ -372,6 +412,7 @@ Auditoria: `competency.certificate.settings`, `competency.certificate.issue`, `c
 2. Rodar `npm run permissions:seed` para criar os 3 recursos novos.
 3. Liberar os perfis desejados na tela de perfis de acesso.
 4. Certificados: aplicar a migration `20261016120000_hr_training_certificates` **antes** do código (a lista de treinamentos consulta `HrTrainingCertificate`). Depois, no painel de certificados, configurar signatário, cargo, local e prefixo. Conferir nome, logo, slogan e site em Identidade Visual. Sem permissão nova: usa as de Treinamentos.
+   Ficha › Certificados: aplicar também a migration `20261017120000_hr_employee_external_certificates` antes do código. Usa as permissões de documentos da ficha.
 5. Cadastrar competências e postos e alocar as equipes. Os níveis começam em 0 e são preenchidos pelas avaliações, pela edição da matriz ou pela importação por planilha (carga inicial: Baixar modelo → preencher → Importar).
 
 ## Testes
@@ -475,3 +516,5 @@ Quando essa etapa for autorizada, a gravação substitui apenas as associações
 - 2026-10-15: governança de níveis (competência crítica, aprovação, versão otimista, decisões condicionais), com `HrCompetencyLevelRequest` na mesma migration.
 - 2026-10-15: feature flag `COMPETENCIES_ENABLED` (fail closed) para API, menu, rota e aba da ficha.
 - 2026-10-16: certificados de treinamento com dados do sistema (instrutor e conteúdo programático no treinamento, configuração de assinatura e numeração, emissão congelada com sha256, cancelamento com motivo, impressão A4 no modelo Lazarios Koppetel). Migration `20261016120000_hr_training_certificates`.
+- 2026-10-16: modal da matriz com nome completo, filtros em chips e cabeçalho fixo opaco.
+- 2026-10-16: aba Certificados na ficha funcional (sistema + anexados, com arquivo no dossiê). Migration `20261017120000_hr_employee_external_certificates`.

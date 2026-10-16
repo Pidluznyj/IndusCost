@@ -314,3 +314,54 @@ describe("certificados de treinamento — rotas", () => {
     assert.deepEqual(res.json.issued.map((c: any) => c.employeeId), [s.ana]);
   });
 });
+
+describe("ficha › certificados emitidos pelo sistema", () => {
+  let app: CompetencyTestApp;
+  before(async () => {
+    app = await startCompetencyTestApp({ db: createFakeDb() });
+  });
+  after(async () => {
+    await app.close();
+  });
+
+  it("lista só os vigentes do colaborador, com dados congelados e validade do treinamento; respeita o escopo", async () => {
+    const s = await seed(app);
+    await requestJson(app, "PUT", "/api/hr/competencies/certificate-settings", SETTINGS);
+    const issued = await requestJson(app, "POST", `/api/hr/competencies/trainings/${s.trainingId}/certificates`, {});
+    const anaCert = issued.json.issued.find((c: any) => c.employeeId === s.ana);
+    const brunoCert = issued.json.issued.find((c: any) => c.employeeId === s.bruno);
+    await requestJson(app, "POST", `/api/hr/competencies/certificates/${brunoCert.id}/cancel`, { reason: "erro" });
+
+    const ana = await requestJson(app, "GET", `/api/hr/competencies/employees/${s.ana}/certificates`);
+    assert.equal(ana.status, 200);
+    assert.equal(ana.json.items.length, 1);
+    const item = ana.json.items[0];
+    assert.equal(item.origin, "SYSTEM");
+    assert.equal(item.number, anaCert.number);
+    assert.equal(item.title, "Desenho mecânico aplicado");
+    assert.equal(item.issuer, "Lazarios Koppetel");
+    assert.equal(item.workloadHours, 8);
+    assert.equal(item.completedOn, "2026-10-10");
+    assert.equal(item.expiresOn, "2027-10-10"); // validade de 12 meses do treinamento
+    assert.equal(item.validity, "VALID");
+    assert.equal(item.trainingId, s.trainingId);
+    assert.equal(item.competencyId, s.competencyId);
+
+    const bruno = await requestJson(app, "GET", `/api/hr/competencies/employees/${s.bruno}/certificates`);
+    assert.deepEqual(bruno.json.items, []); // cancelado não aparece
+
+    const leader = seedEmployee(app.db, "Líder");
+    app.setScope({ accessScope: "DIRECT_REPORTS", actorEmployeeId: leader });
+    try {
+      assert.equal((await requestJson(app, "GET", `/api/hr/competencies/employees/${s.ana}/certificates`)).status, 404);
+    } finally {
+      app.setScope({ accessScope: "ALL", actorEmployeeId: null });
+    }
+    app.setGranted(["admin.employees.competencies:view"]);
+    try {
+      assert.equal((await requestJson(app, "GET", `/api/hr/competencies/employees/${s.ana}/certificates`)).status, 403);
+    } finally {
+      app.setGranted("all");
+    }
+  });
+});

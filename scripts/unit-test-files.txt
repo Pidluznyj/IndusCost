@@ -384,6 +384,7 @@ src/lib/competencies/competencyGovernanceRoutes.test.ts
 src/lib/competencies/competencyFeatureFlags.test.ts
 src/lib/competencies/trainingCertificate.test.ts
 src/lib/competencies/trainingCertificateRoutes.test.ts
+src/lib/hrEmployeeCertificates.test.ts
 src/components/competencies/competencyMatrixGroups.test.ts
 src/components/competencies/CompetencyMatrixGrid.test.tsx
 src/lib/projectsCustomerLink.test.ts

@@ -341,6 +341,7 @@ export const PEOPLE_PROFILE_TAB_IDS = [
   "documents",
   "evaluations",
   "competencies",
+  "certificates",
   "absences",
   "history",
   "notes",

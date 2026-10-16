@@ -15,6 +15,7 @@ import {
   assessmentAverage,
   buildCompetencyMatrix,
   buildCompetencyOverview,
+  addMonthsIso,
   computeCoverage,
   evaluateRequirements,
   formatAssessmentAverage,
@@ -100,6 +101,14 @@ export { businessTodayIso };
 /** Data de negócio gravada como meia-noite UTC (lida de volta com `toIsoDate`). */
 export function fromIsoDate(iso: string): Date {
   return new Date(`${iso}T00:00:00.000Z`);
+}
+
+/**
+ * Fim da validade de um treinamento concluído (mesma conta da reciclagem na engine oficial).
+ * 0 meses = sem validade.
+ */
+export function trainingValidityExpiresOn(completedOn: string, validityMonths: number): string | null {
+  return validityMonths > 0 ? addMonthsIso(completedOn, validityMonths) : null;
 }
 
 export function toIsoDate(value: Date | string | null | undefined): string | null {
