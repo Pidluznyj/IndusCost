@@ -243,6 +243,7 @@ describe("sidebarNavigation — grupos oficiais", () => {
       "employees",
       "org-chart",
       "competencies",
+      "performance-cycle",
     ]);
   });
 });

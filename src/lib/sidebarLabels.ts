@@ -34,6 +34,7 @@ export const MODULE_SHORT_LABELS: Record<AppModuleId, string> = {
   "employees-dashboard": "Dash. Pessoas",
   "org-chart": "Org.",
   competencies: "Compet.",
+  "performance-cycle": "Desemp.",
   machines: "Máq.",
   materials: "Supr.",
   purchases: "Compr.",

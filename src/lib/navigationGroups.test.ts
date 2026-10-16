@@ -72,6 +72,7 @@ const EXPECTED_GROUP_BY_MODULE: Record<AppModuleId, string> = {
   "employees-dashboard": "gestao_pessoas",
   "org-chart": "gestao_pessoas",
   competencies: "gestao_pessoas",
+  "performance-cycle": "gestao_pessoas",
   // P1 (OKR): "Objetivos e Metas" é gestão do negócio — item direto ao lado
   // do Dashboard, fora de Administração. Permissões inalteradas.
   goals: "dashboard",

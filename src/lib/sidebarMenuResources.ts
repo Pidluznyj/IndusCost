@@ -45,6 +45,7 @@ export const SIDEBAR_MODULE_RESOURCE_KEYS: Partial<Record<AppModuleId, string>> 
   "employees-dashboard": ResourceKeys.ADMIN_PESSOAS_DASHBOARD,
   "org-chart": ResourceKeys.ADMIN_PESSOAS,
   competencies: ResourceKeys.ADMIN_PESSOAS_COMPETENCIES,
+  "performance-cycle": ResourceKeys.ADMIN_PESSOAS_PERFORMANCE,
   guide: ResourceKeys.ADMIN_GUIA,
   goals: ResourceKeys.ADMIN_METAS,
   exposure: ResourceKeys.ADMIN_EXPOSURE,

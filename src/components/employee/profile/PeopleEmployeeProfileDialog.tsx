@@ -14,6 +14,7 @@ import { PROFILE_NETWORK_ERROR_MESSAGE } from "./profileClient";
 import { usePermissions } from "@/src/hooks/usePermissions";
 import { COMPETENCY_RESOURCE_KEYS } from "@/src/lib/competencies/competencyAccess";
 import { useCompetenciesFeature } from "@/src/components/competencies/useCompetenciesFeature";
+import { PeoplePerformanceHistorySection } from "@/src/components/hrPerformance/PeoplePerformanceHistorySection";
 
 const PeopleProfessionalTab = lazy(() =>
   import("./PeopleProfessionalTab").then((m) => ({ default: m.PeopleProfessionalTab }))
@@ -439,6 +440,8 @@ export function PeopleEmployeeProfileDialog({
                 )}
                 {activeTab === "competencies" && <PeopleCompetenciesTab employeeId={employeeId} />}
                 {activeTab === "evaluations" && (
+                  <>
+                  <PeoplePerformanceHistorySection employeeId={employeeId} />
                   <PeopleEvaluationsTab
                     data={
                       cached && typeof cached === "object" && "items" in (cached as object)
@@ -454,6 +457,7 @@ export function PeopleEmployeeProfileDialog({
                     canAttach={Boolean(caps?.canAttachEvaluationDocuments)}
                     onSaved={() => onRecorded("evaluations")}
                   />
+                  </>
                 )}
                 {activeTab === "documents" && (
                   <PeopleDocumentsTab

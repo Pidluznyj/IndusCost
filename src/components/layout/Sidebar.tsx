@@ -74,7 +74,9 @@ import {
 } from "@/src/lib/treasury/treasuryNavigation";
 import { fetchTreasuryAvailability } from "@/src/lib/treasury/treasuryAvailabilityApi";
 import { filterCompetenciesMenuNavigation } from "@/src/lib/competencies/competencyNavigation";
+import { filterPerformanceMenuNavigation } from "@/src/lib/hrPerformance/performanceNavigation";
 import { loadCompetenciesFeature } from "@/src/components/competencies/useCompetenciesFeature";
+import { loadPerformanceFeature } from "@/src/components/hrPerformance/usePerformanceFeature";
 import { fetchSupplyChainFeatureStatus } from "@/src/lib/supply-chain/supplyChainClient";
 import {
   canViewSupplyChainInventoryModule,
@@ -122,6 +124,7 @@ const MENU_ITEM_ICONS: Record<AppModuleId, LucideIcon> = {
   "employees-dashboard": LayoutDashboard,
   "org-chart": Network,
   competencies: GraduationCap,
+  "performance-cycle": Target,
   machines: Cpu,
   materials: Truck,
   purchases: ShoppingCart,
@@ -509,6 +512,8 @@ export const Sidebar = () => {
     React.useState<boolean | null>(null);
   const [competenciesFeatureEnabled, setCompetenciesFeatureEnabled] =
     React.useState<boolean | null>(null);
+  const [performanceFeatureEnabled, setPerformanceFeatureEnabled] =
+    React.useState<boolean | null>(null);
   const [supplyChainFeatures, setSupplyChainFeatures] = React.useState<{
     purchases: boolean | null;
     inventory: boolean | null;
@@ -612,11 +617,15 @@ export const Sidebar = () => {
   React.useEffect(() => {
     if (permissions.authLoading || !permissions.authUser) {
       setCompetenciesFeatureEnabled(null);
+      setPerformanceFeatureEnabled(null);
       return;
     }
     let alive = true;
     void loadCompetenciesFeature().then((enabled) => {
       if (alive) setCompetenciesFeatureEnabled(enabled);
+    });
+    void loadPerformanceFeature().then((enabled) => {
+      if (alive) setPerformanceFeatureEnabled(enabled);
     });
     return () => {
       alive = false;
@@ -639,7 +648,8 @@ export const Sidebar = () => {
       }),
     });
     const withCompetencies = filterCompetenciesMenuNavigation(withTreasury, competenciesFeatureEnabled);
-    return filterSupplyChainMenuNavigation(withCompetencies, supplyChainFeatures, {
+    const withPerformance = filterPerformanceMenuNavigation(withCompetencies, performanceFeatureEnabled);
+    return filterSupplyChainMenuNavigation(withPerformance, supplyChainFeatures, {
       purchases: canViewSupplyChainPurchasesModule({
         hasPermission: auth.hasPermission,
       }),
@@ -655,6 +665,7 @@ export const Sidebar = () => {
     salesOrderFlowFeatureEnabled,
     treasuryFeatureEnabled,
     competenciesFeatureEnabled,
+    performanceFeatureEnabled,
     supplyChainFeatures,
     permissions.canPerformAction,
     auth.hasPermission,

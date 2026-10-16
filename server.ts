@@ -267,6 +267,14 @@ import { registerEmployeeLookupRoutes } from "./src/lib/employeeLookupRoutes.js"
 import { registerHrOrgStructureRoutes } from "./src/lib/hrOrgStructureRoutes.js";
 import { registerEmployeesDashboardRoutes } from "./src/lib/employeesDashboardRoutes.js";
 import { registerCompetencyRoutes } from "./src/lib/competencies/competencyRoutes.js";
+import { registerPerformanceRoutes } from "./src/lib/hrPerformance/performanceRoutes.js";
+import { createPrismaPerformanceStore } from "./src/lib/hrPerformance/performancePrisma.js";
+import {
+  isIdentityOtpEnabled,
+  isOfficialPublicationEnabled,
+  isPerformanceCycleEnabled,
+  isPerformanceRemindersEnabled,
+} from "./src/lib/hrPerformance/performanceFeatureFlags.js";
 import { resolvePeopleAccessScope } from "./src/lib/peopleProfileCapabilities.js";
 import { loadDescendantEmployeeIds } from "./src/lib/peopleProfileHierarchy.server.js";
 import { buildEmployeeCosts } from "./src/lib/employeeCostEngine.js";
@@ -15343,6 +15351,110 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   // Recursos admin.employees.competencies[.assessments|.trainings|.approvals]; o editor de RH passa sem
   // grant próprio (nunca contra deny explícito), como nas demais facetas admin.employees.*.
   // Escopo hierárquico (mesma régua da ficha): RH/SUPER_ADMIN = todos; líder = sua equipe.
+  registerPerformanceRoutes(app, {
+    enabled: () => isPerformanceCycleEnabled(),
+    options: {
+      now: () => new Date(),
+      officialPublication: isOfficialPublicationEnabled(),
+      identityOtpEnabled: isIdentityOtpEnabled(),
+      remindersEnabled: isPerformanceRemindersEnabled(),
+      publicOrigin: process.env.APP_PUBLIC_ORIGIN || "http://localhost:3000",
+    },
+    store: createPrismaPerformanceStore(prisma),
+    requireAppAuth,
+    requireResource: (resourceKey, action) =>
+      resourceKey === "admin.employees.performance.conduct"
+        ? requireResource(resourceKey, action)
+        : requireResourceOrHrEditor(resourceKey, action),
+    loadScope: async (req) => {
+      const authUser = (req as { appAuth?: AppAuthContext }).appAuth ?? (await getCurrentAppUser(req));
+      const accessScope = resolvePeopleAccessScope(employeePermCheck(authUser));
+      const actorEmployeeId = (authUser as { employeeId?: string | null } | null)?.employeeId ?? null;
+      let teamIds: string[] = [];
+      if (actorEmployeeId && accessScope === "DIRECT_REPORTS") {
+        const rows = await prisma.employee.findMany({ where: { managerId: actorEmployeeId }, select: { id: true } });
+        teamIds = rows.map((row) => row.id);
+      } else if (actorEmployeeId && accessScope === "DESCENDANTS") {
+        teamIds = await loadDescendantEmployeeIds(prisma, actorEmployeeId);
+      }
+      return { accessScope, actorEmployeeId, teamIds };
+    },
+    loadEmployees: async (ids) => {
+      if (ids.length === 0) return [];
+      const rows = await prisma.employee.findMany({
+        where: { id: { in: ids } },
+        select: {
+          id: true,
+          name: true,
+          status: true,
+          roleId: true,
+          departmentId: true,
+          department: true,
+          managerId: true,
+          managerName: true,
+          admissionDate: true,
+          terminationDate: true,
+          Role: { select: { name: true } },
+        },
+      });
+      return rows.map((row) => ({
+        id: row.id,
+        name: row.name,
+        status: row.status,
+        roleId: row.roleId,
+        roleName: row.Role?.name ?? "",
+        departmentId: row.departmentId,
+        departmentName: row.department,
+        managerId: row.managerId,
+        managerName: row.managerName,
+        admissionDate: row.admissionDate,
+        terminationDate: row.terminationDate,
+        registration: null,
+      }));
+    },
+    searchEmployees: async (query) => {
+      const term = query.trim();
+      const rows = await prisma.employee.findMany({
+        where: term
+          ? { OR: [{ name: { contains: term, mode: "insensitive" } }, { department: { contains: term, mode: "insensitive" } }] }
+          : { status: "ACTIVE" },
+        take: 40,
+        orderBy: { name: "asc" },
+        select: {
+          id: true,
+          name: true,
+          status: true,
+          roleId: true,
+          departmentId: true,
+          department: true,
+          managerId: true,
+          managerName: true,
+          admissionDate: true,
+          terminationDate: true,
+          Role: { select: { name: true } },
+        },
+      });
+      return rows.map((row) => ({
+        id: row.id,
+        name: row.name,
+        status: row.status,
+        roleId: row.roleId,
+        roleName: row.Role?.name ?? "",
+        departmentId: row.departmentId,
+        departmentName: row.department,
+        managerId: row.managerId,
+        managerName: row.managerName,
+        admissionDate: row.admissionDate,
+        terminationDate: row.terminationDate,
+        registration: null,
+      }));
+    },
+    actorUserId: async (req) => {
+      const authUser = (req as { appAuth?: AppAuthContext }).appAuth ?? (await getCurrentAppUser(req));
+      return authUser?.id ?? null;
+    },
+  });
+
   registerCompetencyRoutes(
     app,
     {

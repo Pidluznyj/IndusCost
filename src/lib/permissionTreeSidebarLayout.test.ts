@@ -130,6 +130,7 @@ describe("permissionTreeSidebarLayout", () => {
       "admin.employees.dashboard",
       "admin.employees",
       "admin.employees.competencies",
+      "admin.employees.performance",
     ]);
     const employees = group!.children.find(
       (child) => child.resourceKey === "admin.employees"

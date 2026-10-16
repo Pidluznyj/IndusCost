@@ -5,6 +5,9 @@ import { DashboardModule } from "./components/DashboardModule";
 import { EmployeeModule } from "./components/EmployeeModule";
 import { HrOrgChartPage } from "./components/employee/HrOrgChartPage";
 import { CompetenciesPage } from "./components/competencies/CompetenciesPage";
+import { PerformanceCyclePage } from "./components/hrPerformance/PerformanceCyclePage";
+import { PerformanceInvitePrintPage } from "./components/hrPerformance/PerformanceInvitePrintPage";
+import { PerformancePortalPage } from "./components/hrPerformance/PerformancePortalPage";
 import { EmployeesDashboardPage } from "./components/employee/EmployeesDashboardPage";
 import { MachineModule } from "./components/MachineModule";
 import { MaterialsModule } from "./components/MaterialsModule";
@@ -231,6 +234,7 @@ export default function App() {
         path="/finance/suppliers/:supplierId/service-terminations/:id/print"
         element={<SupplierServiceTerminationPrintView />}
       />
+      <Route path="/avaliacao" element={<PerformancePortalPage />} />
       <Route path="/public/fleet/reservation/:token" element={<FleetPublicReservationPage />} />
       <Route
         path="/public/fleet/vehicle-checklist/:vehicleToken"
@@ -326,6 +330,8 @@ export default function App() {
           }
         />
         <Route path="competencies" element={<CompetenciesPage />} />
+        <Route path="performance-cycle/convites" element={<PerformanceInvitePrintPage />} />
+        <Route path="performance-cycle" element={<PerformanceCyclePage />} />
         <Route
           path="machines"
           element={

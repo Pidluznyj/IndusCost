@@ -132,6 +132,7 @@ export const ResourceKeys = {
   ADMIN_PESSOAS: "admin.employees",
   ADMIN_PESSOAS_DASHBOARD: "admin.employees.dashboard",
   ADMIN_PESSOAS_COMPETENCIES: "admin.employees.competencies",
+  ADMIN_PESSOAS_PERFORMANCE: "admin.employees.performance",
   ADMIN_PESSOAS_COMPETENCIES_ASSESSMENTS: "admin.employees.competencies.assessments",
   ADMIN_PESSOAS_COMPETENCIES_TRAININGS: "admin.employees.competencies.trainings",
   ADMIN_PESSOAS_COMPETENCIES_APPROVALS: "admin.employees.competencies.approvals",
@@ -941,6 +942,17 @@ export const FRONTEND_PERMISSION_RESOURCES: readonly FrontendPermissionResource[
       "employees.competencies.matrix.execute",
       "employees.competencies.manage",
       "employees.edit",
+    ],
+  },
+  {
+    key: ResourceKeys.ADMIN_PESSOAS_PERFORMANCE,
+    label: "RH — Desempenho e Cultura",
+    type: "SUBMENU",
+    parentKey: ResourceKeys.ADMIN_PESSOAS,
+    legacyAliasKeys: [
+      "employees.performance.view",
+      "employees.performance.evaluate",
+      "employees.performance.manage",
     ],
   },
   {

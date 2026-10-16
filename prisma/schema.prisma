@@ -171,6 +171,10 @@ model Employee {
   hrCompetencyAssessmentsAsEvaluator HrCompetencyAssessment[]     @relation("HrCompetencyAssessmentEvaluator")
   hrTrainingParticipations     HrTrainingParticipant[]            @relation("HrTrainingParticipantEmployee")
   hrCompetencyLevelRequests    HrCompetencyLevelRequest[]         @relation("HrCompetencyLevelRequestEmployee")
+  /// Desempenho, Cultura e Potencial. Não altera avaliação de experiência nem competência de posto.
+  hrPerformanceParticipants    HrPerformanceParticipant[]         @relation("PerformanceSubject")
+  hrPerformanceAssignments     HrPerformanceAssignment[]          @relation("PerformanceEvaluator")
+  hrPerformanceConducts        HrPerformanceConductCase[]         @relation("PerformanceConductSubject")
 
   @@unique([personId])
   @@index([costCenterId])
@@ -858,6 +862,276 @@ model HrCompetencyLevelRequest {
 
   @@index([status, createdAt(sort: Desc)])
   @@index([employeeId])
+}
+
+/// Ciclo de desempenho, cultura e potencial. Aditivo: não altera Employee nem HrEmployeeEvaluation.
+model HrPerformanceModel {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  lineageId       String    @db.Uuid
+  name            String
+  status          String
+  version         Int
+  governance      String    @default("EM_VALIDACAO")
+  publishedAt     DateTime? @db.Timestamptz(6)
+  createdByUserId String?   @db.Uuid
+  createdAt       DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt       DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+  questions       HrPerformanceQuestion[]
+  cycles          HrPerformanceCycle[]
+
+  @@index([lineageId, version])
+  @@index([status])
+}
+
+model HrPerformanceQuestion {
+  id         String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  modelId    String @db.Uuid
+  code       String
+  pillar     String
+  sortOrder  Int
+  selfText   String
+  leaderText String
+  hint       String?
+  model      HrPerformanceModel @relation(fields: [modelId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([modelId, code])
+  @@index([modelId, sortOrder])
+}
+
+model HrPerformanceCycle {
+  id                  String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name                String
+  periodLabel         String
+  status              String
+  modelId             String    @db.Uuid
+  selfDueAt           String
+  leaderDueAt         String
+  ownerUserId         String?   @db.Uuid
+  minObservationDays  Int
+  openedAt            DateTime? @db.Timestamptz(6)
+  closedAt            DateTime? @db.Timestamptz(6)
+  createdAt           DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt           DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+  model               HrPerformanceModel @relation(fields: [modelId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  participants        HrPerformanceParticipant[]
+
+  @@index([status])
+  @@index([modelId])
+}
+
+model HrPerformanceParticipant {
+  id                 String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  cycleId            String  @db.Uuid
+  employeeId         String  @db.Uuid
+  employeeName       String
+  eligibility        String
+  eligibilityReason  String
+  roleId             String  @db.Uuid
+  roleName           String
+  departmentId       String? @db.Uuid
+  departmentName     String
+  managerId          String? @db.Uuid
+  managerName        String?
+  admissionDate      DateTime? @db.Timestamptz(6)
+  registration       String?
+  frozen             Boolean @default(false)
+  cycle              HrPerformanceCycle @relation(fields: [cycleId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  employee           Employee @relation("PerformanceSubject", fields: [employeeId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  assignments        HrPerformanceAssignment[]
+  results            HrPerformanceResult[]
+  feedbacks          HrPerformanceFeedback[]
+
+  @@unique([cycleId, employeeId])
+  @@index([employeeId])
+}
+
+model HrPerformanceAssignment {
+  id                   String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  participantId        String    @db.Uuid
+  cycleId              String    @db.Uuid
+  employeeId           String    @db.Uuid
+  kind                 String
+  evaluatorEmployeeId  String    @db.Uuid
+  status               String
+  version              Int       @default(1)
+  revision             Int       @default(1)
+  supersedesId         String?   @db.Uuid
+  active               Boolean   @default(true)
+  submittedAt          DateTime? @db.Timestamptz(6)
+  assistedByUserId     String?   @db.Uuid
+  participant          HrPerformanceParticipant @relation(fields: [participantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  evaluator            Employee @relation("PerformanceEvaluator", fields: [evaluatorEmployeeId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  answers              HrPerformanceAnswer[]
+  invites              HrPerformanceInvite[]
+  sessions             HrPerformanceSession[]
+
+  @@index([cycleId, kind, active])
+  @@index([evaluatorEmployeeId])
+  @@index([employeeId])
+}
+
+model HrPerformanceAnswer {
+  id           String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  assignmentId String @db.Uuid
+  questionCode String
+  pillar       String
+  kind         String
+  score        Int?
+  evidence     String?
+  assignment   HrPerformanceAssignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([assignmentId, questionCode])
+}
+
+model HrPerformanceInvite {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  assignmentId   String    @db.Uuid
+  linkDigest     String    @unique
+  otpDigest      String
+  expiresAt      DateTime  @db.Timestamptz(6)
+  revokedAt      DateTime? @db.Timestamptz(6)
+  failedAttempts Int       @default(0)
+  locked         Boolean   @default(false)
+  createdAt      DateTime  @default(now()) @db.Timestamptz(6)
+  assignment     HrPerformanceAssignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([assignmentId])
+}
+
+model HrPerformanceSession {
+  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  inviteId         String?   @db.Uuid
+  assignmentId     String    @db.Uuid
+  phase            String
+  sessionDigest    String    @unique
+  expiresAt        DateTime  @db.Timestamptz(6)
+  assistantUserId  String?   @db.Uuid
+  revoked          Boolean   @default(false)
+  assignment       HrPerformanceAssignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([assignmentId])
+}
+
+model HrPerformanceResult {
+  id                    String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  participantId         String  @db.Uuid
+  version               Int
+  active                Boolean @default(true)
+  technicalSum          Int
+  technicalCount        Int
+  cultureSum            Int
+  cultureCount          Int
+  potentialSum          Int
+  potentialCount        Int
+  technicalValidation   String
+  validationNote        String?
+  cultureBand           String
+  cultureBasis          String
+  quadrant              String
+  nineBoxReason         String
+  nineX                 String?
+  nineY                 String?
+  official              Boolean @default(false)
+  reviewStatus          String
+  algorithmId           String
+  nineBoxRuleId         String
+  cultureRuleId         String
+  supersedesId          String? @db.Uuid
+  createdAt             DateTime @default(now()) @db.Timestamptz(6)
+  participant           HrPerformanceParticipant @relation(fields: [participantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([participantId, active])
+}
+
+model HrPerformanceFeedback {
+  id                 String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  participantId      String    @db.Uuid
+  resultId           String    @db.Uuid
+  strength           String
+  improvement        String
+  action             String
+  ownerName          String
+  dueAt              String?
+  conversationAt     String?
+  leaderEmployeeId   String    @db.Uuid
+  viewedAt           DateTime? @db.Timestamptz(6)
+  acknowledgedAt     DateTime? @db.Timestamptz(6)
+  agreedAt           DateTime? @db.Timestamptz(6)
+  contestation       String?
+  internalNotes      String?
+  participant        HrPerformanceParticipant @relation(fields: [participantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  pdis               HrPerformancePdi[]
+
+  @@index([participantId])
+}
+
+model HrPerformancePdi {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  participantId String    @db.Uuid
+  feedbackId    String    @db.Uuid
+  title         String
+  priority      Boolean
+  justification String?
+  ownerName     String
+  dueAt         String?
+  status        String
+  feedback      HrPerformanceFeedback @relation(fields: [feedbackId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  checkins      HrPerformancePdiCheckin[]
+
+  @@index([participantId, status])
+}
+
+model HrPerformancePdiCheckin {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  pdiId        String   @db.Uuid
+  note         String
+  obstacle     String?
+  nextStep     String?
+  authorUserId String?  @db.Uuid
+  createdAt    DateTime @db.Timestamptz(6)
+  pdi          HrPerformancePdi @relation(fields: [pdiId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([pdiId, createdAt])
+}
+
+model HrPerformanceConductCase {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  employeeId  String   @db.Uuid
+  status      String
+  summary     String
+  proven      Boolean  @default(false)
+  createdAt   DateTime @default(now()) @db.Timestamptz(6)
+  employee    Employee @relation("PerformanceConductSubject", fields: [employeeId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@index([employeeId, status])
+}
+
+model HrPerformanceAuditEvent {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  at          DateTime @db.Timestamptz(6)
+  actorUserId String?  @db.Uuid
+  action      String
+  entityId    String   @db.Uuid
+  detail      Json
+
+  @@index([entityId, at])
+  @@index([action, at])
+}
+
+/// Trava otimista do módulo. Uma linha. Não apaga histórico.
+model HrPerformanceGraphLock {
+  id       String @id
+  revision Int    @default(0)
+}
+
+model HrPerformanceReminder {
+  id         String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  cycleId    String @db.Uuid
+  employeeId String @db.Uuid
+  audience   String
+  status     String @default("DRAFT")
+
+  @@index([cycleId, status])
 }
 
 model Material {

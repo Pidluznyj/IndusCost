@@ -115,6 +115,7 @@ const EXPECTED_MENU: Record<
     MODULE_LABELS.employees,
     MODULE_LABELS["org-chart"],
     MODULE_LABELS.competencies,
+    MODULE_LABELS["performance-cycle"],
   ],
   // P1 (OKR): "Objetivos e Metas" saiu de Administração e virou item direto
   // ao lado do Dashboard — gestão do negócio, não configuração do sistema.
