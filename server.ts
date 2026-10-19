@@ -276,7 +276,6 @@ import {
   isPerformanceCycleEnabled,
   isPerformanceRemindersEnabled,
 } from "./src/lib/hrPerformance/performanceFeatureFlags.js";
-import { resolvePeopleAccessScope } from "./src/lib/peopleProfileCapabilities.js";
 import { resolveCompetencyAccessScope } from "./src/lib/competencies/competencyScope.js";
 import { loadDescendantEmployeeIds } from "./src/lib/peopleProfileHierarchy.server.js";
 import { buildEmployeeCosts } from "./src/lib/employeeCostEngine.js";
@@ -15465,7 +15464,8 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
         : requireResourceOrHrEditor(resourceKey, action),
     loadScope: async (req) => {
       const authUser = (req as { appAuth?: AppAuthContext }).appAuth ?? (await getCurrentAppUser(req));
-      const accessScope = resolvePeopleAccessScope(employeePermCheck(authUser));
+      // Mesma política de Competências (9fce0ff): ALL só com employees.edit; employees.view chega a líderes pelo Organograma.
+      const accessScope = resolveCompetencyAccessScope(employeePermCheck(authUser));
       const actorEmployeeId = (authUser as { employeeId?: string | null } | null)?.employeeId ?? null;
       let teamIds: string[] = [];
       if (actorEmployeeId && accessScope === "DIRECT_REPORTS") {
