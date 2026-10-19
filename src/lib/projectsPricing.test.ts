@@ -23,6 +23,7 @@ import { resolveProjectCostFinalUnitPrice } from "./projectsCostSnapshot.js";
 import { buildProjectExecutiveReport } from "./projectsExecutiveReport.js";
 import { canManageProjects, canViewProjects } from "./projectsPermissions.js";
 import type { ProjectDetail } from "@/src/types/projects.js";
+import { EMPTY_PROJECT_DOCUMENT_FIELDS } from "./projectsCommercialTerms.js";
 
 const TAX_RULES = [
   {
@@ -42,6 +43,7 @@ function buildDetailFixture(): ProjectDetail {
     title: "IRIS",
     customerName: "Esmaltec S/A",
     customerDocument: null,
+    ...EMPTY_PROJECT_DOCUMENT_FIELDS,
     description: null,
     projectType: "NEW_PRODUCT",
     status: "DRAFT",

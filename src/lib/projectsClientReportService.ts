@@ -15,7 +15,6 @@ import {
   buildProjectClientProposalPptxBuffer,
   buildProjectClientProposalPptxFilename,
 } from "./projectsClientReportPptx.js";
-import { loadProjectDetail } from "./projectsService.js";
 
 export {
   buildProjectClientProposalPptxBuffer,
@@ -37,15 +36,18 @@ export {
 
 export type { ProjectClientReportPayload } from "./projectsClientReportShared.js";
 
-import { loadProjectClientProposalQuantities } from "./projectsClientProposalService.js";
 
+/**
+ * Proposta Cliente para a tela de quantidades e exportações legadas: mesma fonte de valores
+ * dos documentos (precificação salva) e emitente das Configurações de Marca.
+ */
 export async function loadProjectClientReport(
   projectId: string
 ): Promise<ProjectClientReportPayload | null> {
-  const detail = await loadProjectDetail(projectId);
-  if (!detail) return null;
-  const savedQuantities = await loadProjectClientProposalQuantities(projectId);
-  const payload = buildProjectClientReport(detail, savedQuantities);
+  const { loadProjectDocumentContext } = await import("./projectsDocuments.server.js");
+  const ctx = await loadProjectDocumentContext(projectId);
+  if (!ctx) return null;
+  const payload = buildProjectClientReport(ctx.detail, ctx.quantities, { issuerName: ctx.issuer.legalName });
   assertProjectClientReportPayloadIsSafe(payload);
   return payload;
 }

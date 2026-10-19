@@ -277,6 +277,7 @@ import {
   isPerformanceRemindersEnabled,
 } from "./src/lib/hrPerformance/performanceFeatureFlags.js";
 import { resolvePeopleAccessScope } from "./src/lib/peopleProfileCapabilities.js";
+import { resolveCompetencyAccessScope } from "./src/lib/competencies/competencyScope.js";
 import { loadDescendantEmployeeIds } from "./src/lib/peopleProfileHierarchy.server.js";
 import { buildEmployeeCosts } from "./src/lib/employeeCostEngine.js";
 import {
@@ -335,13 +336,17 @@ import {
   EMPLOYEES_RESOURCE_KEYS,
 } from "./src/lib/employeesAccess.js";
 import { registerPeopleProfileRoutes } from "./src/lib/peopleProfileRoutes.js";
+import { registerEpiRoutes } from "./src/lib/epi/epiRoutes.js";
 import { buildVisibleEmployeeWhere } from "./src/lib/peopleProfile.server.js";
 import { canViewCompensationValues } from "./src/lib/peopleProfileCapabilities.js";
 import {
   deletePayrollComponentWithHistory,
+  loadEmployeeHistorySnapshot,
   recordHistoryAfterEmployeeWrite,
   recordPayrollComponentHistory,
 } from "./src/lib/peopleProfileMutations.server.js";
+import { loadEmployeeSituations, loadTerminationGuards } from "./src/lib/employeeLifecycle.server.js";
+import { businessTodayIso as businessTodayIsoForHr } from "./src/lib/competencies/competencyDomain.js";
 import { PeopleProfileAccessError } from "./src/lib/peopleProfileErrors.js";
 import {
   deleteRoleIfUnused,
@@ -557,6 +562,7 @@ import { registerPurchaseEvidenceRoutes } from "./src/lib/purchasing/purchaseEvi
 import { registerPurchaseOrderRoutes } from "./src/lib/purchasing/purchaseOrderRoutes.js";
 import { registerSupplierPerformanceRoutes } from "./src/lib/purchasing/supplierPerformanceRoutes.js";
 import { registerSupplierPerformanceDashboardRoutes } from "./src/lib/purchasing/supplierPerformanceDashboardRoutes.js";
+import { registerPurchasePaymentTermsRoutes } from "./src/lib/purchasing/purchasePaymentTermsRoutes.js";
 import { registerPurchasingWorkstationRoutes } from "./src/lib/purchasing/purchasingWorkstationRoutes.js";
 import { registerPurchaseReceiptRoutes } from "./src/lib/purchasing/purchaseReceiptRoutes.js";
 import { registerShadowPurchasePlanningRoutes } from "./src/lib/purchasing/shadowPurchasePlanningRoutes.js";
@@ -3504,6 +3510,8 @@ app.get("/api/employees", requireAppAuth, requireResource(EMPLOYEES_RESOURCE_KEY
 
   // Motor de Custeio HH (fórmula canônica — employeeCostEngine).
   // Sem permissão de valores: não calcula nem serializa R$.
+  // Situação (ativo / afastado / férias / desligado) a partir dos afastamentos em andamento.
+  const situations = await loadEmployeeSituations(prisma, employees, businessTodayIsoForHr(new Date()));
   const employeesWithCosts = employees.map((emp) => {
     const costs = revealCompensation
       ? buildEmployeeCosts({
@@ -3526,8 +3534,12 @@ app.get("/api/employees", requireAppAuth, requireResource(EMPLOYEES_RESOURCE_KEY
       label: null,
     };
 
+    // Descrição do desligamento (ex.: fatos da justa causa) só com dados administrativos.
+    const { terminationDetails, ...empRest } = emp;
     const enriched = {
-      ...emp,
+      ...empRest,
+      ...(revealAdminNotes ? { terminationDetails } : {}),
+      situation: situations.get(emp.id) ?? null,
       orgLeadership,
       ...(revealCompensation ? { costs } : {}),
     };
@@ -3823,6 +3835,10 @@ app.post("/api/employees", requireAppAuth, requireResourceOrHrEditor(EMPLOYEES_R
             contractType: persisted.contractType,
             admissionDate: persisted.admissionDate,
             terminationDate: persisted.terminationDate,
+            terminationReason: persisted.termination?.reason ?? null,
+            terminationNoticeType: persisted.termination?.noticeType ?? null,
+            terminationNoticeDate: persisted.termination?.noticeDate ?? null,
+            terminationDetails: persisted.termination?.details ?? null,
             personId: personResolve.personId,
           },
           hrProfile as Record<string, unknown>
@@ -3901,7 +3917,9 @@ app.post("/api/employees", requireAppAuth, requireResourceOrHrEditor(EMPLOYEES_R
     });
   } catch (error) {
     if (error instanceof EmployeeRegistrationError) {
-      return res.status(error.status).json({ error: error.message, code: error.code });
+      return res
+        .status(error.status)
+        .json({ error: error.message, code: error.code, ...(error.details ? { details: error.details } : {}) });
     }
     if (error instanceof HrOrgStructureError) {
       return res.status(error.status).json({ error: error.message, code: error.code });
@@ -4071,8 +4089,31 @@ app.put("/api/employees/:id", requireAppAuth, requireResourceOrHrEditor(EMPLOYEE
         existingCostCenterLabel: existingEmployee.costCenter,
         existingContractType: existingEmployee.contractType,
         allowLegacyContractType: true,
+        existingStatus: existingEmployee.status,
+        existingTerminationDate: existingEmployee.terminationDate,
       }
     );
+    // Desligamento: bloqueios (afastamento em andamento) e avisos de estabilidade (exigem ciência).
+    if (persisted.termination && persisted.terminationDate) {
+      const guards = await loadTerminationGuards(
+        prisma,
+        id,
+        persisted.termination.reason,
+        persisted.terminationDate.toISOString().slice(0, 10)
+      );
+      if (guards.blocking.length > 0) {
+        throw new EmployeeRegistrationError("TERMINATION_BLOCKED", guards.blocking.join(" "), 409, { blocking: guards.blocking });
+      }
+      const acknowledged = (req.body as Record<string, unknown>).acknowledgeTerminationWarnings === true;
+      if (guards.warnings.length > 0 && !acknowledged) {
+        throw new EmployeeRegistrationError(
+          "TERMINATION_WARNINGS",
+          "Há restrições legais para este desligamento. Confirme a ciência para continuar.",
+          409,
+          { warnings: guards.warnings }
+        );
+      }
+    }
 
     const hrBuilt = buildEmployeeHrProfileData(
       {
@@ -4178,6 +4219,15 @@ app.put("/api/employees/:id", requireAppAuth, requireResourceOrHrEditor(EMPLOYEE
               contractType: persisted.contractType,
               admissionDate: persisted.admissionDate,
               terminationDate: persisted.terminationDate,
+              // undefined = desligamento legado mantido; null = reativação limpa os dados.
+              ...(persisted.termination === undefined
+                ? {}
+                : {
+                    terminationReason: persisted.termination?.reason ?? null,
+                    terminationNoticeType: persisted.termination?.noticeType ?? null,
+                    terminationNoticeDate: persisted.termination?.noticeDate ?? null,
+                    terminationDetails: persisted.termination?.details ?? null,
+                  }),
               personId: nextPersonId,
             },
             hrProfile as Record<string, unknown>
@@ -4269,7 +4319,9 @@ app.put("/api/employees/:id", requireAppAuth, requireResourceOrHrEditor(EMPLOYEE
     });
   } catch (error) {
     if (error instanceof EmployeeRegistrationError) {
-      return res.status(error.status).json({ error: error.message, code: error.code });
+      return res
+        .status(error.status)
+        .json({ error: error.message, code: error.code, ...(error.details ? { details: error.details } : {}) });
     }
     if (error instanceof HrOrgStructureError) {
       return res.status(error.status).json({ error: error.message, code: error.code });
@@ -12351,17 +12403,44 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
 
   app.patch("/api/employees/:id/status", requireAppAuth, requireResourceOrHrEditor(EMPLOYEES_RESOURCE_KEYS.module, EMPLOYEES_ACTIONS.update), async (req, res) => {
     const { id } = req.params;
-    const { status } = req.body;
+    const status = typeof req.body?.status === "string" ? req.body.status.trim().toUpperCase() : "";
+    // Desligar exige data, motivo e aviso prévio (e passa pelas regras legais): só pelo cadastro.
+    if (status === "INACTIVE") {
+      return res.status(400).json({
+        error: "Para desligar, informe no cadastro a data de demissão, o motivo e o aviso prévio.",
+        code: "TERMINATION_DETAILS_REQUIRED",
+      });
+    }
+    if (status !== "ACTIVE") {
+      return res.status(400).json({ error: "Status inválido.", code: "INVALID_STATUS" });
+    }
     const authUser = await getCurrentAppUser(req);
-    const employee = await prisma.employee.update({
-      where: { id },
-      data: { status },
+    const previous = await prisma.employee.findUnique({ where: { id }, select: { id: true } });
+    if (!previous) return res.status(404).json({ error: "Colaborador não encontrado." });
+    const historyPrevious = await loadEmployeeHistorySnapshot(prisma, id);
+    const employee = await prisma.$transaction(async (tx) => {
+      // Reativação: encerra o desligamento anterior (data e dados) e registra no histórico.
+      const updated = await tx.employee.update({
+        where: { id },
+        data: {
+          status: "ACTIVE",
+          terminationDate: null,
+          terminationReason: null,
+          terminationNoticeType: null,
+          terminationNoticeDate: null,
+          terminationDetails: null,
+        },
+      });
+      if (historyPrevious) {
+        await recordHistoryAfterEmployeeWrite(tx, { employeeId: id, previous: historyPrevious, actorUserId: authUser?.id ?? null });
+      }
+      return updated;
     });
     logEmployeeHrAudit({
       event: "employee.status_change",
       actorUserId: authUser?.id ?? null,
       employeeId: id,
-      details: { status },
+      details: { status: "ACTIVE" },
     });
     res.json(employee);
   });
@@ -15353,6 +15432,18 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     },
   });
 
+  // Catálogo global de EPIs e uniformes (docs/hr/epi-uniforms.md).
+  registerEpiRoutes(app, {
+    requireAppAuth,
+    requireResource,
+    getCurrentAppUser,
+    getPermissionCheck: async (req) => {
+      const authUser =
+        (req as { appAuth?: AppAuthContext }).appAuth ?? (await getCurrentAppUser(req));
+      return employeePermCheck(authUser);
+    },
+  });
+
   // Competências e Desenvolvimento (Gestão de pessoas) — docs/hr/competencies-and-development.md.
   // Recursos admin.employees.competencies[.assessments|.trainings|.approvals]; o editor de RH passa sem
   // grant próprio (nunca contra deny explícito), como nas demais facetas admin.employees.*.
@@ -15531,7 +15622,8 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
         const authUser =
           (req as { appAuth?: AppAuthContext }).appAuth ?? (await getCurrentAppUser(req));
         return {
-          accessScope: resolvePeopleAccessScope(employeePermCheck(authUser)),
+          // Escopo próprio de Competências: `employees.view` (Organograma / editor legado) não é ALL.
+          accessScope: resolveCompetencyAccessScope(employeePermCheck(authUser)),
           actorEmployeeId: (authUser as { employeeId?: string | null } | null)?.employeeId ?? null,
         };
       },
@@ -17409,6 +17501,13 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   registerSupplierPerformanceDashboardRoutes(app, {
     requireAppAuth,
     requireResource,
+  });
+
+  // Compras → Performance → Condições de compra (PMP desde a emissão + meta gerencial).
+  registerPurchasePaymentTermsRoutes(app, {
+    requireAppAuth,
+    requireResource,
+    getCurrentAppUser,
   });
 
   registerPurchasingWorkstationRoutes(app, {

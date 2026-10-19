@@ -11,6 +11,7 @@ import {
   fetchCompetencyOverview,
   fetchTrainings,
   fetchWorkPositions,
+  type CompetencyBoardFilter,
 } from "@/src/lib/competencies/competencyClient";
 import type {
   CompetencyAssessmentDto,
@@ -54,7 +55,7 @@ function errorMessage(error: unknown): string {
   return error instanceof Error && error.message ? error.message : "Não foi possível carregar os dados.";
 }
 
-export function useCompetencyWorkspace(caps: CompetencyCapabilities) {
+export function useCompetencyWorkspace(caps: CompetencyCapabilities, filter: CompetencyBoardFilter = {}) {
   const [ws, setWs] = useState<CompetencyWorkspace>(initial);
   const controllerRef = useRef<AbortController>(new AbortController());
   /** Sequência por fatia: só a resposta mais recente de cada fatia é aplicada. */
@@ -65,8 +66,8 @@ export function useCompetencyWorkspace(caps: CompetencyCapabilities) {
       if (!caps.view) return;
       const { signal } = controllerRef.current;
       const loaders: { [K in Key]?: () => Promise<CompetencyWorkspace[K]["data"]> } = {
-        overview: () => fetchCompetencyOverview(signal),
-        matrix: () => fetchCompetencyMatrix(signal),
+        overview: () => fetchCompetencyOverview(signal, filter),
+        matrix: () => fetchCompetencyMatrix(signal, filter),
         catalog: () => fetchCompetencyCatalog(signal).then((r) => r.competencies),
         positions: () => fetchWorkPositions(signal).then((r) => r.positions),
         options: () => fetchCompetencyOptions(signal),
@@ -94,7 +95,7 @@ export function useCompetencyWorkspace(caps: CompetencyCapabilities) {
         }),
       );
     },
-    [caps.view, caps.viewAssessments, caps.viewTrainings],
+    [caps.view, caps.viewAssessments, caps.viewTrainings, filter.departmentId, filter.shifts?.join(",")],
   );
 
   useEffect(() => {

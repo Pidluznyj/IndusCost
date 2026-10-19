@@ -1,7 +1,15 @@
 # Planilha modelo — Ficha de Abertura de Projeto
 
-Versão do schema: **1.2**  
-Arquivo gerado: `modelo-projeto-induscost.xlsx`
+Versão do schema: **2.0** (colunas das abas 01–08 inalteradas)  
+Arquivo gerado: `modelo-projeto-induscost.xlsx` (sem projeto) ou `<PROJETO>-PL-Rnn.xlsx` / `<PROJETO>-PL-PREVIA.xlsx` (com projeto)
+
+## Dados reais × exemplo (2026-10-15)
+
+- **Com projeto:** as abas 01–08 trazem os **dados reais do projeto** (mesma fonte da Ficha rápida e precificação salva). A aba **00_Documento** traz o bloco documental: número, revisão, emitente, cliente, projeto, versão, emissão e origem dos valores.
+  - O botão do projeto baixa uma **prévia**.
+  - A aba Documentos › "Emitir planilha do projeto" gera a emissão congelada (número, revisão, sha256).
+- **Sem projeto:** abas 01–08 vazias para preenchimento.
+- **Exemplo:** o exemplo `610.51AA` fica **só** na aba **99_Exemplo**, com cada linha marcada "EXEMPLO ILUSTRATIVO — não importar". Ele nunca se mistura às linhas de dados.
 
 ## Objetivo
 

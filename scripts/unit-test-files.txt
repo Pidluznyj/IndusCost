@@ -286,6 +286,10 @@ src/lib/sales-orders/salesOrderTributosReleaseCandidate.test.tsx
 src/lib/finance/fiscalRegression.t08.test.ts
 src/lib/finance/fiscalSettlement.test.ts
 src/lib/employeeRegistration.test.ts
+src/lib/employeeLifecycle.test.ts
+src/lib/employeeTurnover.test.ts
+src/lib/epi/epiRules.test.ts
+src/lib/epi/epiForm.test.ts
 src/lib/adminUserEmployeeLink.test.ts
 src/lib/operationsAdminPermissions.test.ts
 src/lib/canonicalPerson.test.ts
@@ -377,6 +381,7 @@ src/lib/competencies/competencyEngine.test.ts
 src/lib/competencies/competencyRoutes.test.ts
 src/lib/competencies/competencyOfficialEngineGuard.test.ts
 src/lib/competencies/competencyScope.test.ts
+src/lib/competencies/competencyScopePolicy.test.ts
 src/lib/competencies/competencyImport.test.ts
 src/lib/competencies/competencyImportRoutes.test.ts
 src/lib/competencies/competencyGovernance.test.ts
@@ -388,3 +393,15 @@ src/lib/hrPerformance/performanceRoutes.test.ts
 src/lib/hrPerformance/performanceMigration.test.ts
 src/lib/hrPerformance/performancePublicSurface.test.ts
 src/lib/hrPerformance/performancePrisma.integration.test.ts
+src/lib/competencies/trainingCertificate.test.ts
+src/lib/competencies/trainingCertificateRoutes.test.ts
+src/lib/hrEmployeeCertificates.test.ts
+src/components/competencies/competencyMatrixGroups.test.ts
+src/components/competencies/CompetencyMatrixGrid.test.tsx
+src/lib/projectsCustomerLink.test.ts
+src/lib/projectsCommercialTerms.test.ts
+src/lib/projectsDocuments.test.ts
+src/lib/purchasing/purchasePaymentTerms.test.ts
+src/lib/purchasing/purchasePaymentTermsBaseAudit.test.ts
+src/lib/purchasing/purchasePaymentTermsAnalysis.test.ts
+src/lib/purchasing/purchasePaymentTermsList.test.ts

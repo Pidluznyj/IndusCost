@@ -9,7 +9,7 @@ import multer from "multer";
 import type { RequestHandler } from "express";
 import { logEmployeeHrAudit } from "../employeeHrAudit";
 import type { PeopleAccessScope } from "../peopleProfileTypes";
-import { buildCompetencyScope, type CompetencyScope } from "./competencyScope";
+import type { CompetencyScope } from "./competencyScope";
 import { isCompetenciesEnabled, requireCompetenciesEnabled } from "./competencyFeatureFlags";
 import { IMPORT_MAX_FILE_BYTES, type ImportResolutions } from "./competencyImport";
 import {
@@ -32,6 +32,8 @@ import {
   getCompetencyMatrix,
   getCompetencyOptions,
   getCompetencyOverview,
+  listDepartmentCompetencies,
+  setDepartmentCompetencies,
   getEmployeeCompetencyProfile,
   decideLevelRequest,
   listLevelRequests,
@@ -46,25 +48,41 @@ import {
   updateCompetency,
   updateTraining,
   updateWorkPosition,
+  resolveCompetencyScope,
   type CompetencyDb,
 } from "./competency.server";
 import {
   isUuidString,
   parseAssessmentBody,
   parseCompetencyBody,
+  parseDepartmentCompetenciesBody,
+  parseCompetencyViewQuery,
   parseDecisionBody,
   parseLevelBody,
   parsePositionTeamBody,
   parseTrainingBody,
+  parseTrainingCertificateContentBody,
   parseTrainingStatusBody,
   parseWorkPositionBody,
   type ParseResult,
 } from "./competencyValidation";
+import { parseCancelReason, parseCertificateSettingsBody } from "./trainingCertificate";
+import {
+  cancelTrainingCertificate,
+  getTrainingCertificateBoard,
+  getTrainingCertificatesDocument,
+  issueTrainingCertificates,
+  listCertificateSigners,
+  listEmployeeTrainingCertificates,
+  loadCertificateSettings,
+  updateCertificateSettings,
+  updateTrainingCertificateContent,
+} from "./trainingCertificate.server";
 
 export type CompetencyRouteGuards = {
   requireAppAuth: RequestHandler;
   requireResource: (resourceKey: string, action?: string) => RequestHandler;
-  getCurrentAppUser: (req: express.Request) => Promise<{ id: string } | null>;
+  getCurrentAppUser: (req: express.Request) => Promise<{ id: string; name?: string | null } | null>;
   /**
    * Escopo hierárquico do ator (mesma régua do RH: `resolvePeopleAccessScope`) e o colaborador
    * vinculado ao usuário. Autorização efetiva: toda leitura e escrita passa por ele.
@@ -198,21 +216,13 @@ export function registerCompetencyRoutes(
 
   /** Escopo resolvido por requisição — nunca vem do corpo nem do cliente. */
   async function scopeOf(req: express.Request): Promise<CompetencyScope> {
-    const { accessScope, actorEmployeeId } = await guards.getScopeInput(req);
-    let teamIds: string[] = [];
-    if (actorEmployeeId && accessScope === "DIRECT_REPORTS") {
-      const rows = (await db.employee.findMany({ where: { managerId: actorEmployeeId } })) as { id: string }[];
-      teamIds = rows.map((r) => r.id);
-    } else if (actorEmployeeId && accessScope === "DESCENDANTS") {
-      teamIds = await deps.loadDescendantIds(actorEmployeeId);
-    }
-    return buildCompetencyScope({ accessScope, actorEmployeeId, teamIds });
+    return resolveCompetencyScope(db, await guards.getScopeInput(req), deps.loadDescendantIds);
   }
 
   /** Autoria sempre da sessão autenticada — nunca do corpo. */
   async function actor(req: express.Request) {
     const user = await getCurrentAppUser(req);
-    return { userId: user && isUuidString(user.id) ? user.id : null };
+    return { userId: user && isUuidString(user.id) ? user.id : null, name: user?.name?.trim() || null };
   }
 
   const base = "/api/hr/competencies";
@@ -224,14 +234,18 @@ export function registerCompetencyRoutes(
   });
 
   // —— Leitura ——
-  app.get(`${base}/overview`, ...gate("view"), asyncRoute("GET competencies/overview", async (_req, res) => {
+  app.get(`${base}/overview`, ...gate("view"), asyncRoute("GET competencies/overview", async (req, res) => {
+    const filter = parseCompetencyViewQuery(req.query as Record<string, unknown>);
+    if (filter.ok === false) return badRequest(res, filter);
     noStore(res);
-    return res.json(await getCompetencyOverview(db, businessTodayIso(now()), await scopeOf(_req)));
+    return res.json(await getCompetencyOverview(db, businessTodayIso(now()), await scopeOf(req), filter.value));
   }));
 
-  app.get(`${base}/matrix`, ...gate("view"), asyncRoute("GET competencies/matrix", async (_req, res) => {
+  app.get(`${base}/matrix`, ...gate("view"), asyncRoute("GET competencies/matrix", async (req, res) => {
+    const filter = parseCompetencyViewQuery(req.query as Record<string, unknown>);
+    if (filter.ok === false) return badRequest(res, filter);
     noStore(res);
-    return res.json(await getCompetencyMatrix(db, businessTodayIso(now()), await scopeOf(_req)));
+    return res.json(await getCompetencyMatrix(db, businessTodayIso(now()), await scopeOf(req), filter.value));
   }));
 
   // Ficha do colaborador (aba Competências): mesma engine e mesmo escopo do módulo.
@@ -255,6 +269,27 @@ export function registerCompetencyRoutes(
   app.get(`${base}/options`, ...gate("view"), asyncRoute("GET competencies/options", async (_req, res) => {
     noStore(res);
     return res.json(await getCompetencyOptions(db, await scopeOf(_req)));
+  }));
+
+  app.get(`${base}/departments`, ...gate("view"), asyncRoute("GET competencies/departments", async (_req, res) => {
+    noStore(res);
+    return res.json(await listDepartmentCompetencies(db, await scopeOf(_req)));
+  }));
+
+  app.put(`${base}/departments/:id/competencies`, ...gate("manageCatalog"), asyncRoute("PUT competencies/department", async (req, res) => {
+    const id = param(req, "id");
+    if (!id) return invalidId(res);
+    const parsed = parseDepartmentCompetenciesBody(req.body);
+    if (parsed.ok === false) return badRequest(res, parsed);
+    const who = await actor(req);
+    await setDepartmentCompetencies(db, id, parsed.value.items, who);
+    logEmployeeHrAudit({
+      event: "competency.department.change",
+      actorUserId: who.userId,
+      details: { action: "set-competencies", departmentId: id, competencyCount: parsed.value.items.length },
+    });
+    noStore(res);
+    return res.json(await listDepartmentCompetencies(db, await scopeOf(req)));
   }));
 
   // —— Catálogo de competências ——
@@ -582,5 +617,108 @@ export function registerCompetencyRoutes(
     await deleteTraining(db, id, await scopeOf(req));
     logEmployeeHrAudit({ event: "competency.training.change", actorUserId: who.userId, details: { action: "delete", trainingId: id } });
     return res.status(204).end();
+  }));
+
+  // —— Certificados de treinamento ——
+  app.get(`${base}/employees/:employeeId/certificates`, ...gate("viewTrainings"), asyncRoute("GET competencies/employees/certificates", async (req, res) => {
+    const employeeId = param(req, "employeeId");
+    if (!employeeId) return invalidId(res);
+    noStore(res);
+    return res.json({ items: await listEmployeeTrainingCertificates(db, employeeId, businessTodayIso(now()), await scopeOf(req)) });
+  }));
+
+  app.get(`${base}/certificate-settings`, ...gate("viewTrainings"), asyncRoute("GET competencies/certificate-settings", async (_req, res) => {
+    noStore(res);
+    return res.json(await loadCertificateSettings(db));
+  }));
+
+  app.get(`${base}/certificate-settings/signers`, ...gate("manageTrainings"), asyncRoute("GET competencies/certificate-settings/signers", async (req, res) => {
+    // Lista todas as pessoas ativas: só para quem altera a configuração global (escopo RH).
+    if ((await scopeOf(req)).kind !== "ALL") {
+      return res.status(403).json({ error: "OUT_OF_SCOPE", message: "Só o RH altera a configuração dos certificados." });
+    }
+    noStore(res);
+    return res.json({ signers: await listCertificateSigners(db) });
+  }));
+
+  app.put(`${base}/certificate-settings`, ...gate("manageTrainings"), asyncRoute("PUT competencies/certificate-settings", async (req, res) => {
+    const parsed = parseCertificateSettingsBody(req.body);
+    if (parsed.ok === false) return badRequest(res, parsed);
+    const who = await actor(req);
+    const saved = await updateCertificateSettings(db, parsed.value, who, await scopeOf(req));
+    logEmployeeHrAudit({
+      event: "competency.certificate.settings",
+      actorUserId: who.userId,
+      details: { source: saved.signerSource, signerEmployeeId: saved.signerEmployeeId, numberPrefix: saved.numberPrefix },
+    });
+    return res.json(saved);
+  }));
+
+  app.get(`${base}/trainings/:id/certificates`, ...gate("viewTrainings"), asyncRoute("GET competencies/trainings/certificates", async (req, res) => {
+    const id = param(req, "id");
+    if (!id) return invalidId(res);
+    noStore(res);
+    return res.json(await getTrainingCertificateBoard(db, id, await scopeOf(req)));
+  }));
+
+  app.put(`${base}/trainings/:id/certificate-content`, ...gate("manageTrainings"), asyncRoute("PUT competencies/trainings/certificate-content", async (req, res) => {
+    const id = param(req, "id");
+    if (!id) return invalidId(res);
+    const parsed = parseTrainingCertificateContentBody(req.body);
+    if (parsed.ok === false) return badRequest(res, parsed);
+    const who = await actor(req);
+    await updateTrainingCertificateContent(db, id, parsed.value, who, await scopeOf(req));
+    logEmployeeHrAudit({
+      event: "competency.training.change",
+      actorUserId: who.userId,
+      details: { action: "certificate-content", trainingId: id, modules: parsed.value.syllabus.length },
+    });
+    return res.json({ id });
+  }));
+
+  app.post(`${base}/trainings/:id/certificates`, ...gate("manageTrainings"), asyncRoute("POST competencies/trainings/certificates", async (req, res) => {
+    const id = param(req, "id");
+    if (!id) return invalidId(res);
+    const raw = (req.body ?? {}) as { employeeIds?: unknown };
+    let employeeIds: string[] | null = null;
+    if (raw.employeeIds !== undefined && raw.employeeIds !== null) {
+      if (!Array.isArray(raw.employeeIds) || raw.employeeIds.length === 0 || raw.employeeIds.length > 500 || !raw.employeeIds.every(isUuidString)) {
+        return res.status(400).json({ error: "INVALID_PARTICIPANTS", message: "Participantes inválidos." });
+      }
+      employeeIds = [...new Set(raw.employeeIds.map((e: string) => e.trim().toLowerCase()))];
+    }
+    const who = await actor(req);
+    const result = await issueTrainingCertificates(db, id, { employeeIds }, who, now(), await scopeOf(req));
+    logEmployeeHrAudit({
+      event: "competency.certificate.issue",
+      actorUserId: who.userId,
+      details: { trainingId: id, issued: result.issued.map((c) => c.number), skipped: result.skipped.length },
+    });
+    return res.status(result.issued.length > 0 ? 201 : 200).json(result);
+  }));
+
+  app.get(`${base}/trainings/:id/certificates/document`, ...gate("viewTrainings"), asyncRoute("GET competencies/trainings/certificates/document", async (req, res) => {
+    const id = param(req, "id");
+    if (!id) return invalidId(res);
+    const rawIds = typeof req.query.ids === "string" && req.query.ids.trim() !== "" ? req.query.ids.split(",") : null;
+    if (rawIds && (rawIds.length > 500 || !rawIds.every(isUuidString))) return invalidId(res);
+    noStore(res);
+    const ids = rawIds ? [...new Set(rawIds.map((v) => v.trim().toLowerCase()))] : null;
+    return res.json(await getTrainingCertificatesDocument(db, id, { ids }, await scopeOf(req)));
+  }));
+
+  app.post(`${base}/certificates/:id/cancel`, ...gate("manageTrainings"), asyncRoute("POST competencies/certificates/cancel", async (req, res) => {
+    const id = param(req, "id");
+    if (!id) return invalidId(res);
+    const parsed = parseCancelReason(req.body);
+    if (parsed.ok === false) return badRequest(res, parsed);
+    const who = await actor(req);
+    const result = await cancelTrainingCertificate(db, id, parsed.value, who, now(), await scopeOf(req));
+    logEmployeeHrAudit({
+      event: "competency.certificate.cancel",
+      actorUserId: who.userId,
+      details: { certificateId: id, number: result.number },
+    });
+    return res.json(result);
   }));
 }

@@ -6,6 +6,7 @@ import {
   assessmentScope,
   buildCompetencyMatrix,
   buildCompetencyOverview,
+  buildDevelopmentSummary,
   computeCoverage,
   computePositionReadiness,
   countOpenTrainings,
@@ -16,6 +17,7 @@ import {
   isEmployeeReady,
   isRequirementMet,
   listGaps,
+  narrowCompetencyView,
   readinessTone,
   requirementGap,
   resolveEffectiveLevel,
@@ -308,6 +310,92 @@ describe("competencyEngine — competência crítica", () => {
     assert.equal(ov.criticalGaps, 1, "só a NR-12 do Bruno");
     assert.equal(ov.topGaps.find((g) => g.employeeName === "Bruno Souza")?.critical, true);
     assert.equal(buildCompetencyOverview(prototypeInput(), { assessmentStatuses: [], trainingStatuses: [] }).criticalGaps, 0);
+  });
+});
+
+describe("competencyEngine — desenvolvimento por departamento", () => {
+  it("não inventa lacuna: associação não é mínimo e a polivalência cruza departamentos", () => {
+    const input: CompetencyEngineInput = {
+      asOf: "2026-10-15",
+      competencies: [
+        { id: "a", name: "A", category: "TECHNICAL", requiresRecycling: false },
+        { id: "b", name: "B", category: "TECHNICAL", requiresRecycling: false },
+      ],
+      positions: [],
+      departments: [
+        { id: "d1", name: "Injeção" },
+        { id: "d2", name: "Qualidade" },
+      ],
+      departmentLinks: [
+        { departmentId: "d1", competencyId: "a" },
+        { departmentId: "d2", competencyId: "b" },
+      ],
+      employees: [
+        { id: "e1", name: "Ana", positionId: null, departmentId: "d1" },
+        { id: "e2", name: "Bia", positionId: null, departmentId: "d1" },
+      ],
+      levels: [
+        { employeeId: "e1", competencyId: "a", level: 3 },
+        { employeeId: "e1", competencyId: "b", level: 4 },
+      ],
+      trainingCompletions: [],
+    };
+    const dev = buildDevelopmentSummary(input);
+    assert.equal(dev.employeesInScope, 2);
+    assert.equal(dev.evaluatedEmployees, 1);
+    assert.equal(dev.evaluatedCompetencies, 2);
+    assert.equal(dev.autonomousEmployees, 1);
+    assert.equal(dev.multipliers, 1);
+    assert.equal(dev.polyvalentEmployees, 1);
+    assert.equal(dev.levelDistribution.find((d) => d.level === 3)?.count, 1);
+    assert.equal(dev.levelDistribution.find((d) => d.level === 4)?.count, 1);
+    const ov = buildCompetencyOverview(input, { assessmentStatuses: [], trainingStatuses: [] });
+    assert.equal(ov.openGaps, 0);
+    assert.equal(ov.development.polyvalentEmployees, 1);
+    const matrix = buildCompetencyMatrix(input);
+    assert.equal(matrix.rows.every((row) => row.cells.every((cell) => cell.requiredLevel === null && !cell.belowMinimum)), true);
+  });
+
+  it("departamento filtra colaboradores e turno filtra competências, sem classificar pessoa", () => {
+    const input: CompetencyEngineInput = {
+      asOf: "2026-10-15",
+      competencies: [
+        { id: "a", name: "A", category: "TECHNICAL", requiresRecycling: false },
+        { id: "b", name: "B", category: "TECHNICAL", requiresRecycling: false },
+        { id: "c", name: "C", category: "TECHNICAL", requiresRecycling: false },
+      ],
+      positions: [],
+      departments: [
+        { id: "d1", name: "Montagem" },
+        { id: "d2", name: "Qualidade" },
+      ],
+      departmentLinks: [
+        { departmentId: "d1", competencyId: "a", appliesToAllShifts: false, shifts: ["1"] },
+        { departmentId: "d1", competencyId: "b", appliesToAllShifts: false, shifts: ["2"] },
+        { departmentId: "d1", competencyId: "c", appliesToAllShifts: true, shifts: [] },
+      ],
+      employees: [
+        { id: "e1", name: "Ana", positionId: null, departmentId: "d1" },
+        { id: "e2", name: "Bia", positionId: null, departmentId: "d2" },
+      ],
+      levels: [
+        { employeeId: "e1", competencyId: "a", level: 2 },
+        { employeeId: "e1", competencyId: "b", level: 4 },
+        { employeeId: "e2", competencyId: "b", level: 3 },
+      ],
+      trainingCompletions: [],
+    };
+    assert.equal(narrowCompetencyView(input, {}), input);
+    const byDepartment = narrowCompetencyView(input, { departmentId: "d1" });
+    assert.deepEqual(byDepartment.employees.map((employee) => employee.id), ["e1"]);
+    assert.equal(byDepartment.levels.length, 2);
+    const byShift = narrowCompetencyView(input, { shifts: ["2"] });
+    assert.deepEqual(byShift.employees.map((employee) => employee.id), ["e1", "e2"]);
+    assert.deepEqual(byShift.competencies.map((competency) => competency.id), ["b", "c"]);
+    assert.equal(byShift.levels.filter((level) => level.competencyId === "a").length, 0);
+    const both = narrowCompetencyView(input, { departmentId: "d1", shifts: ["1"] });
+    assert.deepEqual(both.employees.map((employee) => employee.id), ["e1"]);
+    assert.deepEqual(both.competencies.map((competency) => competency.id), ["a", "c"]);
   });
 });
 

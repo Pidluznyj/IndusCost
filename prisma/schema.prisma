@@ -114,6 +114,11 @@ model Employee {
   emergencyContactRelationship String?
   admissionDate                DateTime?                  @db.Timestamptz(6)
   terminationDate              DateTime?                  @db.Timestamptz(6)
+  /// Desligamento (status INACTIVE): motivo, aviso prévio e descrição — regras em src/lib/employeeLifecycle.ts.
+  terminationReason            String?
+  terminationNoticeType        String?
+  terminationNoticeDate        DateTime?                  @db.Timestamptz(6)
+  terminationDetails           String?
   contractType                 String?
   managerName                  String?
   /// Gestor = outro Employee (ativos na seleção; histórico preserva inativos).
@@ -157,6 +162,8 @@ model Employee {
   employeeBenefits             HrEmployeeBenefit[]
   extraEmergencyContacts       HrEmergencyContact[]
   epiDeliveries                HrEpiDelivery[]
+  epiDeliveryForms             HrEpiDeliveryForm[]
+  epiDeliveryEvents            HrEpiDeliveryEvent[]
   hrDocuments                  HrEmployeeDocument[]
   absences                     HrAbsence[]
   hrNotes                      HrEmployeeNote[]
@@ -170,6 +177,9 @@ model Employee {
   hrCompetencyAssessments      HrCompetencyAssessment[]           @relation("HrCompetencyAssessmentSubject")
   hrCompetencyAssessmentsAsEvaluator HrCompetencyAssessment[]     @relation("HrCompetencyAssessmentEvaluator")
   hrTrainingParticipations     HrTrainingParticipant[]            @relation("HrTrainingParticipantEmployee")
+  hrTrainingCertificates       HrTrainingCertificate[]            @relation("HrTrainingCertificateEmployee")
+  hrExternalCertificates       HrEmployeeExternalCertificate[]    @relation("HrExternalCertificateEmployee")
+  hrCertificateSignerSettings  HrTrainingCertificateSettings[]    @relation("HrCertificateSigner")
   hrCompetencyLevelRequests    HrCompetencyLevelRequest[]         @relation("HrCompetencyLevelRequestEmployee")
   /// Desempenho, Cultura e Potencial. Não altera avaliação de experiência nem competência de posto.
   hrPerformanceParticipants    HrPerformanceParticipant[]         @relation("PerformanceSubject")
@@ -226,6 +236,7 @@ model HrDepartment {
   childDepartments HrDepartment[] @relation("HrDepartmentHierarchy")
   employees        Employee[]     @relation("EmployeeOrgDepartment")
   workPositions    HrWorkPosition[] @relation("HrWorkPositionDepartment")
+  departmentCompetencies HrDepartmentCompetency[]
 
   @@unique([directorateId, name])
   @@index([status])
@@ -373,23 +384,172 @@ model HrEmergencyContact {
   @@index([employeeId, priority])
 }
 
-/// Entrega histórica de EPI/uniforme (tamanhos atuais continuam em Employee).
+/// Catálogo global de EPIs e uniformes (sem estoque). Regras em src/lib/epi/epiRules.ts.
+/// Código automático e imutável (trigger); item com entrega não é excluído (FK Restrict).
+model HrEpiItem {
+  id               String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  /// Numeração sequencial global; o código (EPI-0001 / UNI-0001) é gravado na criação.
+  number           Int             @unique @default(autoincrement())
+  code             String          @unique
+  description      String
+  /// EPI | UNIFORM
+  type             String
+  /// Certificado de Aprovação (MTE). Não é validade nem vida útil.
+  caNumber         String?
+  /// UNIT | PAIR | KIT
+  unit             String          @default("UNIT")
+  /// Periodicidade de troca definida pela empresa (dias). Vazio = sem troca programada.
+  replacementDays  Int?
+  notes            String?
+  active           Boolean         @default(true)
+  createdByUserId  String?         @db.Uuid
+  updatedByUserId  String?         @db.Uuid
+  createdAt        DateTime        @default(now()) @db.Timestamptz(6)
+  updatedAt        DateTime        @default(now()) @updatedAt @db.Timestamptz(6)
+  deliveries       HrEpiDelivery[]
+
+  @@index([active, description])
+}
+
+/// Evento de entrega de EPI/uniforme: uma ocasião (data) com um ou mais itens e uma ficha documental.
+/// Cada item (HrEpiDelivery) mantém prazo, troca e situação próprios. Ver docs/hr/epi-uniforms.md.
+model HrEpiDeliveryEvent {
+  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  employeeId       String    @db.Uuid
+  /// Data da entrega (meio-dia UTC = data de calendário).
+  deliveredAt      DateTime  @db.Timestamptz(6)
+  responsibleName  String?
+  notes            String?
+  createdByUserId  String?   @db.Uuid
+  createdAt        DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt        DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+  employee         Employee  @relation(fields: [employeeId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  deliveries       HrEpiDelivery[]
+  forms            HrEpiDeliveryForm[]
+  receipts         HrEpiDeliveryReceipt[]
+
+  /// Alvo das FKs compostas (evento + colaborador): item, ficha e comprovante nunca apontam outro colaborador.
+  @@unique([id, employeeId])
+  @@index([employeeId, deliveredAt(sort: Desc)])
+}
+
+/// Item entregue (EPI/uniforme) dentro de um evento de entrega (tamanhos atuais continuam em Employee).
+/// Não é excluído: cancelamento/encerramento/substituição mudam `status` com motivo e autor.
+/// Os campos `item*` são o retrato do catálogo no momento da entrega.
 model HrEpiDelivery {
   id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   employeeId       String    @db.Uuid
+  /// Evento de entrega (ocasião). Entregas anteriores ao recurso viraram eventos de 1 item (mesmo id).
+  eventId          String    @db.Uuid
+  /// Descrição do item no momento da entrega (texto livre nas entregas antigas).
   item             String
   deliveredAt      DateTime  @db.Timestamptz(6)
   quantity         Int       @default(1)
   size             String?
+  /// Legado: "validade" informada antes do catálogo. Entregas novas usam replacementDueDate.
   validUntil       DateTime? @db.Timestamptz(6)
   responsibleName  String?
   returnedAt       DateTime? @db.Timestamptz(6)
   notes            String?
   createdByUserId  String?   @db.Uuid
   createdAt        DateTime  @default(now()) @db.Timestamptz(6)
+  itemId           String?   @db.Uuid
+  itemCode         String?
+  itemType         String?
+  itemCaNumber     String?
+  itemUnit         String?
+  /// Prazo de troca aplicado nesta entrega (dias); null = sem troca programada.
+  replacementDays  Int?
+  /// Data prevista de substituição (data de calendário, sem fuso).
+  replacementDueDate DateTime? @db.Date
+  /// Justificativa quando o prazo/data difere do cadastro do item.
+  replacementAdjustReason String?
+  /// ACTIVE (vigente) | REPLACED | CLOSED | CANCELLED
+  status           String    @default("ACTIVE")
+  statusReason     String?
+  statusChangedAt  DateTime? @db.Timestamptz(6)
+  statusChangedByUserId String? @db.Uuid
+  /// Entrega que substituiu esta (status REPLACED).
+  replacedByDeliveryId String? @unique @db.Uuid
+  updatedAt        DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
   employee         Employee  @relation(fields: [employeeId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  event            HrEpiDeliveryEvent @relation(fields: [eventId, employeeId], references: [id, employeeId], onDelete: Restrict, onUpdate: NoAction)
+  catalogItem      HrEpiItem? @relation(fields: [itemId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  replacedBy       HrEpiDelivery? @relation("HrEpiDeliveryReplacement", fields: [replacedByDeliveryId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  replaces         HrEpiDelivery? @relation("HrEpiDeliveryReplacement")
 
   @@index([employeeId, deliveredAt(sort: Desc)])
+  @@index([eventId])
+  @@index([itemId])
+  @@index([status, replacementDueDate])
+}
+
+/// Ficha de entrega emitida para o EVENTO (PDF regenerado do conteúdo congelado `payload`).
+/// `formCode` (FE-2026-00001) identifica a ficha do evento; cada revisão tem `documentNumber` único (…-R01).
+/// Reemissão sem mudança de conteúdo reaproveita a revisão vigente; conteúdo alterado gera nova revisão
+/// e a anterior fica SUPERSEDED (nunca sobrescrita). Ver docs/hr/epi-uniforms.md.
+model HrEpiDeliveryForm {
+  id               String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  eventId          String        @db.Uuid
+  employeeId       String        @db.Uuid
+  formCode         String
+  revision         Int
+  documentNumber   String        @unique
+  /// ACTIVE | SUPERSEDED
+  status           String        @default("ACTIVE")
+  payload          Json
+  payloadSha256    String
+  /// Hash só do conteúdo (colaborador + itens + declaração): decide se a reemissão muda a revisão.
+  contentSha256    String
+  issuedAt         DateTime      @default(now()) @db.Timestamptz(6)
+  issuedByUserId   String?       @db.Uuid
+  issuedByName     String?
+  printCount       Int           @default(1)
+  lastPrintedAt    DateTime      @default(now()) @db.Timestamptz(6)
+  lastPrintedByUserId String?    @db.Uuid
+  supersededAt     DateTime?     @db.Timestamptz(6)
+  event            HrEpiDeliveryEvent @relation(fields: [eventId, employeeId], references: [id, employeeId], onDelete: Restrict, onUpdate: NoAction)
+  employee         Employee      @relation(fields: [employeeId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  receipts         HrEpiDeliveryReceipt[]
+
+  @@unique([eventId, revision])
+  @@unique([formCode, revision])
+  /// Alvo da FK composta do comprovante (ficha do mesmo evento).
+  @@unique([id, eventId])
+  @@index([employeeId])
+}
+
+/// Comprovante digitalizado (ficha assinada) do evento. Histórico: anexar de novo marca o anterior SUPERSEDED.
+/// O arquivo fica em Documentos do colaborador (HrEmployeeDocument); conferência = APPROVED/REJECTED com autor.
+model HrEpiDeliveryReceipt {
+  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  eventId          String    @db.Uuid
+  employeeId       String    @db.Uuid
+  /// Revisão da ficha a que o arquivo corresponde (null = evento sem ficha emitida).
+  formId           String?   @db.Uuid
+  documentId       String    @db.Uuid
+  fileSha256       String
+  originalFileName String
+  mimeType         String?
+  fileSize         Int
+  /// CURRENT | SUPERSEDED
+  status           String    @default("CURRENT")
+  supersededAt     DateTime? @db.Timestamptz(6)
+  uploadedByUserId String?   @db.Uuid
+  uploadedAt       DateTime  @default(now()) @db.Timestamptz(6)
+  /// Lote de envio (upload de várias fichas de uma vez), quando houver.
+  batchId          String?   @db.Uuid
+  /// APPROVED | REJECTED (conferência manual); null = não conferido.
+  validationResult String?
+  validatedAt      DateTime? @db.Timestamptz(6)
+  validatedByUserId String?  @db.Uuid
+  validationNote   String?
+  event            HrEpiDeliveryEvent @relation(fields: [eventId, employeeId], references: [id, employeeId], onDelete: Restrict, onUpdate: NoAction)
+  form             HrEpiDeliveryForm? @relation(fields: [formId, eventId], references: [id, eventId], onDelete: Restrict, onUpdate: NoAction)
+  document         HrEmployeeDocument @relation(fields: [documentId, employeeId], references: [id, employeeId], onDelete: Restrict, onUpdate: NoAction)
+
+  @@index([eventId, uploadedAt(sort: Desc)])
+  @@index([fileSha256])
 }
 
 /// Metadata de documentos da ficha. Arquivo no storage oficial (`storageKey`).
@@ -412,9 +572,13 @@ model HrEmployeeDocument {
   createdAt        DateTime  @default(now()) @db.Timestamptz(6)
   employee         Employee  @relation(fields: [employeeId], references: [id], onDelete: Restrict, onUpdate: NoAction)
   evaluation       HrEmployeeEvaluation? @relation(fields: [evaluationId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  externalCertificate HrEmployeeExternalCertificate?
+  epiDeliveryReceipts HrEpiDeliveryReceipt[]
 
   @@index([employeeId, createdAt(sort: Desc)])
   @@index([evaluationId])
+  /// Alvo da FK composta do comprovante de EPI (documento do mesmo colaborador).
+  @@unique([id, employeeId])
 }
 
 /// Férias / afastamentos — histórico próprio (status atual do Employee não substitui).
@@ -427,9 +591,16 @@ model HrAbsence {
   expectedReturn  DateTime? @db.Timestamptz(6)
   actualReturn    DateTime? @db.Timestamptz(6)
   status          String    @default("SCHEDULED")
+  /// Justificativa (obrigatória para afastamentos; regras em src/lib/employeeLifecycle.ts).
   reason          String?
   notes           String?
   documentId      String?   @db.Uuid
+  /// Prorrogação Empresa Cidadã (maternidade/adoção +60; paternidade +15).
+  extendedLicense Boolean   @default(false)
+  /// Número do benefício no INSS (afastamentos acima de 15 dias).
+  inssBenefitNumber String?
+  /// Número da CAT (acidente de trabalho).
+  catNumber       String?
   createdByUserId String?   @db.Uuid
   createdAt       DateTime  @default(now()) @db.Timestamptz(6)
   updatedAt       DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
@@ -630,8 +801,41 @@ model HrCompetency {
   assessmentItems   HrCompetencyAssessmentItem[]
   trainings         HrTraining[]
   levelRequests     HrCompetencyLevelRequest[]
+  departmentLinks   HrDepartmentCompetency[]
+  externalCertificates HrEmployeeExternalCertificate[]
 
   @@index([status, sortOrder])
+}
+
+/// Competência pertinente a um departamento oficial do RH.
+/// Não define nível mínimo e não altera o departamento nem o turno do colaborador.
+/// `appliesToAllShifts` = configuração para os turnos 1, 2 e 3; senão, as linhas filhas.
+model HrDepartmentCompetency {
+  id                 String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  departmentId       String   @db.Uuid
+  competencyId       String   @db.Uuid
+  appliesToAllShifts Boolean  @default(true)
+  createdByUserId    String?  @db.Uuid
+  createdAt          DateTime @default(now()) @db.Timestamptz(6)
+
+  department HrDepartment @relation(fields: [departmentId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  competency HrCompetency @relation(fields: [competencyId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  shifts     HrDepartmentCompetencyShift[]
+
+  @@unique([departmentId, competencyId])
+  @@index([competencyId])
+}
+
+/// Turno de configuração (1, 2 ou 3) em que a competência do departamento se aplica.
+/// Não é o turno do colaborador: o RH não possui esse vínculo.
+model HrDepartmentCompetencyShift {
+  id                       String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  departmentCompetencyId   String @db.Uuid
+  shiftCode                String
+  departmentCompetency     HrDepartmentCompetency @relation(fields: [departmentCompetencyId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([departmentCompetencyId, shiftCode])
+  @@index([shiftCode])
 }
 
 /// Posto de trabalho físico (não confundir com cargo `Role`). Setor = departamento oficial RH.
@@ -789,12 +993,17 @@ model HrTraining {
   validityMonths  Int       @default(0)
   status          String    @default("SCHEDULED")
   completedAt     DateTime? @db.Timestamptz(6)
+  /// Instrutor responsável (2ª assinatura do certificado). Opcional.
+  instructorName  String?
+  /// Conteúdo programático do certificado: [{ title, hours }]; soma = workloadHours. Vazio = competência.
+  syllabus        Json?
   createdByUserId String?   @db.Uuid
   updatedByUserId String?   @db.Uuid
   createdAt       DateTime  @default(now()) @db.Timestamptz(6)
   updatedAt       DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
   competency      HrCompetency @relation(fields: [competencyId], references: [id], onDelete: Restrict, onUpdate: NoAction)
   participants    HrTrainingParticipant[]
+  certificates    HrTrainingCertificate[]
 
   @@index([competencyId])
   @@index([status, startDate])
@@ -812,6 +1021,78 @@ model HrTrainingParticipant {
 
   @@unique([trainingId, employeeId])
   @@index([employeeId])
+}
+
+/// Configuração global dos certificados de treinamento (linha única id = "GLOBAL").
+/// Sem valores padrão: a emissão fica bloqueada até o RH configurar quem assina.
+/// signerEmployeeId: pessoa do sistema (nome/cargo vêm do cadastro) ou NULL = digitado manualmente.
+/// issuePlace é sempre "Curitiba – PR"; numberPrefix é gerado na 1ª gravação e nunca muda.
+model HrTrainingCertificateSettings {
+  id              String   @id
+  signerEmployeeId String?  @db.Uuid
+  signerName      String
+  signerRole      String
+  issuePlace      String
+  numberPrefix    String
+  updatedByUserId String?  @db.Uuid
+  updatedByName   String?
+  updatedAt       DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+  signerEmployee  Employee? @relation("HrCertificateSigner", fields: [signerEmployeeId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+}
+
+/// Certificado emitido (imutável). payload = conteúdo congelado na emissão; payloadSha256 confere a integridade.
+/// status: ACTIVE | CANCELED. Um ACTIVE por participante do treinamento (índice parcial escrito na migration).
+/// Única alteração permitida (trigger): ACTIVE → CANCELED com autoria e motivo.
+model HrTrainingCertificate {
+  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  number           String    @unique
+  year             Int
+  sequence         Int
+  trainingId       String    @db.Uuid
+  employeeId       String    @db.Uuid
+  status           String    @default("ACTIVE")
+  issuedAt         DateTime  @default(now()) @db.Timestamptz(6)
+  issuedByUserId   String?   @db.Uuid
+  issuedByName     String
+  payload          Json
+  payloadSha256    String
+  canceledAt       DateTime? @db.Timestamptz(6)
+  canceledByUserId String?   @db.Uuid
+  canceledByName   String?
+  cancelReason     String?
+  training         HrTraining @relation(fields: [trainingId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  employee         Employee   @relation("HrTrainingCertificateEmployee", fields: [employeeId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@unique([year, sequence])
+  @@index([trainingId])
+  @@index([employeeId])
+}
+
+/// Certificado externo do colaborador (curso feito fora dos treinamentos do sistema).
+/// O arquivo fica no dossiê (HrEmployeeDocument, tipo TRAINING_CERTIFICATE); esta linha guarda os
+/// dados estruturados. Excluir o documento exclui o certificado (CASCADE).
+/// Informativo: não altera nível nem reciclagem na engine de Competências.
+model HrEmployeeExternalCertificate {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  employeeId      String    @db.Uuid
+  documentId      String    @unique @db.Uuid
+  title           String
+  institution     String
+  workloadHours   Decimal?  @db.Decimal(7, 1)
+  completedAt     DateTime  @db.Timestamptz(6)
+  expiresAt       DateTime? @db.Timestamptz(6)
+  competencyId    String?   @db.Uuid
+  notes           String?
+  createdByUserId String?   @db.Uuid
+  updatedByUserId String?   @db.Uuid
+  createdAt       DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt       DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+  employee        Employee           @relation("HrExternalCertificateEmployee", fields: [employeeId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  document        HrEmployeeDocument @relation(fields: [documentId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  competency      HrCompetency?      @relation(fields: [competencyId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([employeeId, completedAt(sort: Desc)])
+  @@index([competencyId])
 }
 
 /// Importação assistida de níveis por planilha (um registro por aplicação com alteração).
@@ -2131,6 +2412,7 @@ model Customer {
   person                           Person?                           @relation("CustomerIdentityPerson", fields: [personId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   contactPerson                    Person?                           @relation("CustomerContactPerson", fields: [contactPersonId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   proposals                        Proposal[]
+  projects                         Project[]                         @relation("ProjectCustomer")
   salesOrders                      SalesOrder[]
   commissionCustomerExclusionRules CommissionCustomerExclusionRule[]
   commissionReceiptLedgerLines     CommissionReceiptLedgerLine[]
@@ -4240,6 +4522,29 @@ model NomusPurchaseOrderItem {
   @@index([productCode])
 }
 
+/// Meta gerencial de PMP de Compras (prazo médio ponderado desde a emissão do pedido).
+/// Singleton. Só para análise: não altera pedidos, vencimentos nem bloqueia compras.
+model PurchasePaymentTermsSettings {
+  id                String   @id @default("GLOBAL")
+  /// Meta em dias. Null = sem meta: indicadores sem classificação de atendimento.
+  targetPmpDays     Int?
+  updatedAt         DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+  updatedByUserId   String?  @db.Uuid
+  updatedByUserName String?
+}
+
+/// Histórico das alterações da meta de PMP (autoria e data).
+model PurchasePaymentTermsSettingsHistory {
+  id                 String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  previousTargetDays Int?
+  targetDays         Int?
+  changedAt          DateTime @default(now()) @db.Timestamptz(6)
+  changedByUserId    String?  @db.Uuid
+  changedByUserName  String
+
+  @@index([changedAt])
+}
+
 /// Avaliação do fornecedor pelo Pedido de Compra Nomus (espelho local).
 /// Identidade determinística: NomusPurchaseOrder.id. Não mistura com PurchaseOrder interno.
 /// A nota do FinancialSupplier continua DERIVADA — nenhuma coluna de score no cadastro.
@@ -6293,8 +6598,14 @@ model Project {
   number                Int           @unique @default(autoincrement())
   code                  String        @unique
   title                 String
+  /// Snapshot textual do cliente (histórico da época). Com customerId, vem do cadastro oficial.
   customerName          String
   customerDocument      String?
+  /// Vínculo com o cadastro oficial de clientes (opcional; projetos antigos conciliados por CNPJ).
+  customerId            String?       @db.Uuid
+  customerLinkedAt      DateTime?     @db.Timestamptz(6)
+  /// LOOKUP (escolhido na busca) | CNPJ_RECONCILIATION (conciliação por CNPJ confirmada).
+  customerLinkSource    String?
   description           String?
   projectType           ProjectType
   status                ProjectStatus @default(DRAFT)
@@ -6303,11 +6614,28 @@ model Project {
   expectedMonthlyVolume Decimal?      @db.Decimal(20, 6)
   targetPrice           Decimal?      @db.Decimal(20, 6)
   targetMarginPercent   Decimal?      @db.Decimal(10, 6)
+  /// Observações INTERNAS — nunca aparecem em documentos destinados ao cliente.
   notes                 String?
+  /// Observações para o cliente (Proposta Cliente). Separadas das internas.
+  clientNotes           String?
+  /// Condições comerciais estruturadas — vazias até serem definidas (sem preenchimento automático).
+  proposalValidityDays  Int?
+  paymentTerms          String?
+  deliveryTimeDays      Int?
+  deliveryLocation      String?
+  /// CIF | FOB (mesmo vocabulário da Proposta comercial).
+  freightCondition      String?
+  desiredDeadline       DateTime?     @db.Timestamptz(6)
+  /// LOW | MEDIUM | HIGH | URGENT.
+  priority              String?
+  /// Aplicação do produto/peça no cliente.
+  application           String?
   createdAt             DateTime      @default(now()) @db.Timestamptz(6)
   updatedAt             DateTime      @default(now()) @updatedAt @db.Timestamptz(6)
 
+  customer            Customer?        @relation("ProjectCustomer", fields: [customerId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   versions            ProjectVersion[]
+  issuedDocuments     ProjectIssuedDocument[]
   simulatedProducts   ProjectSimulatedProduct[]
   simulatedItems      ProjectSimulatedItem[]
   structureLines      ProjectStructureLine[]
@@ -6321,6 +6649,7 @@ model Project {
   @@index([status])
   @@index([projectType])
   @@index([customerName])
+  @@index([customerId])
   @@index([updatedAt])
 }
 
@@ -6394,6 +6723,37 @@ model ProjectClientProposalItem {
 
   @@unique([projectId, targetItemId])
   @@index([projectId])
+}
+
+/// Emissão imutável de documento do projeto (Ficha rápida/completa, Planilha, Relatório
+/// gerencial, Proposta Cliente). Guarda o conteúdo exato emitido + sha256; revisões nunca
+/// alteram emissões anteriores. UPDATE/DELETE bloqueados por trigger (exceto projectId → NULL
+/// quando o projeto é excluído).
+model ProjectIssuedDocument {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId      String?   @db.Uuid
+  projectCode    String
+  /// QUICK_FORM | FULL_FORM | SPREADSHEET | EXECUTIVE_REPORT | CLIENT_PROPOSAL
+  documentType   String
+  revision       Int
+  documentNumber String    @unique
+  versionId      String?   @db.Uuid
+  versionNumber  Int?
+  /// SAVED_PRICING | NO_SAVED_PRICING
+  valueSource    String
+  pricingSavedAt DateTime? @db.Timestamptz(6)
+  /// Valores da precificação divergiam do projeto atual no momento da emissão.
+  pricingStale   Boolean   @default(false)
+  issuedAt       DateTime  @default(now()) @db.Timestamptz(6)
+  issuedByUserId String?   @db.Uuid
+  issuedByName   String
+  payload        Json
+  payloadSha256  String
+
+  project Project? @relation(fields: [projectId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@unique([projectId, documentType, revision])
+  @@index([projectId, issuedAt])
 }
 
 model ProjectVersion {

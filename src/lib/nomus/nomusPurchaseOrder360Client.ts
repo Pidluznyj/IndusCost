@@ -53,6 +53,8 @@ export type NomusPurchaseOrder360Detail = {
     financialClassificationId: number | null;
     movementTypeId: number | null;
   }>;
+  /** Condição de Pagamento da Compra: PMP desde a emissão (motor purchasePaymentTerms). */
+  paymentTerms?: import("@/src/lib/purchasing/purchasePaymentTermsAnalysis").PaymentTermsDetailDto;
   plannedInstallments: Array<{
     index: number;
     dueDate: string | null;

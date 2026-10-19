@@ -4,6 +4,11 @@ import {
 } from "./projectsExecutiveReport.js";
 import { isGuidedOtherCostItem } from "./projectsOtherCostGroups.js";
 import { isLaborStructureLine } from "./projectsUiUtils.js";
+import { documentUserNotes, resolveStructureLineCode, sumLaborHours, type ProjectEntityCodes } from "./projectsDocumentCodes.js";
+import { buildProjectCostSnapshot, resolveProjectCostFinalUnitPrice } from "./projectsCostSnapshot.js";
+import { roundProjectMoney } from "./projectsCostAmortization.js";
+import { PROJECT_FREIGHT_LABELS, isProjectFreightCondition, projectPriorityLabel } from "./projectsCommercialTerms.js";
+import { formatTaxId } from "./projectsCustomerLink.js";
 import type {
   ProjectDetail,
   ProjectSimulatedItemRow,
@@ -11,7 +16,39 @@ import type {
   ProjectType,
 } from "@/src/types/projects.js";
 
-export const PROJECT_INTAKE_FORM_VERSION = "1.0";
+export const PROJECT_INTAKE_FORM_VERSION = "2.0";
+
+/** Dados de apoio carregados no servidor para preencher a ficha com dados reais. */
+export type ProjectIntakeFormContext = {
+  entityCodes?: ProjectEntityCodes | null;
+  /** Quantidades por conjunto salvas (Proposta Cliente). */
+  quantitiesByTargetId?: Record<string, number>;
+  /** Razão social do emitente (Configurações de Marca). */
+  issuerName?: string | null;
+};
+
+/** Totais do conjunto pela precificação usada no documento (Σ unitário × qtd./conjunto). */
+export function resolveIntakeSetTotals(
+  detail: ProjectDetail,
+  quantitiesByTargetId?: Record<string, number>,
+): { setFinalCost: number | null; setFinalPrice: number | null; hasSavedPricing: boolean; pricingSavedAt: string | null } {
+  const snapshot = buildProjectCostSnapshot(detail, { quantitiesByTargetId });
+  const items = snapshot.pricing.view.items;
+  const qty = (id: string) => {
+    const q = quantitiesByTargetId?.[id];
+    return q != null && Number.isInteger(q) && q >= 1 ? q : 1;
+  };
+  const setFinalCost = items.length
+    ? roundProjectMoney(items.reduce((acc, i) => acc + roundProjectMoney(i.finalUnitCost * qty(i.targetItemId)), 0))
+    : null;
+  const allPriced = items.length > 0 && items.every((i) => resolveProjectCostFinalUnitPrice(i) != null);
+  return {
+    setFinalCost,
+    setFinalPrice: allPriced ? snapshot.totals.finalSetPrice : null,
+    hasSavedPricing: snapshot.pricing.view.hasSavedPricing === true,
+    pricingSavedAt: detail.documentValueSource?.pricingSavedAt ?? null,
+  };
+}
 export const PROJECT_INTAKE_FORM_TITLE = "Ficha de Abertura de Projeto";
 export const PROJECT_INTAKE_FORM_FULL_TITLE = "Ficha Completa de Abertura de Projeto";
 export const PROJECT_INTAKE_FORM_BUTTON_LABEL = "Imprimir Ficha de Abertura";
@@ -234,7 +271,7 @@ function buildMaterialsTable(detail: ProjectDetail | null): IntakeTableRow[] {
     unit: item.unit,
     estimatedCost: fmtMoney(item.estimatedUnitCost ?? item.quotedUnitCost),
     supplier: item.supplierName,
-    notes: item.notes,
+    notes: documentUserNotes(item.notes),
   }));
   return emptyTableRows(
     ["type", "code", "description", "quantity", "unit", "estimatedCost", "supplier", "notes"],
@@ -243,7 +280,7 @@ function buildMaterialsTable(detail: ProjectDetail | null): IntakeTableRow[] {
   );
 }
 
-function buildBomTable(detail: ProjectDetail | null): IntakeTableRow[] {
+function buildBomTable(detail: ProjectDetail | null, ctx: ProjectIntakeFormContext = {}): IntakeTableRow[] {
   if (!detail) {
     return emptyTableRows(
       ["level", "itemType", "code", "description", "quantity", "unit", "lossPercent", "unitCost", "origin", "notes"],
@@ -255,14 +292,14 @@ function buildBomTable(detail: ProjectDetail | null): IntakeTableRow[] {
     .map((line) => ({
       level: line.level != null ? String(line.level) : null,
       itemType: line.lineType,
-      code: line.simulatedItemId ?? line.existingProductId ?? line.existingMaterialId,
+      code: resolveStructureLineCode(line, detail.simulatedItems, ctx.entityCodes),
       description: line.descriptionSnapshot,
       quantity: fmtNum(line.quantity),
       unit: line.unitSnapshot,
       lossPercent: fmtNum(line.lossPercent, "%"),
       unitCost: fmtMoney(line.unitCostSnapshot),
       origin: structureOriginLabel(line),
-      notes: line.notes,
+      notes: documentUserNotes(line.notes),
     }));
   return emptyTableRows(
     ["level", "itemType", "code", "description", "quantity", "unit", "lossPercent", "unitCost", "origin", "notes"],
@@ -287,7 +324,7 @@ function buildProcessesTable(detail: ProjectDetail | null): IntakeTableRow[] {
       timeHh: fmtNum(line.quantity),
       hourlyRate: fmtMoney(line.unitCostSnapshot),
       totalCost: fmtMoney(line.totalCost),
-      notes: line.notes,
+      notes: documentUserNotes(line.notes),
     }));
   return emptyTableRows(
     ["process", "internalExternal", "machine", "timeHh", "hourlyRate", "totalCost", "notes"],
@@ -311,7 +348,7 @@ function buildMoldTable(detail: ProjectDetail | null): IntakeTableRow[] {
     estimatedCost: fmtMoney(mold.constructionCost),
     amortizes: mold.chargeMode === "AMORTIZED_IN_PRODUCT" ? "Sim" : "Não",
     amortizationQty: fmtNum(mold.amortizationQuantity),
-    notes: mold.notes,
+    notes: documentUserNotes(mold.notes),
   }));
   return emptyTableRows(
     ["item", "description", "internalExternal", "supplier", "estimatedCost", "amortizes", "amortizationQty", "notes"],
@@ -335,7 +372,7 @@ function buildAdditionalCostsTable(detail: ProjectDetail | null): IntakeTableRow
       estimatedValue: fmtMoney(item.estimatedUnitCost ?? item.quotedUnitCost),
       recurring: "Não",
       amortizes: null,
-      notes: item.notes,
+      notes: documentUserNotes(item.notes),
     }));
   return emptyTableRows(
     ["category", "description", "estimatedValue", "recurring", "amortizes", "notes"],
@@ -344,31 +381,29 @@ function buildAdditionalCostsTable(detail: ProjectDetail | null): IntakeTableRow
   );
 }
 
-function buildScenariosTable(detail: ProjectDetail | null): IntakeTableRow[] {
+function buildScenariosTable(detail: ProjectDetail | null, ctx: ProjectIntakeFormContext = {}): IntakeTableRow[] {
   const base: IntakeTableRow[] = [
     { scenario: "Conservador", volume: null, estimatedCost: null, margin: null, suggestedPrice: null, notes: null },
     { scenario: "Provável", volume: null, estimatedCost: null, margin: null, suggestedPrice: null, notes: null },
     { scenario: "Otimista", volume: null, estimatedCost: null, margin: null, suggestedPrice: null, notes: null },
   ];
   if (!detail) return base;
-  const unitCost = detail.costBreakdown?.unitCost;
+  // Mesma fonte dos demais documentos: precificação salva (custo e preço do conjunto).
+  const totals = resolveIntakeSetTotals(detail, ctx.quantitiesByTargetId);
   const margin =
-    detail.targetMarginPercent ??
-    detail.currentVersion?.marginPercent ??
+    detail.documentValueSource?.view.config.defaultMarginPercent ??
     detail.projectPricing?.config.defaultMarginPercent ??
-    null;
-  const price =
-    detail.targetPrice ??
-    detail.currentVersion?.suggestedPrice ??
-    detail.costBreakdown?.suggestedPrice ??
+    detail.targetMarginPercent ??
     null;
   base[1] = {
     scenario: "Provável",
     volume: fmtNum(detail.expectedMonthlyVolume),
-    estimatedCost: fmtMoney(unitCost),
+    estimatedCost: fmtMoney(totals.setFinalCost),
     margin: fmtNum(margin, "%"),
-    suggestedPrice: fmtMoney(price),
-    notes: detail.projectPricing?.hasSavedPricing ? "Pricing salvo no projeto" : null,
+    suggestedPrice: fmtMoney(totals.setFinalPrice),
+    notes: totals.hasSavedPricing
+      ? `Precificação salva${totals.pricingSavedAt ? ` em ${fmtDate(totals.pricingSavedAt)}` : ""} (valores por conjunto)`
+      : "Sem precificação salva",
   };
   return base;
 }
@@ -419,8 +454,14 @@ function hasOfficialSnapshot(detail: ProjectDetail | null): boolean {
   return !!detail && Object.keys(detail.snapshotRootProducts ?? {}).length > 0;
 }
 
-function buildSections(detail: ProjectDetail | null): ProjectIntakeFormSection[] {
+function buildSections(detail: ProjectDetail | null, ctx: ProjectIntakeFormContext = {}): ProjectIntakeFormSection[] {
   const product = detail?.simulatedProducts[0] ?? null;
+  const registry = detail?.customer ?? null;
+  const laborHours = detail ? sumLaborHours(detail.structureLines) : null;
+  const totals = detail ? resolveIntakeSetTotals(detail, ctx.quantitiesByTargetId) : null;
+  const cityState = registry ? [registry.city, registry.state].filter(Boolean).join("/") || null : null;
+  const savedFiscal = detail?.documentValueSource?.view.config.fiscalRuleId ?? detail?.projectPricing?.config.fiscalRuleId ?? null;
+  const fiscalName = detail?.documentValueSource?.view.items.find((i) => i.fiscalRuleName)?.fiscalRuleName ?? null;
   const hasBom = (detail?.structureLines.length ?? 0) > 0;
   const hasProcesses = (detail?.structureLines.some((l) => isLaborStructureLine(l) || l.lineType === "PROCESS") ?? false);
   const hasMolds = (detail?.molds.length ?? 0) > 0;
@@ -438,14 +479,14 @@ function buildSections(detail: ProjectDetail | null): ProjectIntakeFormSection[]
         field("projectCode", "Código interno do projeto", detail?.code, { required: true }),
         field("projectName", "Nome do projeto", detail?.title, { required: true }),
         field("projectType", "Tipo de projeto", mapProjectNature(detail?.projectType), { required: true }),
-        field("priority", "Prioridade", null, { required: true }),
+        field("priority", "Prioridade", projectPriorityLabel(detail?.priority), { required: true }),
         field("initialStatus", "Status inicial", detail ? PROJECT_STATUS_LABEL[detail.status] : null, { required: true }),
         field("openedAt", "Data de abertura", fmtDate(detail?.createdAt ?? null), { required: true }),
         field("internalRequester", "Solicitante interno", null, { required: true }),
         field("requestingArea", "Área solicitante", null, { required: true }),
         field("commercialOwner", "Responsável comercial", detail?.commercialOwner, { required: true }),
         field("technicalOwner", "Responsável técnico/engenharia", detail?.technicalOwner, { required: true }),
-        field("companyGroup", "Empresa do grupo", detail?.notes?.includes("Koppetel") ? "Koppetel" : null, { required: true }),
+        field("companyGroup", "Empresa emitente", ctx.issuerName ?? null, { required: true }),
         field("developmentSite", "Unidade/local de desenvolvimento", null),
         field("demandSummary", "Resumo / descrição inicial da demanda", detail?.description, {
           required: true,
@@ -458,21 +499,33 @@ function buildSections(detail: ProjectDetail | null): ProjectIntakeFormSection[]
       title: "2. Dados do cliente",
       pageBreakBefore: true,
       fields: [
-        field("customerInSystem", "Cliente existente no sistema", detail?.customerName ? "Sim" : null),
-        field("customerLegalName", "Nome/Razão social", detail?.customerName, { required: true }),
-        field("customerDocument", "CNPJ/CPF", detail?.customerDocument, { required: true }),
-        field("tradeName", "Nome fantasia", null),
-        field("mainContact", "Contato principal", null, { required: true }),
+        field(
+          "customerInSystem",
+          "Cliente existente no sistema",
+          detail ? (detail.customerId ? "Sim — vinculado ao cadastro de clientes" : "Não — sem vínculo com o cadastro") : null,
+        ),
+        field("customerLegalName", "Nome/Razão social", registry?.companyName ?? detail?.customerName, { required: true }),
+        field(
+          "customerDocument",
+          "CNPJ/CPF",
+          registry ? formatTaxId(registry.taxId) : detail?.customerDocument ? formatTaxId(detail.customerDocument) : null,
+          { required: true },
+        ),
+        field("stateTaxId", "Inscrição estadual", registry?.stateTaxId),
+        field("tradeName", "Nome fantasia", registry?.tradeName),
+        field("mainContact", "Contato principal", registry?.contactName, { required: true }),
         field("contactRole", "Cargo do contato", null),
-        field("phone", "Telefone", null, { required: true }),
+        field("phone", "Telefone", registry?.phone, { required: true }),
         field("whatsapp", "WhatsApp", null),
-        field("email", "E-mail", null, { required: true }),
-        field("cityState", "Cidade/Estado", null, { required: true }),
+        field("email", "E-mail", registry?.email, { required: true }),
+        field("address", "Endereço", registry?.address),
+        field("cityState", "Cidade/Estado", cityState, { required: true }),
         field("segment", "Segmento de atuação", null),
         field("customerRecurrence", "Cliente novo ou recorrente", null, { required: true }),
         field("commercialAgreement", "Existe contrato ou acordo comercial?", null),
         field("customerSpecProvided", "Cliente forneceu especificação técnica?", null, { required: true }),
-        field("customerNotes", "Informações comerciais relevantes", detail?.notes, { fullWidth: true }),
+        field("customerNotes", "Observações internas (uso interno)", detail?.notes, { fullWidth: true }),
+        field("clientNotes", "Observações ao cliente", detail?.clientNotes, { fullWidth: true }),
       ],
     },
     {
@@ -527,7 +580,7 @@ function buildSections(detail: ProjectDetail | null): ProjectIntakeFormSection[]
         field("estimatedWeight", "Peso estimado", fmtNum(product?.estimatedWeight, " kg")),
         field("mainDimensions", "Dimensões principais", null),
         field("colorFinish", "Cor/acabamento", null),
-        field("application", "Aplicação do produto", null, { required: true }),
+        field("application", "Aplicação do produto", detail?.application, { required: true }),
         field("parentProduct", "Produto pai", null),
         field("childComponent", "Produto filho/componente", null),
         field("purchasedOrManufactured", "Item comprado ou fabricado", null, { required: true }),
@@ -546,7 +599,7 @@ function buildSections(detail: ProjectDetail | null): ProjectIntakeFormSection[]
         field("estimatedConsumption", "Consumo estimado por peça", null),
         field("consumptionUnit", "Unidade de consumo", null),
         field("estimatedLossPercent", "Perda estimada %", null),
-        field("estimatedUnitCost", "Custo estimado unitário", fmtMoney(detail?.costBreakdown?.rawMaterialCost)),
+        field("estimatedUnitCost", "Custo de matéria-prima por unidade (estrutura)", fmtMoney(detail?.costBreakdown?.rawMaterialCost)),
         field("alternativeMaterialAllowed", "Material alternativo permitido?", null),
         field("purchasedComponentsNeeded", "Componentes comprados necessários?", detail?.simulatedItems.some((i) => i.itemType === "COMPONENT") ? "Sim" : null),
         field("manufacturedComponentsNeeded", "Componentes fabricados necessários?", null),
@@ -581,7 +634,8 @@ function buildSections(detail: ProjectDetail | null): ProjectIntakeFormSection[]
         field("partsPerCycle", "Peças por ciclo", null),
         field("setupRequired", "Setup necessário", null),
         field("setupTime", "Tempo de setup (HH)", null),
-        field("directLabor", "Mão de obra direta (HH)", fmtNum(detail?.costBreakdown?.serviceCost ? detail.costBreakdown.serviceCost : null)),
+        field("directLabor", "Mão de obra direta (horas)", fmtNum(laborHours, " h")),
+        field("directLaborCost", "Custo de mão de obra/serviços (R$ por unidade)", fmtMoney(detail?.costBreakdown?.serviceCost || null)),
         field("indirectLabor", "Mão de obra indireta (HH)", null),
         field("externalService", "Serviço externo", null),
         field("internalHourCost", "Custo hora interno", null),
@@ -636,13 +690,24 @@ function buildSections(detail: ProjectDetail | null): ProjectIntakeFormSection[]
         field("currentPrice", "Preço atual", null),
         field("targetMarginOrPrice", "Margem desejada", fmtNum(detail?.targetMarginPercent ?? detail?.projectPricing?.config.defaultMarginPercent, "%"), { required: true }),
         field("desiredMarkup", "Markup desejado", fmtNum(detail?.costBreakdown?.markupPercent, "%")),
-        field("paymentTerms", "Condição de pagamento esperada", null),
-        field("freightIncoterm", "Incoterm/frete", null),
-        field("taxesConsidered", "Impostos considerados", detail?.projectPricing?.config.fiscalRuleId ? "Sim" : null),
+        field("paymentTerms", "Condição de pagamento", detail?.paymentTerms),
+        field(
+          "freightIncoterm",
+          "Frete",
+          isProjectFreightCondition(detail?.freightCondition) ? PROJECT_FREIGHT_LABELS[detail!.freightCondition as "CIF" | "FOB"] : null,
+        ),
+        field(
+          "deliveryTerms",
+          "Prazo / local de entrega",
+          [detail?.deliveryTimeDays != null ? `${detail.deliveryTimeDays} dia(s)` : null, detail?.deliveryLocation]
+            .filter(Boolean)
+            .join(" · ") || null,
+        ),
+        field("taxesConsidered", "Impostos considerados", savedFiscal ? `Sim${fiscalName ? ` — ${fiscalName}` : ""}` : null),
         field("amortizationInPrice", "Amortização embutida no preço?", yesNoFromBool((detail?.molds.length ?? 0) > 0)),
-        field("proposalValidityDays", "Prazo de validade da proposta (dias)", null),
-        field("calculatedUnitCost", "Custo unitário calculado", fmtMoney(detail?.costBreakdown?.unitCost)),
-        field("suggestedPrice", "Preço sugerido calculado", fmtMoney(detail?.costBreakdown?.suggestedPrice ?? detail?.currentVersion?.suggestedPrice)),
+        field("proposalValidityDays", "Prazo de validade da proposta (dias)", fmtNum(detail?.proposalValidityDays)),
+        field("calculatedUnitCost", "Custo final do conjunto (precificação salva)", fmtMoney(totals?.setFinalCost)),
+        field("suggestedPrice", "Preço final do conjunto (precificação salva)", fmtMoney(totals?.setFinalPrice)),
       ],
     },
     {
@@ -651,12 +716,13 @@ function buildSections(detail: ProjectDetail | null): ProjectIntakeFormSection[]
       pageBreakBefore: true,
       fields: [
         field("budgetDeadline", "Data limite para orçamento", null, { required: true }),
+        field("customerDesiredDeadline", "Prazo desejado pelo cliente", fmtDate(detail?.desiredDeadline ? `${detail.desiredDeadline}T12:00:00Z` : null)),
         field("prototypeDesiredDate", "Data desejada para protótipo", null),
         field("sampleDesiredDate", "Data desejada para amostra", null),
         field("productionStartDesired", "Data desejada para início de produção", null),
         field("criticalDeadline", "Prazo do cliente é crítico?", null, { required: true }),
         field("penaltyForDelay", "Existe penalidade por atraso?", null),
-        field("commercialPriority", "Prioridade comercial", null, { required: true }),
+        field("commercialPriority", "Prioridade comercial", projectPriorityLabel(detail?.priority), { required: true }),
       ],
     },
     {
@@ -806,8 +872,9 @@ export function buildBlankProjectIntakeForm(options?: {
 
 export function buildProjectIntakeFormFromDetail(
   detail: ProjectDetail,
-  options?: { generatedAt?: Date; generatedBy?: string | null }
+  options?: { generatedAt?: Date; generatedBy?: string | null } & ProjectIntakeFormContext
 ): ProjectIntakeFormPayload {
+  const ctx: ProjectIntakeFormContext = options ?? {};
   const generatedAt = (options?.generatedAt ?? new Date()).toISOString();
   const pending = listIntakeFormPendingMinimumFields(detail);
   return {
@@ -824,13 +891,13 @@ export function buildProjectIntakeFormFromDetail(
       commercialOwner: detail.commercialOwner,
       statusLabel: PROJECT_STATUS_LABEL[detail.status],
     },
-    sections: buildSections(detail),
+    sections: buildSections(detail, ctx),
     materialsTable: buildMaterialsTable(detail),
-    bomTable: buildBomTable(detail),
+    bomTable: buildBomTable(detail, ctx),
     processesTable: buildProcessesTable(detail),
     moldInvestmentsTable: buildMoldTable(detail),
     additionalCostsTable: buildAdditionalCostsTable(detail),
-    scenariosTable: buildScenariosTable(detail),
+    scenariosTable: buildScenariosTable(detail, ctx),
     milestonesTable: DEFAULT_MILESTONES.map((name) => ({
       milestone: name,
       owner: null,

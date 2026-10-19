@@ -1,5 +1,6 @@
 import React from "react";
 import {
+  Award,
   Briefcase,
   CalendarDays,
   ClipboardCheck,
@@ -33,6 +34,7 @@ export const PEOPLE_PROFILE_TAB_DEFS: { id: PeopleProfileTabId; label: string }[
   { id: "documents", label: "Documentos" },
   { id: "evaluations", label: "Avaliações" },
   { id: "competencies", label: "Competências" },
+  { id: "certificates", label: "Certificados" },
   { id: "absences", label: "Férias & afastamentos" },
   { id: "history", label: "Histórico" },
   { id: "notes", label: "Observações" },
@@ -44,7 +46,7 @@ export const PEOPLE_PROFILE_TAB_DEFS: { id: PeopleProfileTabId; label: string }[
 export const PEOPLE_PROFILE_TAB_GROUPS: { label: string; ids: PeopleProfileTabId[] }[] = [
   { label: "Perfil", ids: ["overview", "personal", "emergency"] },
   { label: "Trabalho", ids: ["professional", "career", "compensation", "benefits"] },
-  { label: "Rotina", ids: ["absences", "epi", "documents", "evaluations", "competencies"] },
+  { label: "Rotina", ids: ["absences", "epi", "documents", "evaluations", "competencies", "certificates"] },
   { label: "Registro", ids: ["history", "notes", "links", "admin"] },
 ];
 
@@ -60,6 +62,7 @@ const TAB_ICONS: Record<PeopleProfileTabId, LucideIcon> = {
   documents: FileText,
   evaluations: ClipboardCheck,
   competencies: GraduationCap,
+  certificates: Award,
   absences: CalendarDays,
   history: History,
   notes: MessageSquare,
@@ -69,7 +72,13 @@ const TAB_ICONS: Record<PeopleProfileTabId, LucideIcon> = {
 
 export function visibleProfileTabs(
   caps: PeopleProfileCapabilities | null,
-  extras?: { canViewLinks?: boolean; canViewAdmin?: boolean; canViewCompetencies?: boolean }
+  extras?: {
+    canViewLinks?: boolean;
+    canViewAdmin?: boolean;
+    canViewCompetencies?: boolean;
+    /** Certificados emitidos pelos treinamentos (Competências › Treinamentos, módulo ligado). */
+    canViewTrainingCertificates?: boolean;
+  }
 ): PeopleProfileTabId[] {
   const ids: PeopleProfileTabId[] = ["overview"];
   if (!caps || caps.canViewProfessional) ids.push("professional");
@@ -83,6 +92,8 @@ export function visibleProfileTabs(
   if (caps?.canViewEvaluations) ids.push("evaluations");
   // Módulo Competências: permissão própria; o escopo hierárquico é aplicado pela API do módulo.
   if (extras?.canViewCompetencies) ids.push("competencies");
+  // Certificados: anexados (permissão de documentos) e/ou emitidos pelos treinamentos.
+  if (caps?.canViewDocuments || extras?.canViewTrainingCertificates) ids.push("certificates");
   if (!caps || caps.canViewAbsences) ids.push("absences");
   if (!caps || caps.canViewHistory) ids.push("history");
   if (!caps || caps.canViewNotes) ids.push("notes");

@@ -1,12 +1,15 @@
 import React, { memo, useCallback } from "react";
 import { Loader2 } from "lucide-react";
 import { formatCurrency } from "@/src/lib/utils";
+import { formatPmpDays } from "@/src/lib/purchasing/purchasePaymentTerms";
+import {
+  PAYMENT_TERMS_ANALYSIS_BASE_LABEL,
+  type PaymentTermsCellDto,
+} from "@/src/lib/purchasing/purchasePaymentTermsAnalysis";
 import type { NomusPurchaseOrderListRowDto } from "@/src/lib/nomus/nomusPurchaseOrder360";
 import {
   formatNomusPurchaseOrderListInvoiceCell,
   formatNomusPurchaseOrderListSupplier,
-  nomusPurchaseOrderFinancialLabel,
-  nomusPurchaseOrderFinancialTone,
   nomusPurchaseOrderStageLabel,
   nomusPurchaseOrderStageTone,
 } from "@/src/lib/nomus/nomusPurchaseOrderUi";
@@ -19,6 +22,48 @@ function formatDate(value: string | null): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "—";
   return date.toLocaleDateString("pt-BR");
+}
+
+export type PaymentTermsSort = "pmp_asc" | "pmp_desc" | null;
+
+function formatBaseDate(key: string | null): string {
+  if (!key) return "—";
+  const [y, m, d] = key.split("-");
+  return `${d}/${m}/${y}`;
+}
+
+/** Tooltip: origem e método do cálculo (data-base = emissão do pedido; não é condição contratual). */
+export function paymentTermsCellTitle(cell: PaymentTermsCellDto): string {
+  if (cell.status === "NOT_IDENTIFIED") {
+    return `Prazo não identificado: ${cell.reasonLabel ?? "dados insuficientes"} Não é tratado como à vista.`;
+  }
+  return [
+    `${PAYMENT_TERMS_ANALYSIS_BASE_LABEL} (${formatBaseDate(cell.baseDate)}).`,
+    `PMP = Σ(valor da parcela × dias) ÷ Σ(valor das parcelas); ${cell.installmentCount} parcela(s) planejada(s) no Nomus.`,
+    "Data-base de emissão: não é condição contratual confirmada.",
+    ...cell.warnings,
+  ].join("\n");
+}
+
+/** Célula "Prazo de Pagamento": condição observada + PMP; meta só aparece se configurada. */
+export function PaymentTermsCell({ cell }: { cell: PaymentTermsCellDto }) {
+  return (
+    <div className="npo-payment-terms-cell" title={paymentTermsCellTitle(cell)} data-testid="npo-list-payment-terms">
+      <div
+        className={cell.status === "IDENTIFIED" ? "font-mono text-xs font-medium tabular-nums" : "text-xs text-muted-foreground"}
+      >
+        {cell.label}
+      </div>
+      <div className="so-cell-meta tabular-nums">
+        {formatPmpDays(cell.pmpDays)}
+        {cell.gapDays != null ? (
+          <span className={cell.gapDays < 0 ? "ml-1 text-amber-700" : "ml-1"} data-testid="npo-list-payment-terms-gap">
+            · {cell.gapDays < 0 ? `−${Math.abs(cell.gapDays)} d da meta` : "na meta"}
+          </span>
+        ) : null}
+      </div>
+    </div>
+  );
 }
 
 type RowProps = {
@@ -89,9 +134,7 @@ const NomusPurchaseOrderListTableRow = memo(function NomusPurchaseOrderListTable
         </span>
       </td>
       <td>
-        <OverlayBadge tone={nomusPurchaseOrderFinancialTone(row.financialStatus)}>
-          {nomusPurchaseOrderFinancialLabel(row.financialStatus)}
-        </OverlayBadge>
+        <PaymentTermsCell cell={row.paymentTerms} />
       </td>
       <td className="so-value-cell font-medium">
         {row.plannedInstallmentsTotal == null
@@ -118,12 +161,17 @@ export const NomusPurchaseOrderListTable = memo(function NomusPurchaseOrderListT
   loading,
   selectedOrderId,
   onOpenDetail,
+  sort = null,
+  onSortChange,
 }: {
   rows: NomusPurchaseOrderListRowDto[];
   loading: boolean;
   selectedOrderId: string | null;
   onOpenDetail: (id: string) => void;
+  sort?: PaymentTermsSort;
+  onSortChange?: (next: PaymentTermsSort) => void;
 }) {
+  const nextSort: PaymentTermsSort = sort === null ? "pmp_desc" : sort === "pmp_desc" ? "pmp_asc" : null;
   return (
     <div className="npo-list-section sales-order-list-section" data-testid="nomus-purchase-order-list-table-wrap">
       <div className="sales-order-list-grid-title">Pedidos de compra Nomus</div>
@@ -141,7 +189,25 @@ export const NomusPurchaseOrderListTable = memo(function NomusPurchaseOrderListT
               <th>Entrega</th>
               <th>Situação</th>
               <th>NF</th>
-              <th>Financeiro</th>
+              <th aria-sort={sort === "pmp_asc" ? "ascending" : sort === "pmp_desc" ? "descending" : "none"}>
+                {onSortChange ? (
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-1"
+                    style={{ font: "inherit", textTransform: "inherit", letterSpacing: "inherit", color: "inherit" }}
+                    onClick={() => onSortChange(nextSort)}
+                    title="Ordenar pelo PMP (dias). Não identificados ficam ao final."
+                    data-testid="npo-list-sort-pmp"
+                  >
+                    Prazo de Pagamento
+                    <span aria-hidden className="text-muted-foreground">
+                      {sort === "pmp_desc" ? "↓" : sort === "pmp_asc" ? "↑" : "↕"}
+                    </span>
+                  </button>
+                ) : (
+                  "Prazo de Pagamento"
+                )}
+              </th>
               <th className="so-value-cell">Total planejado</th>
               <th className="so-value-cell">Itens</th>
               <th>Ações</th>

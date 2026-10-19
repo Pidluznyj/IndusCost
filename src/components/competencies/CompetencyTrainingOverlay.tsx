@@ -7,12 +7,14 @@ import type { CompetencyDto, CompetencyMatrixResponse } from "@/src/lib/competen
 type CompetencyMatrixRow = CompetencyMatrixResponse["rows"][number];
 import { CompetencyModalFrame } from "./CompetencyModalFrame";
 import { ChipToggle, SegmentedControl } from "./competencyUi";
+import { CERTIFICATE_INSTRUCTOR_MAX } from "@/src/lib/competencies/trainingCertificate";
+import { TrainingSyllabusEditor, draftToSyllabus, type SyllabusDraftRow } from "./certificate/TrainingSyllabusEditor";
 
 export type TrainingPreset = { competencyId?: string; title?: string; participantIds?: string[] };
 
 const MODALITY_OPTIONS = TRAINING_MODALITIES.map((m) => ({ value: m, label: TRAINING_MODALITY_LABELS[m] }));
 
-/** Novo treinamento — nasce "Agendado". Ponto vermelho = abaixo do mínimo (célula da matriz). */
+/** Novo treinamento — nasce "Agendado". Participantes são os colaboradores graváveis do escopo. */
 export function CompetencyTrainingOverlay({
   open,
   preset,
@@ -37,6 +39,8 @@ export function CompetencyTrainingOverlay({
   const [validity, setValidity] = useState("12");
   const [modality, setModality] = useState<TrainingModality>("IN_PERSON");
   const [participants, setParticipants] = useState<string[]>([]);
+  const [instructor, setInstructor] = useState("");
+  const [syllabus, setSyllabus] = useState<SyllabusDraftRow[]>([]);
 
   useEffect(() => {
     if (!open) return;
@@ -47,13 +51,16 @@ export function CompetencyTrainingOverlay({
     setValidity("12");
     setModality("IN_PERSON");
     setParticipants(preset?.participantIds ?? []);
+    setInstructor("");
+    setSyllabus([]);
   }, [open, preset, competencies, today]);
 
   const workloadHours = Number(workload);
   const validityMonths = Number(validity);
   const numbersOk =
     Number.isInteger(workloadHours) && workloadHours >= 0 && Number.isInteger(validityMonths) && validityMonths >= 0;
-  const canSave = Boolean(title.trim() && competencyId && startDate && participants.length > 0 && numbersOk);
+  const syllabusCheck = draftToSyllabus(syllabus, numbersOk ? workloadHours : 0);
+  const canSave = Boolean(title.trim() && competencyId && startDate && participants.length > 0 && numbersOk && syllabusCheck.ok);
 
   const eligible = rows.filter((r) => r.writable);
   const toggle = (id: string) =>
@@ -68,6 +75,8 @@ export function CompetencyTrainingOverlay({
       startDate,
       validityMonths,
       participantIds: participants,
+      instructorName: instructor.trim() || null,
+      syllabus: syllabusCheck.ok ? syllabusCheck.value : [],
     });
     onSaved("Treinamento agendado");
   };
@@ -115,28 +124,35 @@ export function CompetencyTrainingOverlay({
       </div>
       <div>
         <p className="mb-1.5 text-xs font-semibold">
-          Participantes <span className="font-normal text-muted-foreground">· ponto vermelho = abaixo do mínimo</span>
+          Participantes
         </p>
         {eligible.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Nenhum colaborador alocado em posto na sua equipe.</p>
+          <p className="text-sm text-muted-foreground">Nenhum colaborador na sua equipe.</p>
         ) : (
           <div className="flex flex-wrap gap-2" data-testid="training-participants">
-            {eligible.map((r) => {
-              const cell = r.cells.find((c) => c.competencyId === competencyId);
-              return (
-                <ChipToggle
-                  key={r.employeeId}
-                  label={r.employeeName}
-                  selected={participants.includes(r.employeeId)}
-                  flagged={Boolean(cell?.belowMinimum)}
-                  flagTitle="Abaixo do mínimo do posto"
-                  onToggle={() => toggle(r.employeeId)}
-                />
-              );
-            })}
+            {eligible.map((r) => (
+              <ChipToggle
+                key={r.employeeId}
+                label={r.employeeName}
+                selected={participants.includes(r.employeeId)}
+                onToggle={() => toggle(r.employeeId)}
+              />
+            ))}
           </div>
         )}
       </div>
+      <OverlayField label="Instrutor responsável" description="Opcional. Assina o certificado ao lado do signatário da empresa.">
+        {(p) => (
+          <OverlayInput
+            {...p}
+            value={instructor}
+            maxLength={CERTIFICATE_INSTRUCTOR_MAX}
+            onChange={(e) => setInstructor(e.target.value)}
+            data-testid="training-instructor"
+          />
+        )}
+      </OverlayField>
+      <TrainingSyllabusEditor rows={syllabus} onChange={setSyllabus} workloadHours={numbersOk ? workloadHours : 0} />
     </CompetencyModalFrame>
   );
 }

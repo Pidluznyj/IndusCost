@@ -5,6 +5,7 @@ import {
   type EmployeesDashboardEmployeeRow,
   type EmployeesDashboardSummary,
 } from "@/src/lib/employeesDashboardSummary.js";
+import { businessTodayIso } from "@/src/lib/competencies/competencyDomain.js";
 
 export async function loadEmployeesDashboardSummary(
   prisma: PrismaClient,
@@ -27,6 +28,7 @@ export async function loadEmployeesDashboardSummary(
       productivity: true,
       admissionDate: true,
       terminationDate: true,
+      terminationReason: true,
       costCenterId: true,
       departmentId: true,
       managerId: true,
@@ -72,6 +74,7 @@ export async function loadEmployeesDashboardSummary(
     productivity: emp.productivity,
     admissionDate: emp.admissionDate,
     terminationDate: emp.terminationDate,
+    terminationReason: emp.terminationReason,
     costCenterId: emp.costCenterId,
     departmentId: emp.departmentId,
     managerId: emp.managerId,
@@ -96,5 +99,6 @@ export async function loadEmployeesDashboardSummary(
     employees: rows,
     filters,
     includeCompensation: opts.includeCompensation,
+    todayIso: businessTodayIso(new Date()),
   });
 }

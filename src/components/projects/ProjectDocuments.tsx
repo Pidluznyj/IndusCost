@@ -1,5 +1,6 @@
 import React from "react";
 import { ProjectIntakeActions } from "@/src/components/projects/ProjectIntakeActions";
+import { ProjectIssuedDocumentsPanel } from "@/src/components/projects/documents/ProjectIssuedDocumentsPanel";
 
 type Props = {
   canManage: boolean;
@@ -24,10 +25,13 @@ export function ProjectDocuments({ canManage, projectId }: Props) {
           <p>
             Use a <strong>Ficha rápida</strong> em reuniões para marcar tipo, entregáveis e estimativas
             preliminares. A <strong>Ficha completa</strong> reúne o dossiê detalhado. A{" "}
-            <strong>planilha modelo</strong> prepara dados para preenchimento offline e futura importação.
+            <strong>planilha modelo</strong> traz os dados reais do projeto (o exemplo ilustrativo fica em
+            aba separada). Todos usam a precificação salva e podem ser emitidos com número e revisão.
           </p>
         </div>
       ) : null}
+
+      {projectId ? <ProjectIssuedDocumentsPanel projectId={projectId} canManage={canManage} /> : null}
 
       <div className="rounded-xl border border-dashed border-border bg-muted/20 px-6 py-12 text-center">
         <p className="text-sm font-medium">Repositório de anexos em preparação</p>

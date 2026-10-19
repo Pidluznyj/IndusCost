@@ -1,3 +1,10 @@
+import { formatTaxId } from "./projectsCustomerLink.js";
+import { documentUserNotes } from "./projectsDocumentCodes.js";
+import {
+  buildClientCommercialTerms,
+  isProjectFreightCondition,
+  proposalValidUntil,
+} from "./projectsCommercialTerms.js";
 import {
   buildProjectAmortizationTargets,
   roundProjectMoney,
@@ -56,20 +63,32 @@ export function isProjectClientReportPath(pathname: string): boolean {
   return /\/projects\/[^/]+\/client-report\/?$/.test(pathname.replace(/\/+$/, ""));
 }
 
+/**
+ * Termos para o CLIENTE: só condições comerciais definidas no projeto e as observações ao
+ * cliente. `detail.notes` é interno e nunca entra aqui. Nada é preenchido por padrão.
+ */
 function resolveCommercialTerms(detail: ProjectDetail): ProjectClientReportCommercialTerms {
+  const terms = buildClientCommercialTerms({
+    proposalValidityDays: detail.proposalValidityDays ?? null,
+    paymentTerms: detail.paymentTerms ?? null,
+    deliveryTimeDays: detail.deliveryTimeDays ?? null,
+    deliveryLocation: detail.deliveryLocation ?? null,
+    freightCondition: isProjectFreightCondition(detail.freightCondition) ? detail.freightCondition : null,
+    clientNotes: detail.clientNotes ?? null,
+  });
   return {
-    paymentTerms: null,
-    deliveryTerms: null,
-    proposalValidity: null,
-    freightTerms: null,
+    paymentTerms: terms.paymentTerms,
+    deliveryTerms: terms.deliveryTerms,
+    proposalValidity: terms.proposalValidity,
+    freightTerms: terms.freightTerms,
     exclusivity: null,
-    notes: detail.notes?.trim() || null,
+    notes: terms.clientNotes,
   };
 }
 
 function resolveProductNotes(detail: ProjectDetail, productId: string): string | null {
   const product = detail.simulatedProducts.find((row) => row.id === productId);
-  return product?.notes?.trim() || null;
+  return documentUserNotes(product?.notes);
 }
 
 function resolveProductUnit(detail: ProjectDetail, productId: string): string {
@@ -136,7 +155,7 @@ function rebuildProjectClientReportSummary(
   const totalProposalValue =
     finalSetPrice != null && payload.summary.estimatedQuantity != null
       ? roundProjectMoney(finalSetPrice * payload.summary.estimatedQuantity)
-      : finalSetPrice;
+      : null; // sem volume mensal não há valor mensal (não repete o preço do conjunto)
 
   return {
     ...payload,
@@ -219,7 +238,8 @@ export function computeProjectClientReportFinalSetPrice(
 
 export function buildProjectClientReport(
   detail: ProjectDetail,
-  savedQuantities?: Map<string, number> | Record<string, number>
+  savedQuantities?: Map<string, number> | Record<string, number>,
+  options?: { issuerName?: string | null; issuedAt?: string }
 ): ProjectClientReportPayload {
   const snapshot = buildProjectCostSnapshot(detail, { quantitiesByTargetId: savedQuantities });
   const products = buildProjectClientReportProducts(detail, savedQuantities);
@@ -233,14 +253,15 @@ export function buildProjectClientReport(
   const totalProposalValue =
     finalSetPrice != null && estimatedQuantity != null
       ? roundProjectMoney(finalSetPrice * estimatedQuantity)
-      : finalSetPrice;
+      : null; // sem volume mensal não há valor mensal (não repete o preço do conjunto)
 
   const productsCount = products.length;
   const finalSetPriceLabel = resolveProjectCostSetPriceLabel(productsCount);
   const pricingPending = snapshot.totals.pricingPending;
 
+  const issuedAt = options?.issuedAt ?? new Date().toISOString();
   return {
-    generatedAt: new Date().toISOString(),
+    generatedAt: issuedAt,
     reportVersion: PROJECT_CLIENT_REPORT_VERSION,
     title: PROJECT_CLIENT_REPORT_TITLE,
     disclaimer: PROJECT_CLIENT_REPORT_DISCLAIMER,
@@ -250,10 +271,11 @@ export function buildProjectClientReport(
       code: detail.code,
       name: detail.title,
       customerName: detail.customerName?.trim() || PROJECT_CLIENT_REPORT_NOT_INFORMED,
+      customerDocument: detail.customerDocument ? formatTaxId(detail.customerDocument) : null,
       commercialResponsibleName: detail.commercialOwner?.trim() || null,
-      issuedAt: new Date().toISOString(),
-      validUntil: null,
-      issuerName: PROJECT_CLIENT_REPORT_ISSUER_NAME,
+      issuedAt,
+      validUntil: proposalValidUntil(issuedAt, detail.proposalValidityDays ?? null),
+      issuerName: options?.issuerName?.trim() || PROJECT_CLIENT_REPORT_ISSUER_NAME,
     },
     products,
     summary: {

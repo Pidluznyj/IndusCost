@@ -417,12 +417,8 @@ function buildExecutiveSummarySlide(
       },
       { label: "Itens no conjunto", value: String(payload.summary.productsCount) },
       {
-        label: "Condição / amortização",
-        value: shortOr(
-          payload.commercialTerms.paymentTerms ??
-            (payload.commercialTerms.notes ? truncate(payload.commercialTerms.notes, 36) : null),
-          "Valores finais já incluem composição do projeto"
-        ),
+        label: "Condição de pagamento",
+        value: shortOr(payload.commercialTerms.paymentTerms, "A definir"),
       },
     ],
     bodyY + 0.2,
@@ -600,7 +596,7 @@ function buildInvestmentSlide(
   });
   if (payload.summary.totalProposalValue != null) {
     slide.addText(
-      `Total estimado (${payload.summary.estimatedQuantity ?? "—"} un.): ${formatClientReportMoney(payload.summary.totalProposalValue)}`,
+      `Valor mensal estimado (volume mensal ${payload.summary.estimatedQuantity ?? "—"}): ${formatClientReportMoney(payload.summary.totalProposalValue)}`,
       {
         x: MARGIN_X + 0.35,
         y: bodyY + 1.12,
@@ -622,7 +618,7 @@ function buildInvestmentSlide(
         value: formatClientReportMoney(payload.summary.finalSetPrice),
       },
       {
-        label: "Total estimado",
+        label: "Valor mensal estimado",
         value:
           payload.summary.totalProposalValue != null
             ? formatClientReportMoney(payload.summary.totalProposalValue)
@@ -661,17 +657,17 @@ function buildCommercialTermsSlide(
             (payload.project.validUntil ? formatClientReportDate(payload.project.validUntil) : null)
         ),
       },
-      { label: "Prazo", value: shortOr(payload.commercialTerms.deliveryTerms) },
+      { label: "Entrega", value: shortOr(payload.commercialTerms.deliveryTerms, "A definir") },
       { label: "Exclusividade", value: shortOr(payload.commercialTerms.exclusivity, "Não informada") },
       {
-        label: "Amortização",
-        value: shortOr(payload.commercialTerms.paymentTerms, "Incluída no preço final"),
+        label: "Pagamento",
+        value: shortOr(payload.commercialTerms.paymentTerms, "A definir"),
       },
       {
-        label: "Volume estimado",
+        label: "Volume mensal estimado",
         value:
           payload.summary.estimatedQuantity != null
-            ? `${payload.summary.estimatedQuantity} un.`
+            ? String(payload.summary.estimatedQuantity)
             : TBD,
       },
     ].slice(0, 4),

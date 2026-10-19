@@ -1,6 +1,14 @@
 import { buildProjectEngineeringTree, type ProjectEngineeringTreeNode } from "./projectsEngineeringTree.js";
 import { PROJECT_STATUS_LABEL, PROJECT_TYPE_LABEL } from "./projectsExecutiveReport.js";
 import { isLaborStructureLine } from "./projectsUiUtils.js";
+import { documentUserNotes, resolveStructureLineCode, type ProjectEntityCodes } from "./projectsDocumentCodes.js";
+import { projectPriorityLabel } from "./projectsCommercialTerms.js";
+
+/** Dados de apoio carregados no servidor (códigos oficiais e quantidades por conjunto). */
+export type ProjectQuickFormContext = {
+  entityCodes?: ProjectEntityCodes | null;
+  quantitiesByTargetId?: Record<string, number>;
+};
 import type {
   ProjectDetail,
   ProjectSimulatedItemRow,
@@ -367,19 +375,38 @@ function mapSimulatedProductDeliverableType(projectType: ProjectType | null | un
   }
 }
 
-export function deliverableProductsFromDetail(detail: ProjectDetail | null): QuickDeliverableProductRow[] {
-  if (!detail || detail.simulatedProducts.length === 0) {
-    return blankDeliverableProducts();
-  }
-  return detail.simulatedProducts.map((product, index) => ({
+export function deliverableProductsFromDetail(
+  detail: ProjectDetail | null,
+  ctx: ProjectQuickFormContext = {},
+): QuickDeliverableProductRow[] {
+  if (!detail) return blankDeliverableProducts();
+  // Quantidade prevista = quantidade por conjunto salva; sem gravação fica em branco (não presume 1).
+  const qty = (id: string) => {
+    const q = ctx.quantitiesByTargetId?.[id];
+    return q != null && Number.isInteger(q) && q >= 1 ? String(q) : null;
+  };
+  const rows: QuickDeliverableProductRow[] = detail.simulatedProducts.map((product, index) => ({
     item: index + 1,
     codeSku: strOrNull(product.provisionalCode),
     name: strOrNull(product.description),
     type: mapSimulatedProductDeliverableType(detail.projectType),
     unit: strOrNull(product.unit) ?? "UN",
-    plannedQuantity: "1",
-    notes: strOrNull(product.notes),
+    plannedQuantity: qty(product.id),
+    notes: documentUserNotes(product.notes),
   }));
+  // Produtos oficiais importados também são entregáveis (SKU oficial, não o id interno).
+  for (const [rootId, official] of Object.entries(detail.snapshotRootProducts ?? {})) {
+    rows.push({
+      item: rows.length + 1,
+      codeSku: strOrNull(official.sku),
+      name: strOrNull(official.name),
+      type: "Produto alterado",
+      unit: "UN",
+      plannedQuantity: qty(rootId),
+      notes: "Produto oficial importado no projeto",
+    });
+  }
+  return rows.length > 0 ? rows : blankDeliverableProducts();
 }
 
 function mapStructureLineToQuickType(line: ProjectStructureLineRow): string {
@@ -409,17 +436,18 @@ function structureUnitForLine(line: ProjectStructureLineRow): string {
 
 function codeFromStructureLine(
   line: ProjectStructureLineRow,
-  simulatedItems: ProjectSimulatedItemRow[]
+  simulatedItems: ProjectSimulatedItemRow[],
+  codes: ProjectEntityCodes | null
 ): string | null {
-  if (line.simulatedItemId) {
-    const item = simulatedItems.find((i) => i.id === line.simulatedItemId);
-    return strOrNull(item?.provisionalCode);
-  }
-  return null;
+  return resolveStructureLineCode(line, simulatedItems, codes);
 }
 
-function lineItemKey(line: ProjectStructureLineRow, simulatedItems: ProjectSimulatedItemRow[]): string {
-  return codeFromStructureLine(line, simulatedItems) ?? line.descriptionSnapshot.trim();
+function lineItemKey(
+  line: ProjectStructureLineRow,
+  simulatedItems: ProjectSimulatedItemRow[],
+  codes: ProjectEntityCodes | null
+): string {
+  return codeFromStructureLine(line, simulatedItems, codes) ?? line.descriptionSnapshot.trim();
 }
 
 function mergeStructureNotes(...parts: Array<string | null | undefined>): string | null {
@@ -433,7 +461,8 @@ function structureRowFromLine(
   level: number,
   parentItem: string,
   simulatedItems: ProjectSimulatedItemRow[],
-  extraNotes: string | null = null
+  extraNotes: string | null = null,
+  codes: ProjectEntityCodes | null = null
 ): QuickStructureRow {
   const quickType = mapStructureLineToQuickType(line);
   const isService = quickType === "Serviço";
@@ -442,13 +471,13 @@ function structureRowFromLine(
     level,
     parentItem,
     type: quickType,
-    code: codeFromStructureLine(line, simulatedItems),
+    code: codeFromStructureLine(line, simulatedItems, codes),
     description: strOrNull(line.descriptionSnapshot),
     unit: structureUnitForLine(line),
     quantityPerUnit: isService ? null : fmtQty(line.quantity),
     serviceHours: isService ? fmtQty(line.quantity) : null,
     estimatedCost: isService ? null : fmtMoney(line.unitCostSnapshot > 0 ? line.unitCostSnapshot : null),
-    notes: mergeStructureNotes(line.notes, extraNotes),
+    notes: mergeStructureNotes(documentUserNotes(line.notes), extraNotes),
   };
 }
 
@@ -478,7 +507,8 @@ function appendStructureTreeRows(
   productId: string,
   product: { description: string; provisionalCode: string | null; unit: string },
   simulatedItems: ProjectSimulatedItemRow[],
-  rows: QuickStructureRow[]
+  rows: QuickStructureRow[],
+  codes: ProjectEntityCodes | null
 ): void {
   const productRootKey = strOrNull(product.provisionalCode) ?? productDeliverable;
   rows.push({
@@ -500,7 +530,7 @@ function appendStructureTreeRows(
   );
   const lineKeyById = new Map<string, string>();
   for (const line of scopedLines) {
-    lineKeyById.set(line.id, lineItemKey(line, simulatedItems));
+    lineKeyById.set(line.id, lineItemKey(line, simulatedItems, codes));
   }
 
   const tree = buildProjectEngineeringTree(
@@ -525,7 +555,7 @@ function appendStructureTreeRows(
         lineKeyById
       );
       rows.push(
-        structureRowFromLine(productDeliverable, line, level, parentItem, simulatedItems, extraNotes)
+        structureRowFromLine(productDeliverable, line, level, parentItem, simulatedItems, extraNotes, codes)
       );
       walk(node.children, depth + 1);
     }
@@ -534,7 +564,10 @@ function appendStructureTreeRows(
   walk(tree.children, 1);
 }
 
-export function structureRowsFromDetail(detail: ProjectDetail | null): QuickStructureRow[] {
+export function structureRowsFromDetail(
+  detail: ProjectDetail | null,
+  codes: ProjectEntityCodes | null = null
+): QuickStructureRow[] {
   if (!detail) return blankStructureRows();
 
   const rows: QuickStructureRow[] = [];
@@ -548,7 +581,8 @@ export function structureRowsFromDetail(detail: ProjectDetail | null): QuickStru
         product.id,
         product,
         detail.simulatedItems,
-        rows
+        rows,
+        codes
       );
     }
   } else if (detail.structureLines.length > 0) {
@@ -557,7 +591,7 @@ export function structureRowsFromDetail(detail: ProjectDetail | null): QuickStru
     const orphanLines = detail.structureLines.filter((line) => line.snapshotRootProductId == null);
     const lineKeyById = new Map<string, string>();
     for (const line of orphanLines) {
-      lineKeyById.set(line.id, lineItemKey(line, detail.simulatedItems));
+      lineKeyById.set(line.id, lineItemKey(line, detail.simulatedItems, codes));
     }
 
     rows.push({
@@ -583,7 +617,7 @@ export function structureRowsFromDetail(detail: ProjectDetail | null): QuickStru
         lineKeyById
       );
       rows.push(
-        structureRowFromLine(productDeliverable, line, level, parentItem, detail.simulatedItems, extraNotes)
+        structureRowFromLine(productDeliverable, line, level, parentItem, detail.simulatedItems, extraNotes, codes)
       );
     }
   } else if (detail.simulatedItems.length > 0) {
@@ -626,7 +660,7 @@ export function structureRowsFromDetail(detail: ProjectDetail | null): QuickStru
         quantityPerUnit: isService ? null : null,
         serviceHours: null,
         estimatedCost: fmtMoney(item.estimatedUnitCost ?? item.quotedUnitCost),
-        notes: strOrNull(item.notes),
+        notes: documentUserNotes(item.notes),
       });
     }
   }
@@ -673,7 +707,7 @@ export function buildBlankQuickIntakeForm(options?: { generatedBy?: string | nul
 
 export function buildQuickIntakeFormFromDetail(
   detail: ProjectDetail | null,
-  options?: { generatedBy?: string | null }
+  options?: { generatedBy?: string | null; generatedAt?: Date } & ProjectQuickFormContext
 ): ProjectIntakeQuickFormPayload {
   const product = detail?.simulatedProducts[0] ?? null;
   const mold = detail?.molds[0] ?? null;
@@ -683,7 +717,7 @@ export function buildQuickIntakeFormFromDetail(
   return {
     mode: detail ? "prefilled" : "blank",
     title: PROJECT_INTAKE_QUICK_FORM_TITLE,
-    generatedAt: new Date().toISOString(),
+    generatedAt: (options?.generatedAt ?? new Date()).toISOString(),
     generatedBy: options?.generatedBy ?? null,
     header: {
       projectName: strOrNull(detail?.title),
@@ -691,8 +725,8 @@ export function buildQuickIntakeFormFromDetail(
       date: fmtDate(detail?.createdAt ?? new Date().toISOString()),
       commercialOwner: strOrNull(detail?.commercialOwner),
       technicalOwner: strOrNull(detail?.technicalOwner),
-      desiredDeadline: null,
-      priority: null,
+      desiredDeadline: fmtDate(detail?.desiredDeadline ? `${detail.desiredDeadline}T12:00:00Z` : null),
+      priority: projectPriorityLabel(detail?.priority),
       status: detail ? PROJECT_STATUS_LABEL[detail.status] : null,
     },
     projectTypes: checklist(PROJECT_INTAKE_QUICK_PROJECT_TYPES, typeLabel),
@@ -704,7 +738,7 @@ export function buildQuickIntakeFormFromDetail(
       { label: "Produto/componente", value: primaryProductName(detail) },
       { label: "Código existente, se houver", value: strOrNull(product?.provisionalCode) },
       { label: "Produto base para copiar, se houver", value: officialSkus(detail) },
-      { label: "Aplicação", value: null },
+      { label: "Aplicação", value: strOrNull(detail?.application) },
       { label: "Unidade", value: strOrNull(product?.unit) ?? "UN" },
       { label: "Volume mensal estimado", value: fmtNum(detail?.expectedMonthlyVolume) },
       {
@@ -718,11 +752,11 @@ export function buildQuickIntakeFormFromDetail(
       },
     ],
     estimateItems: estimateRowsFromDetail(detail),
-    deliverableProducts: deliverableProductsFromDetail(detail),
+    deliverableProducts: deliverableProductsFromDetail(detail, options ?? {}),
     structureInstruction: PROJECT_INTAKE_QUICK_STRUCTURE_INSTRUCTION,
     structureLevelHint: PROJECT_INTAKE_QUICK_STRUCTURE_LEVEL_HINT,
     structureContinuationNote: detail ? null : PROJECT_INTAKE_QUICK_STRUCTURE_CONTINUATION_NOTE,
-    structureRows: structureRowsFromDetail(detail),
+    structureRows: structureRowsFromDetail(detail, options?.entityCodes ?? null),
     mold: {
       requiresTooling: detail ? (detail.molds.length > 0 ? true : null) : null,
       types: checklist(PROJECT_INTAKE_QUICK_MOLD_TYPES, mold ? "Molde novo" : null),

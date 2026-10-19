@@ -1,3 +1,4 @@
+import { LEAVE_JUSTIFICATION_MIN, LEAVE_RULES, isLeaveType, type LeaveInsight } from "@/src/lib/employeeLifecycle";
 import React, { useEffect, useRef, useState } from "react";
 import {
   HR_ABSENCE_STATUS_LABELS,
@@ -13,7 +14,7 @@ import {
   PEOPLE_CAREER_RECLASSIFIABLE_EVENT_TYPES,
   type PeopleCareerPostEventType,
 } from "@/src/lib/peopleProfileTypes";
-import { CONTRACT_TYPE_OPTIONS, EPI_DELIVERY_SIZE_SUGGESTIONS } from "@/src/lib/employeeHrUi";
+import { CONTRACT_TYPE_OPTIONS } from "@/src/lib/employeeHrUi";
 import {
   profileFetchJson,
   profilePatchJson,
@@ -813,6 +814,10 @@ export type AbsenceRecord = {
   status: string;
   reason: string | null;
   notes?: string | null;
+  extendedLicense?: boolean;
+  inssBenefitNumber?: string | null;
+  catNumber?: string | null;
+  legal?: LeaveInsight | null;
 };
 
 export function AbsencesManageForm({
@@ -838,6 +843,10 @@ export function AbsencesManageForm({
   const [status, setStatus] = useState<string>(record?.status || "SCHEDULED");
   const [reason, setReason] = useState(record?.reason ?? "");
   const [notes, setNotes] = useState(record?.notes ?? "");
+  const [extendedLicense, setExtendedLicense] = useState(record?.extendedLicense ?? false);
+  const [inssBenefitNumber, setInssBenefitNumber] = useState(record?.inssBenefitNumber ?? "");
+  const [catNumber, setCatNumber] = useState(record?.catNumber ?? "");
+  const leaveRule = isLeaveType(type) ? LEAVE_RULES[type] : null;
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ok, setOk] = useState(false);
@@ -851,6 +860,9 @@ export function AbsencesManageForm({
     status,
     reason: trimOrNull(reason),
     notes: trimOrNull(notes),
+    extendedLicense,
+    inssBenefitNumber: trimOrNull(inssBenefitNumber),
+    catNumber: trimOrNull(catNumber),
   });
   const initialPayload = useInitialPayload(isEdit, buildEditPayload);
 
@@ -885,6 +897,9 @@ export function AbsencesManageForm({
               status,
               reason: trimOrNull(reason),
               notes: trimOrNull(notes),
+              extendedLicense,
+              inssBenefitNumber: trimOrNull(inssBenefitNumber),
+              catNumber: trimOrNull(catNumber),
             });
             setOk(true);
             setReason("");
@@ -956,9 +971,38 @@ export function AbsencesManageForm({
             ))}
           </select>
         </Field>
-        <Field label="Motivo">
-          <input className={PROFILE_INPUT_CLASS} value={reason} onChange={(e) => setReason(e.target.value)} />
+        {leaveRule?.extendedDays ? (
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={extendedLicense} onChange={(e) => setExtendedLicense(e.target.checked)} />
+            {leaveRule.extendedLabel} ({leaveRule.extendedDays} dias no total)
+          </label>
+        ) : null}
+        {type === "SICK_LEAVE" || type === "ACCIDENT" ? (
+          <Field label="Nº do benefício INSS">
+            <input className={PROFILE_INPUT_CLASS} value={inssBenefitNumber} maxLength={40} onChange={(e) => setInssBenefitNumber(e.target.value)} />
+          </Field>
+        ) : null}
+        {type === "ACCIDENT" ? (
+          <Field label="Nº da CAT">
+            <input className={PROFILE_INPUT_CLASS} value={catNumber} maxLength={40} onChange={(e) => setCatNumber(e.target.value)} />
+          </Field>
+        ) : null}
+        <Field label={leaveRule ? "Justificativa (obrigatória)" : "Motivo"}>
+          <textarea
+            rows={leaveRule ? 3 : 1}
+            className={PROFILE_INPUT_CLASS}
+            value={reason}
+            required={Boolean(leaveRule)}
+            minLength={leaveRule ? LEAVE_JUSTIFICATION_MIN : undefined}
+            placeholder={leaveRule ? "Motivo do afastamento e documento apresentado (atestado, certidão, CAT)." : undefined}
+            onChange={(e) => setReason(e.target.value)}
+          />
         </Field>
+        {leaveRule ? (
+          <p className="text-xs text-muted-foreground">
+            {leaveRule.label}: {leaveRule.legalBasis}. {leaveRule.payment}
+          </p>
+        ) : null}
         <Field label="Observação">
           <textarea
             rows={2}
@@ -1204,179 +1248,6 @@ export function EmergencyManageForm({
         <FormActions
           saving={saving}
           label={isEdit ? "Salvar" : "Adicionar contato"}
-          onCancel={isEdit ? onCancel : undefined}
-        />
-      </form>
-    </ProfileManageSection>
-  );
-}
-
-export type EpiDeliveryRecord = {
-  id: string;
-  item: string;
-  deliveredAt: string;
-  quantity?: number | null;
-  size?: string | null;
-  validUntil?: string | null;
-  responsibleName?: string | null;
-  returnedAt?: string | null;
-  notes?: string | null;
-};
-
-export function EpiManageForm({
-  employeeId,
-  onSaved,
-  record,
-  onCancel,
-}: {
-  employeeId: string;
-  onSaved: () => void;
-  record?: EpiDeliveryRecord;
-} & EditProps) {
-  const isEdit = Boolean(record);
-  const [item, setItem] = useState(record?.item ?? "");
-  const [deliveredAt, setDeliveredAt] = useState(() =>
-    record ? toProfileDateInput(record.deliveredAt) : todayIsoDate()
-  );
-  const [quantity, setQuantity] = useState(record?.quantity != null ? String(record.quantity) : "1");
-  const [size, setSize] = useState(record?.size ?? "");
-  const sizeListId = `epi-size-suggestions-${record?.id ?? "new"}`;
-  const [validUntil, setValidUntil] = useState(() => toProfileDateInput(record?.validUntil));
-  const [responsibleName, setResponsibleName] = useState(record?.responsibleName ?? "");
-  const [returnedAt, setReturnedAt] = useState(() => toProfileDateInput(record?.returnedAt));
-  const [notes, setNotes] = useState(record?.notes ?? "");
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [ok, setOk] = useState(false);
-
-  const buildCreatePayload = (): Record<string, unknown> => ({
-    item: item.trim(),
-    deliveredAt,
-    quantity: Number(quantity || 1),
-    size: trimOrNull(size),
-    validUntil: validUntil || null,
-    responsibleName: trimOrNull(responsibleName),
-    notes: trimOrNull(notes),
-  });
-  // A devolução só existe depois da entrega: entra apenas na correção do registro.
-  const buildEditPayload = (): Record<string, unknown> => ({
-    ...buildCreatePayload(),
-    returnedAt: returnedAt || null,
-  });
-  const initialPayload = useInitialPayload(isEdit, buildEditPayload);
-
-  return (
-    <ProfileManageSection title={isEdit ? "Editar entrega" : "Registrar entrega"} inline={isEdit}>
-      <form
-        className="grid gap-3 max-w-xl"
-        onSubmit={async (e) => {
-          e.preventDefault();
-          setSaving(true);
-          setError(null);
-          setOk(false);
-          try {
-            if (record) {
-              const changed = await patchChangedFields(
-                `/api/employees/${employeeId}/epi-deliveries/${record.id}`,
-                initialPayload.current,
-                buildEditPayload()
-              );
-              if (changed || !onCancel) onSaved();
-              else onCancel();
-              return;
-            }
-            await profilePostJson(`/api/employees/${employeeId}/epi-deliveries`, buildCreatePayload());
-            setOk(true);
-            setItem("");
-            setSize("");
-            setValidUntil("");
-            setNotes("");
-            onSaved();
-          } catch (err) {
-            setError(
-              err instanceof Error
-                ? err.message
-                : isEdit
-                  ? "Não foi possível salvar a entrega."
-                  : "Não foi possível registrar a entrega."
-            );
-          } finally {
-            setSaving(false);
-          }
-        }}
-      >
-        <Field label="Item">
-          <input required className={PROFILE_INPUT_CLASS} value={item} onChange={(e) => setItem(e.target.value)} />
-        </Field>
-        <Field label="Data">
-          <input
-            type="date"
-            required
-            className={PROFILE_INPUT_CLASS}
-            value={deliveredAt}
-            onChange={(e) => setDeliveredAt(e.target.value)}
-          />
-        </Field>
-        <Field label="Quantidade">
-          <input
-            type="number"
-            min={1}
-            className={PROFILE_INPUT_CLASS}
-            value={quantity}
-            onChange={(e) => setQuantity(e.target.value)}
-          />
-        </Field>
-        <Field label="Tamanho">
-          <input
-            className={PROFILE_INPUT_CLASS}
-            list={sizeListId}
-            placeholder="PP a 5XG, numeração ou Único"
-            value={size}
-            onChange={(e) => setSize(e.target.value)}
-          />
-          <datalist id={sizeListId}>
-            {EPI_DELIVERY_SIZE_SUGGESTIONS.map((opt) => (
-              <option key={opt} value={opt} />
-            ))}
-          </datalist>
-        </Field>
-        <Field label="Validade">
-          <input
-            type="date"
-            className={PROFILE_INPUT_CLASS}
-            value={validUntil}
-            onChange={(e) => setValidUntil(e.target.value)}
-          />
-        </Field>
-        <Field label="Responsável pela entrega">
-          <input
-            className={PROFILE_INPUT_CLASS}
-            value={responsibleName}
-            onChange={(e) => setResponsibleName(e.target.value)}
-          />
-        </Field>
-        {isEdit ? (
-          <Field label="Devolvido em">
-            <input
-              type="date"
-              className={PROFILE_INPUT_CLASS}
-              value={returnedAt}
-              onChange={(e) => setReturnedAt(e.target.value)}
-            />
-          </Field>
-        ) : null}
-        <Field label="Observação">
-          <textarea
-            rows={2}
-            className={PROFILE_INPUT_CLASS}
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-          />
-        </Field>
-        <FormStatus error={error} ok={ok} />
-        <FormActions
-          saving={saving}
-          label={isEdit ? "Salvar" : "Registrar entrega"}
           onCancel={isEdit ? onCancel : undefined}
         />
       </form>

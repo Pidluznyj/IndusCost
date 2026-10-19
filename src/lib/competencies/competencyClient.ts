@@ -8,6 +8,7 @@ import type { ImportResolutions } from "./competencyImport";
 import type {
   CompetencyAssessmentDto,
   CompetencyImportApplyResult,
+  DepartmentCompetencyBoard,
   CompetencyImportPreviewDto,
   EmployeeCompetencyProfileDto,
   LevelRequestDto,
@@ -16,9 +17,14 @@ import type {
   CompetencyMatrixResponse,
   CompetencyOptionsResponse,
   CompetencyOverviewResponse,
+  TrainingCertificateBoardDto,
+  TrainingCertificateDocumentDto,
+  TrainingCertificateIssueResult,
   TrainingDto,
   WorkPositionDto,
 } from "./competencyTypes";
+import type { EmployeeCertificateItemDto } from "../hrEmployeeCertificates";
+import type { CertificateSettingsDto, CertificateSettingsInput, CertificateSignerOptionDto, SyllabusModule } from "./trainingCertificate";
 
 const NO_STORE: RequestInit = { cache: "no-store" };
 
@@ -30,11 +36,21 @@ function jsonInit(method: string, body: unknown): RequestInit {
 export const fetchCompetenciesFeatureStatus = (signal?: AbortSignal) =>
   fetchJsonOk<{ enabled: boolean }>(`${COMPETENCY_API_BASE}/feature-status`, { ...NO_STORE, signal });
 
-export const fetchCompetencyOverview = (signal?: AbortSignal) =>
-  fetchJsonOk<CompetencyOverviewResponse>(`${COMPETENCY_API_BASE}/overview`, { ...NO_STORE, signal });
+export type CompetencyBoardFilter = { departmentId?: string | null; shifts?: string[] };
 
-export const fetchCompetencyMatrix = (signal?: AbortSignal) =>
-  fetchJsonOk<CompetencyMatrixResponse>(`${COMPETENCY_API_BASE}/matrix`, { ...NO_STORE, signal });
+function viewQuery(filter?: CompetencyBoardFilter) {
+  const params = new URLSearchParams();
+  if (filter?.departmentId) params.set("departmentId", filter.departmentId);
+  if (filter?.shifts && filter.shifts.length > 0) params.set("shifts", filter.shifts.join(","));
+  const query = params.toString();
+  return query ? `?${query}` : "";
+}
+
+export const fetchCompetencyOverview = (signal?: AbortSignal, filter?: CompetencyBoardFilter) =>
+  fetchJsonOk<CompetencyOverviewResponse>(`${COMPETENCY_API_BASE}/overview${viewQuery(filter)}`, { ...NO_STORE, signal });
+
+export const fetchCompetencyMatrix = (signal?: AbortSignal, filter?: CompetencyBoardFilter) =>
+  fetchJsonOk<CompetencyMatrixResponse>(`${COMPETENCY_API_BASE}/matrix${viewQuery(filter)}`, { ...NO_STORE, signal });
 
 export const fetchCompetencyCatalog = (signal?: AbortSignal) =>
   fetchJsonOk<{ competencies: CompetencyDto[] }>(`${COMPETENCY_API_BASE}/catalog`, { ...NO_STORE, signal });
@@ -44,6 +60,18 @@ export const fetchWorkPositions = (signal?: AbortSignal) =>
 
 export const fetchCompetencyOptions = (signal?: AbortSignal) =>
   fetchJsonOk<CompetencyOptionsResponse>(`${COMPETENCY_API_BASE}/options`, { ...NO_STORE, signal });
+
+export const fetchDepartmentCompetencies = (signal?: AbortSignal) =>
+  fetchJsonOk<DepartmentCompetencyBoard>(`${COMPETENCY_API_BASE}/departments`, { ...NO_STORE, signal });
+
+export const setDepartmentCompetencies = (
+  departmentId: string,
+  items: { competencyId: string; shifts: string[] | null }[],
+) =>
+  fetchJsonOk<DepartmentCompetencyBoard>(
+    `${COMPETENCY_API_BASE}/departments/${encodeURIComponent(departmentId)}/competencies`,
+    jsonInit("PUT", { items }),
+  );
 
 const byEmployee = (employeeId?: string) => (employeeId ? `?employeeId=${encodeURIComponent(employeeId)}` : "");
 
@@ -129,6 +157,8 @@ export type TrainingPayload = {
   startDate: string;
   validityMonths: number;
   participantIds: string[];
+  instructorName?: string | null;
+  syllabus?: SyllabusModule[];
 };
 export const createTraining = (body: TrainingPayload) =>
   fetchJsonOk<{ id: string }>(`${COMPETENCY_API_BASE}/trainings`, jsonInit("POST", body));
@@ -141,6 +171,58 @@ export const setTrainingStatus = (id: string, status: string, completedOn: strin
 
 export const deleteTraining = (id: string) =>
   fetchOk(`${COMPETENCY_API_BASE}/trainings/${encodeURIComponent(id)}`, { method: "DELETE" });
+
+// —— Certificados de treinamento ——
+
+export const fetchEmployeeTrainingCertificates = (employeeId: string, signal?: AbortSignal) =>
+  fetchJsonOk<{ items: EmployeeCertificateItemDto[] }>(
+    `${COMPETENCY_API_BASE}/employees/${encodeURIComponent(employeeId)}/certificates`,
+    { ...NO_STORE, signal },
+  );
+
+export const fetchCertificateSettings = (signal?: AbortSignal) =>
+  fetchJsonOk<CertificateSettingsDto>(`${COMPETENCY_API_BASE}/certificate-settings`, { ...NO_STORE, signal });
+
+export const fetchCertificateSigners = (signal?: AbortSignal) =>
+  fetchJsonOk<{ signers: CertificateSignerOptionDto[] }>(`${COMPETENCY_API_BASE}/certificate-settings/signers`, { ...NO_STORE, signal });
+
+export const saveCertificateSettings = (body: CertificateSettingsInput) =>
+  fetchJsonOk<CertificateSettingsDto>(`${COMPETENCY_API_BASE}/certificate-settings`, jsonInit("PUT", body));
+
+export const fetchTrainingCertificateBoard = (trainingId: string, signal?: AbortSignal) =>
+  fetchJsonOk<TrainingCertificateBoardDto>(`${COMPETENCY_API_BASE}/trainings/${encodeURIComponent(trainingId)}/certificates`, {
+    ...NO_STORE,
+    signal,
+  });
+
+export const saveTrainingCertificateContent = (
+  trainingId: string,
+  body: { instructorName: string | null; syllabus: SyllabusModule[] },
+) =>
+  fetchJsonOk<{ id: string }>(
+    `${COMPETENCY_API_BASE}/trainings/${encodeURIComponent(trainingId)}/certificate-content`,
+    jsonInit("PUT", body),
+  );
+
+export const issueTrainingCertificates = (trainingId: string, employeeIds: string[] | null = null) =>
+  fetchJsonOk<TrainingCertificateIssueResult>(
+    `${COMPETENCY_API_BASE}/trainings/${encodeURIComponent(trainingId)}/certificates`,
+    jsonInit("POST", employeeIds ? { employeeIds } : {}),
+  );
+
+export const fetchTrainingCertificatesDocument = (trainingId: string, ids: string[] | null = null) =>
+  fetchJsonOk<TrainingCertificateDocumentDto>(
+    `${COMPETENCY_API_BASE}/trainings/${encodeURIComponent(trainingId)}/certificates/document${
+      ids && ids.length > 0 ? `?ids=${ids.map(encodeURIComponent).join(",")}` : ""
+    }`,
+    NO_STORE,
+  );
+
+export const cancelTrainingCertificate = (certificateId: string, reason: string) =>
+  fetchJsonOk<{ id: string; number: string }>(
+    `${COMPETENCY_API_BASE}/certificates/${encodeURIComponent(certificateId)}/cancel`,
+    jsonInit("POST", { reason }),
+  );
 
 // —— Importação assistida por planilha ——
 

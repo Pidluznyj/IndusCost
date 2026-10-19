@@ -7,7 +7,9 @@ import {
   ProfileState,
   useProfileRecordActions,
 } from "./profileUi";
-import { AbsencesManageForm } from "./PeopleProfileManageForms";
+import { AbsencesManageForm, type AbsenceRecord } from "./PeopleProfileManageForms";
+import { LeaveInsightCard } from "@/src/components/employee/lifecycle/EmployeeSituationSection";
+import { formatDateBr } from "@/src/lib/employeeLifecycle";
 
 function absenceTypeLabel(type: string): string {
   return (HR_ABSENCE_TYPE_LABELS as Record<string, string>)[type] ?? type;
@@ -25,17 +27,7 @@ export function PeopleAbsencesTab({
   canManage,
   onSaved,
 }: {
-  items: Array<{
-    id: string;
-    type: string;
-    startDate: string;
-    endDate: string | null;
-    expectedReturn?: string | null;
-    actualReturn?: string | null;
-    status: string;
-    reason: string | null;
-    notes?: string | null;
-  }> | null;
+  items: AbsenceRecord[] | null;
   loading: boolean;
   error: string | null;
   employeeId?: string;
@@ -86,7 +78,26 @@ export function PeopleAbsencesTab({
                     {row.actualReturn ? (
                       <p className="text-muted-foreground">Retorno real: {formatProfileDate(row.actualReturn)}</p>
                     ) : null}
-                    {row.reason ? <p>{row.reason}</p> : null}
+                    {row.reason ? (
+                      <p>
+                        {row.legal ? <span className="text-muted-foreground">Justificativa: </span> : null}
+                        {row.reason}
+                      </p>
+                    ) : null}
+                    {row.inssBenefitNumber ? <p className="text-muted-foreground">Benefício INSS: {row.inssBenefitNumber}</p> : null}
+                    {row.catNumber ? <p className="text-muted-foreground">CAT: {row.catNumber}</p> : null}
+                    {row.legal ? (
+                      row.status !== "COMPLETED" && row.status !== "CANCELLED" && !row.actualReturn ? (
+                        <div className="mt-2">
+                          <LeaveInsightCard insight={row.legal} title="Afastamento em andamento" withRecord={false} />
+                        </div>
+                      ) : (
+                        <p className="text-xs text-muted-foreground">
+                          {row.legal.legalBasis}
+                          {row.legal.stabilityUntil ? ` · Estabilidade até ${formatDateBr(row.legal.stabilityUntil)}` : ""}
+                        </p>
+                      )
+                    ) : null}
                     {row.notes ? (
                       <p className="text-muted-foreground whitespace-pre-wrap">{row.notes}</p>
                     ) : null}

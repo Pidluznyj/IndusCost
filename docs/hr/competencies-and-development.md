@@ -1,19 +1,19 @@
 # Competências e Desenvolvimento
 
-Submódulo de **Gestão de pessoas** (`/competencies`). Reúne a matriz de competências por posto de trabalho, as lacunas, as avaliações e os treinamentos da equipe.
+Submódulo de **Gestão de pessoas** (`/competencies`). Organiza as competências pelos departamentos oficiais do RH, com avaliações individuais, evolução, polivalência e treinamentos.
 
 Breadcrumb: Gestão de pessoas › Competências e Desenvolvimento.
 
 ## Princípios
 
-- **Engine oficial única.** `src/lib/competencies/competencyEngine.ts` é pura (sem Prisma) e calcula cobertura, lacunas, aptidão, média da avaliação e reciclagem.
+- **Engine oficial única.** `src/lib/competencies/competencyEngine.ts` é pura (sem Prisma) e calcula os indicadores de desenvolvimento, a média da avaliação, a reciclagem e, por compatibilidade, a cobertura legada dos postos.
   - Só `competency.server.ts` a chama. A UI apenas formata o que a API devolve.
   - O teste `competencyOfficialEngineGuard.test.ts` impede que componentes importem funções de cálculo dela.
 - **Nada de entidade paralela.**
   - Colaborador = `Employee` (somente ativos).
   - Setor = `HrDepartment` (departamento oficial do RH).
   - O posto de trabalho é físico e **não** substitui o cargo salarial (`Role`).
-  - Não existe tabela de turno no RH, então o posto guarda o padrão de turno como string validada.
+  - Não existe vínculo oficial de turno no colaborador (`Employee.workSchedule` é texto livre). A configuração da competência usa os códigos 1, 2 e 3; o `shiftPattern` do posto continua sendo só a quantidade de turnos do posto físico.
 - **Avaliação de competência ≠ avaliação de experiência.** `HrEmployeeEvaluation` (45/90 dias, por template e pesos) continua intacta. Aqui o registro é o nível de 1 a 4 por competência exigida.
 - **Histórico append-only.**
   - Toda gravação de nível gera uma linha em `HrEmployeeCompetencyLevelHistory`: na avaliação, sempre; na edição manual, só quando o nível muda.
@@ -71,7 +71,11 @@ Quando o nível não cai:
 - **Sem treinamento concluído registrado:** mantém o nível gravado. Isso evita derrubar a equipe inteira no dia em que a competência passa a exigir reciclagem.
 - **Validade 0:** sem vencimento.
 
-**População.** Entram na matriz e nos indicadores os colaboradores **ativos** com alocação ativa num posto **ativo**. Competências arquivadas saem das colunas e dos requisitos.
+**Unidade organizacional.** O departamento oficial (`HrDepartment`, via `Employee.departmentId`) é o contexto. A tela lista departamentos já existentes — não os cria — e associa competências do catálogo (`HrDepartmentCompetency`), sem nível mínimo. A mesma competência pode pertencer a vários departamentos e, na configuração, a um, vários ou todos os turnos 1, 2 e 3. Essa escolha não classifica o colaborador, não altera `workSchedule` e não duplica a competência no catálogo. Trocar o departamento do colaborador não duplica nem apaga o histórico de níveis. A matriz e a visão geral filtram colaboradores pelo departamento oficial; o filtro de turno restringe as competências configuradas.
+
+**População.** Entram na matriz e nos indicadores os colaboradores **ativos** visíveis no escopo, com ou sem posto. Competências arquivadas saem das colunas. A associação ao departamento sugere competências na avaliação; não obriga a avaliar todas e não cria lacuna.
+
+**Postos (compatibilidade).** `HrWorkPosition`, `HrWorkPositionRequirement` e `HrEmployeeWorkPosition` permanecem no banco e na API. Não são o fluxo principal e não são exigidos para avaliar. Os indicadores da Visão geral não usam o mínimo do posto.
 
 ## Governança de níveis
 
@@ -104,7 +108,9 @@ Migration: `20261008120000_hr_competencies`. É aditiva: só cria tabelas, não 
 | Tabela | Conteúdo |
 |---|---|
 | `HrCompetency` | `name`, `category` (`TECHNICAL`/`SAFETY`/`QUALITY`/`BEHAVIORAL`), `description`, `requiresRecycling`, `critical`, `status`, `sortOrder` (ordem das colunas). Nome único entre as ativas, sem diferenciar maiúsculas (índice parcial `HrCompetency_name_active_uidx`). |
-| `HrWorkPosition` | `name`, `departmentId` → `HrDepartment`, `shiftPattern` (`ONE_SHIFT`/`TWO_SHIFTS`/`THREE_SHIFTS`), `status`. |
+| `HrDepartmentCompetency` | Associação `departmentId` + `competencyId`, sem nível mínimo. `appliesToAllShifts` (padrão true) cobre os turnos 1, 2 e 3. Única por par. Migration `20261015140000_hr_department_competency`. |
+| `HrDepartmentCompetencyShift` | Subconjunto de turnos de configuração (`shiftCode` 1, 2 ou 3) quando `appliesToAllShifts` é false. Única por associação + código. Não é turno do colaborador. Migration `20261015153000_hr_department_competency_shift`. |
+| `HrWorkPosition` | Compatibilidade. `name`, `departmentId` → `HrDepartment`, `shiftPattern` (`ONE_SHIFT`/`TWO_SHIFTS`/`THREE_SHIFTS`), `status`. |
 | `HrWorkPositionRequirement` | `positionId`, `competencyId`, `minLevel` 1–4 (CHECK). Único por par. |
 | `HrEmployeeWorkPosition` | Alocação com histórico (`startedAt`/`endedAt`). No máximo uma ativa por colaborador (índice parcial `HrEmployeeWorkPosition_employee_active_uidx`). |
 | `HrEmployeeCompetencyLevel` | Nível atual 0–4 (CHECK), `source` (`ASSESSMENT`/`MANUAL`/`TRAINING`/`IMPORT`), `assessedAt`, `version` (concorrência otimista). Único por colaborador + competência. |
@@ -114,6 +120,10 @@ Migration: `20261008120000_hr_competencies`. É aditiva: só cria tabelas, não 
 | `HrCompetencyAssessmentItem` | Nível 1–4 (CHECK) por competência e o mínimo vigente no momento (`requiredLevel`). |
 | `HrTraining` | `title`, `competencyId`, `modality` (`IN_PERSON`/`ONLINE`/`ON_THE_JOB`), `workloadHours`, `startDate`, `validityMonths` (0 = sem validade), `status` (`SCHEDULED`/`IN_PROGRESS`/`COMPLETED`), `completedAt`. |
 | `HrTrainingParticipant` | Participante e `completedAt`, que é a base da reciclagem. |
+| `HrTraining.instructorName` / `syllabus` | Instrutor (opcional) e conteúdo programático `[{ title, hours }]` do certificado. Migration `20261016120000_hr_training_certificates`. |
+| `HrTrainingCertificateSettings` | Linha única `GLOBAL` (CHECK): signatário, cargo, local de emissão e prefixo da numeração (CHECK de formato), com autor da última alteração. Sem valores padrão. |
+| `HrEmployeeExternalCertificate` | Certificado externo (upload): `documentId` único → `HrEmployeeDocument` (CASCADE), curso, instituição, carga (numeric 7,1), conclusão, validade, competência (opcional, SET NULL), observações e autoria. Migration `20261017120000_hr_employee_external_certificates`. |
+| `HrTrainingCertificate` | Certificado emitido: número único, `year` + `sequence` únicos, treinamento, colaborador, `status` (`ACTIVE`/`CANCELED`), emissão (data/autor), `payload` congelado + `payloadSha256`, cancelamento (data/autor/motivo). Imutável por trigger. |
 | `HrCompetencyImportBatch` | Uma linha por importação por planilha **que alterou algo**: nome e SHA-256 do arquivo, linhas, alterações, conflitos aplicados, resumo (JSON só com contagens) e autor. O histórico de níveis aponta para o lote (`importBatchId`, origem `IMPORT`). |
 
 Datas de negócio são gravadas como meia-noite UTC e trafegam como `AAAA-MM-DD`. O "hoje" da engine segue o fuso de São Paulo.
@@ -129,11 +139,13 @@ Arquivo: `src/lib/competencies/competencyRoutes.ts`. É registrado em `server.ts
 
 | Método | Caminho | Capacidade | Notas |
 |---|---|---|---|
-| GET | `/api/hr/competencies/overview` | ver | KPIs, 6 maiores lacunas e aptidão por posto, já calculados pela engine. |
-| GET | `/api/hr/competencies/matrix` | ver | Linhas × colunas, com nível efetivo, mínimo, `belowMinimum` e situação da reciclagem. |
+| GET | `/api/hr/competencies/overview` | ver | KPIs já calculados pela engine. `?departmentId=` filtra colaboradores do departamento oficial. `?shifts=1,2` filtra competências configuradas para esses turnos. |
+| GET | `/api/hr/competencies/matrix` | ver | Linhas × colunas, com nível efetivo, mínimo, `belowMinimum` e situação da reciclagem. Aceita os mesmos filtros de departamento e turno. |
 | GET | `/api/hr/competencies/catalog` | ver | Competências ativas. |
 | GET | `/api/hr/competencies/positions` | ver | Postos com requisitos e equipe. |
 | GET | `/api/hr/competencies/options` | ver | Colaboradores ativos (avaliador, equipe) e setores. |
+| GET | `/api/hr/competencies/departments` | ver | Departamentos oficiais e as competências associadas, com turnos de configuração. |
+| PUT | `/api/hr/competencies/departments/:id/competencies` | gerenciar | Substitui as associações. `{ items: [{ competencyId, shifts }] }`; `shifts` null ou `["1","2","3"]` = todos. Não grava nível, avaliação nem turno do colaborador. Lista antiga `{ competencyIds }` continua valendo para todos os turnos. |
 | GET | `/api/hr/competencies/employees/:employeeId` | ver | Perfil de UM colaborador para a ficha funcional: posto, requisitos com nível atual, cobertura, apto, outras competências registradas e as últimas 50 alterações de nível. Também inclui inativo e quem está sem posto. Fora do escopo → 404. |
 | POST/PUT/DELETE | `/api/hr/competencies/catalog[/:id]` | gerenciar | DELETE arquiva (`INACTIVE`). 409 `DUPLICATE_NAME`. |
 | POST/PUT/DELETE | `/api/hr/competencies/positions[/:id]` | gerenciar | Exige nome e ≥ 1 requisito (`REQUIREMENTS_REQUIRED`). Nível 0 = não exigido. DELETE arquiva e encerra as alocações. |
@@ -157,7 +169,7 @@ Arquivo: `src/lib/competencies/competencyRoutes.ts`. É registrado em `server.ts
 
 | Status | Comportamento |
 |---|---|
-| `COMPLETED` | Exige avaliador e **um nível para cada competência exigida pelo posto** (400 `ITEMS_MISMATCH`). Colaborador sem posto → 409 `NO_POSITION`. Na mesma transação: grava a média calculada pela engine, os itens, os níveis atuais e o histórico, e **substitui** a avaliação aberta do colaborador. A mais recente vira a concluída e as demais pendências dele são removidas. |
+| `COMPLETED` | Exige avaliador e ao menos um item com nível. Lista vazia → 400 `ITEMS_REQUIRED`. Competência desconhecida → `UNKNOWN_COMPETENCY`. Item repetido → `DUPLICATE_ITEM`. Não exige posto. Uma avaliação grava um nível por colaborador e competência, qualquer que seja o turno configurado. Na mesma transação: grava a média calculada pela engine, os itens, os níveis atuais e o histórico, e **substitui** a avaliação aberta do colaborador. A mais recente vira a concluída e as demais pendências dele são removidas. |
 | `PENDING` / `IN_PROGRESS` | Só agenda, sem níveis. |
 
 Auditoria em `logEmployeeHrAudit`:
@@ -188,25 +200,52 @@ O perfil de acesso persiste 3 eixos por recurso (ver / executar / gerenciar). Po
 
 ### Escopo hierárquico (quem o usuário pode ver e alterar)
 
-A permissão de recurso diz **o que** o usuário pode fazer; o escopo diz **sobre quem**. É a mesma régua da ficha do RH (`resolvePeopleAccessScope`), resolvida no servidor a cada requisição (`getScopeInput` em `server.ts` → `buildCompetencyScope`, `src/lib/competencies/competencyScope.ts`). Nunca vem do cliente.
+A permissão de recurso (`admin.employees.competencies…`) diz **o que** o usuário pode fazer no módulo. O escopo diz **sobre quem**. São coisas separadas: ter o menu não dá acesso a nenhum colaborador por si só.
 
-| Perfil | Escopo | Vê | Altera |
+O escopo é resolvido no servidor a cada requisição:
+- `getScopeInput` em `server.ts` chama `resolveCompetencyAccessScope`.
+- Em seguida, `resolveCompetencyScope` (`competency.server.ts`) chama `buildCompetencyScope`.
+- Usa só a sessão e a hierarquia oficial `Employee.managerId`. Para DESCENDANTS, usa a CTE `loadDescendantEmployeeIds`.
+- Nenhum id de gestor, colaborador ou departamento enviado pelo cliente amplia o acesso.
+
+**Política oficial (2026-10-16):** o líder vê **somente os subordinados autorizados**. Nunca vê a própria matriz ou as próprias avaliações, pares, superiores ou outras equipes.
+
+| Perfil (permissões efetivas) | Escopo | Vê | Altera |
 |---|---|---|---|
-| RH (`employees.view` / `employees.edit`) e SUPER_ADMIN | ALL | todos | todos |
-| Líder com `employees.team.descendants.view` | DESCENDANTS | ele + toda a árvore abaixo (CTE `loadDescendantEmployeeIds`) | só a árvore |
-| Líder com `employees.team.view` | DIRECT_REPORTS | ele + liderados diretos | só os liderados |
-| Só ficha própria | SELF | só ele | ninguém |
-| Sem colaborador vinculado ao usuário, ou sem escopo | NONE | ninguém | ninguém |
+| Editor de RH (`employees.edit`; canônico `admin.employees` executar/criar) e SUPER_ADMIN | ALL | todos | todos |
+| Líder com `employees.team.descendants.view` | DESCENDANTS | a árvore abaixo dele, **sem ele** | a mesma árvore |
+| Líder com `employees.team.view` | DIRECT_REPORTS | os liderados diretos, **sem ele** | os mesmos |
+| Só `employees.profile.view` | SELF | **ninguém** (nem os próprios dados) | ninguém |
+| Sem chave de equipe, sem colaborador vinculado ou sem escopo | NONE | ninguém | ninguém |
 
-O líder nunca altera o próprio nível nem se autoavalia: isso continua com o RH.
+**Por que `employees.view` não dá ALL em Competências.** A política global de RH (`resolvePeopleAccessScope`, usada pela ficha e por outros módulos) continua igual. Em Competências, porém, `employees.view` chega a quem não é RH administrativo:
+- pelo **Organograma** (`admin.employees.org_chart:view` materializa `employees.view`);
+- pelo **editor legado de permissões**, que adiciona `employees.view` como "pai" ao marcar "Ver equipe direta".
+
+Por isso `resolveCompetencyAccessScope` (`competencyScope.ts`) exige `employees.edit` para ALL e ignora `employees.view`.
+
+O líder aparece só como **avaliador possível**, em `options.selfEvaluator`: apenas o nome, sem dados de competência. Ele nunca altera o próprio nível nem se autoavalia.
 
 O que o escopo filtra ou bloqueia:
-- **Leituras:** matriz, Visão geral (KPIs, lacunas, aptidão, contadores), busca de colaboradores (`/options`), equipe dos postos, avaliações e treinamentos. A lista de treinamentos mostra as turmas com ao menos um liderado; os participantes de outras equipes aparecem só como contagem (`hiddenParticipantCount`).
-- **Escritas (403 `OUT_OF_SCOPE`):** nível manual; avaliação de quem não é liderado ou com avaliador de fora da equipe; inscrição em treinamento; alterar, concluir ou excluir turma que tenha participante de outra equipe; alocar ou retirar alguém no posto; arquivar posto com membro de fora.
-- **Registro de outra equipe:** avaliação ou treinamento que o líder não vê → 404, sem confirmar que existe.
-- **Equipe do posto:** quem o líder não enxerga é **preservado** quando ele salva a equipe. Nunca sai por omissão.
+- **Leituras:**
+  - matriz e Visão geral (KPIs, lacunas, aptidão, contadores, aprovações pendentes);
+  - busca de colaboradores (`/options`), equipe dos postos e departamentos;
+  - avaliações, treinamentos, aprovações, ficha (`/employees/:id`);
+  - certificados: painel, documento e `/employees/:id/certificates`;
+  - modelo e prévia da importação XLSX.
+  - Turma com participantes de fora: só `hasParticipantsOutsideScope` (sem nomes e sem contagem).
+- **Escritas (403 `OUT_OF_SCOPE`):**
+  - nível manual;
+  - avaliação de quem não é liderado, autoavaliação, ou avaliador de fora da equipe ou superior;
+  - inscrição em treinamento;
+  - alterar, concluir ou excluir turma com participante de outra equipe;
+  - equipe do posto com **qualquer** id fora do escopo, mesmo já alocado (a resposta não revela alocação);
+  - lista de signatários dos certificados (todas as pessoas): só ALL.
+- **Registro fora do escopo** (avaliação, treinamento, solicitação, ficha, certificado, inclusive os do próprio líder): 404, sem confirmar que existe. Na importação, nomes de fora viram "não encontrado".
+- **Filtros** de departamento e turno só restringem o conjunto autorizado.
+- **Exportações futuras (PDF):** devem resolver o escopo com `resolveCompetencyScope` e partir de `authorizedEmployeeIds` / `restrictToScope`. Nunca de ids enviados sem validação nem de print da tela.
 
-A interface usa `writable` (por linha da matriz e por colaborador em `/options`) para esconder o que o servidor recusaria, e mostra um aviso quando a visão é restrita (`overview.scope`).
+Testes: `competencyScope.test.ts` e `competencyScopePolicy.test.ts`. O segundo monta o cenário completo: diretoria, gerente, dois supervisores, diretos, indiretos, outra equipe e usuário sem colaborador. Também varre todas as respostas do supervisor atrás de nomes e ids de fora do escopo.
 
 ## UI
 
@@ -220,7 +259,7 @@ Não há CSS novo. Segmentado, toggle, chip e toast seguem os padrões locais do
 | Aba | Conteúdo |
 |---|---|
 | Visão geral | 4 KPIs; Lacunas por posto (atual → exigido, botão **Planejar**); Aptidão por posto. |
-| Matriz de competências | Primeira coluna fixa na rolagem horizontal. Célula com o nível e "mín. N". Contorno vermelho abaixo do mínimo. Popover com os 5 níveis (edição persistida com histórico). |
+| Matriz de competências | A aba mostra o resumo e abre a grade numa modal de tela cheia. Só a grade rola. Colaborador e cabeçalho ficam grudados. O agrupamento inicial é por departamento, a partir de `HrDepartmentCompetency` e dos turnos configurados. A outra visão agrupa pelo texto gravado em `HrCompetency.category`; "Sem categoria" só aparece quando esse texto está vazio. A mesma competência pode repetir a coluna em mais de um departamento, com uma única avaliação. Popover com os 5 níveis (edição persistida com histórico). |
 | Avaliações | Colaborador, posto, avaliador, data dd/mm/aaaa, média e status. **Agendar avaliação**; nas abertas, **Avaliar** e **Excluir**. Contador de pendentes na aba. |
 | Treinamentos | Título + validade, competência, modalidade, carga, início, participantes e status. **Iniciar** / **Concluir** / **Excluir**. Contador de não concluídos na aba. |
 | Aprovações | Pendentes (Aprovar / Rejeitar com justificativa) e Decididas. Contador de pendentes na aba. Sem "Aprovar níveis": só leitura. |
@@ -280,12 +319,112 @@ A aba **Competências** fica na Ficha Funcional do colaborador (Pessoas / RH ›
 - **Somente leitura:** para avaliar ou alterar níveis, use "Abrir módulo".
 
 Conteúdo da aba:
-- posto (setor · turno), cobertura e "Apto no posto" / "Com lacunas";
-- requisitos do posto (exigido × atual, lacuna, reciclagem vencida);
+- departamento oficial e competências associadas a ele, com o nível atual (sem mínimo inventado);
+- níveis registrados fora do departamento atual (polivalência) e o histórico;
 - outras competências registradas;
 - avaliações;
 - treinamentos;
 - histórico de níveis.
+
+## Certificados de treinamento
+
+Treinamentos › **Certificados** abre o painel do treinamento. Ele emite, imprime e cancela certificados de conclusão no modelo visual "Certificado Lazarios Koppetel" (A4 paisagem). **Nada é digitado no certificado.** Cada campo vem do sistema:
+
+| Campo do certificado | Origem |
+|---|---|
+| Nome do participante | `Employee.name`, no momento da emissão |
+| Curso, carga horária, modalidade, início | `HrTraining` |
+| "Concluído em" | `HrTrainingParticipant.completedAt` (gravado ao concluir o treinamento) |
+| Competência desenvolvida (lateral, sem conteúdo programático) | `HrCompetency.name` + `description` |
+| Conteúdo programático (lateral) | `HrTraining.syllabus` (módulos com horas; soma = carga horária) |
+| 2ª assinatura | `HrTraining.instructorName`. Sem instrutor, a linha traz local e data |
+| Quem assina e cargo | `HrTrainingCertificateSettings`. **Pessoa do sistema**: escolhida numa lista de colaboradores ativos; nome e cargo (`Role`) vêm do cadastro e são lidos na hora da emissão. Ou **digitado manualmente** (nome + cargo). |
+| Local de emissão | Fixo: **Curitiba – PR** (CHECK no banco; não configurável) |
+| Prefixo da numeração | Gerado pelo sistema na 1ª gravação, com as iniciais da empresa na Identidade Visual + `-TR` (ex.: `LK-TR`). **Nunca mais muda**: trigger no banco. |
+| Empresa, slogan, site, texto do selo | `BrandingSettings` (Administração › Identidade Visual) |
+| Logo | **Logo oficial Lazarios Koppetel embutida no sistema** (`trainingCertificateBrand.ts`, WebP recortado do arquivo oficial da marca). Também traz o símbolo usado na marca d’água. Não depende do logo da Identidade Visual e fica congelada no certificado. |
+| Registro nº | `{prefixo}-{ano da emissão}/{sequência de 4 dígitos}`, sequencial por ano, nunca reutilizado |
+| Data de emissão | Data de negócio (São Paulo) do clique em Emitir |
+
+**Regras** (`src/lib/competencies/trainingCertificate.ts` e `trainingCertificate.server.ts`)
+
+- **Emissão bloqueada** se: treinamento não concluído, carga 0, conteúdo que não fecha a carga, quem assina não configurado, pessoa selecionada que deixou de estar ativa, ou empresa sem nome na Identidade Visual.
+- **Registro nº**: único (índice) e sequencial por ano. É gerado na emissão e **não é editável** em nenhuma tela. Os impedimentos aparecem no painel e voltam no 409 `CERTIFICATE_BLOCKED`.
+- **Um certificado vigente** por participante do treinamento (índice parcial `HrTrainingCertificate_active_participant_uidx`). Emitir de novo não duplica: devolve `ALREADY_ISSUED`. Participante sem conclusão devolve `NOT_COMPLETED`.
+- **Conteúdo congelado**: a emissão grava o conteúdo inteiro (inclusive o logo) em `payload` com `payloadSha256`. Imprimir usa só o gravado. Mudar o cadastro do colaborador, a Identidade Visual ou o signatário depois **não altera** certificados emitidos. A impressão é recusada se o hash não conferir.
+- **Imutável no banco**: trigger `HrTrainingCertificate_immutable` bloqueia DELETE e todo UPDATE, exceto ACTIVE → CANCELED com data, autor e motivo (CHECK exige motivo). `HrTraining` com certificado não pode ser excluído (FK RESTRICT).
+- **Cancelar → reemitir**: o cancelamento fica no histórico do painel e a nova emissão recebe outro número.
+- **Instrutor e conteúdo programático** podem ser informados no "Novo treinamento" ou no painel, inclusive depois da conclusão. Ficam **travados** enquanto houver certificado vigente (409 `CERTIFICATE_CONTENT_LOCKED`).
+- **Escopo**: o líder vê e emite apenas para a própria equipe. A configuração global só é alterada com escopo RH (ALL).
+- **Concorrência**: a numeração usa o maior número do ano + 1 dentro da transação. Em colisão (`P2002` no número único ou no índice parcial), a emissão é refeita até 3 vezes.
+
+**Layout** (premium, identidade da marca): faixa lateral no degradê da marca (#1455E0 → #0A8CFF → #00BDFF), moldura fina dupla, guilhoché discreto e símbolo em marca d’água, título em degradê, faixa de informações (carga, conclusão, modalidade), selo em roseta com as horas, assinaturas e painel lateral com o conteúdo programático. Fontes Ubuntu e Lato.
+
+**Impressão**: `src/components/competencies/certificate/trainingCertificatePrint.ts` monta o HTML (`renderTrainingCertificatesHtml`, uma página por certificado) num iframe isolado do CSS do app e chama a impressão do navegador. O usuário salva em PDF por ali. Fontes Lato e Ubuntu (subconjunto latino) estão embutidas: 400/500/700 vêm da arte de Comunicados, 300 fica em `certificate/assets`. O diálogo espera as fontes e o logo carregarem.
+
+**API**
+
+| Método e rota | Capacidade |
+|---|---|
+| `GET /api/hr/competencies/certificate-settings` | `viewTrainings` |
+| `GET /api/hr/competencies/certificate-settings/signers` (pessoas ativas + cargo) | `manageTrainings` |
+| `PUT /api/hr/competencies/certificate-settings` (`{ signerEmployeeId }` ou `{ signerName, signerRole }`; local e prefixo enviados são ignorados) | `manageTrainings` + escopo RH |
+| `GET /api/hr/competencies/trainings/:id/certificates` (painel) | `viewTrainings` |
+| `PUT /api/hr/competencies/trainings/:id/certificate-content` | `manageTrainings` |
+| `POST /api/hr/competencies/trainings/:id/certificates` (`{ employeeIds? }`) | `manageTrainings` |
+| `GET /api/hr/competencies/trainings/:id/certificates/document?ids=` | `viewTrainings` |
+| `POST /api/hr/competencies/certificates/:id/cancel` (`{ reason }`) | `manageTrainings` |
+
+Auditoria: `competency.certificate.settings`, `competency.certificate.issue`, `competency.certificate.cancel`.
+
+**Validação (2026-10-16, sem banco real)**
+
+- Testes: `trainingCertificate.test.ts` (12) e `trainingCertificateRoutes.test.ts` (9).
+- PostgreSQL descartável (PGlite) com DDL da main + migration:
+  - 18 verificações de CHECK, índice parcial, trigger e FK;
+  - `migrate diff` vazio contra o schema;
+  - 17 verificações com rotas reais + Prisma, incluindo duas emissões simultâneas sem número repetido.
+- Fluxo completo na UI real (configurar → emitir → cancelar → reemitir → imprimir). PDF do Chrome: 6 páginas A4 paisagem.
+- Limite do teste: o logo real (≈330 KB) derruba o servidor PGlite. Por isso, nas rotas reais o logo foi validado com um PNG pequeno; o logo real foi usado no harness.
+
+### Ficha funcional › Certificados
+
+A aba **Certificados** (grupo Rotina, depois de Competências) reúne **todos** os certificados do colaborador numa lista só, da conclusão mais recente para a mais antiga. Indicadores no topo: total, horas de formação, a vencer em 30 dias e vencidos. Filtro por origem: Todos, Treinamentos do sistema ou Anexados.
+
+| Origem | De onde vem | Ações | Permissão |
+|---|---|---|---|
+| **Sistema** | Certificados **vigentes** emitidos nos treinamentos (`HrTrainingCertificate`), com o conteúdo congelado. A validade é a do treinamento: meses a partir da conclusão. | Imprimir (mesmo HTML do painel de certificados) | `viewTrainings` em Competências + módulo ligado + escopo hierárquico (`GET /api/hr/competencies/employees/:employeeId/certificates`) |
+| **Anexado** | Certificado externo enviado pelo RH: o arquivo fica no **dossiê** (`HrEmployeeDocument`, tipo `TRAINING_CERTIFICATE`) e os dados ficam em `HrEmployeeExternalCertificate` | Ver, baixar, editar e excluir | Ver: documentos da ficha (`canViewDocuments`); anexar, editar e excluir: `canManageDocuments` |
+
+A aba aparece com qualquer uma das duas permissões. Cada origem carrega sozinha: sem acesso a uma, a outra continua visível.
+
+**Certificado anexado** (`src/lib/hrEmployeeCertificates.ts` e `.server.ts`, rotas em `peopleProfileRoutes.ts`)
+
+- Campos obrigatórios: nome do curso, instituição e conclusão (não pode ser futura).
+- Campos opcionais: carga horária (passos de 0,5 h), validade (não anterior à conclusão), competência relacionada e observações.
+- O arquivo deve ser **PDF, JPG ou PNG de até 10 MB**. O tipo é conferido pelo conteúdo (magic bytes), e o MIME gravado é o real.
+- Gravação numa transação: documento do dossiê + certificado + evento `DOCUMENT_ADDED` no histórico. Se o banco falhar, o arquivo salvo é apagado (sem órfão).
+- A edição muda só os dados (o arquivo não é trocado) e atualiza o nome e as datas do documento no dossiê.
+- A exclusão usa o fluxo oficial do dossiê: apaga o arquivo e o evento do histórico, e o certificado sai junto (CASCADE).
+  - Excluir o documento pela aba Documentos também remove o certificado. Lá ele aparece como "Certificado de treinamento".
+- A competência relacionada é **só informativa**. Um certificado anexado **não** altera nível nem reciclagem na engine oficial; quem conta para a reciclagem continua sendo a conclusão de um treinamento do sistema.
+- API:
+  - `GET /api/employees/:id/certificates`
+  - `POST /api/employees/:id/certificates` (multipart: `file` + campos)
+  - `PATCH /api/employees/:id/certificates/:recordId`
+  - `DELETE /api/employees/:id/certificates/:recordId`
+  - Download pela rota de documentos já existente.
+- Auditoria: `employee.certificate.upload` e `employee.certificate.update`; a exclusão registra `employee.document.delete`.
+- Migration: `20261017120000_hr_employee_external_certificates` (aditiva). CHECKs: título e instituição não vazios, carga > 0, validade ≥ conclusão. `documentId` é único.
+
+**Validação (2026-10-16, sem banco real)**
+
+- `hrEmployeeCertificates.test.ts` (9) e um teste novo do endpoint do colaborador em `trainingCertificateRoutes.test.ts`.
+- PGlite com DDL da main + migration:
+  - 8 verificações de DDL (CHECKs, unicidade, CASCADE);
+  - `migrate diff` vazio;
+  - 18 verificações com as rotas reais da ficha e de Competências, cobrindo upload, arquivo disfarçado, conclusão futura, dossiê, download byte a byte, histórico, edição, somente leitura (403), IDOR (404) e exclusão sem arquivo órfão.
+- Harness da aba com os certificados do sistema vindos das rotas reais (banco simulado), em desktop, celular e somente leitura.
 
 ## Diferenças em relação ao protótipo
 
@@ -306,7 +445,9 @@ Conteúdo da aba:
 1. Aplicar a migration `20261008120000_hr_competencies` **antes** do código: a página consulta as tabelas novas.
 2. Rodar `npm run permissions:seed` para criar os 3 recursos novos.
 3. Liberar os perfis desejados na tela de perfis de acesso.
-4. Cadastrar competências e postos e alocar as equipes. Os níveis começam em 0 e são preenchidos pelas avaliações, pela edição da matriz ou pela importação por planilha (carga inicial: Baixar modelo → preencher → Importar).
+4. Certificados: aplicar a migration `20261016120000_hr_training_certificates` **antes** do código (a lista de treinamentos consulta `HrTrainingCertificate`). Aplicar também `20261018120000_hr_certificate_signer_employee` (pessoa que assina, local fixo e prefixo imutável). Depois, no painel de certificados, escolher quem assina (pessoa do sistema ou manual); o local e a numeração são automáticos. Conferir nome, logo, slogan e site em Identidade Visual. Sem permissão nova: usa as de Treinamentos.
+   Ficha › Certificados: aplicar também a migration `20261017120000_hr_employee_external_certificates` antes do código. Usa as permissões de documentos da ficha.
+5. Cadastrar competências e postos e alocar as equipes. Os níveis começam em 0 e são preenchidos pelas avaliações, pela edição da matriz ou pela importação por planilha (carga inicial: Baixar modelo → preencher → Importar).
 
 ## Testes
 
@@ -349,6 +490,48 @@ Esses arquivos também estão em `scripts/unit-test-files.txt`.
 
 Em 2026-10-15 passou 9/9 em PGlite (PostgreSQL 17.5 em memória, via `pglite-socket`). O `prisma migrate diff` do banco migrado contra o `schema.prisma` saiu vazio.
 
+## Competências já cadastradas na homologação
+
+As competências que já estão em `HrCompetency` — inclusive as 67 carregadas antes desta refatoração — permanecem no catálogo. O deploy das migrations `20261015140000_hr_department_competency` e `20261015153000_hr_department_competency_shift` só cria a associação. Não há backfill. A importação de níveis (ID, Colaborador, Posto) continua separada e não cria competência nem departamento.
+
+A carga das associações é uma etapa **posterior e supervisionada**. Este deploy não a executa.
+
+### Plano de conciliação com a TDE-FO-002 V202604
+
+Origem do agrupamento: as oito áreas dessa planilha. Elas não são departamentos e não estão gravadas no cadastro. O destino é somente `HrDepartment` já existente. A competência de destino é somente uma linha ativa já existente em `HrCompetency`.
+
+A prévia não grava. A gravação só ocorre depois de uma confirmação explícita da prévia, numa etapa própria.
+
+**1. Prévia**
+
+- Contar `HrCompetency` ativas. O esperado na homologação é 67. Outra contagem interrompe a prévia.
+- Listar `HrDepartment` ativos. Não criar departamento.
+- Ler as oito áreas da TDE-FO-002 V202604 e os nomes de competência de cada área.
+- Normalizar texto só para comparar: sem espaços nas pontas, sem diferença de maiúsculas e sem acento. O nome gravado não muda.
+
+**2. Correspondência exata**
+
+- Cada nome da planilha casa com uma única competência ativa. Zero ocorrências fica como ausente. Mais de uma fica como ambígua.
+- Cada área casa com um único departamento ativo pelo nome normalizado. Zero ou mais de um deixa a área inteira sem proposta.
+- Proposta aceita: `departmentId` + `competencyId` já existentes, turnos em branco (todos os turnos, `appliesToAllShifts`). Sem nível mínimo.
+- A mesma competência pode aparecer em mais de uma área só se cada área tiver um departamento exato. Continua sendo uma linha no catálogo.
+
+**3. Ambiguidades**
+
+Ficam de fora da proposta, para decisão humana:
+
+- área sem departamento oficial de mesmo nome, ou com mais de um;
+- competência da planilha sem par ativo no catálogo, ou com mais de um;
+- nome que só se parece com o departamento (contém, abrevia ou traduz) sem ser igual depois da normalização.
+
+Nada disso vira departamento novo, competência nova ou associação automática.
+
+**4. Confirmação antes de gravar**
+
+A prévia devolve três listas: propostas exatas, ambiguidades e ausências, mais uma impressão digital dos ids de catálogo, departamentos e propostas. A confirmação repete a leitura. Se a impressão mudou, a gravação é recusada e a prévia é refeita.
+
+Quando essa etapa for autorizada, a gravação substitui apenas as associações confirmadas, numa transação, sem duplicar o par departamento × competência. Não altera `Employee`, `workSchedule`, avaliação, treinamento, nível nem histórico. Turno específico só entra se a confirmação o trouxer; o padrão da prévia é todos os turnos.
+
 ## Status e pendências (auditoria de 2026-10-15)
 
 - **Escopo hierárquico: implementado** (ver Permissões › Escopo hierárquico).
@@ -366,3 +549,9 @@ Em 2026-10-15 passou 9/9 em PGlite (PostgreSQL 17.5 em memória, via `pglite-soc
 - 2026-10-15: importação assistida de níveis por planilha (modelo, prévia, conciliação, conflitos, idempotência), com a tabela `HrCompetencyImportBatch` na mesma migration.
 - 2026-10-15: governança de níveis (competência crítica, aprovação, versão otimista, decisões condicionais), com `HrCompetencyLevelRequest` na mesma migration.
 - 2026-10-15: feature flag `COMPETENCIES_ENABLED` (fail closed) para API, menu, rota e aba da ficha.
+- 2026-10-16: certificados de treinamento com dados do sistema (instrutor e conteúdo programático no treinamento, configuração de assinatura e numeração, emissão congelada com sha256, cancelamento com motivo, impressão A4 no modelo Lazarios Koppetel). Migration `20261016120000_hr_training_certificates`.
+- 2026-10-16: modal da matriz com nome completo, filtros em chips e cabeçalho fixo opaco.
+- 2026-10-16: aba Certificados na ficha funcional (sistema + anexados, com arquivo no dossiê). Migration `20261017120000_hr_employee_external_certificates`.
+- 2026-10-16: assinatura por pessoa do sistema (nome e cargo do cadastro) ou manual; local fixo Curitiba – PR; prefixo da numeração gerado e imutável. Migration `20261018120000_hr_certificate_signer_employee`.
+- 2026-10-16: layout premium do certificado com a logo oficial embutida no sistema.
+- 2026-10-16: escopo hierárquico revisado — o líder vê só subordinados autorizados (nunca a si); SELF/NONE sem dados; ALL só com editor de RH (`employees.edit`), não mais com `employees.view`; equipe do posto sem oráculo de alocação; signatários só para RH; turmas mistas sem contagem.

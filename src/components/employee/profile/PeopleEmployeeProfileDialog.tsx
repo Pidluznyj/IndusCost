@@ -12,7 +12,8 @@ import { PeopleOverviewTab } from "./PeopleOverviewTab";
 import { ProfileState, formatProfileDateTime } from "./profileUi";
 import { PROFILE_NETWORK_ERROR_MESSAGE } from "./profileClient";
 import { usePermissions } from "@/src/hooks/usePermissions";
-import { COMPETENCY_RESOURCE_KEYS } from "@/src/lib/competencies/competencyAccess";
+import { COMPETENCY_RESOURCE_KEYS, resolveCompetencyCapabilities } from "@/src/lib/competencies/competencyAccess";
+import type { UiPermissionAction } from "@/src/lib/actionPermissionAccess";
 import { useCompetenciesFeature } from "@/src/components/competencies/useCompetenciesFeature";
 import { PeoplePerformanceHistorySection } from "@/src/components/hrPerformance/PeoplePerformanceHistorySection";
 
@@ -39,6 +40,9 @@ const PeopleDocumentsTab = lazy(() =>
   import("./PeopleDocumentsTab").then((m) => ({ default: m.PeopleDocumentsTab }))
 );
 // Competências: aba própria do módulo (carrega os próprios dados nos endpoints do módulo).
+const PeopleCertificatesTab = lazy(() =>
+  import("./PeopleCertificatesTab").then((m) => ({ default: m.PeopleCertificatesTab }))
+);
 const PeopleCompetenciesTab = lazy(() =>
   import("./PeopleCompetenciesTab").then((m) => ({ default: m.PeopleCompetenciesTab }))
 );
@@ -151,9 +155,14 @@ export function PeopleEmployeeProfileDialog({
   // Aba só com permissão E com o módulo ligado no servidor (flag COMPETENCIES_ENABLED).
   const competenciesFeature = useCompetenciesFeature(canSeeCompetenciesModule);
   const canViewCompetencies = canSeeCompetenciesModule && competenciesFeature === true;
+  const competencyCaps = useMemo(
+    () => resolveCompetencyCapabilities((rk, action) => canPerformAction(rk, action as UiPermissionAction)),
+    [canPerformAction]
+  );
+  const canViewTrainingCertificates = canViewCompetencies && competencyCaps.viewTrainings;
   const visibleTabIds = useMemo(
-    () => visibleProfileTabs(caps, { canViewLinks, canViewAdmin, canViewCompetencies }),
-    [caps, canViewLinks, canViewAdmin, canViewCompetencies]
+    () => visibleProfileTabs(caps, { canViewLinks, canViewAdmin, canViewCompetencies, canViewTrainingCertificates }),
+    [caps, canViewLinks, canViewAdmin, canViewCompetencies, canViewTrainingCertificates]
   );
 
   useEffect(() => {
@@ -439,6 +448,15 @@ export function PeopleEmployeeProfileDialog({
                   />
                 )}
                 {activeTab === "competencies" && <PeopleCompetenciesTab employeeId={employeeId} />}
+                {activeTab === "certificates" && (
+                  <PeopleCertificatesTab
+                    employeeId={employeeId}
+                    canViewUploads={Boolean(caps?.canViewDocuments)}
+                    canManageUploads={Boolean(caps?.canManageDocuments)}
+                    canViewSystem={canViewTrainingCertificates}
+                    canViewCompetencyCatalog={canViewCompetencies}
+                  />
+                )}
                 {activeTab === "evaluations" && (
                   <>
                   <PeoplePerformanceHistorySection employeeId={employeeId} />

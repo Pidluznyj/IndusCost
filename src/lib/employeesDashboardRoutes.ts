@@ -19,6 +19,8 @@ import {
   type EmployeePermissionCheck,
 } from "@/src/lib/employeesPermissions.js";
 import { loadEmployeesDashboardSummary } from "@/src/lib/employeesDashboard.server.js";
+import { exportEpiDeliveriesCsv, loadEpiReplacements } from "@/src/lib/epi/epiReplacements.server.js";
+import { businessTodayIso } from "@/src/lib/competencies/competencyDomain.js";
 
 type AuthGuards = {
   requireAppAuth: RequestHandler;
@@ -66,6 +68,47 @@ export function registerEmployeesDashboardRoutes(
         return res.status(500).json({
           error: "Erro ao carregar dashboard de pessoas.",
         });
+      }
+    }
+  );
+
+  // Controle de EPIs e Uniformes: trocas vencidas e previstas para os próximos 60 dias.
+  app.get(
+    "/api/employees/epi-replacements",
+    requireAppAuth,
+    requireDashboardAccess,
+    async (_req, res) => {
+      try {
+        res.setHeader("Cache-Control", "no-store");
+        return res.json(await loadEpiReplacements(prisma, businessTodayIso(new Date())));
+      } catch (error) {
+        console.error("GET /api/employees/epi-replacements", error);
+        return res.status(500).json({ error: "Erro ao carregar o controle de EPIs." });
+      }
+    }
+  );
+
+  // Relatório de entregas de EPI/uniforme (CSV), com período opcional pela data da entrega.
+  app.get(
+    "/api/employees/epi-deliveries/export",
+    requireAppAuth,
+    requireDashboardAccess,
+    async (req, res) => {
+      try {
+        const day = (v: unknown) =>
+          typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null;
+        const csv = await exportEpiDeliveriesCsv(prisma, {
+          from: day(req.query.from),
+          to: day(req.query.to),
+          todayIso: businessTodayIso(new Date()),
+        });
+        res.setHeader("Cache-Control", "no-store");
+        res.setHeader("Content-Type", "text/csv; charset=utf-8");
+        res.setHeader("Content-Disposition", 'attachment; filename="entregas-epi-uniformes.csv"');
+        return res.send(csv);
+      } catch (error) {
+        console.error("GET /api/employees/epi-deliveries/export", error);
+        return res.status(500).json({ error: "Erro ao exportar entregas de EPI." });
       }
     }
   );

@@ -53,8 +53,9 @@ Regras comuns:
 | DELETE | `/api/employees/:id/absences/:recordId` | `canManageAbsences` | |
 | PATCH | `/api/employees/:id/emergency-contacts/:recordId` | `canManageEmergency` | `{ name?, phone?, relationship?, alternatePhone?, priority?, notes? }` (prioridade 1–9). `recordId = "primary"` → 400 `PRIMARY_CONTACT`: o contato principal vive nas colunas do Employee e é editado no cadastro (guia Emergência). |
 | DELETE | `/api/employees/:id/emergency-contacts/:recordId` | `canManageEmergency` | Mesma regra do `"primary"`. |
-| PATCH | `/api/employees/:id/epi-deliveries/:recordId` | `canManageEpi` | `{ item?, deliveredAt?, quantity?, size?, validUntil?, returnedAt?, responsibleName?, notes? }` (quantidade inteira ≥ 1). |
-| DELETE | `/api/employees/:id/epi-deliveries/:recordId` | `canManageEpi` | |
+| PATCH | `/api/employees/:id/epi-deliveries/:recordId` | `canManageEpi` | Entrega do catálogo: `{ deliveredOn?, quantity?, size?, notes?, receiptDocumentId?, replacementDays?, replacementDueDate?, adjustReason? }` (item imutável). Entrega antiga (texto livre): campos de antes. Ver [`epi-uniforms.md`](./epi-uniforms.md). |
+| POST | `/api/employees/:id/epi-deliveries/:recordId/{cancel,close}` | `canManageEpi` | `{ reason }` (mín. 10). Só a partir de Vigente. |
+| DELETE | `/api/employees/:id/epi-deliveries/:recordId` | `canManageEpi` | 405 `EPI_DELETE_NOT_ALLOWED`: entregas não são excluídas (cancelar). |
 | PATCH | `/api/employees/:id/documents/:recordId` | `canManageDocuments` | JSON, **só metadados**: `{ documentType?, displayName?, issuedAt?, expiresAt?, notes? }`. O arquivo anexado não é substituído. |
 | DELETE | `/api/employees/:id/documents/:recordId` | `canManageDocuments` | Linha (e evento ligado) no banco primeiro; o arquivo sai depois do commit (`deleteAppLocalFile(...).catch(() => undefined)`). |
 | PATCH | `/api/employees/:id/notes/:recordId` | `canManageNotes` | `{ category?, body? }`. Linha **existente** `RESTRITA` sem `canViewRestrictedNotes` → 404 (sem oráculo de id). **Nova** categoria `RESTRITA` sem a permissão → 403. `visibility` acompanha a categoria. |
@@ -155,7 +156,7 @@ O modal **Editar** (Pessoas / RH › Colaboradores) espelha a ficha. Guias (`EMP
 
 `logEmployeeHrAudit` não grava salário/CPF. `VIEW_COMPENSATION_VALUES` ocorre só no GET de remuneração com valores. Abrir o summary da ficha não gera log financeiro.
 
-Eventos das correções (detalhes só com ids, booleanos e **nomes** dos campos alterados — nunca valores, CPF ou telefone): `employee.compensation.adjustment.update`, `employee.compensation.adjustment.delete`, `employee.history.update`, `employee.history.delete`, `employee.document.update`, `employee.document.delete`, `employee.epi.update`, `employee.epi.delete`, `employee.note.update`, `employee.note.delete`, `employee.photo.change`. Benefício, afastamento e contato de emergência reutilizam o `.change` com `details.action: "update" | "delete"`. Registro histórico usa o evento de criação com `historicalOnly: true` / `recordOnly: true` (o de reajuste omite o percentual).
+Eventos das correções (detalhes só com ids, booleanos e **nomes** dos campos alterados — nunca valores, CPF ou telefone): `employee.compensation.adjustment.update`, `employee.compensation.adjustment.delete`, `employee.history.update`, `employee.history.delete`, `employee.document.update`, `employee.document.delete`, `employee.epi.update` (exceção: guarda também os valores anteriores de data/quantidade/prazo e a justificativa, sem observações), `employee.epi.replace`, `employee.epi.cancel`, `employee.epi.close`, `employee.note.update`, `employee.note.delete`, `employee.photo.change`. Benefício, afastamento e contato de emergência reutilizam o `.change` com `details.action: "update" | "delete"`. Registro histórico usa o evento de criação com `historicalOnly: true` / `recordOnly: true` (o de reajuste omite o percentual).
 
 ## Performance
 

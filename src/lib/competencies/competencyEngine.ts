@@ -1,15 +1,18 @@
 /**
  * Competências e Desenvolvimento — ENGINE OFICIAL (pura, sem Prisma).
  *
- * Fonte única de: requisito atendido, lacuna, cobertura, aptidão no posto, média da
- * avaliação, expiração por reciclagem e os agregados da Visão geral / Matriz.
+ * Fonte única de: requisito atendido (compatibilidade com posto), indicadores de
+ * desenvolvimento por departamento, média da avaliação, expiração por reciclagem
+ * e os agregados da Visão geral / Matriz.
  * API e UI consomem só estas funções; nenhuma tela recalcula por conta própria.
  *
  * Regras:
  * - requisito atendido = nível efetivo ≥ mínimo do posto do colaborador;
  * - lacuna = requisito não atendido, diferença = mínimo − nível efetivo;
  * - cobertura = atendidos / total de requisitos (null quando não há requisitos);
- * - apto no posto = atende 100% dos requisitos do posto;
+ * - apto no posto = atende 100% dos requisitos do posto (cálculo legado; a tela não o exibe);
+ * - desenvolvimento (colaboradores avaliados, autônomos, multiplicadores, polivalência)
+ *   usa só níveis gravados/efetivos e a associação departamento×competência, sem mínimo;
  * - média da avaliação = média dos níveis atribuídos, 1 casa decimal, vírgula;
  * - lacuna crítica = lacuna em competência marcada como crítica (contada à parte na Visão geral);
  * - reciclagem: competência com `requiresRecycling` cujo último treinamento concluído
@@ -42,7 +45,24 @@ export type WorkPositionRef = {
   requirements: PositionRequirementRef[];
 };
 
-export type EmployeeRef = { id: string; name: string; positionId: string | null };
+export type EmployeeRef = { id: string; name: string; positionId: string | null; departmentId?: string | null };
+
+/** Competência pertinente a um departamento. Não é nível mínimo. */
+export type DepartmentLinkRef = {
+  departmentId: string;
+  competencyId: string;
+  /** Ausente ou true = vale para todos os turnos de configuração. */
+  appliesToAllShifts?: boolean;
+  shifts?: string[];
+};
+
+export type CompetencyViewFilter = {
+  departmentId?: string | null;
+  /** Vazio ou ausente = sem filtro de turno. */
+  shifts?: readonly string[] | null;
+};
+
+export type DepartmentRef = { id: string; name: string };
 
 export type StoredLevelRef = { employeeId: string; competencyId: string; level: number };
 
@@ -60,6 +80,10 @@ export type CompetencyEngineInput = {
   employees: EmployeeRef[];
   levels: StoredLevelRef[];
   trainingCompletions: TrainingCompletionRef[];
+  /** Departamentos oficiais citados pelos colaboradores ou pelas associações. */
+  departments?: DepartmentRef[];
+  /** Associação departamento × competência, sem nível mínimo. */
+  departmentLinks?: DepartmentLinkRef[];
   /** Data de referência "AAAA-MM-DD" (hoje, no fuso de negócio). */
   asOf: string;
 };
@@ -356,6 +380,22 @@ export function countOpenTrainings(statuses: readonly string[]): number {
 // Agregados de tela
 // ---------------------------------------------------------------------------
 
+export type DevelopmentSummary = {
+  employeesInScope: number;
+  /** Colaboradores com ao menos um nível gravado maior que zero. */
+  evaluatedEmployees: number;
+  /** Competências distintas com nível gravado maior que zero. */
+  evaluatedCompetencies: number;
+  /** Contagem dos níveis gravados (0–4) entre os registros existentes. */
+  levelDistribution: { level: CompetencyLevel; count: number }[];
+  /** Ao menos um nível efetivo 3 ou 4 (executa com autonomia). */
+  autonomousEmployees: number;
+  /** Ao menos um nível efetivo 4 (referência / ensina). */
+  multipliers: number;
+  /** Nível gravado numa competência pertinente a outro departamento. */
+  polyvalentEmployees: number;
+};
+
 export type CompetencyOverview = {
   coverage: CoverageSummary;
   openGaps: number;
@@ -367,7 +407,103 @@ export type CompetencyOverview = {
   allocatedEmployees: number;
   topGaps: RequirementEvaluation[];
   positions: PositionReadiness[];
+  development: DevelopmentSummary;
 };
+
+export function linkAppliesToShifts(link: DepartmentLinkRef, shifts: readonly string[]): boolean {
+  if (shifts.length === 0) return true;
+  if (link.appliesToAllShifts !== false) return true;
+  const codes = link.shifts ?? [];
+  return shifts.some((shift) => codes.includes(shift));
+}
+
+/**
+ * Recorte da visão. Departamento filtra colaboradores pelo vínculo oficial.
+ * Turno filtra competências da configuração. Não classifica colaborador por turno.
+ */
+export function narrowCompetencyView(input: CompetencyEngineInput, filter: CompetencyViewFilter = {}): CompetencyEngineInput {
+  const departmentId = filter.departmentId || null;
+  const shifts = filter.shifts && filter.shifts.length > 0 ? filter.shifts : null;
+  if (!departmentId && !shifts) return input;
+  let links = input.departmentLinks ?? [];
+  let employees = input.employees;
+  if (departmentId) {
+    employees = employees.filter((employee) => employee.departmentId === departmentId);
+    links = links.filter((link) => link.departmentId === departmentId);
+  }
+  let competencies = input.competencies;
+  if (shifts) {
+    const applicable = new Set(links.filter((link) => linkAppliesToShifts(link, shifts)).map((link) => link.competencyId));
+    competencies = competencies.filter((competency) => applicable.has(competency.id));
+    links = links.filter((link) => applicable.has(link.competencyId));
+  }
+  const employeeIds = new Set(employees.map((employee) => employee.id));
+  const competencyIds = new Set(competencies.map((competency) => competency.id));
+  return {
+    ...input,
+    employees,
+    competencies,
+    departmentLinks: links,
+    levels: input.levels.filter((level) => employeeIds.has(level.employeeId) && competencyIds.has(level.competencyId)),
+    trainingCompletions: input.trainingCompletions.filter(
+      (completion) => employeeIds.has(completion.employeeId) && competencyIds.has(completion.competencyId),
+    ),
+  };
+}
+
+/**
+ * Indicadores do fluxo por departamento. Associação não gera lacuna:
+ * só entram níveis já gravados e o nível efetivo (reciclagem inclusive).
+ */
+export function buildDevelopmentSummary(input: CompetencyEngineInput): DevelopmentSummary {
+  const matrix = buildCompetencyMatrix(input);
+  const linksByCompetency = new Map<string, Set<string>>();
+  for (const link of input.departmentLinks ?? []) {
+    const set = linksByCompetency.get(link.competencyId) ?? new Set<string>();
+    set.add(link.departmentId);
+    linksByCompetency.set(link.competencyId, set);
+  }
+  const departmentOf = new Map(input.employees.map((e) => [e.id, e.departmentId ?? null]));
+  const distribution: Record<CompetencyLevel, number> = { 0: 0, 1: 0, 2: 0, 3: 0, 4: 0 };
+  const evaluatedCompetencyIds = new Set<string>();
+  let evaluatedEmployees = 0;
+  let autonomousEmployees = 0;
+  let multipliers = 0;
+  let polyvalentEmployees = 0;
+  for (const row of matrix.rows) {
+    const home = departmentOf.get(row.employeeId) ?? null;
+    let evaluated = false;
+    let autonomous = false;
+    let multiplier = false;
+    let polyvalent = false;
+    for (const cell of row.cells) {
+      if (cell.storedLevel > 0) {
+        evaluated = true;
+        evaluatedCompetencyIds.add(cell.competencyId);
+        distribution[cell.storedLevel] += 1;
+      }
+      if (cell.level >= 3) autonomous = true;
+      if (cell.level === 4) multiplier = true;
+      const departments = linksByCompetency.get(cell.competencyId);
+      if (cell.storedLevel > 0 && departments && [...departments].some((departmentId) => departmentId !== home)) {
+        polyvalent = true;
+      }
+    }
+    if (evaluated) evaluatedEmployees += 1;
+    if (autonomous) autonomousEmployees += 1;
+    if (multiplier) multipliers += 1;
+    if (polyvalent) polyvalentEmployees += 1;
+  }
+  return {
+    employeesInScope: matrix.rows.length,
+    evaluatedEmployees,
+    evaluatedCompetencies: evaluatedCompetencyIds.size,
+    levelDistribution: ([0, 1, 2, 3, 4] as const).map((level) => ({ level, count: distribution[level] })),
+    autonomousEmployees,
+    multipliers,
+    polyvalentEmployees,
+  };
+}
 
 export function buildCompetencyOverview(
   input: CompetencyEngineInput,
@@ -386,6 +522,7 @@ export function buildCompetencyOverview(
     allocatedEmployees: input.employees.filter((e) => e.positionId && positions.some((p) => p.positionId === e.positionId)).length,
     topGaps: gaps.slice(0, OVERVIEW_TOP_GAPS),
     positions,
+    development: buildDevelopmentSummary(input),
   };
 }
 

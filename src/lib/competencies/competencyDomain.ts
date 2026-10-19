@@ -38,6 +38,19 @@ export const COMPETENCY_CATEGORY_LABELS: Record<CompetencyCategory, string> = {
   BEHAVIORAL: "Comportamental",
 };
 
+/**
+ * Turnos de configuração das competências (não é o turno do colaborador).
+ * O RH não tem esse vínculo: `Employee.workSchedule` é texto livre e o posto
+ * só guarda quantos turnos opera (`SHIFT_PATTERNS`).
+ */
+export const COMPETENCY_SHIFTS = ["1", "2", "3"] as const;
+export type CompetencyShift = (typeof COMPETENCY_SHIFTS)[number];
+export const COMPETENCY_SHIFT_LABELS: Record<CompetencyShift, string> = {
+  "1": "Turno 1",
+  "2": "Turno 2",
+  "3": "Turno 3",
+};
+
 export const SHIFT_PATTERNS = ["ONE_SHIFT", "TWO_SHIFTS", "THREE_SHIFTS"] as const;
 export type ShiftPattern = (typeof SHIFT_PATTERNS)[number];
 export const SHIFT_PATTERN_LABELS: Record<ShiftPattern, string> = {
@@ -84,6 +97,7 @@ function isMember<T extends string>(list: readonly T[], value: unknown): value i
 }
 
 export const isCompetencyCategory = (v: unknown): v is CompetencyCategory => isMember(COMPETENCY_CATEGORIES, v);
+export const isCompetencyShift = (v: unknown): v is CompetencyShift => isMember(COMPETENCY_SHIFTS, v);
 export const isShiftPattern = (v: unknown): v is ShiftPattern => isMember(SHIFT_PATTERNS, v);
 export const isCompetencyAssessmentStatus = (v: unknown): v is CompetencyAssessmentStatus =>
   isMember(COMPETENCY_ASSESSMENT_STATUSES, v);
@@ -109,6 +123,17 @@ export function competencyCategoryLabel(category: string): string {
 
 export function shiftPatternLabel(shift: string): string {
   return isShiftPattern(shift) ? SHIFT_PATTERN_LABELS[shift] : shift;
+}
+
+export function competencyShiftLabel(shift: string): string {
+  return isCompetencyShift(shift) ? COMPETENCY_SHIFT_LABELS[shift] : shift;
+}
+
+/** null = todos os turnos de configuração. Lista parcial vem ordenada e sem repetição. */
+export function normalizeCompetencyShifts(shifts: readonly string[]): string[] | null {
+  const unique = [...new Set(shifts)];
+  if (unique.length === COMPETENCY_SHIFTS.length && COMPETENCY_SHIFTS.every((shift) => unique.includes(shift))) return null;
+  return unique.slice().sort();
 }
 
 export const BUSINESS_TIME_ZONE = "America/Sao_Paulo";

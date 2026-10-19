@@ -18,6 +18,7 @@ import {
   PROJECTS_BASE_PATH,
 } from "./projectsNavigation.js";
 import type { ProjectDetail } from "@/src/types/projects.js";
+import { EMPTY_PROJECT_DOCUMENT_FIELDS } from "./projectsCommercialTerms.js";
 
 function minimalDetail(overrides: Partial<ProjectDetail> = {}): ProjectDetail {
   return {
@@ -26,6 +27,7 @@ function minimalDetail(overrides: Partial<ProjectDetail> = {}): ProjectDetail {
     title: "Smaltec",
     customerName: "Smaltec",
     customerDocument: null,
+    ...EMPTY_PROJECT_DOCUMENT_FIELDS,
     description: null,
     projectType: "NEW_PRODUCT",
     status: "DRAFT",

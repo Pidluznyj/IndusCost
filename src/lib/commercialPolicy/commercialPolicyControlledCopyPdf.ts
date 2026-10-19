@@ -16,6 +16,9 @@
 import { escapePdfText } from "./commercialPolicyPdf.js";
 import { parsePolicyChapters, type PolicyBlock, type PolicyChapter } from "./policyDocumentFormat.js";
 import { applyPolicyAutoFields, type PolicyAutoFieldContext } from "./policyAutoFields.js";
+import type { PdfImageObject } from "../pdf/pdfImage.js";
+
+// Primitivas exportadas para reuso pelos documentos de Projetos (mesmo motor, sem dependência nova).
 
 export type ControlledCopyPdfInput = {
   /** Conteúdo gravado na versão (marcação `# / ## / - / > / |` ou texto plano). */
@@ -93,9 +96,9 @@ const SUBSTITUTIONS: Record<string, string> = {
   "\t": " ",
 };
 
-type Font = "F1" | "F2";
+export type Font = "F1" | "F2";
 
-function sanitize(text: string): string {
+export function sanitize(text: string): string {
   let out = "";
   for (const char of text) out += SUBSTITUTIONS[char] ?? char;
   return out;
@@ -147,7 +150,7 @@ export function wrapPdfText(text: string, font: Font, size: number, maxWidth: nu
   return lines.length ? lines : [""];
 }
 
-function fitText(text: string, font: Font, size: number, maxWidth: number): string {
+export function fitText(text: string, font: Font, size: number, maxWidth: number): string {
   if (pdfTextWidth(text, font, size) <= maxWidth) return text;
   let cut = text.length;
   while (cut > 1 && pdfTextWidth(`${text.slice(0, cut)}…`, font, size) > maxWidth) cut -= 1;
@@ -155,43 +158,43 @@ function fitText(text: string, font: Font, size: number, maxWidth: number): stri
 }
 
 // ── Página ───────────────────────────────────────────────────────────────────
-const PAGE_W = 595;
-const PAGE_H = 842;
-const LEFT = 56;
-const RIGHT = 539;
-const WIDTH = RIGHT - LEFT;
-const TOP = 770;
-const BOTTOM = 96;
+export const PAGE_W = 595;
+export const PAGE_H = 842;
+export const LEFT = 56;
+export const RIGHT = 539;
+export const WIDTH = RIGHT - LEFT;
+export const TOP = 770;
+export const BOTTOM = 96;
 
-const NAVY = "0.06 0.09 0.16";
-const TEXT = "0.12 0.14 0.18";
-const MUTED = "0.38 0.42 0.48";
-const AMBER = "0.71 0.33 0.04";
-const RED = "0.70 0.11 0.11";
-const RULE = "0.80 0.83 0.87";
-const SHADE = "0.93 0.94 0.96";
+export const NAVY = "0.06 0.09 0.16";
+export const TEXT = "0.12 0.14 0.18";
+export const MUTED = "0.38 0.42 0.48";
+export const AMBER = "0.71 0.33 0.04";
+export const RED = "0.70 0.11 0.11";
+export const RULE = "0.80 0.83 0.87";
+export const SHADE = "0.93 0.94 0.96";
 
-const n = (value: number) => (Math.round(value * 100) / 100).toString();
+export const n = (value: number) => (Math.round(value * 100) / 100).toString();
 
 /** `bg` recebe preenchimentos (ficam atrás da marca d'água); `fg`, texto e traços. */
-type Page = { bg: string[]; fg: string[] };
+export type Page = { bg: string[]; fg: string[] };
 
-function drawText(target: string[], x: number, y: number, text: string, font: Font, size: number, color = TEXT, wordSpacing = 0): void {
+export function drawText(target: string[], x: number, y: number, text: string, font: Font, size: number, color = TEXT, wordSpacing = 0): void {
   target.push(`BT /${font} ${n(size)} Tf ${color} rg ${n(wordSpacing)} Tw 1 0 0 1 ${n(x)} ${n(y)} Tm (${escapePdfText(text)}) Tj ET`);
 }
 
-function drawTextRight(target: string[], right: number, y: number, text: string, font: Font, size: number, color = TEXT): void {
+export function drawTextRight(target: string[], right: number, y: number, text: string, font: Font, size: number, color = TEXT): void {
   drawText(target, right - pdfTextWidth(text, font, size), y, text, font, size, color);
 }
 
-function drawLine(target: string[], x1: number, y1: number, x2: number, y2: number, color: string, width: number): void {
+export function drawLine(target: string[], x1: number, y1: number, x2: number, y2: number, color: string, width: number): void {
   target.push(`${color} RG ${n(width)} w ${n(x1)} ${n(y1)} m ${n(x2)} ${n(y2)} l S`);
 }
 
-type ParagraphStyle = { font?: Font; size?: number; leading?: number; color?: string; indent?: number; justify?: boolean; gapAfter?: number; width?: number };
+export type ParagraphStyle = { font?: Font; size?: number; leading?: number; color?: string; indent?: number; justify?: boolean; gapAfter?: number; width?: number };
 
 /** Fluxo vertical com quebra de página automática. */
-class Flow {
+export class Flow {
   readonly pages: Page[] = [];
   y = TOP;
 
@@ -279,7 +282,7 @@ class Flow {
   }
 
   /** Tabela com bordas; células quebram por largura; o cabeçalho repete ao virar a página. */
-  table(rows: string[][], options: { header: boolean; boldFirstColumn?: boolean }): void {
+  table(rows: string[][], options: { header: boolean; boldFirstColumn?: boolean; boldColumns?: readonly number[] }): void {
     const columns = Math.max(...rows.map((row) => row.length), 1);
     const size = 9;
     const leading = 11.6;
@@ -294,7 +297,9 @@ class Flow {
     widths = widths.map((value) => value * scale);
 
     const drawRow = (row: string[], isHeader: boolean) => {
-      const fonts: Font[] = row.map((_, col) => (isHeader || (options.boldFirstColumn && col === 0) ? "F2" : "F1"));
+      const fonts: Font[] = row.map((_, col) =>
+        isHeader || (options.boldFirstColumn && col === 0) || options.boldColumns?.includes(col) ? "F2" : "F1"
+      );
       const cells = row.map((cell, col) => wrapPdfText(cell, fonts[col], size, widths[col] - pad * 2));
       const height = Math.max(...cells.map((lines) => lines.length)) * leading + pad + 3;
       if (this.y - height < BOTTOM) {
@@ -385,17 +390,37 @@ function watermarkCommands(input: ControlledCopyPdfInput, issuedAt: string): str
   return commands;
 }
 
-function assemblePdf(streams: string[], title: string): Buffer {
+/** Monta o PDF. `images` (opcional) vira /Im1, /Im2… nos recursos de todas as páginas. */
+export function assemblePdf(streams: string[], title: string, images: readonly PdfImageObject[] = []): Buffer {
   const objects: string[] = [];
   const pageIds: number[] = [];
   let nextId = 6;
+  const imageRefs: string[] = [];
+  images.forEach((image, index) => {
+    let smaskRef = "";
+    if (image.smask) {
+      const smaskId = nextId++;
+      objects[smaskId] = `${image.smask.dict} /Length ${image.smask.data.length} >>
+stream
+${image.smask.data.toString("latin1")}
+endstream`;
+      smaskRef = ` /SMask ${smaskId} 0 R`;
+    }
+    const imageId = nextId++;
+    objects[imageId] = `${image.dict}${smaskRef} /Length ${image.data.length} >>
+stream
+${image.data.toString("latin1")}
+endstream`;
+    imageRefs.push(`/Im${index + 1} ${imageId} 0 R`);
+  });
+  const xobjects = imageRefs.length ? ` /XObject << ${imageRefs.join(" ")} >>` : "";
   for (const stream of streams) {
     const contentId = nextId++;
     const pageId = nextId++;
     pageIds.push(pageId);
     objects[contentId] = `<< /Length ${Buffer.byteLength(stream, "latin1")} >>\nstream\n${stream}\nendstream`;
     objects[pageId] =
-      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${PAGE_W} ${PAGE_H}] /Contents ${contentId} 0 R /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> >>`;
+      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${PAGE_W} ${PAGE_H}] /Contents ${contentId} 0 R /Resources << /Font << /F1 3 0 R /F2 4 0 R >>${xobjects} >> >>`;
   }
   objects[1] = "<< /Type /Catalog /Pages 2 0 R >>";
   objects[2] = `<< /Type /Pages /Count ${pageIds.length} /Kids [${pageIds.map((id) => `${id} 0 R`).join(" ")}] >>`;

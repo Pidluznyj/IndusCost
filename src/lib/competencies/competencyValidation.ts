@@ -5,11 +5,14 @@
 
 import {
   COMPETENCY_ASSESSMENT_STATUSES,
+  COMPETENCY_SHIFTS,
   isAssessedLevel,
   isCompetencyAssessmentStatus,
   isCompetencyCategory,
   isCompetencyLevel,
+  isCompetencyShift,
   isShiftPattern,
+  normalizeCompetencyShifts,
   isTrainingModality,
   isTrainingStatus,
   type CompetencyAssessmentStatus,
@@ -19,6 +22,7 @@ import {
   type TrainingModality,
   type TrainingStatus,
 } from "./competencyDomain";
+import { parseInstructorName, parseSyllabus, syllabusMatchesWorkload, type SyllabusModule } from "./trainingCertificate";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const ISO_DATE_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
@@ -160,6 +164,56 @@ export function parseWorkPositionBody(body: unknown): ParseResult<WorkPositionIn
   return { ok: true, value: { name, departmentId, shiftPattern: body.shiftPattern, requirements } };
 }
 
+export type DepartmentCompetencyAssignment = { competencyId: string; shifts: string[] | null };
+
+function readShiftSelection(value: unknown): string[] | null | "invalid" {
+  if (value == null || value === "ALL") return null;
+  if (!Array.isArray(value) || value.length === 0 || value.length > COMPETENCY_SHIFTS.length) return "invalid";
+  const codes: string[] = [];
+  for (const shift of value) {
+    if (!isCompetencyShift(shift) || codes.includes(shift)) return "invalid";
+    codes.push(shift);
+  }
+  return normalizeCompetencyShifts(codes);
+}
+
+export function parseDepartmentCompetenciesBody(body: unknown): ParseResult<{ items: DepartmentCompetencyAssignment[] }> {
+  if (!isRecord(body)) return fail("INVALID_BODY", "Corpo da requisição inválido.");
+  if (Array.isArray(body.items)) {
+    if (body.items.length > 500) return fail("INVALID_COMPETENCIES", "Lista de competências inválida.");
+    const items: DepartmentCompetencyAssignment[] = [];
+    const seen = new Set<string>();
+    for (const raw of body.items) {
+      if (!isRecord(raw) || !isUuidString(raw.competencyId)) return fail("INVALID_COMPETENCIES", "Lista de competências inválida.");
+      const competencyId = raw.competencyId.trim().toLowerCase();
+      if (seen.has(competencyId)) return fail("DUPLICATE_COMPETENCY", "Competência repetida na associação.");
+      seen.add(competencyId);
+      const shifts = readShiftSelection(raw.shifts);
+      if (shifts === "invalid") return fail("INVALID_SHIFTS", "Selecione um ou mais turnos, ou todos.");
+      items.push({ competencyId, shifts });
+    }
+    return { ok: true, value: { items } };
+  }
+  const competencyIds = readUuidList(body.competencyIds, 500);
+  if (!competencyIds) return fail("INVALID_COMPETENCIES", "Lista de competências inválida.");
+  return { ok: true, value: { items: competencyIds.map((competencyId) => ({ competencyId, shifts: null })) } };
+}
+
+export function parseCompetencyViewQuery(query: Record<string, unknown>): ParseResult<{ departmentId: string | null; shifts: string[] | null }> {
+  const rawDepartment = query.departmentId;
+  let departmentId: string | null = null;
+  if (rawDepartment != null && rawDepartment !== "") {
+    if (typeof rawDepartment !== "string" || !isUuidString(rawDepartment)) return fail("INVALID_DEPARTMENT", "Departamento inválido.");
+    departmentId = rawDepartment.trim().toLowerCase();
+  }
+  const rawShifts = query.shifts;
+  if (rawShifts == null || rawShifts === "" || rawShifts === "all") return { ok: true, value: { departmentId, shifts: null } };
+  if (typeof rawShifts !== "string") return fail("INVALID_SHIFTS", "Turnos inválidos.");
+  const shifts = readShiftSelection(rawShifts.split(",").map((shift) => shift.trim()).filter(Boolean));
+  if (shifts === "invalid") return fail("INVALID_SHIFTS", "Turnos inválidos.");
+  return { ok: true, value: { departmentId, shifts } };
+}
+
 export function parsePositionTeamBody(body: unknown): ParseResult<{ employeeIds: string[] }> {
   if (!isRecord(body)) return fail("INVALID_BODY", "Corpo da requisição inválido.");
   const employeeIds = readUuidList(body.employeeIds, POSITION_MAX_TEAM);
@@ -265,7 +319,23 @@ export type TrainingInput = {
   startDate: string;
   validityMonths: number;
   participantIds: string[];
+  /** Ausente = mantém o gravado. */
+  instructorName?: string | null;
+  /** Ausente = mantém o gravado. Com módulos, a soma fecha com `workloadHours`. */
+  syllabus?: SyllabusModule[];
 };
+
+/** Instrutor e conteúdo programático do certificado (também editáveis após a conclusão). */
+export function parseTrainingCertificateContentBody(
+  body: unknown,
+): ParseResult<{ instructorName: string | null; syllabus: SyllabusModule[] }> {
+  if (!isRecord(body)) return fail("INVALID_BODY", "Corpo da requisição inválido.");
+  const instructor = parseInstructorName(body.instructorName);
+  if (instructor.ok === false) return fail(instructor.code, instructor.message);
+  const syllabus = parseSyllabus(body.syllabus);
+  if (syllabus.ok === false) return fail(syllabus.code, syllabus.message);
+  return { ok: true, value: { instructorName: instructor.value, syllabus: syllabus.value } };
+}
 
 export function parseTrainingBody(body: unknown): ParseResult<TrainingInput> {
   if (!isRecord(body)) return fail("INVALID_BODY", "Corpo da requisição inválido.");
@@ -285,6 +355,24 @@ export function parseTrainingBody(body: unknown): ParseResult<TrainingInput> {
   const participantIds = readUuidList(body.participantIds, TRAINING_MAX_PARTICIPANTS);
   if (!participantIds) return fail("INVALID_PARTICIPANTS", "Participantes inválidos.");
   if (participantIds.length === 0) return fail("PARTICIPANTS_REQUIRED", "Selecione pelo menos 1 participante.");
+  let instructorName: string | null | undefined;
+  if (body.instructorName !== undefined) {
+    const parsed = parseInstructorName(body.instructorName);
+    if (parsed.ok === false) return fail(parsed.code, parsed.message);
+    instructorName = parsed.value;
+  }
+  let syllabus: SyllabusModule[] | undefined;
+  if (body.syllabus !== undefined) {
+    const parsed = parseSyllabus(body.syllabus);
+    if (parsed.ok === false) return fail(parsed.code, parsed.message);
+    if (!syllabusMatchesWorkload(parsed.value, workloadHours)) {
+      return fail(
+        "SYLLABUS_WORKLOAD_MISMATCH",
+        `A soma dos módulos precisa ser igual à carga horária do treinamento (${workloadHours} h).`,
+      );
+    }
+    syllabus = parsed.value;
+  }
   return {
     ok: true,
     value: {
@@ -295,6 +383,8 @@ export function parseTrainingBody(body: unknown): ParseResult<TrainingInput> {
       startDate: body.startDate,
       validityMonths,
       participantIds,
+      ...(instructorName !== undefined ? { instructorName } : {}),
+      ...(syllabus !== undefined ? { syllabus } : {}),
     },
   };
 }

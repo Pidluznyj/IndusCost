@@ -1,4 +1,5 @@
 import React from "react";
+import { Award } from "lucide-react";
 import { OverlayTable } from "@/src/components/ui/overlay";
 import { TRAINING_MODALITY_LABELS, formatIsoDateBr, isTrainingModality } from "@/src/lib/competencies/competencyDomain";
 import type { TrainingDto } from "@/src/lib/competencies/competencyTypes";
@@ -14,12 +15,15 @@ export function CompetencyTrainingsTab({
   canManage,
   onStatus,
   onDelete,
+  onCertificates,
   onRetry,
 }: {
   trainings: Slice<TrainingDto[]>;
   canManage: boolean;
   onStatus: (training: TrainingDto, status: "IN_PROGRESS" | "COMPLETED") => void;
   onDelete: (training: TrainingDto) => void;
+  /** Abre os certificados do treinamento (emitir exige gestão; imprimir só visualização). */
+  onCertificates: (training: TrainingDto) => void;
   onRetry: () => void;
 }) {
   const list = trainings.data;
@@ -63,16 +67,27 @@ export function CompetencyTrainingsTab({
                 <OverlayTable.Cell mono>{formatIsoDateBr(t.startDate)}</OverlayTable.Cell>
                 <OverlayTable.Cell align="right" title={t.participants.map((p) => p.employeeName).join(", ")}>
                   {t.participants.length} {t.participants.length === 1 ? "pessoa" : "pessoas"}
-                  {t.hiddenParticipantCount > 0 ? (
-                    <span className="block text-xs text-muted-foreground">+{t.hiddenParticipantCount} de outras equipes</span>
+                  {t.hasParticipantsOutsideScope ? (
+                    <span className="block text-xs text-muted-foreground">Turma com outras equipes</span>
                   ) : null}
                 </OverlayTable.Cell>
                 <OverlayTable.Cell>
-                  <TrainingStatusBadge status={t.status} />
+                  <span className="flex flex-col items-start gap-1">
+                    <TrainingStatusBadge status={t.status} />
+                    <button
+                      type="button"
+                      className={`${BTN_GHOST} -ml-2`}
+                      onClick={() => onCertificates(t)}
+                      data-testid="competency-training-certificates"
+                    >
+                      <Award className="h-3.5 w-3.5" aria-hidden />
+                      Certificados{t.activeCertificateCount > 0 ? ` (${t.activeCertificateCount})` : ""}
+                    </button>
+                  </span>
                 </OverlayTable.Cell>
                 {canManage ? (
                   <OverlayTable.Cell align="right" nowrap>
-                    {t.status !== "COMPLETED" && t.hiddenParticipantCount > 0 ? (
+                    {t.status !== "COMPLETED" && t.hasParticipantsOutsideScope ? (
                       <span className="text-xs text-muted-foreground" title="A turma tem participantes de outras equipes">
                         Gerida pelo RH
                       </span>

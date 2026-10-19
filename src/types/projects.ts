@@ -268,12 +268,45 @@ export type ProjectCostAmortizationSummaryView = {
   alerts: string[];
 };
 
+/** Cadastro oficial vinculado ao projeto (dados vivos do cadastro de Clientes). */
+export type ProjectLinkedCustomer = {
+  id: string;
+  companyName: string;
+  tradeName: string | null;
+  taxId: string;
+  stateTaxId: string | null;
+  contactName: string | null;
+  email: string | null;
+  phone: string | null;
+  address: string | null;
+  city: string | null;
+  state: string | null;
+  zipCode: string | null;
+  status: string;
+};
+
 export type ProjectDetail = {
   id: string;
   code: string;
   title: string;
+  /** Snapshot textual do cliente (com vínculo, copiado do cadastro no momento do vínculo). */
   customerName: string;
   customerDocument: string | null;
+  customerId: string | null;
+  customerLinkedAt: string | null;
+  customerLinkSource: string | null;
+  customer: ProjectLinkedCustomer | null;
+  /** Condições comerciais estruturadas — null = "A definir". */
+  proposalValidityDays: number | null;
+  paymentTerms: string | null;
+  deliveryTimeDays: number | null;
+  deliveryLocation: string | null;
+  freightCondition: string | null;
+  desiredDeadline: string | null;
+  priority: string | null;
+  application: string | null;
+  /** Observações para o cliente. `notes` é interno e nunca vai a documento do cliente. */
+  clientNotes: string | null;
   description: string | null;
   projectType: ProjectType;
   status: ProjectStatus;
@@ -299,6 +332,13 @@ export type ProjectDetail = {
   costAmortizations?: ProjectCostAmortizationSavedRow[];
   costAmortizationSummary?: ProjectCostAmortizationSummaryView;
   projectPricing?: ProjectPricingView;
+  /** Precificação gravada (snapshots) — fonte de valores dos documentos. */
+  projectPricingSaved?: {
+    config: { fiscalRuleId: string | null; defaultMarginPercent: number | null };
+    items: import("@/src/lib/projectsPricing").SavedProjectPricingItem[];
+  };
+  /** Definido só na montagem de documentos no servidor: valores da precificação salva. */
+  documentValueSource?: import("@/src/lib/projectsDocumentValues").ProjectDocumentValueSource;
 };
 
 export type ProjectPricingTaxRuleOption = {

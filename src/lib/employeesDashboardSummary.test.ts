@@ -62,6 +62,7 @@ describe("employeesDashboardSummary", () => {
 
   it("filtra por status ACTIVE por padrão e agrega custos", () => {
     const summary = buildEmployeesDashboardSummary({
+      todayIso: "2026-10-16",
       includeCompensation: true,
       filters: { ...DEFAULT_EMPLOYEES_DASHBOARD_FILTERS },
       employees: [
@@ -83,6 +84,7 @@ describe("employeesDashboardSummary", () => {
 
   it("sem includeCompensation omite R$ e mantém headcount/qualidade", () => {
     const summary = buildEmployeesDashboardSummary({
+      todayIso: "2026-10-16",
       includeCompensation: false,
       filters: { ...DEFAULT_EMPLOYEES_DASHBOARD_FILTERS, status: "ALL" },
       employees: [
@@ -110,6 +112,7 @@ describe("employeesDashboardSummary", () => {
 
   it("movimentação ignora status ACTIVE e filtro de admissão do headcount", () => {
     const summary = buildEmployeesDashboardSummary({
+      todayIso: "2026-10-16",
       includeCompensation: false,
       filters: {
         ...DEFAULT_EMPLOYEES_DASHBOARD_FILTERS,
@@ -179,5 +182,25 @@ describe("employeesDashboardSummary", () => {
     assert.ok(routes.includes("canViewEmployeesDashboard"));
     assert.ok(routes.includes("/api/employees/dashboard-summary"));
     assert.ok(catalog.includes("employees.dashboard.view"));
+  });
+});
+
+describe("turnover YTD no dashboard", () => {
+  it("usa o recorte estrutural, ignora status e período de admissão, e classifica pelo motivo", () => {
+    const summary = buildEmployeesDashboardSummary({
+      todayIso: "2026-10-16",
+      includeCompensation: false,
+      filters: { ...DEFAULT_EMPLOYEES_DASHBOARD_FILTERS, status: "ACTIVE", classification: "DIRETO", admissionFrom: "2026-01-01" },
+      employees: [
+        emp({ id: "a", name: "Ativo" }),
+        emp({ id: "b", name: "Pediu demissão", status: "INACTIVE", terminationDate: "2026-06-30T12:00:00.000Z", terminationReason: "RESIGNATION" }),
+        emp({ id: "c", name: "Dispensado", status: "INACTIVE", terminationDate: "2026-03-10T12:00:00.000Z", terminationReason: "DISMISSAL_WITHOUT_CAUSE" }),
+        emp({ id: "d", name: "Outro recorte", classification: "INDIRETO", status: "INACTIVE", terminationDate: "2026-05-01T12:00:00.000Z", terminationReason: "RESIGNATION" }),
+      ],
+    });
+    const t = summary.turnoverYtd;
+    assert.deepEqual([t.terminations, t.voluntary, t.involuntary], [2, 1, 1]);
+    assert.equal(t.from, "2026-01-01");
+    assert.ok(t.rate != null && t.rate > 0);
   });
 });

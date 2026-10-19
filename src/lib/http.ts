@@ -31,12 +31,15 @@ export class HttpError extends Error {
     formValue: string | null;
     personValue: string | null;
   }>;
+  /** Dados estruturados do erro (ex.: avisos legais que exigem ciência). */
+  readonly details?: unknown;
   constructor(
     status: number,
     message: string,
     code?: string,
     existingSupplierId?: string,
-    conflicts?: Array<{ field: string; formValue: string | null; personValue: string | null }>
+    conflicts?: Array<{ field: string; formValue: string | null; personValue: string | null }>,
+    details?: unknown
   ) {
     super(message);
     this.name = "HttpError";
@@ -44,6 +47,7 @@ export class HttpError extends Error {
     this.code = code;
     this.existingSupplierId = existingSupplierId;
     this.conflicts = conflicts;
+    this.details = details;
   }
 }
 
@@ -112,6 +116,7 @@ export async function parseApiErrorPayload(res: Response): Promise<{
   code?: string;
   existingSupplierId?: string;
   conflicts?: Array<{ field: string; formValue: string | null; personValue: string | null }>;
+  details?: unknown;
 }> {
   const fallback = `Erro HTTP ${res.status}`;
   try {
@@ -138,7 +143,8 @@ export async function parseApiErrorPayload(res: Response): Promise<{
           : undefined;
         // Preferir message: o backend costuma enviar error=CHILD_COST_FAILED e o detalhe útil em message.
         const message = msg || err || (typeof o.details === "string" && o.details.trim()) || fallback;
-        return { message, code, existingSupplierId, conflicts };
+        const details = o.details && typeof o.details === "object" ? o.details : undefined;
+        return { message, code, existingSupplierId, conflicts, ...(details !== undefined ? { details } : {}) };
       }
       return { message: fallback };
     }
@@ -212,7 +218,8 @@ export async function fetchJsonOk<T = unknown>(
       payload.message,
       payload.code,
       payload.existingSupplierId,
-      payload.conflicts
+      payload.conflicts,
+      payload.details
     );
   }
   const ct = res.headers.get("content-type");
@@ -252,7 +259,8 @@ export async function fetchOk(
       payload.message,
       payload.code,
       payload.existingSupplierId,
-      payload.conflicts
+      payload.conflicts,
+      payload.details
     );
   }
 }

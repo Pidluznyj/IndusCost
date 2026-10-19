@@ -64,7 +64,8 @@ export function PeopleDocumentsTab({
                   <div className="min-w-0">
                     <p className="font-medium">{doc.displayName}</p>
                     <p className="text-muted-foreground">
-                      {doc.documentType} · {formatProfileDate(doc.createdAt)}
+                      {doc.documentType === "TRAINING_CERTIFICATE" ? "Certificado de treinamento (aba Certificados)" : doc.documentType} ·{" "}
+                      {formatProfileDate(doc.createdAt)}
                       {doc.evaluationId ? " · vinculado à avaliação" : ""}
                     </p>
                     {doc.issuedAt || doc.expiresAt ? (

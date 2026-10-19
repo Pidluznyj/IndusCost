@@ -8,6 +8,7 @@ import type {
   Prisma,
 } from "@prisma/client";
 import { prisma } from "@/src/lib/prisma.js";
+import type { ProjectCommercialData } from "@/src/lib/projectsCommercialTerms.js";
 import {
   buildCostBreakdown,
   calculateAmortizedMoldCostPerUnit,
@@ -673,6 +674,7 @@ export async function loadProjectDetail(projectId: string): Promise<ProjectDetai
       simulatedItems: { orderBy: { createdAt: "asc" } },
       structureLines: { orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] },
       molds: { orderBy: { createdAt: "asc" } },
+      customer: { select: PROJECT_LINKED_CUSTOMER_SELECT },
     },
   });
   if (!project) return null;
@@ -717,6 +719,19 @@ export async function loadProjectDetail(projectId: string): Promise<ProjectDetai
     title: project.title,
     customerName: project.customerName,
     customerDocument: project.customerDocument,
+    customerId: project.customerId,
+    customerLinkedAt: project.customerLinkedAt?.toISOString() ?? null,
+    customerLinkSource: project.customerLinkSource,
+    customer: project.customer ?? null,
+    proposalValidityDays: project.proposalValidityDays,
+    paymentTerms: project.paymentTerms,
+    deliveryTimeDays: project.deliveryTimeDays,
+    deliveryLocation: project.deliveryLocation,
+    freightCondition: project.freightCondition,
+    desiredDeadline: project.desiredDeadline?.toISOString().slice(0, 10) ?? null,
+    priority: project.priority,
+    application: project.application,
+    clientNotes: project.clientNotes,
     description: project.description,
     projectType: project.projectType as ProjectType,
     status: project.status as ProjectStatus,
@@ -753,13 +768,35 @@ export async function enrichProjectDetailWithPricing(
   return {
     ...detail,
     projectPricing: pricing.view,
+    // Snapshots gravados (fonte dos documentos; a view acima é recalculada para a tela).
+    projectPricingSaved: { config: pricing.config, items: pricing.items },
   };
 }
+
+export const PROJECT_LINKED_CUSTOMER_SELECT = {
+  id: true,
+  companyName: true,
+  tradeName: true,
+  taxId: true,
+  stateTaxId: true,
+  contactName: true,
+  email: true,
+  phone: true,
+  address: true,
+  city: true,
+  state: true,
+  zipCode: true,
+  status: true,
+} as const;
 
 export async function createProjectWithVersion(data: {
   title: string;
   customerName: string;
   customerDocument?: string | null;
+  /** Vínculo oficial já validado pela rota (snapshot vem do cadastro). */
+  customerLink?: { customerId: string; customerLinkSource: string; customerLinkedAt: Date } | null;
+  /** Condições comerciais já validadas (parseProjectCommercialPatch → toProjectCommercialData). */
+  commercial?: ProjectCommercialData;
   description?: string | null;
   projectType: ProjectType;
   status?: ProjectStatus;
@@ -786,6 +823,8 @@ export async function createProjectWithVersion(data: {
         targetPrice: data.targetPrice ?? null,
         targetMarginPercent: data.targetMarginPercent ?? null,
         notes: data.notes ?? null,
+        ...(data.customerLink ?? {}),
+        ...(data.commercial ?? {}),
       },
     });
 

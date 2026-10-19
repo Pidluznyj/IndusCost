@@ -5,25 +5,30 @@
  * todo número exibido sai da engine. Consultas sem `include` (junção em memória):
  * o volume é o de um cadastro de RH e o formato mantém as rotas testáveis com banco simulado.
  *
- * População da matriz: colaboradores ATIVOS com alocação ativa num posto ATIVO.
+ * População da matriz: colaboradores ATIVOS visíveis no escopo, com ou sem posto.
+ * O departamento oficial (`Employee.departmentId`) é o contexto organizacional.
+ * `HrWorkPosition` permanece só como compatibilidade e não é exigido para avaliar.
  */
 
 import type { PrismaClient } from "@prisma/client";
 import {
   assessmentAverage,
-  assessmentScope,
   buildCompetencyMatrix,
   buildCompetencyOverview,
+  addMonthsIso,
   computeCoverage,
   evaluateRequirements,
   formatAssessmentAverage,
   isEmployeeReady,
+  narrowCompetencyView,
   type CompetencyEngineInput,
+  type CompetencyViewFilter,
   type TrainingCompletionRef,
 } from "./competencyEngine";
 import type {
   CompetencyAssessmentDto,
   CompetencyDto,
+  DepartmentCompetencyBoard,
   EmployeeCompetencyProfileDto,
   CompetencyMatrixResponse,
   CompetencyOptionsResponse,
@@ -39,12 +44,17 @@ import type {
   WorkPositionInput,
 } from "./competencyValidation";
 import { businessTodayIso, type CompetencyLevel, type TrainingStatus } from "./competencyDomain";
+import { readStoredSyllabus } from "./trainingCertificate";
 import { decideLevelWrite, validateDecision, type LevelChangeSource } from "./competencyGovernance";
+import type { PeopleAccessScope } from "../peopleProfileTypes";
 import {
   COMPETENCY_SCOPE_ALL,
+  buildCompetencyScope,
   canSeeEmployee,
+  canUseAsEvaluator,
   canWriteEmployee,
   competencyScopeView,
+  isTeamAccessScope,
   outOfWriteScope,
   type CompetencyScope,
 } from "./competencyScope";
@@ -54,6 +64,8 @@ export type CompetencyDb = Pick<
   PrismaClient,
   | "employee"
   | "hrDepartment"
+  | "hrDepartmentCompetency"
+  | "hrDepartmentCompetencyShift"
   | "hrCompetency"
   | "hrWorkPosition"
   | "hrWorkPositionRequirement"
@@ -66,6 +78,10 @@ export type CompetencyDb = Pick<
   | "hrTrainingParticipant"
   | "hrCompetencyImportBatch"
   | "hrCompetencyLevelRequest"
+  | "hrTrainingCertificate"
+  | "hrTrainingCertificateSettings"
+  | "brandingSettings"
+  | "role"
 > & {
   $transaction: PrismaClient["$transaction"];
 };
@@ -90,6 +106,35 @@ export { businessTodayIso };
 /** Data de negócio gravada como meia-noite UTC (lida de volta com `toIsoDate`). */
 export function fromIsoDate(iso: string): Date {
   return new Date(`${iso}T00:00:00.000Z`);
+}
+
+/**
+ * Fim da validade de um treinamento concluído (mesma conta da reciclagem na engine oficial).
+ * 0 meses = sem validade.
+ */
+export function trainingValidityExpiresOn(completedOn: string, validityMonths: number): string | null {
+  return validityMonths > 0 ? addMonthsIso(completedOn, validityMonths) : null;
+}
+
+/**
+ * Escopo efetivo do ator, resolvido SEMPRE no servidor a partir da sessão e da hierarquia
+ * oficial (`Employee.managerId`): DIRECT_REPORTS = liderados diretos; DESCENDANTS = árvore
+ * oficial (CTE recursiva). Nenhum id vindo do cliente entra aqui. Reutilizar em exportações.
+ */
+export async function resolveCompetencyScope(
+  db: CompetencyDb,
+  input: { accessScope: PeopleAccessScope; actorEmployeeId: string | null },
+  loadDescendantIds: (managerEmployeeId: string) => Promise<string[]>,
+): Promise<CompetencyScope> {
+  const { accessScope, actorEmployeeId } = input;
+  let teamIds: string[] = [];
+  if (actorEmployeeId && accessScope === "DIRECT_REPORTS") {
+    const rows = (await db.employee.findMany({ where: { managerId: actorEmployeeId } })) as { id: string }[];
+    teamIds = rows.map((r) => r.id);
+  } else if (actorEmployeeId && accessScope === "DESCENDANTS") {
+    teamIds = await loadDescendantIds(actorEmployeeId);
+  }
+  return buildCompetencyScope({ accessScope, actorEmployeeId, teamIds });
 }
 
 export function toIsoDate(value: Date | string | null | undefined): string | null {
@@ -197,16 +242,62 @@ export async function loadCompetencyEngineInput(
   /** Colaboradores visíveis a incluir mesmo sem posto ativo (ex.: ficha individual, inclusive inativo). */
   includeEmployeeIds: readonly string[] = [],
 ): Promise<CompetencyEngineInput> {
-  const [competencies, bundle] = await Promise.all([loadActiveCompetencies(db), loadPositionBundle(db, scope)]);
+  const [competencies, bundle, linkRows, shiftRows, departmentRows] = await Promise.all([
+    loadActiveCompetencies(db),
+    loadPositionBundle(db, scope),
+    db.hrDepartmentCompetency.findMany() as Promise<
+      { id: string; departmentId: string; competencyId: string; appliesToAllShifts?: boolean }[]
+    >,
+    db.hrDepartmentCompetencyShift.findMany() as Promise<{ departmentCompetencyId: string; shiftCode: string }[]>,
+    db.hrDepartment.findMany({ where: { status: ACTIVE } }) as Promise<{ id: string; name: string }[]>,
+  ]);
+  const activeCompetencyIds = new Set(competencies.map((c) => c.id));
+  const activeDepartmentIds = new Set(departmentRows.map((d) => d.id));
+  const shiftsOf = new Map<string, string[]>();
+  for (const row of shiftRows) {
+    const list = shiftsOf.get(row.departmentCompetencyId) ?? [];
+    list.push(row.shiftCode);
+    shiftsOf.set(row.departmentCompetencyId, list);
+  }
+  const departmentLinks = linkRows
+    .filter((link) => activeCompetencyIds.has(link.competencyId) && activeDepartmentIds.has(link.departmentId))
+    .map((link) => ({
+      departmentId: link.departmentId,
+      competencyId: link.competencyId,
+      appliesToAllShifts: link.appliesToAllShifts !== false,
+      shifts: link.appliesToAllShifts === false ? (shiftsOf.get(link.id) ?? []).slice().sort() : [],
+    }));
   const positionByEmployee = new Map(bundle.assignments.map((a) => [a.employeeId, a.positionId]));
   const extraIds = includeEmployeeIds.filter((id) => !bundle.employees.has(id) && canSeeEmployee(scope, id));
   const extras = extraIds.length
-    ? ((await db.employee.findMany({ where: { id: { in: extraIds } } })) as { id: string; name: string }[])
+    ? ((await db.employee.findMany({ where: { id: { in: extraIds } } })) as {
+        id: string;
+        name: string;
+        departmentId: string | null;
+      }[])
     : [];
   const employees = [
-    ...[...bundle.employees.values()].map((e) => ({ id: e.id, name: e.name, positionId: positionByEmployee.get(e.id) ?? null })),
-    ...extras.map((e) => ({ id: e.id, name: e.name, positionId: null })),
-  ].sort(byName);
+    ...[...bundle.employees.values()].map((e) => ({
+      id: e.id,
+      name: e.name,
+      positionId: positionByEmployee.get(e.id) ?? null,
+      departmentId: e.departmentId,
+    })),
+    ...extras.map((e) => ({ id: e.id, name: e.name, positionId: null, departmentId: e.departmentId ?? null })),
+  ];
+  const activeRows = (await db.employee.findMany({ where: { status: ACTIVE } })) as {
+    id: string;
+    name: string;
+    departmentId: string | null;
+    status?: string | null;
+    terminationDate?: Date | null;
+  }[];
+  const byId = new Map(employees.map((e) => [e.id, e]));
+  for (const row of activeRows) {
+    if (!isActiveEmployee(row) || !canSeeEmployee(scope, row.id) || byId.has(row.id)) continue;
+    byId.set(row.id, { id: row.id, name: row.name, positionId: null, departmentId: row.departmentId ?? null });
+  }
+  employees.splice(0, employees.length, ...[...byId.values()].sort(byName));
   const employeeIds = employees.map((e) => e.id);
   const levels = employeeIds.length
     ? ((await db.hrEmployeeCompetencyLevel.findMany({ where: { employeeId: { in: employeeIds } } })) as {
@@ -255,12 +346,14 @@ export async function loadCompetencyEngineInput(
     employees,
     levels,
     trainingCompletions,
+    departments: departmentRows.map((d) => ({ id: d.id, name: d.name })),
+    departmentLinks,
     asOf,
   };
 }
 
 /** Treinamentos visíveis: RH vê todos; líder vê os que têm ao menos um participante do escopo. */
-async function visibleTrainingIds(db: CompetencyDb, scope: CompetencyScope, trainingIds: string[]): Promise<Set<string>> {
+export async function visibleTrainingIds(db: CompetencyDb, scope: CompetencyScope, trainingIds: string[]): Promise<Set<string>> {
   if (scope.kind === "ALL") return new Set(trainingIds);
   if (trainingIds.length === 0 || scope.visible.size === 0) return new Set();
   const parts = (await db.hrTrainingParticipant.findMany({
@@ -273,21 +366,36 @@ export async function getCompetencyOverview(
   db: CompetencyDb,
   asOf: string,
   scope: CompetencyScope = COMPETENCY_SCOPE_ALL,
+  filter: CompetencyViewFilter = {},
 ): Promise<CompetencyOverviewResponse> {
-  const [input, assessments, trainings] = await Promise.all([
+  const [loaded, assessments, trainings] = await Promise.all([
     loadCompetencyEngineInput(db, asOf, scope),
     db.hrCompetencyAssessment.findMany({ where: { status: { not: "COMPLETED" } } }) as Promise<
       { status: string; employeeId: string }[]
     >,
     db.hrTraining.findMany({ where: { status: { not: "COMPLETED" } } }) as Promise<{ id: string; status: string }[]>,
   ]);
+  const input = narrowCompetencyView(loaded, filter);
+  const visibleEmployees = new Set(input.employees.map((employee) => employee.id));
   const seenTrainings = await visibleTrainingIds(db, scope, trainings.map((t) => t.id));
+  const filtered = Boolean(filter.departmentId || (filter.shifts && filter.shifts.length));
+  const trainingsInView = filtered
+    ? new Set(
+        (
+          (await db.hrTrainingParticipant.findMany({
+            where: { employeeId: { in: [...visibleEmployees] } },
+          })) as { trainingId: string }[]
+        ).map((row) => row.trainingId),
+      )
+    : null;
   const pendingRequests = ((await db.hrCompetencyLevelRequest.findMany({ where: { status: "PENDING" } })) as {
     employeeId: string;
-  }[]).filter((r) => canSeeEmployee(scope, r.employeeId));
+  }[]).filter((r) => visibleEmployees.has(r.employeeId) && canSeeEmployee(scope, r.employeeId));
   const overview = buildCompetencyOverview(input, {
-    assessmentStatuses: assessments.filter((a) => canSeeEmployee(scope, a.employeeId)).map((a) => a.status),
-    trainingStatuses: trainings.filter((t) => seenTrainings.has(t.id)).map((t) => t.status),
+    assessmentStatuses: assessments.filter((a) => visibleEmployees.has(a.employeeId) && canSeeEmployee(scope, a.employeeId)).map((a) => a.status),
+    trainingStatuses: trainings
+      .filter((t) => seenTrainings.has(t.id) && (trainingsInView == null || trainingsInView.has(t.id)))
+      .map((t) => t.status),
   });
   return { ...overview, asOf, scope: competencyScopeView(scope), pendingApprovals: pendingRequests.length };
 }
@@ -296,8 +404,9 @@ export async function getCompetencyMatrix(
   db: CompetencyDb,
   asOf: string,
   scope: CompetencyScope = COMPETENCY_SCOPE_ALL,
+  filter: CompetencyViewFilter = {},
 ): Promise<CompetencyMatrixResponse> {
-  const input = await loadCompetencyEngineInput(db, asOf, scope);
+  const input = narrowCompetencyView(await loadCompetencyEngineInput(db, asOf, scope), filter);
   const matrix = buildCompetencyMatrix(input);
   const employeeIds = matrix.rows.map((r) => r.employeeId);
   const [levelRows, pendingRows] = employeeIds.length
@@ -312,11 +421,22 @@ export async function getCompetencyMatrix(
     : [[], []];
   const versionOf = new Map(levelRows.map((l) => [`${l.employeeId}:${l.competencyId}`, l.version ?? 1]));
   const pendingOf = new Map(pendingRows.map((p) => [`${p.employeeId}:${p.competencyId}`, p]));
+  const departmentNameOf = new Map((input.departments ?? []).map((d) => [d.id, d.name]));
+  const linksOf = new Map<string, string[]>();
+  for (const link of input.departmentLinks ?? []) {
+    const list = linksOf.get(link.departmentId) ?? [];
+    list.push(link.competencyId);
+    linksOf.set(link.departmentId, list);
+  }
+  const departmentOf = new Map(input.employees.map((e) => [e.id, e.departmentId ?? null]));
   return {
     ...matrix,
     rows: matrix.rows.map((r) => ({
       ...r,
       writable: canWriteEmployee(scope, r.employeeId),
+      departmentId: departmentOf.get(r.employeeId) ?? null,
+      departmentName: (departmentOf.get(r.employeeId) && departmentNameOf.get(departmentOf.get(r.employeeId)!)) || null,
+      linkedCompetencyIds: linksOf.get(departmentOf.get(r.employeeId) ?? "") ?? [],
       cells: r.cells.map((c) => {
         const key = `${r.employeeId}:${c.competencyId}`;
         const pending = pendingOf.get(key);
@@ -373,12 +493,28 @@ export async function getEmployeeCompetencyProfile(
       }[])
     : [];
   const historyNames = new Map(allCompetencies.map((c) => [c.id, c.name]));
-  const required = new Set(evaluations.map((e) => e.competencyId));
+  const home = input.employees.find((e) => e.id === employeeId);
+  const departmentId = home?.departmentId ?? null;
+  const departmentName = departmentId ? input.departments?.find((d) => d.id === departmentId)?.name ?? null : null;
+  const linkedIds = new Set(
+    (input.departmentLinks ?? []).filter((l) => l.departmentId === departmentId).map((l) => l.competencyId),
+  );
+  const levelDto = (c: (typeof row.cells)[number]) => ({
+    competencyId: c.competencyId,
+    competencyName: competencyById.get(c.competencyId)?.name ?? "—",
+    category: competencyById.get(c.competencyId)?.category ?? "",
+    currentLevel: c.level,
+    storedLevel: c.storedLevel,
+    recycling: c.recycling,
+    recyclingExpiresOn: c.recyclingExpiresOn,
+  });
   return {
     asOf,
     employeeId,
     employeeName: employee.name,
     writable: canWriteEmployee(scope, employeeId),
+    department: departmentId ? { id: departmentId, name: departmentName ?? "Departamento" } : null,
+    associated: row.cells.filter((c) => linkedIds.has(c.competencyId)).map(levelDto),
     position: position
       ? { id: position.id, name: position.name, departmentName: position.departmentName, shiftPattern: position.shiftPattern }
       : null,
@@ -400,17 +536,7 @@ export async function getEmployeeCompetencyProfile(
         recyclingExpiresOn: cell.recyclingExpiresOn,
       };
     }),
-    otherLevels: row.cells
-      .filter((c) => !required.has(c.competencyId) && c.storedLevel > 0)
-      .map((c) => ({
-        competencyId: c.competencyId,
-        competencyName: competencyById.get(c.competencyId)?.name ?? "—",
-        category: competencyById.get(c.competencyId)?.category ?? "",
-        currentLevel: c.level,
-        storedLevel: c.storedLevel,
-        recycling: c.recycling,
-        recyclingExpiresOn: c.recyclingExpiresOn,
-      })),
+    otherLevels: row.cells.filter((c) => !linkedIds.has(c.competencyId) && c.storedLevel > 0).map(levelDto),
     history: history.map((h) => ({
       id: h.id,
       competencyId: h.competencyId,
@@ -593,6 +719,9 @@ export async function setWorkPositionTeam(
   scope: CompetencyScope = COMPETENCY_SCOPE_ALL,
 ): Promise<{ added: string[]; removed: string[] }> {
   await findActivePosition(db, positionId);
+  // Qualquer id fora do escopo no pedido → 403, esteja ou não alocado: a resposta não pode
+  // revelar se alguém de outra equipe ocupa o posto.
+  assertWritable(scope, employeeIds);
   const employees = await loadActiveEmployees(db, employeeIds);
   if (employees.size !== employeeIds.length) {
     throw new CompetencyServiceError("INVALID_EMPLOYEES", "Colaborador inexistente ou inativo.", 400);
@@ -673,7 +802,98 @@ export async function getCompetencyOptions(
       }))
       .sort(byName),
     departments: departments.map((d) => ({ id: d.id, name: d.name })).sort(byName),
+    selfEvaluator: (() => {
+      if (scope.kind === "ALL" || !scope.actorEmployeeId || !isTeamAccessScope(scope.accessScope)) return null;
+      const self = employees.find((e) => e.id === scope.actorEmployeeId && isActiveEmployee(e));
+      return self ? { id: self.id, name: self.name } : null;
+    })(),
   };
+}
+
+/** Departamentos oficiais ativos e as competências associadas. A lista de pessoas respeita o escopo. */
+export async function listDepartmentCompetencies(
+  db: CompetencyDb,
+  scope: CompetencyScope = COMPETENCY_SCOPE_ALL,
+): Promise<DepartmentCompetencyBoard> {
+  const [departments, links, shiftRows, employees, competencies] = await Promise.all([
+    db.hrDepartment.findMany({ where: { status: ACTIVE } }) as Promise<{ id: string; name: string }[]>,
+    db.hrDepartmentCompetency.findMany() as Promise<
+      { id: string; departmentId: string; competencyId: string; appliesToAllShifts?: boolean }[]
+    >,
+    db.hrDepartmentCompetencyShift.findMany() as Promise<{ departmentCompetencyId: string; shiftCode: string }[]>,
+    db.employee.findMany({ where: { status: ACTIVE } }) as Promise<
+      { id: string; name: string; departmentId: string | null; status?: string | null; terminationDate?: Date | null }[]
+    >,
+    loadActiveCompetencies(db),
+  ]);
+  const activeCompetencyIds = new Set(competencies.map((c) => c.id));
+  const shiftsOf = new Map<string, string[]>();
+  for (const row of shiftRows) {
+    const list = shiftsOf.get(row.departmentCompetencyId) ?? [];
+    list.push(row.shiftCode);
+    shiftsOf.set(row.departmentCompetencyId, list);
+  }
+  return {
+    departments: departments.sort(byName).map((department) => {
+      const departmentLinks = links
+        .filter((link) => link.departmentId === department.id && activeCompetencyIds.has(link.competencyId))
+        .map((link) => ({
+          competencyId: link.competencyId,
+          appliesToAllShifts: link.appliesToAllShifts !== false,
+          shifts: link.appliesToAllShifts === false ? (shiftsOf.get(link.id) ?? []).slice().sort() : [],
+        }));
+      return {
+      id: department.id,
+      name: department.name,
+      competencyIds: departmentLinks.map((link) => link.competencyId),
+      links: departmentLinks,
+      employees: employees
+        .filter((e) => e.departmentId === department.id && isActiveEmployee(e) && canSeeEmployee(scope, e.id))
+        .map((e) => ({ id: e.id, name: e.name, writable: canWriteEmployee(scope, e.id) }))
+        .sort(byName),
+    };
+    }),
+  };
+}
+
+/**
+ * Substitui o conjunto de competências de um departamento oficial.
+ * Não cria departamento, não grava nível mínimo e não altera departamento nem turno do colaborador.
+ * `shifts` null = todos os turnos de configuração.
+ */
+export async function setDepartmentCompetencies(
+  db: CompetencyDb,
+  departmentId: string,
+  items: readonly { competencyId: string; shifts: string[] | null }[],
+  actor: CompetencyActor,
+): Promise<void> {
+  const department = (await db.hrDepartment.findUnique({ where: { id: departmentId } })) as { id: string; status: string } | null;
+  if (!department || department.status !== ACTIVE) notFound("Departamento");
+  const active = new Set((await loadActiveCompetencies(db)).map((c) => c.id));
+  for (const item of items) {
+    if (!active.has(item.competencyId)) {
+      throw new CompetencyServiceError("UNKNOWN_COMPETENCY", "Competência inválida ou inativa.", 400);
+    }
+  }
+  await db.$transaction(async (tx) => {
+    const t = tx as unknown as CompetencyDb;
+    await t.hrDepartmentCompetency.deleteMany({ where: { departmentId } });
+    for (const item of items) {
+      const created = (await t.hrDepartmentCompetency.create({
+        data: {
+          departmentId,
+          competencyId: item.competencyId,
+          appliesToAllShifts: item.shifts == null,
+          createdByUserId: actor.userId,
+        },
+      })) as { id: string };
+      for (const shiftCode of item.shifts ?? []) {
+        await t.hrDepartmentCompetencyShift.create({
+          data: { departmentCompetencyId: created.id, shiftCode },
+        });
+      }
+    }
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -1069,9 +1289,9 @@ export async function listAssessments(
 }
 
 async function resolveAssessmentContext(db: CompetencyDb, input: AssessmentInput, asOf: string, scope: CompetencyScope) {
-  // Líder: avalia só liderados; o avaliador é ele mesmo ou alguém da equipe dele.
+  // Líder: avalia só liderados; o avaliador é ele mesmo (só referência) ou alguém da equipe dele.
   assertWritable(scope, [input.employeeId]);
-  if (input.evaluatorEmployeeId && !canSeeEmployee(scope, input.evaluatorEmployeeId)) {
+  if (input.evaluatorEmployeeId && !canUseAsEvaluator(scope, input.evaluatorEmployeeId)) {
     throw new CompetencyServiceError("OUT_OF_SCOPE", "Avaliador fora da sua equipe.", 403);
   }
   const people = await loadActiveEmployees(
@@ -1092,27 +1312,39 @@ async function resolveAssessmentContext(db: CompetencyDb, input: AssessmentInput
   };
 }
 
-/** Itens da conclusão precisam cobrir exatamente as competências exigidas pelo posto. */
+/**
+ * Conclusão: ao menos uma competência ativa, escolhida pelo avaliador.
+ * Não exige posto nem cobre o catálogo do departamento — associação não é obrigação.
+ * `requiredLevel` fica nulo: não há mínimo inventado.
+ */
 function completionItems(
   input: AssessmentInput,
   ctx: Awaited<ReturnType<typeof resolveAssessmentContext>>,
-): { competencyId: string; level: number; requiredLevel: number }[] {
-  if (!ctx.position) {
-    throw new CompetencyServiceError("NO_POSITION", "Colaborador sem posto de trabalho: aloque-o antes de avaliar.", 409);
+): { competencyId: string; level: number; requiredLevel: number | null }[] {
+  if (input.items.length === 0) {
+    throw new CompetencyServiceError("ITEMS_REQUIRED", "Informe ao menos uma competência.", 400);
   }
-  const scope = assessmentScope(ctx.engineInput, input.employeeId);
-  const given = new Map(input.items.map((i) => [i.competencyId, i.level]));
-  if (scope.length !== given.size || scope.some((s) => !given.has(s.competencyId))) {
-    throw new CompetencyServiceError("ITEMS_MISMATCH", "Atribua um nível a cada competência exigida pelo posto.", 400);
+  const active = new Set(ctx.engineInput.competencies.map((c) => c.id));
+  const seen = new Set<string>();
+  const items: { competencyId: string; level: number; requiredLevel: number | null }[] = [];
+  for (const item of input.items) {
+    if (!active.has(item.competencyId)) {
+      throw new CompetencyServiceError("UNKNOWN_COMPETENCY", "Competência inválida ou inativa.", 400);
+    }
+    if (seen.has(item.competencyId)) {
+      throw new CompetencyServiceError("DUPLICATE_ITEM", "Competência repetida na avaliação.", 400);
+    }
+    seen.add(item.competencyId);
+    items.push({ competencyId: item.competencyId, level: item.level, requiredLevel: null });
   }
-  return scope.map((s) => ({ competencyId: s.competencyId, level: given.get(s.competencyId)!, requiredLevel: s.requiredLevel }));
+  return items;
 }
 
 async function writeCompletion(
   t: CompetencyDb,
   assessmentId: string,
   input: AssessmentInput,
-  items: { competencyId: string; level: number; requiredLevel: number }[],
+  items: { competencyId: string; level: number; requiredLevel: number | null }[],
   actor: CompetencyActor,
 ) {
   await t.hrCompetencyAssessmentItem.deleteMany({ where: { assessmentId } });
@@ -1263,6 +1495,8 @@ type TrainingRow = {
   validityMonths: number;
   status: string;
   completedAt: Date | null;
+  instructorName?: string | null;
+  syllabus?: unknown;
 };
 
 export async function listTrainings(
@@ -1283,13 +1517,18 @@ export async function listTrainings(
   const seen = await visibleTrainingIds(db, scope, all.map((r) => r.id));
   const rows = all.filter((r) => seen.has(r.id));
   const ids = rows.map((r) => r.id);
-  const [participants, competencies] = await Promise.all([
+  const [participants, competencies, certificates] = await Promise.all([
     ids.length
       ? (db.hrTrainingParticipant.findMany({ where: { trainingId: { in: ids } } }) as Promise<
           { trainingId: string; employeeId: string; completedAt: Date | null }[]
         >)
       : Promise.resolve([]),
     db.hrCompetency.findMany({}) as Promise<{ id: string; name: string }[]>,
+    ids.length
+      ? (db.hrTrainingCertificate.findMany({ where: { trainingId: { in: ids }, status: "ACTIVE" } }) as Promise<
+          { trainingId: string; employeeId: string }[]
+        >)
+      : Promise.resolve([]),
   ]);
   const employeeIds = [...new Set(participants.map((p) => p.employeeId))];
   const employeeRows = employeeIds.length
@@ -1309,11 +1548,14 @@ export async function listTrainings(
       validityMonths: r.validityMonths,
       status: r.status,
       completedOn: toIsoDate(r.completedAt),
-      hiddenParticipantCount: participants.filter((p) => p.trainingId === r.id && !canSeeEmployee(scope, p.employeeId)).length,
+      hasParticipantsOutsideScope: participants.some((p) => p.trainingId === r.id && !canSeeEmployee(scope, p.employeeId)),
       participants: participants
         .filter((p) => p.trainingId === r.id && canSeeEmployee(scope, p.employeeId))
         .map((p) => ({ employeeId: p.employeeId, employeeName: names.get(p.employeeId) ?? "—", completedOn: toIsoDate(p.completedAt) }))
         .sort((a, b) => a.employeeName.localeCompare(b.employeeName, "pt-BR")),
+      instructorName: r.instructorName ?? null,
+      syllabus: readStoredSyllabus(r.syllabus),
+      activeCertificateCount: certificates.filter((c) => c.trainingId === r.id && canSeeEmployee(scope, c.employeeId)).length,
     }))
     .sort((a, b) => b.startDate.localeCompare(a.startDate) || a.title.localeCompare(b.title, "pt-BR"));
 }
@@ -1336,6 +1578,9 @@ function trainingData(input: TrainingInput) {
     workloadHours: input.workloadHours,
     startDate: fromIsoDate(input.startDate),
     validityMonths: input.validityMonths,
+    // Ausentes no corpo = mantém o gravado (instrutor e conteúdo programático são opcionais).
+    ...(input.instructorName !== undefined ? { instructorName: input.instructorName } : {}),
+    ...(input.syllabus !== undefined ? { syllabus: input.syllabus } : {}),
   };
 }
 

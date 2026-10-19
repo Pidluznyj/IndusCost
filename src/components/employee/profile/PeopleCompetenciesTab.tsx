@@ -18,7 +18,6 @@ import {
   COMPETENCY_LEVEL_SOURCE_LABELS,
   competencyCategoryLabel,
   formatIsoDateBr,
-  shiftPatternLabel,
 } from "@/src/lib/competencies/competencyDomain";
 import type {
   CompetencyAssessmentDto,
@@ -114,73 +113,57 @@ export function PeopleCompetenciesTab({ employeeId }: { employeeId: string }) {
     <div data-testid="people-competencies-tab">
       <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
         <div>
-          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Posto de trabalho</p>
-          <p className="text-base font-semibold" data-testid="people-competencies-position">
-            {profile.position ? profile.position.name : "Sem posto de trabalho"}
+          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Departamento</p>
+          <p className="text-base font-semibold" data-testid="people-competencies-department">
+            {profile.department ? profile.department.name : "Sem departamento"}
           </p>
-          {profile.position ? (
-            <p className="text-xs text-muted-foreground">
-              {[profile.position.departmentName, shiftPatternLabel(profile.position.shiftPattern)].filter(Boolean).join(" · ")}
-            </p>
-          ) : null}
         </div>
         <div className="flex flex-wrap items-center gap-4 text-sm" data-testid="people-competencies-summary">
           <span>
-            Cobertura <strong className="tabular-nums">{profile.coverage.percentLabel}</strong>
-            <span className="text-muted-foreground"> ({profile.coverage.met} de {profile.coverage.total})</span>
+            Avaliadas{" "}
+            <strong className="tabular-nums">
+              {profile.associated.filter((item) => item.storedLevel > 0).length}
+            </strong>
+            <span className="text-muted-foreground"> de {profile.associated.length}</span>
           </span>
-          {profile.position && profile.requirements.length > 0 ? (
-            <span className={profile.ready ? "font-semibold text-emerald-700" : "font-semibold text-rose-700"}>
-              {profile.ready ? "Apto no posto" : "Com lacunas"}
-            </span>
-          ) : null}
           <Link to={COMPETENCY_MODULE_PATH} className="inline-flex items-center gap-1 text-xs font-semibold text-primary hover:underline">
             Abrir módulo <ExternalLink className="h-3.5 w-3.5" aria-hidden />
           </Link>
         </div>
       </div>
 
-      <Section title="Requisitos do posto">
-        {profile.requirements.length === 0 ? (
-          <ProfileState kind="empty" message={profile.position ? "O posto não exige competências." : "Colaborador sem posto de trabalho alocado."} />
+      <Section title="Competências do departamento">
+        {profile.associated.length === 0 ? (
+          <ProfileState kind="empty" message={profile.department ? "Nenhuma competência associada a este departamento." : "Colaborador sem departamento oficial."} />
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[560px] text-sm" data-testid="people-competencies-requirements">
+            <table className="w-full min-w-[560px] text-sm" data-testid="people-competencies-associated">
               <thead>
                 <tr className="border-b border-border">
                   <th className={TH}>Competência</th>
-                  <th className={TH}>Exigido</th>
-                  <th className={TH}>Atual</th>
+                  <th className={TH}>Nível</th>
                   <th className={TH}>Situação</th>
                 </tr>
               </thead>
               <tbody>
-                {profile.requirements.map((r) => (
+                {profile.associated.map((r) => (
                   <tr key={r.competencyId} className="border-b border-border/60 last:border-b-0">
                     <td className={TD}>
-                      <span className="block font-medium">
-                        {r.competencyName}
-                        {r.critical ? <span className="ml-1.5 text-xs font-semibold text-rose-700">· Crítica</span> : null}
-                      </span>
+                      <span className="block font-medium">{r.competencyName}</span>
                       <span className="block text-xs text-muted-foreground">{competencyCategoryLabel(r.category)}</span>
                     </td>
                     <td className={TD}>
-                      <LevelChip level={r.requiredLevel} />
-                    </td>
-                    <td className={TD}>
-                      <LevelChip level={r.currentLevel} className={r.met ? undefined : "ring-2 ring-inset ring-rose-500"} />
+                      <LevelChip level={r.currentLevel} />
                     </td>
                     <td className={TD}>
                       {r.recycling === "EXPIRED" ? (
                         <span className="text-xs font-semibold text-rose-700">
                           Reciclagem vencida em {formatIsoDateBr(r.recyclingExpiresOn)} (registrado: {r.storedLevel})
                         </span>
-                      ) : r.met ? (
-                        <span className="text-xs font-semibold text-emerald-700">Atende</span>
+                      ) : r.storedLevel > 0 ? (
+                        <span className="text-xs font-semibold text-emerald-700">Avaliada</span>
                       ) : (
-                        <span className="inline-flex items-center gap-1 text-xs font-semibold text-rose-700">
-                          Lacuna de {r.gap} <ArrowRight className="h-3 w-3" aria-hidden /> mín. {r.requiredLevel}
-                        </span>
+                        <span className="text-xs text-muted-foreground">Não avaliada</span>
                       )}
                     </td>
                   </tr>

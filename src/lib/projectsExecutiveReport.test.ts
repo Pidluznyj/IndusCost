@@ -21,6 +21,7 @@ import {
 } from "./projectsExecutiveReport.js";
 import { ProjectExecutiveReport } from "@/src/components/projects/ProjectExecutiveReport";
 import type { ProjectDetail } from "@/src/types/projects.js";
+import { EMPTY_PROJECT_DOCUMENT_FIELDS } from "./projectsCommercialTerms.js";
 
 const MOLD_TOTAL = 52_000;
 const OTHER_COST_BATCH_ID = "other-cost-batch-11111111-1111-1111-1111-111111111111";
@@ -70,6 +71,7 @@ function buildDetailFixture(): ProjectDetail {
     title: "IRIS",
     customerName: "Esmaltec S/A",
     customerDocument: null,
+    ...EMPTY_PROJECT_DOCUMENT_FIELDS,
     description: "Desenvolvimento da linha IRIS.",
     projectType: "NEW_PRODUCT",
     status: "WAITING_INTERNAL_APPROVAL",

@@ -36,21 +36,28 @@ export function buildProjectsCustomerLookupWhere(query: string) {
 
 /** Cliente digitado manualmente — apenas snapshot no Project, sem cadastro oficial. */
 export function buildSimulationCustomerPayload(name: string): {
+  customerId: null;
   customerName: string;
   customerDocument: null;
 } {
   return {
+    customerId: null,
     customerName: name.trim(),
     customerDocument: null,
   };
 }
 
-/** Cliente existente selecionado — snapshot textual no Project. */
+/**
+ * Cliente existente selecionado — envia o id do cadastro oficial. O servidor valida o id e
+ * grava o snapshot (nome/documento) a partir do cadastro, não do texto enviado.
+ */
 export function buildExistingCustomerPayload(item: ProjectCustomerLookupItem): {
+  customerId: string;
   customerName: string;
   customerDocument: string | null;
 } {
   return {
+    customerId: item.id,
     customerName: item.name.trim(),
     customerDocument: item.document,
   };

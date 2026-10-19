@@ -23,7 +23,7 @@ import {
 import { formatMoldDescriptionForDisplay } from "./projectsMoldCostLines.js";
 import type { ProjectDetail, ProjectStatus, ProjectType } from "@/src/types/projects.js";
 
-export const PROJECT_EXECUTIVE_REPORT_VERSION = "1.0";
+export const PROJECT_EXECUTIVE_REPORT_VERSION = "2.0";
 export const PROJECT_EXECUTIVE_REPORT_TITLE = "Relatório Gerencial de Projeto";
 export const PROJECT_EXECUTIVE_REPORT_BUTTON_LABEL = "Gerar relatório gerencial";
 /** Rodapé / aviso em cada folha (tela e PDF). */
@@ -100,13 +100,17 @@ export type ProjectExecutiveReportPayload = {
     notes: string | null;
   };
   executiveSummary: {
+    /** Σ (custo base unitário × quantidade por conjunto). */
     baseItemsCost: number;
     moldsTotal: number;
     otherCostsTotal: number;
     investmentTotal: number;
     amortizedToCustomer: number;
     absorbedInternally: number;
+    /** Σ (custo final unitário × quantidade por conjunto). */
     finalItemsCost: number;
+    /** true quando alguma quantidade por conjunto não foi salva (assumida 1). */
+    setQuantitiesAssumed: boolean;
     totalProjectCost: number;
     pendingItemsCount: number;
     totalAmortizationAllocated: number;
@@ -125,8 +129,17 @@ export type ProjectExecutiveReportPayload = {
     baseUnitCost: number;
     unitAmortizedCost: number;
     finalUnitCost: number;
+    /** Quantidade por conjunto (Proposta Cliente › quantidades salvas; 1 se não salva). */
+    quantityPerSet: number;
+    quantityPerSetSaved: boolean;
+    /** Custo final unitário × quantidade por conjunto. */
+    setFinalCost: number;
+    /** Volume base do item (volume esperado/lote do produto) usado na estimativa de volume. */
     baseQuantity: number;
+    /** Custo final unitário × volume base. */
     estimatedTotalCost: number;
+    /** Origem dos custos unitários: precificação salva ou custos atuais (item sem precificação). */
+    costSource: "SAVED_PRICING" | "CURRENT_COSTS";
     status: ProjectExecutiveReportItemStatus;
     statusLabel: string;
   }>;
@@ -321,10 +334,23 @@ export function isProjectExecutiveReportPath(pathname: string): boolean {
 
 export function buildProjectExecutiveReport(
   detail: ProjectDetail,
-  options?: { generatedAt?: Date }
+  options?: {
+    generatedAt?: Date;
+    /** Quantidades por conjunto salvas (ProjectClientProposalItem). */
+    quantitiesByTargetId?: Record<string, number>;
+    /** Usuário que emite o documento (Elaborado por). */
+    preparedBy?: string | null;
+  }
 ): ProjectExecutiveReportPayload {
   const generatedAt = (options?.generatedAt ?? new Date()).toISOString();
-  const costSnapshot = buildProjectCostSnapshot(detail, { generatedAt: new Date(generatedAt) });
+  const costSnapshot = buildProjectCostSnapshot(detail, {
+    generatedAt: new Date(generatedAt),
+    quantitiesByTargetId: options?.quantitiesByTargetId,
+  });
+  // Com documentValueSource, os custos unitários dos itens precificados vêm da gravação.
+  const savedCostById = detail.documentValueSource?.mode === "SAVED_PRICING"
+    ? new Map(detail.documentValueSource.view.items.map((row) => [row.targetItemId, row]))
+    : null;
   const summary = costSnapshot.costAmortizationSummary;
   const guided = costSnapshot.guidedCosts;
   const targets = buildProjectAmortizationTargets(detail);
@@ -347,9 +373,13 @@ export function buildProjectExecutiveReport(
     .map((target) => {
     const rollup = rollupById.get(target.targetItemId);
     const guidedItem = guidedById.get(target.targetItemId);
-    const baseUnitCost = rollup?.baseUnitCost ?? target.baseUnitCost;
-    const unitAmortizedCost = rollup?.unitAmortizedCost ?? 0;
-    const finalUnitCost = rollup?.finalUnitCost ?? baseUnitCost;
+    const saved = savedCostById?.get(target.targetItemId) ?? null;
+    const baseUnitCost = saved ? saved.costBaseUnit : rollup?.baseUnitCost ?? target.baseUnitCost;
+    const unitAmortizedCost = saved ? saved.amortizationUnitCost : rollup?.unitAmortizedCost ?? 0;
+    const finalUnitCost = saved ? saved.finalUnitCost : rollup?.finalUnitCost ?? baseUnitCost;
+    const savedQty = options?.quantitiesByTargetId?.[target.targetItemId];
+    const quantityPerSetSaved = savedQty != null && Number.isInteger(savedQty) && savedQty >= 1;
+    const quantityPerSet = quantityPerSetSaved ? savedQty! : 1;
     const baseQuantity = target.suggestedQuantity;
     const estimatedTotalCost = roundProjectMoney(finalUnitCost * baseQuantity);
     const itemIncomplete = incompleteSources.some((source) =>
@@ -369,8 +399,12 @@ export function buildProjectExecutiveReport(
       baseUnitCost,
       unitAmortizedCost,
       finalUnitCost,
+      quantityPerSet,
+      quantityPerSetSaved,
+      setFinalCost: roundProjectMoney(finalUnitCost * quantityPerSet),
       baseQuantity,
       estimatedTotalCost,
+      costSource: saved ? ("SAVED_PRICING" as const) : ("CURRENT_COSTS" as const),
       status,
       statusLabel: ITEM_STATUS_LABEL[status],
     };
@@ -444,12 +478,14 @@ export function buildProjectExecutiveReport(
   );
 
   const investmentTotal = roundProjectMoney(summary.totalMoldsCost + summary.totalOtherCosts);
+  // Custo do conjunto = Σ unitário × quantidade por conjunto (decisão aprovada 2026-10-15).
   const reportBaseItemsCost = roundProjectMoney(
-    items.reduce((acc, item) => acc + item.baseUnitCost, 0)
+    items.reduce((acc, item) => acc + roundProjectMoney(item.baseUnitCost * item.quantityPerSet), 0)
   );
   const reportFinalItemsCost = roundProjectMoney(
-    items.reduce((acc, item) => acc + item.finalUnitCost, 0)
+    items.reduce((acc, item) => acc + item.setFinalCost, 0)
   );
+  const setQuantitiesAssumed = items.some((item) => !item.quantityPerSetSaved);
 
   const alerts: ProjectExecutiveReportPayload["alerts"] = [];
   if (!detail.customerName?.trim()) {
@@ -658,6 +694,7 @@ export function buildProjectExecutiveReport(
       amortizedToCustomer: summary.totalPassThroughAmount,
       absorbedInternally: summary.totalAbsorbedAmount,
       finalItemsCost: reportFinalItemsCost,
+      setQuantitiesAssumed,
       totalProjectCost: guided.totalProjectCost,
       pendingItemsCount: guided.pendingCount,
       totalAmortizationAllocated: summary.totalAmortizationAllocated,
@@ -703,10 +740,11 @@ export function buildProjectExecutiveReport(
       automaticAlerts: alerts.map((alert) => alert.message),
     },
     alerts,
+    // Elaborado por = quem emite. Revisão e aprovação não são presumidas: ficam para assinatura.
     approval: {
-      preparedBy: detail.commercialOwner?.trim() || PROJECT_EXECUTIVE_REPORT_NOT_INFORMED,
-      reviewedBy: detail.technicalOwner?.trim() || PROJECT_EXECUTIVE_REPORT_NOT_INFORMED,
-      approvedBy: PROJECT_EXECUTIVE_REPORT_NOT_INFORMED,
+      preparedBy: options?.preparedBy?.trim() || PROJECT_EXECUTIVE_REPORT_NOT_INFORMED,
+      reviewedBy: "",
+      approvedBy: "",
     },
     technicalAnnex: {
       enabled: false,

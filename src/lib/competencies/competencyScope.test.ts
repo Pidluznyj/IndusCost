@@ -1,5 +1,6 @@
 /**
  * Escopo hierárquico de Competências — testes negativos de acesso cruzado (rotas reais).
+ * Política: o líder vê só os subordinados autorizados, nunca a si mesmo.
  *
  * Organograma:  Diretora (D) ─┬─ Gestor G ─┬─ Ana (O1)
  *                             │            └─ Bruno (O2)
@@ -18,9 +19,9 @@ describe("competencyScope — regra pura", () => {
     assert.equal(competencyScopeView(s), "ALL");
   });
 
-  it("líder vê a si e à equipe, mas só grava na equipe", () => {
+  it("líder vê e grava só a equipe; nunca a si mesmo (mesmo se a lista vier com ele)", () => {
     const s = buildCompetencyScope({ accessScope: "DIRECT_REPORTS", actorEmployeeId: "g", teamIds: ["a", "b", "g"] });
-    assert.deepEqual([canSeeEmployee(s, "g"), canSeeEmployee(s, "a"), canSeeEmployee(s, "x")], [true, true, false]);
+    assert.deepEqual([canSeeEmployee(s, "g"), canSeeEmployee(s, "a"), canSeeEmployee(s, "x")], [false, true, false]);
     assert.deepEqual([canWriteEmployee(s, "g"), canWriteEmployee(s, "a"), canWriteEmployee(s, "x")], [false, true, false]);
     assert.equal(competencyScopeView(s), "TEAM");
   });
@@ -36,9 +37,9 @@ describe("competencyScope — regra pura", () => {
     }
   });
 
-  it("SELF vê só a si e não grava", () => {
-    const s = buildCompetencyScope({ accessScope: "SELF", actorEmployeeId: "g" });
-    assert.deepEqual([canSeeEmployee(s, "g"), canWriteEmployee(s, "g")], [true, false]);
+  it("SELF não recebe dados individuais (nem os próprios) e não grava", () => {
+    const s = buildCompetencyScope({ accessScope: "SELF", actorEmployeeId: "g", teamIds: ["a"] });
+    assert.deepEqual([canSeeEmployee(s, "g"), canWriteEmployee(s, "g"), canSeeEmployee(s, "a")], [false, false, false]);
     assert.equal(competencyScopeView(s), "SELF");
   });
 });
@@ -99,16 +100,17 @@ describe("competencyRoutes — acesso cruzado de líder", () => {
 
   const names = (rows: { employeeName?: string; name?: string }[]) => rows.map((r) => r.employeeName ?? r.name).sort();
 
-  it("matriz mostra só o líder e os liderados", async () => {
+  it("matriz mostra só os liderados (sem o próprio líder)", async () => {
     const r = await requestJson(app, "GET", "/api/hr/competencies/matrix");
-    assert.deepEqual(names(r.json.rows), ["Ana", "Bruno", "Gestor G"]);
+    assert.deepEqual(names(r.json.rows), ["Ana", "Bruno"]);
   });
 
   it("dashboard (overview) calcula só sobre a equipe", async () => {
     const r = await requestJson(app, "GET", "/api/hr/competencies/overview");
     assert.equal(r.json.scope, "TEAM");
-    assert.equal(r.json.allocatedEmployees, 3);
-    assert.equal(r.json.coverage.total, 3);
+    assert.equal(r.json.allocatedEmployees, 2, "o líder não entra nos indicadores da própria equipe");
+    assert.equal(r.json.coverage.total, 2);
+    assert.ok(r.json.topGaps.every((g: { employeeId: string }) => g.employeeId !== id.g));
     assert.ok(r.json.topGaps.every((g: { employeeId: string }) => g.employeeId !== id.x));
     assert.equal(r.json.pendingAssessments, 1, "só a pendência da Ana");
     assert.equal(r.json.openTrainings, 1, "só a turma com liderado");
@@ -116,9 +118,10 @@ describe("competencyRoutes — acesso cruzado de líder", () => {
 
   it("busca de colaboradores (options) e equipe do posto não expõem outra equipe", async () => {
     const opts = await requestJson(app, "GET", "/api/hr/competencies/options");
-    assert.deepEqual(names(opts.json.employees), ["Ana", "Bruno", "Gestor G"]);
+    assert.deepEqual(names(opts.json.employees), ["Ana", "Bruno"]);
+    assert.deepEqual(opts.json.selfEvaluator, { id: id.g, name: "Gestor G" }, "o líder só como avaliador possível");
     const pos = await requestJson(app, "GET", "/api/hr/competencies/positions");
-    assert.deepEqual(names(pos.json.positions[0].team), ["Ana", "Bruno", "Gestor G"]);
+    assert.deepEqual(names(pos.json.positions[0].team), ["Ana", "Bruno"]);
   });
 
   it("avaliações e treinamentos listam só o que envolve a equipe", async () => {
@@ -127,7 +130,8 @@ describe("competencyRoutes — acesso cruzado de líder", () => {
     const tr = await requestJson(app, "GET", "/api/hr/competencies/trainings");
     assert.deepEqual(tr.json.trainings.map((t: { title: string }) => t.title), ["Turma mista"]);
     assert.deepEqual(names(tr.json.trainings[0].participants), ["Ana"]);
-    assert.equal(tr.json.trainings[0].hiddenParticipantCount, 1);
+    assert.equal(tr.json.trainings[0].hasParticipantsOutsideScope, true);
+    assert.equal("hiddenParticipantCount" in tr.json.trainings[0], false, "sem contador de outras equipes");
   });
 
   it("não altera nível de outra equipe nem o próprio", async () => {
@@ -184,14 +188,18 @@ describe("competencyRoutes — acesso cruzado de líder", () => {
       employeeIds: [id.g, id.o1, id.o2, id.h],
     });
     assert.equal(add.status, 403);
-    // O líder envia a equipe que enxerga, sem o Xavier → Xavier continua alocado.
+    // Mandar o próprio líder (já alocado pelo RH) também é recusado: ele não está no escopo.
+    const withSelf = await requestJson(app, "PUT", `/api/hr/competencies/positions/${id.pos}/team`, { employeeIds: [id.g, id.o1] });
+    assert.equal(withSelf.status, 403);
+    // O líder envia a equipe que enxerga, sem o Xavier → Xavier (e o próprio líder) continuam alocados.
     const keep = await requestJson(app, "PUT", `/api/hr/competencies/positions/${id.pos}/team`, {
-      employeeIds: [id.g, id.o1],
+      employeeIds: [id.o1],
     });
     assert.equal(keep.status, 200);
     assert.deepEqual(keep.json.removed, [id.o2]);
     const active = app.db.tables.hrEmployeeWorkPosition.filter((a) => a.endedAt == null).map((a) => a.employeeId);
     assert.ok(active.includes(id.x), "Xavier preservado");
+    assert.ok(active.includes(id.g), "o líder preservado (fora do escopo dele)");
     assert.equal((await requestJson(app, "DELETE", `/api/hr/competencies/positions/${id.pos}`)).status, 403, "arquivar afetaria outra equipe");
   });
 
@@ -211,7 +219,9 @@ describe("competencyRoutes — acesso cruzado de líder", () => {
   it("descendentes: a diretora vê a árvore inteira dela, mas não a outra diretoria", async () => {
     app.setScope({ accessScope: "DESCENDANTS", actorEmployeeId: id.d });
     const r = await requestJson(app, "GET", "/api/hr/competencies/matrix");
-    assert.deepEqual(names(r.json.rows), ["Ana", "Gestor G"]);
+    // Bruno saiu do posto e continua visível. A própria Diretora não aparece.
+    // Xavier, Gestor H e a outra diretora continuam de fora.
+    assert.deepEqual(names(r.json.rows), ["Ana", "Bruno", "Gestor G"]);
     assert.equal((await requestJson(app, "PUT", `/api/hr/competencies/levels/${id.g}/${id.comp}`, { level: 2 })).status, 200);
     assert.equal((await requestJson(app, "PUT", `/api/hr/competencies/levels/${id.x}/${id.comp}`, { level: 2 })).status, 403);
     asLeader();
@@ -226,12 +236,12 @@ describe("competencyRoutes — acesso cruzado de líder", () => {
     asLeader();
   });
 
-  it("ficha: perfil de outra equipe → 404; liderado e o próprio líder visíveis", async () => {
+  it("ficha: perfil de outra equipe e o do próprio líder → 404; liderado visível", async () => {
     assert.equal((await requestJson(app, "GET", `/api/hr/competencies/employees/${id.x}`)).status, 404);
     const liderado = await requestJson(app, "GET", `/api/hr/competencies/employees/${id.o1}`);
     assert.deepEqual([liderado.status, liderado.json.writable], [200, true]);
     const self = await requestJson(app, "GET", `/api/hr/competencies/employees/${id.g}`);
-    assert.deepEqual([self.status, self.json.writable], [200, false]);
+    assert.equal(self.status, 404, "o líder não consulta a própria ficha de competências");
   });
 
   it("ficha: filtros por colaborador de fora não revelam nada (nem turma mista)", async () => {

@@ -9,6 +9,7 @@ import {
   type EmployeeCostBreakdown,
   type EmployeePayrollComponentLike,
 } from "@/src/lib/employeeCostEngine";
+import { computeTurnoverYtd, type TurnoverYtd } from "@/src/lib/employeeTurnover";
 
 export type EmployeesDashboardStatusFilter = "ACTIVE" | "INACTIVE" | "ALL";
 
@@ -37,6 +38,8 @@ export type EmployeesDashboardEmployeeRow = {
   productivity: unknown;
   admissionDate: Date | string | null;
   terminationDate: Date | string | null;
+  /** Motivo do desligamento: classifica o turnover em voluntário/involuntário. */
+  terminationReason?: string | null;
   costCenterId: string | null;
   departmentId: string | null;
   managerId: string | null;
@@ -111,6 +114,8 @@ export type EmployeesDashboardSummary = {
     admissionsInPeriod: number;
     terminationsInPeriod: number;
   };
+  /** Turnover do ano até hoje no recorte estrutural (ignora status e período de admissão). */
+  turnoverYtd: TurnoverYtd;
   filterOptions: {
     costCenters: Array<{ id: string; label: string }>;
     departments: Array<{ id: string; label: string; directorateId: string | null }>;
@@ -291,6 +296,8 @@ export function buildEmployeesDashboardSummary(input: {
   employees: readonly EmployeesDashboardEmployeeRow[];
   filters: EmployeesDashboardFilters;
   includeCompensation: boolean;
+  /** Hoje no fuso do negócio (YYYY-MM-DD); define o ano do turnover YTD. */
+  todayIso: string;
 }): EmployeesDashboardSummary {
   const { filters, includeCompensation } = input;
   const all = input.employees;
@@ -405,6 +412,14 @@ export function buildEmployeesDashboardSummary(input: {
         })
       )
     : [];
+
+  // Turnover: mesmo recorte estrutural da movimentação, sem status nem período de admissão.
+  const turnoverYtd = computeTurnoverYtd(
+    all.filter((row) =>
+      employeeMatchesDashboardFilters(row, { ...filters, status: "ALL", admissionFrom: null, admissionTo: null })
+    ),
+    input.todayIso
+  );
 
   let admissionsInPeriod = 0;
   let terminationsInPeriod = 0;
@@ -589,6 +604,7 @@ export function buildEmployeesDashboardSummary(input: {
       admissionsInPeriod: hasMovementWindow ? admissionsInPeriod : 0,
       terminationsInPeriod: hasMovementWindow ? terminationsInPeriod : 0,
     },
+    turnoverYtd,
     filterOptions,
   };
 }

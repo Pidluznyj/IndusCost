@@ -353,6 +353,9 @@ export type EmployeeAbsencePatch = {
   status?: HrAbsenceStatus;
   reason?: string | null;
   notes?: string | null;
+  extendedLicense?: boolean;
+  inssBenefitNumber?: string | null;
+  catNumber?: string | null;
 };
 
 export function parseEmployeeAbsencePatch(input: unknown): EmployeeAbsencePatch {
@@ -376,6 +379,11 @@ export function parseEmployeeAbsencePatch(input: unknown): EmployeeAbsencePatch 
   if (has(body, "notes")) {
     patch.notes = normalizeOptionalText(body.notes, "Observações", PEOPLE_RECORD_TEXT_LIMITS.notes);
   }
+  if (has(body, "extendedLicense")) patch.extendedLicense = body.extendedLicense === true || body.extendedLicense === "true";
+  if (has(body, "inssBenefitNumber")) {
+    patch.inssBenefitNumber = normalizeOptionalText(body.inssBenefitNumber, "Número do benefício INSS", 40);
+  }
+  if (has(body, "catNumber")) patch.catNumber = normalizeOptionalText(body.catNumber, "Número da CAT", 40);
   return patch;
 }
 
