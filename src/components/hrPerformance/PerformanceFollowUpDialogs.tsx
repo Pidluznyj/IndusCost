@@ -121,7 +121,11 @@ export function PdiDialog({
   const [form, setForm] = useState({ title: "", objective: "", competencyCode: "", ownerName, dueAt: addDaysIso(90), justification: "" });
   useEffect(() => {
     void fetchCycleWorkspace(cycleId)
-      .then((ws) => setQuestions(ws.questions))
+      .then((ws) => {
+        // Líder no ciclo também pode ter ação do PDI ligada a uma competência de liderança.
+        const isLeader = ws.people.some((p) => p.participant.employeeName === employeeName && p.leadership?.isLeader);
+        setQuestions([...ws.questions, ...(isLeader ? ws.leadershipQuestions ?? [] : [])]);
+      })
       .catch(() => setQuestions([]));
   }, [cycleId]);
   const valid = form.title.trim().length >= 3 && form.ownerName.trim().length >= 2 && Boolean(form.dueAt) && (!hasPriority || form.justification.trim().length >= 8);
@@ -162,7 +166,7 @@ export function PdiDialog({
               <option value="">Não vinculada</option>
               {questions.map((q) => (
                 <option key={q.code} value={q.code}>
-                  {PILLAR_SHORT_LABELS[q.pillar as Pillar]} · {q.competency}
+                  {q.pillar === "LEADERSHIP" ? "Liderança" : PILLAR_SHORT_LABELS[q.pillar as Pillar]} · {q.competency}
                 </option>
               ))}
             </OverlaySelect>

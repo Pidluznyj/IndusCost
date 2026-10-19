@@ -37,6 +37,7 @@ import {
   quadrantText,
 } from "./performanceUi";
 import { ReasonDialog } from "./CycleDesk";
+import { LeadershipCalibrationSection } from "./PerformanceLeadershipUi";
 
 type Dialog =
   | { kind: "validate"; row: CalibrationRow }
@@ -247,6 +248,7 @@ export function PerformanceCalibrationTab({ cycleId, onToast }: { cycleId: strin
           <p className="text-sm">{data.rows.length} resultado(s) serão homologados. Nenhuma promoção, remuneração ou penalidade é aplicada automaticamente.</p>
         </PerformanceModal>
       ) : null}
+      {cycleId ? <LeadershipCalibrationSection cycleId={cycleId} onToast={onToast} /> : null}
     </section>
   );
 }

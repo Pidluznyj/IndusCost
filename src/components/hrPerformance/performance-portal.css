@@ -308,3 +308,28 @@
 .pp [tabindex="-1"]:focus {
   outline: none;
 }
+
+/* Jornada em etapas (autoavaliação → liderança). */
+.pp-steps {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #1d4ed8;
+}
+
+.pp-comment {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.pp-textarea {
+  min-height: 88px;
+  resize: vertical;
+  font: inherit;
+  font-size: 16px;
+  letter-spacing: normal;
+  text-align: left;
+  line-height: 1.4;
+}

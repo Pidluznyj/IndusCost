@@ -59,6 +59,8 @@ export type ModelSummary = {
   createdAt: string;
   questionCount: number;
   cycles: number;
+  /** INDIVIDUAL (12 perguntas) ou LEADERSHIP (180°). */
+  kind?: "INDIVIDUAL" | "LEADERSHIP";
 };
 export type RoleExampleDto = { roleName: string; text: string };
 export type ModelQuestion = {
@@ -69,6 +71,8 @@ export type ModelQuestion = {
   sortOrder: number;
   selfText: string;
   leaderText: string;
+  /** Liderança: liderado sobre o líder. */
+  upwardText?: string | null;
   hint: string | null;
   description: string | null;
   positiveExample: string | null;
@@ -142,6 +146,8 @@ export type CycleSummary = {
   activation: CycleActivation;
   activationReason: string | null;
   activationChangedAt: string | null;
+  /** Avaliação 180° de liderança neste ciclo (modelo de liderança). */
+  leadershipModelId?: string | null;
   /** Presente na lista de ciclos; no workspace vem em `CycleWorkspace.governance`. */
   governance?: CycleGovernanceDto;
 };
@@ -175,7 +181,7 @@ export const deletePerformanceTestCycle = (cycleId: string, reason: string, conf
   json<{ deleted: Record<string, number>; auditId: string }>(`${BASE}/cycles/${cycleId}`, { method: "DELETE", body: JSON.stringify({ reason, confirmation }) });
 
 export const fetchPerformanceCycles = () => json<{ cycles: CycleSummary[]; counts: Record<string, CycleCounts> }>(`${BASE}/cycles`);
-export const createPerformanceCycle = (input: { name: string; periodLabel: string; modelId: string; selfDueAt: string; leaderDueAt: string; classification: CycleClassification }) => post<{ cycleId: string }>(`${BASE}/cycles`, input);
+export const createPerformanceCycle = (input: { name: string; periodLabel: string; modelId: string; selfDueAt: string; leaderDueAt: string; classification: CycleClassification; leadershipModelId?: string | null }) => post<{ cycleId: string }>(`${BASE}/cycles`, input);
 export const updatePerformanceCycle = (id: string, input: { name: string; periodLabel: string; selfDueAt: string; leaderDueAt: string; reason?: string }) => put(`${BASE}/cycles/${id}`, input);
 export const transitionPerformanceCycle = (id: string, input: { to: string; reason?: string; pilotAck?: boolean; acceptPending?: boolean }) =>
   post<{ status: string; pending?: number }>(`${BASE}/cycles/${id}/transition`, input);
@@ -207,6 +213,8 @@ export type ResultSummary = {
 };
 
 export type WorkspacePerson = {
+  /** Avaliação 180°: líder no retrato da abertura e andamento das etapas (só RH). */
+  leadership?: { isLeader: boolean; directReportCount: number; status: LeadershipStatus; journey: { kind: string; status: string }[] | null };
   participant: {
     id: string;
     employeeId: string;
@@ -252,6 +260,7 @@ export type WorkspacePerson = {
 export type CycleWorkspace = {
   cycle: CycleSummary;
   governance: CycleGovernanceDto;
+  leadershipQuestions?: { code: string; pillar: string; competency: string }[];
   model: { id: string; name: string; version: number; status: string; instructions: string | null; rules: PerformanceRules } | null;
   questions: { code: string; pillar: string; competency: string; selfText: string; leaderText: string; hint: string | null }[];
   people: WorkspacePerson[];
@@ -331,7 +340,91 @@ export type LeaderQueueItem = {
   feedback: { id: string; acknowledgedAt: string | null; createdAt: string } | null;
   pdis: { id: string; title: string; status: string; dueAt: string | null }[];
 };
-export const fetchLeaderQueue = () => json<{ items: LeaderQueueItem[] }>(`${BASE}/team`);
+export const fetchLeaderQueue = () => json<{ items: LeaderQueueItem[]; leadership?: SuperiorLeadershipItem[] }>(`${BASE}/team`);
+
+// ------------------------------------------------------------------ liderança (180°)
+export type LeadershipStatus = "NOT_APPLICABLE" | "PENDING" | "AVAILABLE" | "CALIBRATED" | "EXCEPTION" | "HOMOLOGATED";
+export type SuperiorLeadershipItem = {
+  assignmentId: string;
+  participantId: string;
+  employeeName: string;
+  roleName: string;
+  departmentName: string;
+  directReportCount: number;
+  cycleId: string;
+  cycleName: string;
+  cycleStatus: string;
+  status: string;
+  dueAt: string;
+  leadershipStatus: LeadershipStatus;
+};
+export type SuperiorLeadershipForm = {
+  assignment: { id: string; kind: string; status: string; version: number; submittedAt: string | null };
+  participant: { id: string; employeeName: string; roleName: string; departmentName: string; directReportCount: number };
+  cycle: { id: string; name: string; periodLabel: string; status: string; dueAt: string };
+  rules: { minRespondents: number; commentMinLetters: number; divergenceThreshold: number };
+  questions: { code: string; competency: string; behavior: string; text: string }[];
+  answers: { questionCode: string; kind: string; score: number | null; comment: string | null }[];
+};
+export const fetchSuperiorLeadershipForm = (assignmentId: string) => json<SuperiorLeadershipForm>(`${BASE}/assignments/${assignmentId}`);
+export const createLeadershipModel = (name: string) => post<{ modelId: string }>(`${BASE}/models/leadership`, { name });
+export const updateLeadershipQuestion = (modelId: string, code: string, body: { competency: string; behavior: string; selfText: string; upwardText: string; superiorText: string }) =>
+  put<{ code: string }>(`${BASE}/models/${modelId}/leadership-questions/${encodeURIComponent(code)}`, body);
+export const setCycleLeadershipModel = (cycleId: string, leadershipModelId: string | null) => put(`${BASE}/cycles/${cycleId}/leadership`, { leadershipModelId });
+export type LeadershipListRow = {
+  participantId: string;
+  employeeName: string;
+  roleName: string;
+  departmentName: string;
+  managerName: string | null;
+  directReportCount: number;
+  status: LeadershipStatus;
+  teamInvited: number;
+  selfStatus: string | null;
+  superiorStatus: string | null;
+  calibratedIndex: number | null;
+};
+export const fetchLeadershipList = (cycleId: string) => json<{ rows: LeadershipListRow[] }>(`${BASE}/cycles/${cycleId}/leadership`);
+export type LeadershipComparisonRow = {
+  code: string;
+  competency: string;
+  behavior: string;
+  self: number | null;
+  superior: number | null;
+  team: number | null;
+  teamDisclosed: boolean;
+  teamValidCount: number;
+  dispersion: number | null;
+  divergences: string[];
+};
+export type LeadershipComparison = {
+  participant: { id: string; employeeName: string; roleName: string; departmentName: string; directReportCount: number; managerName: string | null };
+  cycle: { id: string; name: string; status: string };
+  status: LeadershipStatus;
+  rules: { minRespondents: number; commentMinLetters: number; divergenceThreshold: number };
+  coverage: { teamInvited: number; teamRespondents: number | null; teamDisclosed: boolean; selfSubmitted: boolean; superiorSubmitted: boolean };
+  self: { index: number | null; coverage: number };
+  superior: { index: number | null; coverage: number };
+  team: { index: number | null; coverage: number; disclosed: boolean; message: string | null };
+  rows: LeadershipComparisonRow[];
+  result: null | {
+    id: string;
+    version: number;
+    status: "CALIBRATED" | "EXCEPTION";
+    scores: Record<string, number>;
+    justifications: Record<string, string>;
+    generalNote: string;
+    exceptionReason: string | null;
+    official: boolean;
+    calibratedAt: string;
+    index: number | null;
+    strengths: { code: string; competency: string; score: number }[];
+    priorities: { code: string; competency: string; score: number }[];
+  };
+};
+export const fetchLeadershipComparison = (participantId: string) => json<LeadershipComparison>(`${BASE}/participants/${participantId}/leadership`);
+export const calibrateLeadershipApi = (participantId: string, body: { scores: Record<string, number>; justifications: Record<string, string>; generalNote: string; exceptionReason?: string | null }) =>
+  post<{ status: string; version: number }>(`${BASE}/participants/${participantId}/leadership/calibration`, body);
 
 export type LeaderAnswerDraft = { kind: "pending" } | { kind: "notObserved"; evidence?: string | null } | { kind: "score"; score: number; evidence?: string | null };
 export type LeaderForm = {
@@ -424,6 +517,17 @@ export type CycleDashboard = {
   culture: Record<string, number>;
   cultureLabels: Record<string, string>;
   pdiByStatus: Record<string, number>;
+  /** Avaliação 180°: só contagens e notas calibradas (nada da avaliação da equipe). */
+  leadership?: null | {
+    leaders: number;
+    calibrated: number;
+    homologated: number;
+    exceptions: number;
+    upwardInvited: number;
+    upwardSubmitted: number;
+    byCompetency: { code: string; competency: string; mean: number }[] | null;
+    lowSample: boolean;
+  };
   lowSample: boolean;
   lowSampleThreshold: number;
   filters: { departments: string[]; roles: string[]; managers: string[] };

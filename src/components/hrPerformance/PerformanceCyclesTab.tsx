@@ -58,7 +58,8 @@ export function PerformanceCyclesTab({
   }, []);
 
   const canManage = me.capabilities.manage;
-  const published = models.filter((m) => m.status === "PUBLISHED");
+  const published = models.filter((m) => m.status === "PUBLISHED" && m.kind !== "LEADERSHIP");
+  const leadershipModels = models.filter((m) => m.status === "PUBLISHED" && m.kind === "LEADERSHIP");
   const inactiveCount = (cycles ?? []).filter((c) => c.activation === "INACTIVE").length;
   const listed = (cycles ?? []).filter((c) => showInactive || c.activation !== "INACTIVE" || c.id === selectedId);
 
@@ -145,6 +146,7 @@ export function PerformanceCyclesTab({
       <CreateCycleOverlay
         open={creating}
         models={published}
+        leadershipModels={leadershipModels}
         onClose={() => setCreating(false)}
         onCreated={(id) => {
           setCreating(false);
@@ -157,7 +159,20 @@ export function PerformanceCyclesTab({
   );
 }
 
-function CreateCycleOverlay({ open, models, onClose, onCreated }: { open: boolean; models: ModelSummary[]; onClose: () => void; onCreated: (id: string) => void }) {
+function CreateCycleOverlay({
+  open,
+  models,
+  leadershipModels,
+  onClose,
+  onCreated,
+}: {
+  open: boolean;
+  models: ModelSummary[];
+  leadershipModels: ModelSummary[];
+  onClose: () => void;
+  onCreated: (id: string) => void;
+}) {
+  const [leadershipModelId, setLeadershipModelId] = useState("");
   const [name, setName] = useState("");
   const [periodLabel, setPeriodLabel] = useState("");
   const [modelId, setModelId] = useState("");
@@ -182,7 +197,7 @@ function CreateCycleOverlay({ open, models, onClose, onCreated }: { open: boolea
       testId="perf-cycle-create"
       onSave={async () => {
         if (classification === "") return;
-        const created = await createPerformanceCycle({ name, periodLabel, modelId, selfDueAt, leaderDueAt, classification });
+        const created = await createPerformanceCycle({ name, periodLabel, modelId, selfDueAt, leaderDueAt, classification, leadershipModelId: leadershipModelId || null });
         onCreated(created.cycleId);
       }}
     >
@@ -208,6 +223,18 @@ function CreateCycleOverlay({ open, models, onClose, onCreated }: { open: boolea
               {models.map((m) => (
                 <option key={m.id} value={m.id}>
                   {m.name} · v{m.version} · publicado em {dateBr(m.publishedAt)}
+                </option>
+              ))}
+            </OverlaySelect>
+          )}
+        </OverlayField>
+        <OverlayField label="Avaliação 180° de liderança" colSpan={2}>
+          {(p) => (
+            <OverlaySelect {...p} value={leadershipModelId} onChange={(e) => setLeadershipModelId(e.target.value)} data-testid="perf-cycle-create-leadership">
+              <option value="">Não incluir</option>
+              {leadershipModels.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.name} · v{m.version}
                 </option>
               ))}
             </OverlaySelect>

@@ -24,7 +24,7 @@ import {
 } from "./performanceDomain.js";
 import { canSeeEmployee, type PerformanceScope } from "./performanceAccess.js";
 import { cycleGovernance, isHistoryCycle } from "./performanceLifecycle.js";
-import { journeyOf, leadershipStatusOf } from "./performanceLeadershipService.js";
+import { journeyOf, leadershipComparison, leadershipStatusOf } from "./performanceLeadershipService.js";
 import {
   activeAssignment,
   activeResult,
@@ -189,6 +189,8 @@ export function describeCycle(db: PerformanceDatabase, cycleId: string, scope: P
           rules,
         }
       : null,
+    /** Competências de liderança (PDI de liderança). Vazio sem 180° no ciclo. */
+    leadershipQuestions: cycle.leadershipModelId ? questionsOf(db, cycle.leadershipModelId).map((q) => ({ code: q.code, pillar: "LEADERSHIP", competency: q.competency })) : [],
     questions: questionsOf(db, cycle.modelId).map((q) => ({
       code: q.code,
       pillar: q.pillar,
@@ -303,6 +305,33 @@ export type NineBoxCell = {
   culture: string | null;
 };
 
+/**
+ * Liderança (180°) no painel: contagens e média das notas CALIBRADAS por competência. Nada da
+ * avaliação da equipe aparece aqui (nem média, nem andamento por líder). Com menos de
+ * LOW_SAMPLE_THRESHOLD líderes calibrados, a média por competência não é mostrada.
+ */
+function leadershipSummary(db: PerformanceDatabase, cycleId: string, visibleEligible: readonly { id: string; isLeader: boolean }[]) {
+  const cycle = db.cycles.find((c) => c.id === cycleId);
+  if (!cycle?.leadershipModelId) return null;
+  const leaders = visibleEligible.filter((p) => p.isLeader);
+  const results = leaders.map((p) => db.leadershipResults.find((r) => r.participantId === p.id && r.active)).filter((r): r is NonNullable<typeof r> => Boolean(r));
+  const upward = db.assignments.filter((a) => a.active && a.kind === "LEADERSHIP_UPWARD" && a.cycleId === cycleId);
+  const codes = questionsOf(db, cycle.leadershipModelId).map((q) => ({ code: q.code, competency: q.competency }));
+  const enough = results.length >= LOW_SAMPLE_THRESHOLD;
+  return {
+    leaders: leaders.length,
+    calibrated: results.length,
+    homologated: results.filter((r) => r.official).length,
+    exceptions: results.filter((r) => r.status === "EXCEPTION").length,
+    upwardInvited: upward.length,
+    upwardSubmitted: upward.filter((a) => a.status === "SUBMITTED").length,
+    byCompetency: enough
+      ? codes.map(({ code, competency }) => ({ code, competency, mean: results.reduce((s, r) => s + (r.scores[code] ?? 0), 0) / results.length }))
+      : null,
+    lowSample: !enough,
+  };
+}
+
 export function dashboard(db: PerformanceDatabase, cycleId: string, scope: PerformanceScope, filters: PeopleFilters | undefined, now: Date) {
   const cycle = db.cycles.find((c) => c.id === cycleId);
   if (!cycle) return null;
@@ -343,6 +372,7 @@ export function dashboard(db: PerformanceDatabase, cycleId: string, scope: Perfo
     culture,
     cultureLabels: CULTURE_BAND_LABELS,
     pdiByStatus,
+    leadership: leadershipSummary(db, cycle.id, allEligible.filter((p) => matchesFilters(p, filters))),
     lowSample: cells.length > 0 && cells.length < LOW_SAMPLE_THRESHOLD,
     lowSampleThreshold: LOW_SAMPLE_THRESHOLD,
     filters: {
@@ -619,11 +649,15 @@ export function reportData(
         };
       })()
     : null;
+  // Documento de liderança: só o comparativo agregado (a equipe vem como média divulgável).
+  const leadershipView =
+    input.kind === "lideranca" && person ? leadershipComparison(db, person.participant.id, scope, scope.kind === "ALL" ? null : scope.actorEmployeeId) : null;
   return {
     kind: input.kind,
     cycle: { id: cycle.id, name: cycle.name, periodLabel: cycle.periodLabel, status: cycle.status, selfDueAt: cycle.selfDueAt, leaderDueAt: cycle.leaderDueAt, classification: cycle.classification },
     governance: workspace.governance,
     model: workspace.model,
+    leadership: leadershipView && leadershipView.ok ? leadershipView : null,
     questions,
     counts: workspace.counts,
     people: workspace.people

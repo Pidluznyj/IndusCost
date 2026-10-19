@@ -4,7 +4,8 @@
  */
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { ClipboardCheck, MessageSquareText, Target } from "lucide-react";
-import { fetchLeaderQueue, type LeaderQueueItem } from "@/src/lib/hrPerformance/performanceClient";
+import { fetchLeaderQueue, type LeaderQueueItem, type SuperiorLeadershipItem } from "@/src/lib/hrPerformance/performanceClient";
+import { LeadershipCalibrationOverlay, LeadershipStatusBadge, SuperiorLeadershipOverlay } from "./PerformanceLeadershipUi";
 import { AssignmentBadge, BTN_GHOST, BTN_PRIMARY, BTN_SECONDARY, CultureBadge, ErrorBanner, InfoBanner, PANEL, PanelState, PdiBadge, dateBr, mean, quadrantText, todayIso } from "./performanceUi";
 import { LeaderAssignmentPanel } from "./LeaderAssignmentPanel";
 import { AckDialog, FeedbackDialog, PdiDialog } from "./PerformanceFollowUpDialogs";
@@ -20,10 +21,14 @@ export function PerformanceTeamTab({ onToast, actorName, linkedEmployee = true }
   const [cycle, setCycle] = useState("");
   const [open, setOpen] = useState<string | null>(null);
   const [dialog, setDialog] = useState<Dialog>(null);
+  const [leadership, setLeadership] = useState<SuperiorLeadershipItem[]>([]);
+  const [leadershipOpen, setLeadershipOpen] = useState<{ kind: "evaluate" | "calibrate"; item: SuperiorLeadershipItem } | null>(null);
 
   const reload = useCallback(async () => {
     try {
-      setItems((await fetchLeaderQueue()).items);
+      const queue = await fetchLeaderQueue();
+      setLeadership(queue.leadership ?? []);
+      setItems(queue.items);
       setError(null);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Não foi possível carregar a sua equipe.");
@@ -224,6 +229,68 @@ export function PerformanceTeamTab({ onToast, actorName, linkedEmployee = true }
           onDone={() => {
             setDialog(null);
             onToast("Ação do PDI criada");
+            void reload();
+          }}
+        />
+      ) : null}
+      {leadership.length > 0 ? (
+        <section className={`${PANEL} space-y-3 p-4`} data-testid="perf-team-leadership">
+          <div>
+            <h3 className="text-base font-semibold">Liderança da sua equipe (180°)</h3>
+            <p className="text-sm text-muted-foreground">
+              Para quem lidera pessoas na sua equipe. É diferente da avaliação individual acima: aqui você avalia como a pessoa lidera e, depois do fechamento da coleta, calibra comparando com a autoavaliação e com a média da equipe.
+            </p>
+          </div>
+          <ul className="grid gap-2 lg:grid-cols-2">
+            {leadership.map((item) => {
+              const canCalibrate = item.leadershipStatus !== "PENDING" && item.leadershipStatus !== "NOT_APPLICABLE";
+              return (
+                <li key={item.assignmentId} className="rounded-lg border border-border p-3" data-testid={`perf-team-leadership-${item.employeeName}`}>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <p className="font-semibold">{item.employeeName}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {item.roleName} · lidera {item.directReportCount} · {item.cycleName}
+                      </p>
+                    </div>
+                    <LeadershipStatusBadge status={item.leadershipStatus} />
+                  </div>
+                  <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                    <span>Avaliação de liderança:</span>
+                    <AssignmentBadge status={item.status} />
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <button type="button" className={item.status === "SUBMITTED" ? BTN_GHOST : BTN_SECONDARY} onClick={() => setLeadershipOpen({ kind: "evaluate", item })} data-testid={`perf-team-leadership-evaluate-${item.employeeName}`}>
+                      {item.status === "SUBMITTED" ? "Ver avaliação de liderança" : "Avaliar liderança"}
+                    </button>
+                    {canCalibrate ? (
+                      <button type="button" className={BTN_PRIMARY} onClick={() => setLeadershipOpen({ kind: "calibrate", item })} data-testid={`perf-team-leadership-calibrate-${item.employeeName}`}>
+                        {item.leadershipStatus === "AVAILABLE" ? "Calibrar liderança" : "Ver calibração"}
+                      </button>
+                    ) : null}
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      ) : null}
+      {leadershipOpen?.kind === "evaluate" ? (
+        <SuperiorLeadershipOverlay
+          assignmentId={leadershipOpen.item.assignmentId}
+          onClose={() => setLeadershipOpen(null)}
+          onDone={(message) => {
+            onToast(message);
+            void reload();
+          }}
+        />
+      ) : null}
+      {leadershipOpen?.kind === "calibrate" ? (
+        <LeadershipCalibrationOverlay
+          participantId={leadershipOpen.item.participantId}
+          onClose={() => setLeadershipOpen(null)}
+          onDone={(message) => {
+            onToast(message);
             void reload();
           }}
         />

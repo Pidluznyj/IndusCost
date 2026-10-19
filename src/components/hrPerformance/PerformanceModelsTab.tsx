@@ -4,7 +4,7 @@
  * duplicar para nascer a versão seguinte.
  */
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowDown, ArrowUp, Copy, Eye, FilePlus2, Lock, Pencil, Send, Archive } from "lucide-react";
+import { ArrowDown, ArrowUp, Copy, Eye, FilePlus2, Lock, Pencil, Send, Archive, Users } from "lucide-react";
 import { Overlay, OverlayBody, OverlayFooter, OverlayHeader, OverlayField, OverlayFieldGrid, OverlayInput, OverlaySection, OverlayTextarea, OverlayBadge } from "@/src/components/ui/overlay";
 import {
   PILLARS,
@@ -31,6 +31,7 @@ import {
   type ModelSummary,
 } from "@/src/lib/hrPerformance/performanceClient";
 import { BTN_GHOST, BTN_PRIMARY, BTN_SECONDARY, ErrorBanner, InfoBanner, PANEL, PanelState, PERF_EYEBROW, PerformanceModal, TableScroll, dateBr } from "./performanceUi";
+import { CreateLeadershipModelOverlay, LeadershipModelEditorOverlay } from "./PerformanceLeadershipUi";
 
 type Props = { canManage: boolean; onToast: (message: string) => void; onChanged: () => void };
 
@@ -38,7 +39,9 @@ export function PerformanceModelsTab({ canManage, onToast, onChanged }: Props) {
   const [models, setModels] = useState<ModelSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [creatingLeadership, setCreatingLeadership] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
+  const editingKind = models?.find((m) => m.id === editing)?.kind ?? "INDIVIDUAL";
 
   const reload = useCallback(async () => {
     try {
@@ -73,9 +76,14 @@ export function PerformanceModelsTab({ canManage, onToast, onChanged }: Props) {
           Cada modelo tem três pilares com quatro perguntas. Textos, escala e cortes são proposta até a validação do RH. Uma versão publicada não muda: para melhorar, duplique.
         </p>
         {canManage ? (
-          <button type="button" className={BTN_PRIMARY} onClick={() => setCreating(true)} data-testid="perf-model-new">
-            <FilePlus2 className="h-4 w-4" aria-hidden /> Novo modelo
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" className={BTN_SECONDARY} onClick={() => setCreatingLeadership(true)} data-testid="perf-leadership-model-new">
+              <Users className="h-4 w-4" aria-hidden /> Novo modelo de liderança
+            </button>
+            <button type="button" className={BTN_PRIMARY} onClick={() => setCreating(true)} data-testid="perf-model-new">
+              <FilePlus2 className="h-4 w-4" aria-hidden /> Novo modelo
+            </button>
+          </div>
         ) : null}
       </div>
       <ErrorBanner message={error} testId="perf-models-error" />
@@ -102,7 +110,14 @@ export function PerformanceModelsTab({ canManage, onToast, onChanged }: Props) {
                 {models.map((model) => (
                   <tr key={model.id} data-testid={`perf-model-row-${model.version}-${model.status}`}>
                     <td className="px-4 py-3">
-                      <p className="font-semibold">{model.name}</p>
+                      <p className="font-semibold">
+                        {model.name}
+                        {model.kind === "LEADERSHIP" ? (
+                          <span className="ml-2 align-middle">
+                            <OverlayBadge tone="violet">Liderança 180°</OverlayBadge>
+                          </span>
+                        ) : null}
+                      </p>
                       {model.description ? <p className="text-xs text-muted-foreground">{model.description}</p> : null}
                     </td>
                     <td className="px-2 py-3 tabular-nums">v{model.version}</td>
@@ -158,7 +173,31 @@ export function PerformanceModelsTab({ canManage, onToast, onChanged }: Props) {
           setEditing(id);
         }}
       />
-      {editing ? (
+      <CreateLeadershipModelOverlay
+        open={creatingLeadership}
+        onClose={() => setCreatingLeadership(false)}
+        onCreated={(id) => {
+          setCreatingLeadership(false);
+          onToast("Rascunho criado com as oito competências de liderança");
+          void reload().then(() => setEditing(id));
+        }}
+      />
+      {editing && editingKind === "LEADERSHIP" ? (
+        <LeadershipModelEditorOverlay
+          modelId={editing}
+          canManage={canManage}
+          onClose={() => {
+            setEditing(null);
+            void reload();
+          }}
+          onToast={onToast}
+          onChanged={() => {
+            void reload();
+            onChanged();
+          }}
+        />
+      ) : null}
+      {editing && editingKind !== "LEADERSHIP" ? (
         <ModelEditorOverlay
           modelId={editing}
           canManage={canManage}

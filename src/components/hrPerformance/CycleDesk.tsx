@@ -7,6 +7,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { CheckCircle2, ClipboardCopy, FileDown, Network, Pencil, Printer, QrCode, RotateCcw, Search, Settings2, ShieldOff, UserMinus, UserPlus, UserRoundCog, Users } from "lucide-react";
 import { CycleGovernanceBadges, CycleLifecycleOverlay } from "./CycleLifecyclePanel";
+import { LeadershipStatusBadge } from "./PerformanceLeadershipUi";
 import { OverlayBadge, OverlayField, OverlayFieldGrid, OverlayInput, OverlaySelect, OverlayTextarea } from "@/src/components/ui/overlay";
 import { CYCLE_STATUSES, CYCLE_STATUS_LABELS, ELIGIBILITY_LABELS, forwardStatus, reversalStatus, type CycleStatus } from "@/src/lib/hrPerformance/performanceDomain";
 import {
@@ -220,6 +221,7 @@ export function CycleDesk({ cycleId, me: realMe, onToast, onChanged }: { cycleId
             <h3 className="text-xl font-bold" data-testid="perf-cycle-title">{ws.cycle.name}</h3>
             <CycleStatusBadge status={status} />
             <CycleGovernanceBadges governance={ws.governance} />
+            {ws.cycle.leadershipModelId ? <OverlayBadge tone="violet" testId="perf-cycle-180">180° de liderança</OverlayBadge> : null}
           </div>
           <p className="mt-1 text-sm text-muted-foreground">
             {ws.cycle.periodLabel} · {ws.model?.name} v{ws.model?.version} · autoavaliação até {dateBr(ws.cycle.selfDueAt)} · líder até {dateBr(ws.cycle.leaderDueAt)}
@@ -555,6 +557,17 @@ function PersonRow({
         <p className="text-xs text-muted-foreground">
           {p.roleName} · {p.departmentName}
         </p>
+        {item.leadership?.isLeader ? (
+          <div className="mt-1 flex flex-wrap items-center gap-1" data-testid={`perf-person-leader-${p.employeeName}`}>
+            <OverlayBadge tone="violet" variant="outline">Líder · {item.leadership.directReportCount} liderado(s)</OverlayBadge>
+            {item.leadership.status !== "NOT_APPLICABLE" ? <LeadershipStatusBadge status={item.leadership.status} /> : null}
+          </div>
+        ) : null}
+        {item.leadership?.journey && item.leadership.journey.length > 1 ? (
+          <p className="mt-1 text-xs text-muted-foreground" data-testid={`perf-person-journey-${p.employeeName}`}>
+            Portal: {item.leadership.journey.filter((s) => s.status === "SUBMITTED").length} de {item.leadership.journey.length} etapas
+          </p>
+        ) : null}
         {removed ? <p className="mt-1 text-xs text-rose-700">Retirada: {p.removedReason}</p> : null}
       </td>
       <td className="px-2 py-3">
@@ -564,6 +577,7 @@ function PersonRow({
       <td className="px-2 py-3">
         <p className="text-sm">{p.managerName ?? <span className="text-amber-700">Sem líder</span>}</p>
         {p.managerSource === "RH" ? <OverlayBadge tone="violet" variant="outline">Exceção do RH</OverlayBadge> : null}
+        {p.managerSource === "TOPO" ? <OverlayBadge tone="slate" variant="outline">Topo da estrutura</OverlayBadge> : null}
       </td>
       <td className="px-2 py-3">
         {p.eligibility === "ELIGIBLE" ? (

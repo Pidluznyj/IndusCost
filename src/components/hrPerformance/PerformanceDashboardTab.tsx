@@ -102,6 +102,36 @@ export function PerformanceDashboardTab({ cycleId }: { cycleId: string | null })
               )}
             </div>
           </div>
+          {board.leadership ? (
+            <div className={`${PANEL} p-4`} data-testid="perf-dashboard-leadership">
+              <p className="mb-1 text-sm font-semibold">Liderança (180°)</p>
+              <p className="mb-3 text-xs text-muted-foreground">
+                Separada da Nine-Box. Mostra só notas calibradas pelos superiores; a avaliação da equipe não aparece aqui.
+              </p>
+              <div className="grid gap-2 sm:grid-cols-4">
+                <KpiTile label="Líderes no ciclo" value={board.leadership.leaders} />
+                <KpiTile label="Calibradas" value={board.leadership.calibrated} hint={`${board.leadership.exceptions} exceção(ões)`} />
+                <KpiTile label="Homologadas" value={board.leadership.homologated} />
+                <KpiTile label="Avaliações da equipe" value={board.leadership.upwardSubmitted} hint={`de ${board.leadership.upwardInvited} convidadas`} />
+              </div>
+              {board.leadership.byCompetency ? (
+                <table className="mt-3 w-full text-sm">
+                  <tbody className="divide-y divide-border">
+                    {board.leadership.byCompetency.map((c) => (
+                      <tr key={c.code}>
+                        <td className="py-1.5">
+                          {c.code} · {c.competency}
+                        </td>
+                        <td className="py-1.5 text-right tabular-nums">{c.mean.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <p className="mt-3 text-xs text-muted-foreground">Média por competência aparece com {board.lowSampleThreshold} ou mais lideranças calibradas.</p>
+              )}
+            </div>
+          ) : null}
         </>
       ) : (
         <div className={PANEL}>

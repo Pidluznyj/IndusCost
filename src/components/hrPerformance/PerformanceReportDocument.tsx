@@ -35,6 +35,7 @@ export const REPORT_TITLES: Record<string, string> = {
   consolidado: "Consolidado gerencial do ciclo",
   ninebox: "Nine-Box do ciclo",
   historico: "Histórico de avaliações",
+  lideranca: "Avaliação de liderança (180°)",
 };
 
 const label = <T extends string>(map: Record<T, string>, key: string | null | undefined) => (key ? map[key as T] ?? key : "—");
@@ -119,6 +120,7 @@ export function PerformanceReportDocument({ data, issue, branding }: { data: any
       {(kind === "historico" || kind === "individual") && person ? <HistorySection person={person} /> : null}
       {kind === "consolidado" ? <ConsolidatedSections data={data} /> : null}
       {kind === "ninebox" ? <NineBoxSection data={data} /> : null}
+      {kind === "lideranca" && data.leadership ? <LeadershipSection view={data.leadership} /> : null}
 
       <PrintSection title="Regras e limites">
         <p className="perf-note">
@@ -224,6 +226,80 @@ function IndividualSections({ person, rules }: { person: any; rules: any }) {
           </p>
         ) : null}
       </PrintSection>
+    </>
+  );
+}
+
+/** Comparativo de liderança. A equipe só aparece como média divulgável; nenhum comentário dos liderados. */
+function LeadershipSection({ view }: { view: any }) {
+  const fmt = (v: number | null | undefined) => (v == null ? "—" : v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+  const r = view.result;
+  return (
+    <>
+      <PrintSection title="Perspectivas e nota calibrada">
+        <p className="perf-note">
+          Equipe: {view.coverage.teamRespondents ?? "—"} de {view.coverage.teamInvited} responderam (mínimo {view.rules.minRespondents} para divulgar)
+          {view.team.message ? ` · ${view.team.message}` : ""}. A nota calibrada é decisão do superior, inteira de 1 a 4, e não uma média automática.
+        </p>
+        <PrintTable>
+          <thead>
+            <tr>
+              <th>Competência</th>
+              <th>Equipe</th>
+              <th>Autoavaliação</th>
+              <th>Superior</th>
+              <th>Calibrada</th>
+              <th>Justificativa</th>
+            </tr>
+          </thead>
+          <tbody>
+            {view.rows.map((row: any) => (
+              <tr key={row.code}>
+                <td>
+                  {row.code} · {row.competency}
+                </td>
+                <td>{row.teamDisclosed ? fmt(row.team) : "Insuficiente"}</td>
+                <td>{row.self ?? "—"}</td>
+                <td>{row.superior ?? "—"}</td>
+                <td>{r?.scores[row.code] ?? "—"}</td>
+                <td>{r?.justifications[row.code] ?? ""}</td>
+              </tr>
+            ))}
+          </tbody>
+        </PrintTable>
+      </PrintSection>
+      {r ? (
+        <PrintSection title="Síntese">
+          <PrintTable>
+            <tbody>
+              <tr>
+                <th style={{ width: "30%" }}>Índice calibrado</th>
+                <td>
+                  {fmt(r.index)} · versão {r.version} · {r.official ? "homologada" : r.status === "EXCEPTION" ? "exceção registrada" : "calibrada"}
+                </td>
+              </tr>
+              <tr>
+                <th>Mais fortes</th>
+                <td>{r.strengths.map((s: any) => s.competency).join(", ") || "—"}</td>
+              </tr>
+              <tr>
+                <th>Prioridades de desenvolvimento</th>
+                <td>{r.priorities.map((s: any) => s.competency).join(", ") || "—"}</td>
+              </tr>
+              <tr>
+                <th>Fundamentação</th>
+                <td>{r.generalNote}</td>
+              </tr>
+              {r.exceptionReason ? (
+                <tr>
+                  <th>Exceção</th>
+                  <td>{r.exceptionReason}</td>
+                </tr>
+              ) : null}
+            </tbody>
+          </PrintTable>
+        </PrintSection>
+      ) : null}
     </>
   );
 }

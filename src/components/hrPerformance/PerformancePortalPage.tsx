@@ -6,6 +6,7 @@
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FREQUENCY_SCALE, NOT_OBSERVED_LABEL, PILLAR_LABELS, type Pillar } from "@/src/lib/hrPerformance/performanceDomain";
+import { commentProblem, commentRequired } from "@/src/lib/hrPerformance/performanceLeadership";
 import {
   claimAssistedPerformance,
   fetchPerformanceForm,
@@ -18,7 +19,8 @@ import {
 } from "@/src/lib/hrPerformance/performancePortalClient";
 import "./performance-portal.css";
 
-type Answer = { kind: "score"; score: number } | { kind: "notObserved" } | { kind: "pending" };
+/** Nas etapas de liderança a resposta leva um comentário (obrigatório nas notas 1 e 4). */
+type Answer = { kind: "score"; score: number; comment?: string } | { kind: "notObserved"; comment?: string } | { kind: "pending" };
 type Step = "boot" | "code" | "intro" | "form" | "review" | "done" | "expired" | "blocked";
 type SaveState = "idle" | "saving" | "saved" | "offline" | "error";
 
@@ -42,6 +44,7 @@ export function PerformancePortalPage() {
   const [confirmed, setConfirmed] = useState(false);
   const [assisted, setAssisted] = useState(false);
   const versionRef = useRef(0);
+  const stepRef = useRef<string | undefined>(undefined);
   const pendingRef = useRef<Map<string, Answer>>(new Map<string, Answer>());
   const flushing = useRef<Promise<boolean> | null>(null);
   const retryTimer = useRef<number | null>(null);
@@ -52,10 +55,12 @@ export function PerformancePortalPage() {
     setForm(payload);
     setAssisted(payload.assisted);
     versionRef.current = payload.version;
+    stepRef.current = payload.step?.kind;
     const fromServer: Record<string, Answer> = {};
     for (const a of payload.answers) {
-      if (a.kind === "score" && a.score) fromServer[a.questionCode] = { kind: "score", score: a.score };
-      else if (a.kind === "notObserved") fromServer[a.questionCode] = { kind: "notObserved" };
+      const comment = a.comment ?? undefined;
+      if (a.kind === "score" && a.score) fromServer[a.questionCode] = { kind: "score", score: a.score, comment };
+      else if (a.kind === "notObserved") fromServer[a.questionCode] = { kind: "notObserved", comment };
       else fromServer[a.questionCode] = { kind: "pending" };
     }
     if (keepLocal) for (const [code, answer] of [...pendingRef.current.entries()] as [string, Answer][]) fromServer[code] = answer;
@@ -132,7 +137,11 @@ export function PerformancePortalPage() {
       setSaveState("saving");
       const result = await savePerformanceForm(
         versionRef.current,
-        batch.map(([code, answer]) => ({ code, answer: answer.kind === "score" ? { kind: "score", score: answer.score } : { kind: answer.kind } }))
+        batch.map(([code, answer]) => ({
+          code,
+          answer: answer.kind === "score" ? { kind: "score", score: answer.score, evidence: answer.comment ?? null } : answer.kind === "notObserved" ? { kind: "notObserved", evidence: answer.comment ?? null } : { kind: "pending" },
+        })),
+        stepRef.current
       );
       if (result.ok && result.version != null) {
         versionRef.current = result.version;
@@ -184,8 +193,30 @@ export function PerformancePortalPage() {
   const question = questions[index];
   const answeredCount = useMemo(() => questions.filter((q) => answers[q.code] && answers[q.code]!.kind !== "pending").length, [questions, answers]);
   const missing = questions.filter((q) => !answers[q.code] || answers[q.code]!.kind === "pending");
+  const commentRule = form?.step?.commentRule ?? null;
+  /** Mesma regra do servidor: nota 1 ou 4 pede comentário que descreva o observado. */
+  const commentIssue = (answer: Answer | undefined): string | null =>
+    commentRule && answer?.kind === "score" && commentRequired(answer.score) ? commentProblem(answer.comment, commentRule.minLetters) : null;
+  const commentMissing = questions.filter((q) => commentIssue(answers[q.code]));
+  const setComment = (code: string, comment: string) => {
+    setAnswers((current) => {
+      const answer = current[code];
+      if (!answer || answer.kind === "pending") return current;
+      return { ...current, [code]: { ...answer, comment } };
+    });
+  };
+  /** Grava o comentário quando a pessoa sai do campo ou avança. */
+  const commitComment = (code: string) => {
+    const answer = answers[code];
+    if (!answer || answer.kind === "pending") return;
+    pendingRef.current.set(code, answer);
+    void flush();
+  };
 
   const choose = (code: string, answer: Answer) => {
+    // Trocar a nota mantém o comentário já escrito.
+    const previous = answers[code];
+    if (answer.kind !== "pending" && previous && previous.kind !== "pending" && previous.comment) answer = { ...answer, comment: previous.comment };
     setAnswers((current) => ({ ...current, [code]: answer }));
     pendingRef.current.set(code, answer);
     setMessage(null);
@@ -214,7 +245,7 @@ export function PerformancePortalPage() {
       setMessage("Ainda não conseguimos salvar tudo. Confira a internet e toque em Enviar de novo.");
       return;
     }
-    const result = await submitPerformanceForm(versionRef.current, assisted ? confirmed : true);
+    const result = await submitPerformanceForm(versionRef.current, assisted ? confirmed : true, stepRef.current);
     setBusy(false);
     if (!result.ok) {
       if (result.code === "EXPIRED") {
@@ -223,6 +254,14 @@ export function PerformancePortalPage() {
         return;
       }
       setMessage(result.offline ? "Sem internet. Toque em Enviar quando a conexão voltar." : result.message ?? "Não foi possível enviar.");
+      return;
+    }
+    if (result.done === false) {
+      // Próxima etapa na mesma sessão: nada de novo QR, código ou login.
+      pendingRef.current.clear();
+      setConfirmed(false);
+      setIndex(0);
+      await loadForm({ resume: true });
       return;
     }
     setStep("done");
@@ -293,13 +332,40 @@ export function PerformancePortalPage() {
           </form>
         ) : null}
 
-        {step === "intro" && form ? (
+        {form && form.step && form.step.total > 1 && (step === "intro" || step === "form" || step === "review") ? (
+          <p className="pp-steps" data-testid="portal-step">
+            Etapa {form.step.index} de {form.step.total} · {form.step.title}
+          </p>
+        ) : null}
+
+        {step === "intro" && form && form.step && form.step.kind !== "SELF" ? (
+          <section className="pp-card" data-testid="portal-step-intro">
+            {form.step.kind === "LEADERSHIP_UPWARD" ? <p className="pp-alert pp-alert-ok">{form.step.intro.split(". ")[0]}.</p> : null}
+            <h1 ref={headingRef} tabIndex={-1}>
+              {form.step.kind === "LEADERSHIP_UPWARD" ? `Como é a liderança de ${form.step.subjectFirstName ?? "seu gestor"}?` : form.step.title}
+            </h1>
+            <p>{form.step.kind === "LEADERSHIP_UPWARD" ? form.step.intro.split(". ").slice(1).join(". ") : form.step.intro}</p>
+            <p>São {questions.length} perguntas, uma por tela, no mesmo período de referência.</p>
+            <p className="pp-muted">Nas respostas “Nunca ou quase nunca” e “Sempre ou quase sempre”, conte um comportamento ou situação que você observou. Não precisa citar nomes.</p>
+            {form.step.kind === "LEADERSHIP_UPWARD" ? (
+              <p className="pp-muted" data-testid="portal-upward-privacy">
+                Suas respostas sobre o líder entram numa média com as dos colegas e só aparecem quando houver respostas suficientes. Seu líder não vê respostas individuais nem os comentários. A resposta fica registrada no sistema.
+              </p>
+            ) : null}
+            <button type="button" className="pp-btn pp-btn-primary" onClick={() => setStep("form")} data-testid="portal-start">
+              Começar
+            </button>
+          </section>
+        ) : null}
+
+        {step === "intro" && form && (!form.step || form.step.kind === "SELF") ? (
           <section className="pp-card" data-testid="portal-intro">
             <h1 ref={headingRef} tabIndex={-1}>
               Olá, {form.employeeName}
             </h1>
             <p>
               São {questions.length} perguntas curtas sobre o seu dia a dia de trabalho, uma por tela. Leva uns 10 minutos.
+              {form.step && form.step.total > 1 ? ` Depois vêm mais ${form.step.total - 1} etapa(s) curta(s) sobre liderança.` : ""}
             </p>
             <p>{form.instructions}</p>
             <p className="pp-muted">
@@ -322,7 +388,7 @@ export function PerformancePortalPage() {
                 <span style={{ width: `${Math.round(((index + 1) / questions.length) * 100)}%` }} />
               </div>
             </div>
-            <p className="pp-pillar">{PILLAR_LABELS[question.pillar as Pillar] ?? question.pillar}</p>
+            <p className="pp-pillar">{question.pillar === "LEADERSHIP" ? question.competency ?? "Liderança" : PILLAR_LABELS[question.pillar as Pillar] ?? question.pillar}</p>
             <h2 ref={headingRef} tabIndex={-1} id="pp-question" data-testid="portal-question-text">
               {question.text}
             </h2>
@@ -345,6 +411,31 @@ export function PerformancePortalPage() {
                 {NOT_OBSERVED_LABEL}
               </button>
             </div>
+            {commentRule && answers[question.code] && answers[question.code]!.kind !== "pending" ? (
+              <div className="pp-comment">
+                <label htmlFor="pp-comment" className="pp-muted">
+                  {commentIssue(answers[question.code]) !== null || (answers[question.code]!.kind === "score" && commentRequired((answers[question.code] as { score: number }).score))
+                    ? "Conte o que você observou (obrigatório nesta resposta)"
+                    : "Comentário (opcional)"}
+                </label>
+                <textarea
+                  id="pp-comment"
+                  className="pp-input pp-textarea"
+                  rows={3}
+                  maxLength={600}
+                  value={(answers[question.code] as { comment?: string }).comment ?? ""}
+                  onChange={(e) => setComment(question.code, e.target.value)}
+                  onBlur={() => commitComment(question.code)}
+                  placeholder="Ex.: avisou a equipe da mudança de turno com uma semana de antecedência."
+                  data-testid="portal-comment"
+                />
+                {commentIssue(answers[question.code]) ? (
+                  <p className="pp-alert pp-alert-warn" data-testid="portal-comment-hint">
+                    {commentIssue(answers[question.code])}
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
             <p className={`pp-status ${saveState === "saved" ? "pp-status-ok" : saveState === "offline" || saveState === "error" ? "pp-status-warn" : ""}`} aria-live="polite" data-testid="portal-save-state">
               {saveText}
             </p>
@@ -360,8 +451,9 @@ export function PerformancePortalPage() {
               <button
                 type="button"
                 className="pp-btn pp-btn-primary"
-                disabled={!answers[question.code] || answers[question.code]!.kind === "pending"}
+                disabled={!answers[question.code] || answers[question.code]!.kind === "pending" || commentIssue(answers[question.code]) !== null}
                 onClick={() => {
+                  if (commentRule) commitComment(question.code);
                   void flush();
                   if (index < questions.length - 1) setIndex(index + 1);
                   else setStep("review");
@@ -389,6 +481,9 @@ export function PerformancePortalPage() {
                       {i + 1}. {q.text}
                     </span>
                     {text ? <span className="pp-review-answer">{text}</span> : <span className="pp-review-missing">Sem resposta</span>}
+                    {commentRule && answers[q.code] && answers[q.code]!.kind !== "pending" && (answers[q.code] as { comment?: string }).comment ? (
+                      <span className="pp-muted">“{(answers[q.code] as { comment?: string }).comment}”</span>
+                    ) : null}
                     <button
                       type="button"
                       className="pp-link"
@@ -418,8 +513,15 @@ export function PerformancePortalPage() {
               </p>
             ) : null}
             {missing.length ? <p className="pp-alert pp-alert-warn">Faltam {missing.length} resposta(s).</p> : null}
-            <button type="button" className="pp-btn pp-btn-primary" disabled={busy || missing.length > 0 || (assisted && !confirmed)} onClick={() => void send()} data-testid="portal-send">
-              {busy ? "Enviando…" : "Enviar respostas"}
+            {commentMissing.length ? <p className="pp-alert pp-alert-warn">Falta comentário em {commentMissing.length} resposta(s) extrema(s).</p> : null}
+            <button
+              type="button"
+              className="pp-btn pp-btn-primary"
+              disabled={busy || missing.length > 0 || commentMissing.length > 0 || (assisted && !confirmed)}
+              onClick={() => void send()}
+              data-testid="portal-send"
+            >
+              {busy ? "Enviando…" : form.step && form.step.index < form.step.total ? "Enviar e continuar" : "Enviar respostas"}
             </button>
           </section>
         ) : null}

@@ -14,6 +14,9 @@ import {
   calibrate,
   createCycle,
   createDraftModel,
+  createFeedback,
+  createPdi,
+  issueReport,
   exchangeLink,
   hasSubmittedLeaderEvaluation,
   issueInvite,
@@ -28,6 +31,7 @@ import {
   verifyOtp,
 } from "./performanceService.js";
 import { emptyPerformanceDatabase, type AssignmentRecord, type PerformanceDatabase } from "./performanceState.js";
+import { reportData } from "./performanceInsights.js";
 import { hrScope, must, NOW, openOptions, person } from "./performanceTestFixtures.js";
 
 const tokenOf = (url: string) => decodeURIComponent(new URL(url).hash.slice(3));
@@ -249,6 +253,26 @@ describe("180°: consolidação protegida e calibração", () => {
     assert.ok(db.leadershipResults.filter((r) => r.active).every((r) => r.official));
     assert.equal(calibrateLeadership(db, input, openOptions).ok, false, "homologado não muda");
     assert.equal(db.results.some((r) => r.quadrant.includes("Lideran")), false, "liderança fora da Nine-Box");
+
+    // Documento de liderança: superior ou RH; nunca o próprio líder nem um liderado.
+    const report = (scope: typeof carla, kind: "lideranca" = "lideranca") =>
+      issueReport(db, { cycleId, kind, participantId: brunoId, actorUserId: "u", actorName: "X", scope, randomSuffix: "abc123" }, openOptions);
+    assert.equal(report(carla).ok, true);
+    assert.equal(report(buildPerformanceScope({ accessScope: "DIRECT_REPORTS", actorEmployeeId: "bruno", teamIds: ["ana"] })).ok, false);
+    assert.equal(report(buildPerformanceScope({ accessScope: "SELF", actorEmployeeId: "ana" })).ok, false);
+    const data = reportData(db, { cycleId, kind: "lideranca", participantId: brunoId }, hrScope, NOW)!;
+    assert.equal(data.leadership?.result?.version, 1);
+    assert.equal(JSON.stringify(data).includes("Comentário confidencial"), false);
+
+    // PDI de liderança: competência LD só para quem é líder no ciclo.
+    const feedback = (participantId: string) =>
+      must(createFeedback(db, { participantId, strength: "Organiza bem a semana.", improvement: "Dar retorno mais cedo.", action: "Reunião quinzenal de retorno.", ownerName: "Carla", dueAt: "2027-01-30", conversationAt: "2026-12-01", actorUserId: "rh", scope: hrScope }, openOptions));
+    const fb = feedback(brunoId);
+    const pdi = createPdi(fb.db, { feedbackId: fb.value.feedbackId, title: "Rodada de retorno à equipe", competencyCode: "LD-06", priority: true, justification: null, ownerName: "Bruno", dueAt: "2027-02-28", actorUserId: "rh", scope: hrScope }, openOptions);
+    assert.equal(pdi.ok, true, "PDI de liderança para o líder");
+    const anaFb = feedback(pid(db, "ana"));
+    const anaPdi = createPdi(anaFb.db, { feedbackId: anaFb.value.feedbackId, title: "Liderar reunião", competencyCode: "LD-06", priority: true, justification: null, ownerName: "Ana", dueAt: "2027-02-28", actorUserId: "rh", scope: hrScope }, openOptions);
+    assert.equal(anaPdi.ok, false, "quem não é líder não recebe competência de liderança");
   });
 });
 

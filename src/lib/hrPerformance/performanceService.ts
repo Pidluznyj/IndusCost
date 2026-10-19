@@ -60,6 +60,7 @@ import {
   ensureLeadershipAssignments,
   journeyDone,
   journeyOf,
+  leadershipComparison,
   leadershipHomologationProblem,
   leadershipModelProblems,
   leadershipQuestionsFor,
@@ -2160,7 +2161,9 @@ export function createPdi(
   if (!input.dueAt || !isIsoDate(input.dueAt)) return fail("INVALID_DATE", "Informe o prazo da ação.");
   const cycle = db.cycles.find((c) => c.id === participant.cycleId)!;
   const competencyCode = cleanOrNull(input.competencyCode, 20);
-  if (competencyCode && !questionsOf(db, cycle.modelId).some((q) => q.code === competencyCode)) {
+  // PDI de liderança: competências LD-xx do modelo de liderança do ciclo, só para quem é líder no ciclo.
+  const leadershipCode = Boolean(competencyCode && cycle.leadershipModelId && participant.isLeader && questionsOf(db, cycle.leadershipModelId).some((q) => q.code === competencyCode));
+  if (competencyCode && !leadershipCode && !questionsOf(db, cycle.modelId).some((q) => q.code === competencyCode)) {
     return fail("INVALID_COMPETENCY", "Competência não faz parte do modelo deste ciclo.");
   }
   const existingPriority = db.pdis.some((p) => p.feedbackId === feedback.id && p.priority && p.status !== "CANCELLED");
@@ -2317,9 +2320,9 @@ export function recordExport(
   return { ok: true, db, value: { rows: input.rows } };
 }
 
-export const REPORT_KINDS = ["individual", "devolutiva", "pdi", "consolidado", "ninebox", "historico"] as const;
+export const REPORT_KINDS = ["individual", "devolutiva", "pdi", "consolidado", "ninebox", "historico", "lideranca"] as const;
 export type ReportKind = (typeof REPORT_KINDS)[number];
-export const PERSONAL_REPORT_KINDS: readonly ReportKind[] = ["individual", "devolutiva", "pdi", "historico"];
+export const PERSONAL_REPORT_KINDS: readonly ReportKind[] = ["individual", "devolutiva", "pdi", "historico", "lideranca"];
 
 export function isReportKind(value: unknown): value is ReportKind {
   return typeof value === "string" && (REPORT_KINDS as readonly string[]).includes(value);
@@ -2337,7 +2340,13 @@ export function issueReport(
   if (PERSONAL_REPORT_KINDS.includes(input.kind)) {
     const participant = db.participants.find((p) => p.id === input.participantId && p.cycleId === cycle.id);
     if (!participant) return fail("NOT_FOUND", "Escolha a pessoa do documento.");
-    if (!canSeeEmployee(input.scope, participant.employeeId)) return fail("FORBIDDEN", FORBIDDEN_MESSAGE);
+    if (input.kind === "lideranca") {
+      // Mesma regra da calibração: RH ou o superior do líder; nunca o próprio líder sozinho.
+      const actor = input.scope.kind === "ALL" ? null : input.scope.actorEmployeeId;
+      const view = leadershipComparison(db, participant.id, input.scope, actor);
+      if (view.ok === false) return fail(view.code, view.message);
+      if (!view.result) return fail("LEADERSHIP_NOT_CALIBRATED", "Calibre a liderança antes de emitir o documento.");
+    } else if (!canSeeEmployee(input.scope, participant.employeeId)) return fail("FORBIDDEN", FORBIDDEN_MESSAGE);
   } else if (input.scope.kind !== "ALL") {
     return fail("FORBIDDEN", "Relatórios do ciclo inteiro são do RH.");
   }
