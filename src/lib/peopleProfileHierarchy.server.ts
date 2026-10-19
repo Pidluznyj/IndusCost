@@ -1,43 +1,32 @@
 /**
- * Hierarquia de gestores — CTE PostgreSQL (sem recursão N+1).
+ * Hierarquia de gestores. Equipe e descendentes vêm da hierarquia efetiva (`orgHierarchy`);
+ * a checagem de ciclo do gestor explícito continua por CTE PostgreSQL.
  */
 
 import { Prisma } from "@prisma/client";
 import type { PrismaClient } from "@prisma/client";
 import { wouldCreateManagerCycle, type ManagerLink } from "./peopleProfileAccess.js";
+import { loadOrgHierarchy, type OrgHierarchyDb } from "./orgHierarchy.server.js";
 
 type SqlClient = Pick<PrismaClient, "$queryRaw">;
 
+/**
+ * Toda a árvore abaixo do líder pela hierarquia efetiva (gestor do cadastro + liderança das
+ * unidades). Inclui líderes de unidades subordinadas, que têm `managerId` nulo por regra.
+ */
 export async function loadDescendantEmployeeIds(
-  prisma: SqlClient,
+  prisma: OrgHierarchyDb,
   managerEmployeeId: string
 ): Promise<string[]> {
-  const rows = await prisma.$queryRaw<Array<{ id: string }>>(Prisma.sql`
-    WITH RECURSIVE tree AS (
-      SELECT e.id, e."managerId", 1 AS depth
-      FROM "Employee" e
-      WHERE e."managerId" = ${managerEmployeeId}::uuid
-      UNION ALL
-      SELECT child.id, child."managerId", tree.depth + 1
-      FROM "Employee" child
-      INNER JOIN tree ON child."managerId" = tree.id
-      WHERE tree.depth < 50
-        AND child.id <> ${managerEmployeeId}::uuid
-    )
-    SELECT DISTINCT id FROM tree
-  `);
-  return rows.map((row) => row.id);
+  return (await loadOrgHierarchy(prisma)).descendants(managerEmployeeId);
 }
 
+/** Equipe direta pela hierarquia efetiva (mesma regra de `loadDescendantEmployeeIds`). */
 export async function loadDirectReportIds(
-  prisma: PrismaClient,
+  prisma: OrgHierarchyDb,
   managerEmployeeId: string
 ): Promise<string[]> {
-  const rows = await prisma.employee.findMany({
-    where: { managerId: managerEmployeeId },
-    select: { id: true },
-  });
-  return rows.map((row) => row.id);
+  return (await loadOrgHierarchy(prisma)).directReports(managerEmployeeId);
 }
 
 export async function loadManagerLinks(prisma: PrismaClient): Promise<ManagerLink[]> {

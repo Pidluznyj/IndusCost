@@ -81,8 +81,8 @@ export type ParticipantRecord = {
   departmentName: string;
   managerId: string | null;
   managerName: string | null;
-  /** CADASTRO = líder veio da ficha; RH = exceção atribuída e justificada. */
-  managerSource: "CADASTRO" | "RH";
+  /** CADASTRO = gestor da ficha; ORGANOGRAMA = líder da unidade pela hierarquia efetiva; RH = exceção justificada. */
+  managerSource: "CADASTRO" | "ORGANOGRAMA" | "RH";
   admissionDate: string | null;
   registration: string | null;
   frozen: boolean;

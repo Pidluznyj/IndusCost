@@ -70,6 +70,17 @@ function PersonCard({
         >
           {subtitle || person.roleName || (person.isLeader ? "Líder" : "Colaborador")}
         </p>
+        {person.reportsTo && tone !== "member" ? (
+          person.reportsTo.resolved ? (
+            <p className="truncate text-[11px] leading-tight text-muted-foreground" title={person.reportsTo.text}>
+              Responde a {person.reportsTo.name}
+            </p>
+          ) : person.reportsTo.pending ? (
+            <p className="truncate text-[11px] font-semibold leading-tight text-amber-700" title={person.reportsTo.text} data-testid="org-leader-unresolved">
+              Superior não definido
+            </p>
+          ) : null
+        ) : null}
       </div>
     </div>
   );

@@ -277,7 +277,9 @@ import {
   isPerformanceRemindersEnabled,
 } from "./src/lib/hrPerformance/performanceFeatureFlags.js";
 import { resolveCompetencyAccessScope } from "./src/lib/competencies/competencyScope.js";
-import { loadDescendantEmployeeIds } from "./src/lib/peopleProfileHierarchy.server.js";
+import { loadDescendantEmployeeIds, loadDirectReportIds } from "./src/lib/peopleProfileHierarchy.server.js";
+import { assignableManager, loadOrgHierarchy } from "./src/lib/orgHierarchy.server.js";
+import { toEffectiveManagerView, type EffectiveManagerResolution } from "./src/lib/orgHierarchy.js";
 import { buildEmployeeCosts } from "./src/lib/employeeCostEngine.js";
 import {
   HrOrgStructureError,
@@ -3506,6 +3508,8 @@ app.get("/api/employees", requireAppAuth, requireResource(EMPLOYEES_RESOURCE_KEY
   });
 
   const orgLeadershipByEmployee = await loadOrgLeadershipByEmployeeId(prisma);
+  // Superior efetivo (cadastro + liderança das unidades), resolvido uma vez para a lista.
+  const orgHierarchy = await loadOrgHierarchy(prisma);
 
   // Motor de Custeio HH (fórmula canônica — employeeCostEngine).
   // Sem permissão de valores: não calcula nem serializa R$.
@@ -3540,6 +3544,7 @@ app.get("/api/employees", requireAppAuth, requireResource(EMPLOYEES_RESOURCE_KEY
       ...(revealAdminNotes ? { terminationDetails } : {}),
       situation: situations.get(emp.id) ?? null,
       orgLeadership,
+      effectiveManager: toEffectiveManagerView(orgHierarchy.resolve(emp.id)),
       ...(revealCompensation ? { costs } : {}),
     };
 
@@ -15447,6 +15452,16 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   // Recursos admin.employees.competencies[.assessments|.trainings|.approvals]; o editor de RH passa sem
   // grant próprio (nunca contra deny explícito), como nas demais facetas admin.employees.*.
   // Escopo hierárquico (mesma régua da ficha): RH/SUPER_ADMIN = todos; líder = sua equipe.
+  /** Líder do participante: hierarquia efetiva; sem líder válido, fica nulo com o motivo. */
+  const performanceManagerOf = (r: EffectiveManagerResolution) => {
+    const m = assignableManager(r);
+    return {
+      managerId: m.managerId,
+      managerName: m.managerName,
+      managerSource: m.fromOrgChart ? ("ORGANOGRAMA" as const) : ("CADASTRO" as const),
+      managerNote: m.note,
+    };
+  };
   registerPerformanceRoutes(app, {
     enabled: () => isPerformanceCycleEnabled(),
     options: {
@@ -15469,8 +15484,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
       const actorEmployeeId = (authUser as { employeeId?: string | null } | null)?.employeeId ?? null;
       let teamIds: string[] = [];
       if (actorEmployeeId && accessScope === "DIRECT_REPORTS") {
-        const rows = await prisma.employee.findMany({ where: { managerId: actorEmployeeId }, select: { id: true } });
-        teamIds = rows.map((row) => row.id);
+        teamIds = await loadDirectReportIds(prisma, actorEmployeeId);
       } else if (actorEmployeeId && accessScope === "DESCENDANTS") {
         teamIds = await loadDescendantEmployeeIds(prisma, actorEmployeeId);
       }
@@ -15494,7 +15508,9 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
           Role: { select: { name: true } },
         },
       });
+      const hierarchy = await loadOrgHierarchy(prisma);
       return rows.map((row) => ({
+        ...performanceManagerOf(hierarchy.resolve(row.id)),
         id: row.id,
         name: row.name,
         status: row.status,
@@ -15502,8 +15518,6 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
         roleName: row.Role?.name ?? "",
         departmentId: row.departmentId,
         departmentName: row.department,
-        managerId: row.managerId,
-        managerName: row.managerName,
         admissionDate: row.admissionDate,
         terminationDate: row.terminationDate,
         registration: null,
@@ -15538,7 +15552,9 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
           Role: { select: { name: true } },
         },
       });
+      const hierarchy = await loadOrgHierarchy(prisma);
       return rows.map((row) => ({
+        ...performanceManagerOf(hierarchy.resolve(row.id)),
         id: row.id,
         name: row.name,
         status: row.status,
@@ -15546,8 +15562,6 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
         roleName: row.Role?.name ?? "",
         departmentId: row.departmentId,
         departmentName: row.department,
-        managerId: row.managerId,
-        managerName: row.managerName,
         admissionDate: row.admissionDate,
         terminationDate: row.terminationDate,
         registration: null,
@@ -15643,7 +15657,11 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
         }
       },
     },
-    { prisma, loadDescendantIds: (managerId) => loadDescendantEmployeeIds(prisma, managerId) }
+    {
+      prisma,
+      loadDescendantIds: (managerId) => loadDescendantEmployeeIds(prisma, managerId),
+      loadDirectReportIds: (managerId) => loadDirectReportIds(prisma, managerId),
+    }
   );
 
   registerCanonicalPersonRoutes(app, {

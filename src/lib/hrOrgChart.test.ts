@@ -282,3 +282,31 @@ describe("hrOrgChart", () => {
     assert.equal(chart.unassigned[0].id, "free");
   });
 });
+
+describe("organograma — a quem cada líder responde", () => {
+  it("líder do departamento mostra o líder da diretoria; topo não tem alerta", async () => {
+    const { buildOrgHierarchy } = await import("./orgHierarchy");
+    const employees = [
+      { id: "paulo", name: "Paulo", socialName: null, status: "ACTIVE", departmentId: null, roleName: "Diretor" },
+      { id: "jose", name: "José", socialName: null, status: "ACTIVE", departmentId: null, roleName: "Gerente" },
+      { id: "joseane", name: "Joseane", socialName: null, status: "ACTIVE", departmentId: "com", roleName: "Vendas" },
+    ];
+    const directorates = [{ id: "adm", name: "Administrativa", code: null, status: "ACTIVE", leaderEmployeeId: "paulo", parentDirectorateId: null }];
+    const departments = [{ id: "com", name: "Comercial", code: null, status: "ACTIVE", directorateId: "adm", leaderEmployeeId: "jose", parentDepartmentId: null }];
+    const hierarchy = buildOrgHierarchy({ employees, directorates, departments });
+    const chart = buildHrOrgChart({
+      employees,
+      directorates,
+      departments,
+      superiorOf: (id) => {
+        const r = hierarchy.resolve(id);
+        return r.status === "RESOLVED" ? { resolved: true, pending: false, name: r.managerName, text: r.message } : { resolved: false, pending: r.status !== "TOP", name: null, text: r.message };
+      },
+    });
+    const adm = chart.directorates[0];
+    assert.equal(adm.leader?.reportsTo?.resolved, false);
+    assert.equal(adm.leader?.reportsTo?.pending, false, "topo legítimo sem alerta");
+    assert.equal(adm.departments[0].leader?.reportsTo?.name, "Paulo");
+    assert.equal(adm.departments[0].members.map((m) => m.name).join(), "Joseane", "pessoa aparece uma vez só");
+  });
+});

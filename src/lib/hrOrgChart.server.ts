@@ -3,6 +3,7 @@
  */
 import type { PrismaClient } from "@prisma/client";
 import { buildHrOrgChart, type HrOrgChartRoot } from "@/src/lib/hrOrgChart.js";
+import { buildOrgHierarchy } from "@/src/lib/orgHierarchy.js";
 
 type Db = Pick<PrismaClient, "hrDirectorate" | "hrDepartment" | "employee">;
 
@@ -41,15 +42,24 @@ export async function loadHrOrgChart(
         socialName: true,
         status: true,
         departmentId: true,
+        managerId: true,
         Role: { select: { name: true } },
       },
       orderBy: { name: "asc" },
     }),
   ]);
 
+  // Mesma fonte de Pessoas/RH e Desempenho, com as linhas já carregadas (sem nova consulta).
+  const hierarchy = buildOrgHierarchy({ employees, directorates, departments });
+
   return buildHrOrgChart({
     organizationName: options?.organizationName ?? "Lazarios Koppetel",
     includeInactiveUnits: options?.includeInactiveUnits === true,
+    superiorOf: (employeeId) => {
+      const r = hierarchy.resolve(employeeId);
+      if (r.status === "RESOLVED") return { resolved: true, pending: false, name: r.managerName, text: r.message };
+      return { resolved: false, pending: r.status !== "TOP", name: null, text: r.message };
+    },
     directorates,
     departments,
     employees: employees.map((e) => ({

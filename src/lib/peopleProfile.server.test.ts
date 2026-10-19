@@ -21,6 +21,19 @@ function check(perms: string[]) {
   };
 }
 
+/** Prisma falso com o grafo mínimo que a hierarquia efetiva lê (sem unidades = só o cadastro). */
+function orgFake(rows: { id: string; name: string; managerId?: string | null }[]) {
+  const people = rows.map((r) => ({ socialName: null, status: "ACTIVE", departmentId: null, managerId: null, ...r }));
+  return {
+    employee: {
+      findUnique: async ({ where }: { where: { id: string } }) => people.find((p) => p.id === where.id) ?? null,
+      findMany: async () => people,
+    },
+    hrDirectorate: { findMany: async () => [] },
+    hrDepartment: { findMany: async () => [] },
+  };
+}
+
 describe("resolveProfileAccess — IDOR e escopo", () => {
   it("SEM ACESSO recusa a ficha", async () => {
     const prisma = {
@@ -42,9 +55,7 @@ describe("resolveProfileAccess — IDOR e escopo", () => {
   });
 
   it("líder fora da equipe é bloqueado", async () => {
-    const prisma = {
-      employee: { findUnique: async () => ({ id: "maria", managerId: "outro" }) },
-    };
+    const prisma = orgFake([{ id: "maria", name: "Maria", managerId: "outro" }, { id: "outro", name: "Outro" }, { id: "joao-lider", name: "João" }]);
     await assert.rejects(
       () =>
         resolveProfileAccess(prisma as never, {
@@ -60,10 +71,27 @@ describe("resolveProfileAccess — IDOR e escopo", () => {
     );
   });
 
-  it("líder vê reporte direto", async () => {
+  it("líder da diretoria vê o líder do departamento subordinado (managerId nulo por regra)", async () => {
+    const base = orgFake([
+      { id: "jose", name: "José", managerId: null },
+      { id: "paulo", name: "Paulo" },
+    ]);
     const prisma = {
-      employee: { findUnique: async () => ({ id: "maria", managerId: "joao-lider" }) },
+      ...base,
+      hrDirectorate: { findMany: async () => [{ id: "adm", name: "Administrativa", status: "ACTIVE", leaderEmployeeId: "paulo", parentDirectorateId: null }] },
+      hrDepartment: { findMany: async () => [{ id: "com", name: "Comercial", status: "ACTIVE", directorateId: "adm", leaderEmployeeId: "jose", parentDepartmentId: null }] },
     };
+    const access = await resolveProfileAccess(prisma as never, {
+      check: check(["employees.team.view"]),
+      actorEmployeeId: "paulo",
+      targetEmployeeId: "jose",
+    });
+    assert.equal(access.capabilities.accessScope, "DIRECT_REPORTS");
+    assert.equal(access.capabilities.canViewProfile, true);
+  });
+
+  it("líder vê reporte direto", async () => {
+    const prisma = orgFake([{ id: "maria", name: "Maria", managerId: "joao-lider" }, { id: "joao-lider", name: "João" }]);
     const access = await resolveProfileAccess(prisma as never, {
       check: check(["employees.team.view"]),
       actorEmployeeId: "joao-lider",
@@ -189,7 +217,11 @@ describe("loadPeopleProfileSummary — última promoção", () => {
           manager: null,
           person: null,
         }),
+        // Hierarquia efetiva (sem gestor no cadastro): grafo mínimo, sem unidades.
+        findMany: async () => [{ id: "emp-1", name: "João da Silva", socialName: null, status: "ACTIVE", departmentId: null, managerId: null }],
       },
+      hrDirectorate: { findMany: async () => [] },
+      hrDepartment: { findMany: async () => [] },
       hrEmployeeHistory: {
         findMany: async (args: { take?: number }) => {
           recentTake = args.take;

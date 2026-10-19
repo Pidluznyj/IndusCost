@@ -13,7 +13,7 @@ import { cn } from "@/src/lib/utils";
 type Filter = "pending" | "submitted" | "all";
 type Dialog = { kind: "feedback" | "ack" | "pdi"; item: LeaderQueueItem } | null;
 
-export function PerformanceTeamTab({ onToast, actorName }: { onToast: (message: string) => void; actorName: string }) {
+export function PerformanceTeamTab({ onToast, actorName, linkedEmployee = true }: { onToast: (message: string) => void; actorName: string; linkedEmployee?: boolean }) {
   const [items, setItems] = useState<LeaderQueueItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<Filter>("pending");
@@ -89,7 +89,16 @@ export function PerformanceTeamTab({ onToast, actorName }: { onToast: (message: 
         </div>
       ) : shown.length === 0 ? (
         <div className={PANEL}>
-          <PanelState kind="empty" message={items.length === 0 ? "Nenhuma avaliação atribuída a você." : "Nada nesta situação."} />
+          <PanelState
+            kind="empty"
+            message={
+              !linkedEmployee
+                ? "Seu usuário não está ligado a um cadastro de colaborador. As avaliações são atribuídas ao colaborador líder; peça ao RH o vínculo em Configurações › Usuários."
+                : items.length === 0
+                  ? "Nenhuma avaliação atribuída a você."
+                  : "Nada nesta situação."
+            }
+          />
         </div>
       ) : (
         <ul className="grid gap-3 lg:grid-cols-2" data-testid="perf-team-list">

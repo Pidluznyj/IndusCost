@@ -9,6 +9,7 @@ import {
   createCycle,
   createDraftModel,
   publishModel,
+  reassignLeader,
   saveAnswers,
   submitAssignment,
   transitionCycle,
@@ -89,9 +90,17 @@ export function draftCycle(employees = [ana, bia, bruno, recem, inativo, afastad
   return { db: people.db, cycleId: cycle.value.cycleId, modelId: published.modelId, counts: people.value };
 }
 
+/** Fabi entra sem gestor; o ciclo só abre depois que o RH escolhe a líder (exceção justificada, fora dos escopos de teste). */
+export function withFabiLeader(db: PerformanceDatabase): PerformanceDatabase {
+  const fabi = participantOf(db, "semlider");
+  return must(
+    reassignLeader(db, { participantId: fabi.id, managerId: "carla", managerName: "Carla Gerente", reason: "Cadastro sem gestor; Carla acompanha o turno.", actorUserId: "rh", scope: hrScope }, openOptions)
+  ).db;
+}
+
 export function openCycle() {
   const draft = draftCycle();
-  const prepared = must(transitionCycle(draft.db, { cycleId: draft.cycleId, to: "PREPARED", actorUserId: "rh", reversalReason: null, scope: hrScope }, openOptions));
+  const prepared = must(transitionCycle(withFabiLeader(draft.db), { cycleId: draft.cycleId, to: "PREPARED", actorUserId: "rh", reversalReason: null, scope: hrScope }, openOptions));
   const opened = must(transitionCycle(prepared.db, { cycleId: draft.cycleId, to: "OPEN", actorUserId: "rh", reversalReason: null, scope: hrScope }, openOptions));
   return { ...draft, db: opened.db };
 }

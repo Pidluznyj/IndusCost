@@ -109,7 +109,7 @@ function PerformanceModule() {
           <PerformanceCyclesTab me={me} selectedId={cycleId} onSelect={selectCycle} onToast={toast.setToast} />
         </React.Fragment>
       ) : null}
-      {active === "equipe" ? <PerformanceTeamTab onToast={toast.setToast} actorName={actorName} /> : null}
+      {active === "equipe" ? <PerformanceTeamTab onToast={toast.setToast} actorName={actorName} linkedEmployee={Boolean(me.actorEmployeeId)} /> : null}
       {active === "calibracao" ? <PerformanceCalibrationTab cycleId={cycleId} onToast={toast.setToast} /> : null}
       {active === "ninebox" ? <PerformanceNineBoxTab cycleId={cycleId} canReport={caps.report} /> : null}
       {active === "pdi" ? <PerformancePdiTab cycleId={cycleId} canReport={caps.report} actorName={actorName} onToast={toast.setToast} /> : null}

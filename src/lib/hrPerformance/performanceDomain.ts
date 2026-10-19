@@ -322,9 +322,22 @@ export type EmployeeSnapshotSource = {
   departmentName: string;
   managerId: string | null;
   managerName: string | null;
+  /** Origem do líder (hierarquia efetiva). Sem valor = gestor do cadastro. */
+  managerSource?: ParticipantManagerSource;
+  /** Por que não há líder (ou alerta), em texto para o RH. */
+  managerNote?: string | null;
   admissionDate: Date | null;
   terminationDate: Date | null;
   registration: string | null;
+};
+
+/** CADASTRO = gestor da ficha; ORGANOGRAMA = líder da unidade pela hierarquia; RH = exceção justificada. */
+export type ParticipantManagerSource = "CADASTRO" | "ORGANOGRAMA" | "RH";
+
+export const MANAGER_SOURCE_TEXT: Record<ParticipantManagerSource, string> = {
+  CADASTRO: "Gestor do cadastro",
+  ORGANOGRAMA: "Organograma",
+  RH: "Exceção do RH",
 };
 
 export type EligibilityInput = {

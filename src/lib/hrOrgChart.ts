@@ -9,6 +9,16 @@ export type HrOrgChartPerson = {
   roleName: string | null;
   status: string;
   isLeader: boolean;
+  /** Só em líderes: a quem a pessoa responde pela hierarquia efetiva. */
+  reportsTo?: HrOrgChartReportsTo | null;
+};
+
+export type HrOrgChartReportsTo = {
+  /** false = topo legítimo (sem alerta) ou pendência (com alerta), ver `pending`. */
+  resolved: boolean;
+  pending: boolean;
+  name: string | null;
+  text: string;
 };
 
 export type HrOrgChartDepartmentNode = {
@@ -172,6 +182,23 @@ function buildDepartmentNode(
   };
 }
 
+function annotateLeaders(
+  nodes: readonly HrOrgChartDirectorateNode[],
+  superiorOf: (employeeId: string) => HrOrgChartReportsTo | null
+): void {
+  const annotateDepartments = (depts: readonly HrOrgChartDepartmentNode[]) => {
+    for (const dept of depts) {
+      if (dept.leader) dept.leader.reportsTo = superiorOf(dept.leader.id);
+      annotateDepartments(dept.childDepartments);
+    }
+  };
+  for (const node of nodes) {
+    if (node.leader) node.leader.reportsTo = superiorOf(node.leader.id);
+    annotateDepartments(node.departments);
+    annotateLeaders(node.childDirectorates, superiorOf);
+  }
+}
+
 function nestDepartmentTree(
   flat: HrOrgChartDepartmentNode[]
 ): HrOrgChartDepartmentNode[] {
@@ -199,6 +226,8 @@ export function buildHrOrgChart(input: {
   departments: readonly HrOrgChartDepartmentInput[];
   employees: readonly HrOrgChartEmployeeInput[];
   includeInactiveUnits?: boolean;
+  /** Superior efetivo de cada líder (hierarquia efetiva). Sem ele, o card não mostra a quem responde. */
+  superiorOf?: (employeeId: string) => HrOrgChartReportsTo | null;
 }): HrOrgChartRoot {
   const includeInactive = input.includeInactiveUnits === true;
   const byId = new Map(input.employees.map((e) => [e.id, e]));
@@ -283,6 +312,7 @@ export function buildHrOrgChart(input: {
     for (const n of nodes) sortTree(n.childDirectorates);
   };
   sortTree(roots);
+  if (input.superiorOf) annotateLeaders(roots, input.superiorOf);
 
   return {
     kind: "organization",

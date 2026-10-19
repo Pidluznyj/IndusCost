@@ -5,7 +5,7 @@
  */
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
-import { CheckCircle2, ClipboardCopy, FileDown, Pencil, Printer, QrCode, RotateCcw, Search, ShieldOff, UserMinus, UserPlus, UserRoundCog, Users } from "lucide-react";
+import { CheckCircle2, ClipboardCopy, FileDown, Network, Pencil, Printer, QrCode, RotateCcw, Search, ShieldOff, UserMinus, UserPlus, UserRoundCog, Users } from "lucide-react";
 import { OverlayBadge, OverlayField, OverlayFieldGrid, OverlayInput, OverlaySelect, OverlayTextarea } from "@/src/components/ui/overlay";
 import { CYCLE_STATUSES, CYCLE_STATUS_LABELS, ELIGIBILITY_LABELS, forwardStatus, reversalStatus, type CycleStatus } from "@/src/lib/hrPerformance/performanceDomain";
 import {
@@ -23,6 +23,7 @@ import {
   savePerformanceParticipants,
   searchPerformanceDirectory,
   setPerformanceEligibilityException,
+  syncPerformanceLeaders,
   transitionPerformanceCycle,
   updatePerformanceCycle,
   type CycleWorkspace,
@@ -176,6 +177,20 @@ export function CycleDesk({ cycleId, me, onToast, onChanged }: { cycleId: string
     }
   };
 
+  const syncLeaders = async () => {
+    setError(null);
+    try {
+      const result = await syncPerformanceLeaders(cycleId);
+      const parts = [`${result.changed} líder(es) atualizado(s) pelo organograma`];
+      if (result.keptByHr) parts.push(`${result.keptByHr} exceção(ões) do RH mantida(s)`);
+      if (result.withoutLeader) parts.push(`${result.withoutLeader} ainda sem líder`);
+      onToast(parts.join(" · "));
+      await reload();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Não foi possível atualizar os líderes.");
+    }
+  };
+
   const issueOne = async (person: WorkspacePerson) => {
     if (!person.self) return;
     setError(null);
@@ -206,6 +221,17 @@ export function CycleDesk({ cycleId, me, onToast, onChanged }: { cycleId: string
           {caps.manage && status !== "HOMOLOGATED" && status !== "CLOSED" ? (
             <button type="button" className={BTN_SECONDARY} onClick={() => setDialog({ kind: "edit" })} data-testid="perf-cycle-edit">
               <Pencil className="h-4 w-4" aria-hidden /> Editar
+            </button>
+          ) : null}
+          {caps.manage && preOpen ? (
+            <button
+              type="button"
+              className={BTN_SECONDARY}
+              onClick={() => void syncLeaders()}
+              title="Líder de cada pessoa pela estrutura organizacional. Exceções do RH ficam como estão."
+              data-testid="perf-sync-leaders"
+            >
+              <Network className="h-4 w-4" aria-hidden /> Atualizar líderes
             </button>
           ) : null}
           {caps.manage && back ? (
@@ -691,9 +717,16 @@ function TransitionDialog({
     >
       {reversal ? <ReasonField label="Motivo" value={reason} onChange={setReason} testId="perf-transition-reason" /> : null}
       {to === "OPEN" && !reversal ? (
-        <p className="text-sm">
-          {counts.eligible} pessoa(s) elegível(is) · {counts.withLeader} com líder · {counts.withoutLeader} sem líder (só autoavaliação).
-        </p>
+        <>
+          <p className="text-sm">
+            {counts.eligible} pessoa(s) elegível(is) · {counts.withLeader} com líder · {counts.withoutLeader} sem líder.
+          </p>
+          {counts.withoutLeader > 0 ? (
+            <InfoBanner tone="amber" testId="perf-open-without-leader">
+              O ciclo só abre quando todo elegível tem líder. Use Atualizar líderes (organograma), Trocar líder (exceção com motivo) ou retire a pessoa do ciclo.
+            </InfoBanner>
+          ) : null}
+        </>
       ) : null}
       {needsPilotAck ? (
         <label className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
@@ -888,7 +921,13 @@ function AddPeopleDialog({ ws, onClose, onDone }: { ws: CycleWorkspace; onClose:
                       <td className="py-2 text-muted-foreground">
                         {person.roleName} · {person.departmentName}
                       </td>
-                      <td className="py-2">{person.managerName ?? <span className="text-amber-700">sem líder</span>}</td>
+                      <td className="py-2">
+                        {person.managerName ?? (
+                          <span className="text-amber-700" title={person.managerNote ?? undefined}>
+                            sem líder
+                          </span>
+                        )}
+                      </td>
                       <td className="py-2 tabular-nums">{dateBr(person.admissionDate)}</td>
                     </tr>
                   );
@@ -963,7 +1002,7 @@ function LeaderDialog({ person, opened, onClose, onDone }: { person: WorkspacePe
     <PerformanceModal
       open
       title="Líder avaliador"
-      subtitle={`${person.participant.employeeName} · hoje: ${person.participant.managerName ?? "sem líder"}${person.participant.managerSource === "RH" ? " (exceção do RH)" : " (cadastro)"}`}
+      subtitle={`${person.participant.employeeName} · hoje: ${person.participant.managerName ?? "sem líder"}${person.participant.managerSource === "RH" ? " (exceção do RH)" : person.participant.managerSource === "ORGANOGRAMA" ? " (organograma)" : " (cadastro)"}`}
       saveLabel="Atribuir líder"
       footerHint={opened ? "Depois da abertura, a avaliação anterior fica preservada e uma nova tarefa nasce para o novo líder." : "A troca vale só para este ciclo; o cadastro não muda."}
       canSave={Boolean(leader) && reason.trim().length >= 8}

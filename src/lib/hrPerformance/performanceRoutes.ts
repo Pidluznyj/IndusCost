@@ -60,6 +60,7 @@ import {
   readLeaderForm,
   recordExport,
   reassignLeader,
+  syncParticipantLeaders,
   recordConduct,
   removeParticipant,
   returnForRevision,
@@ -553,9 +554,30 @@ export function registerPerformanceRoutes(expressApp: express.Application, deps:
           exceptionReason: null,
         });
         const existing = db.participants.find((p) => p.cycleId === cycle.id && p.employeeId === employee.id && !p.removedAt);
-        return { employeeId: employee.id, name: employee.name, eligibility: decision.state, reason: decision.reason, alreadyInCycle: Boolean(existing), managerName: employee.managerName };
+        return {
+          employeeId: employee.id,
+          name: employee.name,
+          eligibility: decision.state,
+          reason: decision.reason,
+          alreadyInCycle: Boolean(existing),
+          managerName: employee.managerName,
+          managerSource: employee.managerSource ?? "CADASTRO",
+          managerNote: employee.managerNote ?? null,
+        };
       }),
     });
+  });
+
+  /** Antes da abertura: líderes pela hierarquia efetiva (exceção do RH preservada). */
+  app.post("/api/hr/performance/cycles/:id/participants/sync-leaders", ...manage, async (req, res) => {
+    const actorUserId = await deps.actorUserId(req);
+    const { scope } = await scopeOf(req);
+    const first = await deps.store.read();
+    const ids = first.participants.filter((p) => p.cycleId === req.params.id && !p.removedAt).map((p) => p.employeeId);
+    const employees = await deps.loadEmployees(ids);
+    await mutateAdmin(deps.store, res, (db) =>
+      syncParticipantLeaders(db, { cycleId: req.params.id, employees, actorUserId, scope }, deps.options)
+    );
   });
 
   app.post("/api/hr/performance/cycles/:id/participants", ...manage, async (req, res) => {
@@ -753,6 +775,7 @@ export function registerPerformanceRoutes(expressApp: express.Application, deps:
           decision: req.body?.decision === "ADJUST" ? "ADJUST" : "CONFIRM",
           technicalBand: isNineBoxBand(req.body?.technicalBand) ? req.body.technicalBand : null,
           potentialBand: isNineBoxBand(req.body?.potentialBand) ? req.body.potentialBand : null,
+          acceptMissingLeader: req.body?.acceptMissingLeader === true,
           actorUserId,
           actorEmployeeId,
           scope,
@@ -958,6 +981,8 @@ export function registerPerformanceRoutes(expressApp: express.Application, deps:
         departmentName: row.departmentName,
         managerId: row.managerId,
         managerName: row.managerName,
+        managerSource: row.managerSource ?? "CADASTRO",
+        managerNote: row.managerNote ?? null,
         admissionDate: row.admissionDate ? row.admissionDate.toISOString().slice(0, 10) : null,
         registration: row.registration,
       })),

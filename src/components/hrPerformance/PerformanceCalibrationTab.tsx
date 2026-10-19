@@ -323,7 +323,10 @@ function ValidateDialog({ row, onClose, onDone }: { row: CalibrationRow; onClose
 
 function CalibrateDialog({ row, onClose, onDone }: { row: CalibrationRow; onClose: () => void; onDone: (message: string) => void }) {
   const result = row.result;
-  const canAdjust = Boolean(result && result.nineX && result.nineY);
+  // Sem avaliação do líder enviada: só confirma como exceção declarada, sem posição.
+  const withoutLeader = row.leaderStatus !== "SUBMITTED";
+  const canAdjust = Boolean(result && result.nineX && result.nineY) && !withoutLeader;
+  const [acceptMissingLeader, setAcceptMissingLeader] = useState(false);
   const [decision, setDecision] = useState<"CONFIRM" | "ADJUST">("CONFIRM");
   const [technicalBand, setTechnicalBand] = useState(result?.nineX ?? "MID");
   const [potentialBand, setPotentialBand] = useState(result?.nineY ?? "MID");
@@ -336,13 +339,16 @@ function CalibrateDialog({ row, onClose, onDone }: { row: CalibrationRow; onClos
       subtitle={`${row.employeeName} · posição atual: ${quadrantText(result?.quadrant)}. Ajuste só com justificativa; a versão original fica guardada.`}
       saveLabel={decision === "ADJUST" ? "Registrar ajuste" : "Confirmar posição"}
       footerHint="A decisão fica registrada com responsável e horário."
-      canSave={note.trim().length >= 8 && (decision === "CONFIRM" || changed)}
+      canSave={note.trim().length >= 8 && (decision === "CONFIRM" || changed) && (!withoutLeader || acceptMissingLeader)}
       size="md"
       testId="perf-calibrate-dialog"
       onClose={onClose}
       onSave={async () => {
-        const out = await calibratePerformance(row.participantId, decision === "ADJUST" ? { note, decision, technicalBand, potentialBand } : { note, decision });
-        onDone(decision === "ADJUST" ? `Ajustado para ${out.quadrant}` : "Calibração registrada");
+        const out = await calibratePerformance(
+          row.participantId,
+          decision === "ADJUST" ? { note, decision, technicalBand, potentialBand } : { note, decision, acceptMissingLeader: withoutLeader && acceptMissingLeader }
+        );
+        onDone(decision === "ADJUST" ? `Ajustado para ${out.quadrant}` : withoutLeader ? "Exceção registrada: sem avaliação do líder" : "Calibração registrada");
       }}
     >
       <OverlayField label="Decisão" required>
@@ -353,7 +359,14 @@ function CalibrateDialog({ row, onClose, onDone }: { row: CalibrationRow; onClos
           </OverlaySelect>
         )}
       </OverlayField>
-      {!canAdjust ? <InfoBanner tone="slate">Sem evidência suficiente não há quadrante para ajustar. A pessoa fica sem classificação.</InfoBanner> : null}
+      {withoutLeader ? (
+        <label className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+          <input type="checkbox" className="mt-0.5 h-4 w-4" checked={acceptMissingLeader} onChange={(e) => setAcceptMissingLeader(e.target.checked)} data-testid="perf-accept-missing-leader" />
+          Não há avaliação do líder enviada. Registrar como exceção: a pessoa fica sem classificação na Nine-Box e a decisão vai para a auditoria. Prefira pedir a avaliação ou trocar o líder.
+        </label>
+      ) : !canAdjust ? (
+        <InfoBanner tone="slate">Sem evidência suficiente não há quadrante para ajustar. A pessoa fica sem classificação.</InfoBanner>
+      ) : null}
       {decision === "ADJUST" ? (
         <div className="grid gap-3 sm:grid-cols-2">
           <OverlayField label="Desempenho (eixo horizontal)" required>

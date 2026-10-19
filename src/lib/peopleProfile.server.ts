@@ -16,7 +16,8 @@ import {
   canViewPeopleProfile,
 } from "./peopleProfileCapabilities.js";
 import { canAccessEmployeeRecord } from "./peopleProfileAccess.js";
-import { loadDescendantEmployeeIds } from "./peopleProfileHierarchy.server.js";
+import { loadDescendantEmployeeIds, loadDirectReportIds } from "./peopleProfileHierarchy.server.js";
+import { loadOrgHierarchy } from "./orgHierarchy.server.js";
 import {
   compensationTypeLabel,
   formatElapsedSince,
@@ -155,15 +156,20 @@ export async function resolveProfileAccess(
   const selfRecord = Boolean(input.actorEmployeeId && input.actorEmployeeId === target.id);
   const capabilities = buildPeopleProfileCapabilities(input.check, { selfRecord });
   let descendantIds: Set<string> | undefined;
-  if (capabilities.accessScope === "DESCENDANTS" && input.actorEmployeeId) {
-    descendantIds = new Set(await loadDescendantEmployeeIds(prisma, input.actorEmployeeId));
+  let targetManagerId = target.managerId;
+  if ((capabilities.accessScope === "DESCENDANTS" || capabilities.accessScope === "DIRECT_REPORTS") && input.actorEmployeeId) {
+    // Hierarquia efetiva: líder de unidade subordinada tem managerId nulo, mas tem superior.
+    const hierarchy = await loadOrgHierarchy(prisma);
+    const resolved = hierarchy.resolve(target.id);
+    targetManagerId = resolved.status === "RESOLVED" ? resolved.managerId : null;
+    if (capabilities.accessScope === "DESCENDANTS") descendantIds = new Set(hierarchy.descendants(input.actorEmployeeId));
   }
 
   const allowed = canAccessEmployeeRecord({
     scope: capabilities.accessScope,
     actorEmployeeId: input.actorEmployeeId,
     targetEmployeeId: target.id,
-    targetManagerId: target.managerId,
+    targetManagerId,
     descendantIds,
   });
 
@@ -187,7 +193,8 @@ export async function buildVisibleEmployeeWhere(
   if (!actor) return { id: { in: [] } };
   if (capabilities.accessScope === "SELF") return { id: actor };
   if (capabilities.accessScope === "DIRECT_REPORTS") {
-    return { OR: [{ id: actor }, { managerId: actor }] };
+    const ids = await loadDirectReportIds(prisma, actor);
+    return { id: { in: [actor, ...ids] } };
   }
   if (capabilities.accessScope === "DESCENDANTS") {
     const ids = await loadDescendantEmployeeIds(prisma, actor);
@@ -303,6 +310,9 @@ export async function loadPeopleProfileSummary(
   });
 
   const identityName = row.person?.displayName?.trim() || row.name;
+  // Líder de unidade tem managerId nulo por regra: o cabeçalho mostra o superior efetivo.
+  const effective = row.managerId ? null : (await loadOrgHierarchy(prisma)).resolve(row.id);
+  const effectiveManager = effective?.status === "RESOLVED" ? effective : null;
 
   const dto: PeopleProfileSummaryDto = {
     identity: {
@@ -317,8 +327,8 @@ export async function loadPeopleProfileSummary(
       roleName: row.Role?.name ?? null,
       department: row.orgDepartment?.name ?? row.department ?? null,
       costCenterLabel: costCenterLabel(row),
-      managerName: managerDisplay(row),
-      managerId: row.managerId,
+      managerName: managerDisplay(row) ?? effectiveManager?.managerName ?? null,
+      managerId: row.managerId ?? effectiveManager?.managerId ?? null,
       contractType: row.contractType ? formatContractType(row.contractType) : null,
       workSchedule: row.workSchedule ?? (row.monthlyHours ? `${row.monthlyHours} h/mês` : null),
       corporateEmail: row.corporateEmail,

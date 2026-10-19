@@ -232,7 +232,12 @@ describe("rotas de desempenho", () => {
         if (row.result.technicalValidation === "PENDING_VALIDATION") {
           assert.equal((await hr.call("POST", `/api/hr/performance/participants/${row.participantId}/validation`, { decision: "VALIDATED", note: "Padrão da função conferido." })).status, 200);
         }
-        assert.equal((await hr.call("POST", `/api/hr/performance/participants/${row.participantId}/calibration`, { note: "Leitura do RH sem ajuste." })).status, 200);
+        const withoutLeader = row.leaderStatus !== "SUBMITTED";
+        if (withoutLeader) {
+          const silent = await hr.call("POST", `/api/hr/performance/participants/${row.participantId}/calibration`, { note: "Leitura do RH sem ajuste." });
+          assert.equal(silent.json.error, "LEADER_EVALUATION_REQUIRED", "sem avaliação do líder não calibra em silêncio");
+        }
+        assert.equal((await hr.call("POST", `/api/hr/performance/participants/${row.participantId}/calibration`, { note: "Leitura do RH sem ajuste.", acceptMissingLeader: withoutLeader })).status, 200);
       }
       assert.equal((await hr.call("POST", `/api/hr/performance/cycles/${cycleId}/transition`, { to: "HOMOLOGATED" })).json.error, "FORBIDDEN", "homologação só pela rota de calibração");
       assert.equal((await hr.call("POST", `/api/hr/performance/cycles/${cycleId}/homologate`)).status, 200);

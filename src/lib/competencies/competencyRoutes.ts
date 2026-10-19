@@ -95,8 +95,10 @@ export type CompetencyRouteGuards = {
 export type CompetencyRouteDeps = {
   prisma: CompetencyDb;
   now?: () => Date;
-  /** Árvore abaixo do líder (CTE recursiva em produção; injetável em teste). */
+  /** Árvore abaixo do líder pela hierarquia efetiva (`orgHierarchy`); injetável em teste. */
   loadDescendantIds: (managerEmployeeId: string) => Promise<string[]>;
+  /** Equipe direta pela hierarquia efetiva. Sem ela, cai no `managerId` (testes antigos). */
+  loadDirectReportIds?: (managerEmployeeId: string) => Promise<string[]>;
   /** Feature flag (padrão: COMPETENCIES_ENABLED, fail closed). Injetável em teste. */
   isEnabled?: () => boolean;
 };
@@ -216,7 +218,7 @@ export function registerCompetencyRoutes(
 
   /** Escopo resolvido por requisição — nunca vem do corpo nem do cliente. */
   async function scopeOf(req: express.Request): Promise<CompetencyScope> {
-    return resolveCompetencyScope(db, await guards.getScopeInput(req), deps.loadDescendantIds);
+    return resolveCompetencyScope(db, await guards.getScopeInput(req), deps.loadDescendantIds, deps.loadDirectReportIds);
   }
 
   /** Autoria sempre da sessão autenticada — nunca do corpo. */

@@ -39,6 +39,7 @@ import {
   type EmployeeFichaTabId,
 } from "@/src/lib/employeeHrUi";
 import { resolveForcedManagerFromOrgDepartment } from "@/src/lib/hrOrgStructure";
+import { EffectiveManagerNote } from "@/src/components/employee/EffectiveManagerNote";
 import {
   assertCorporateEmailFormat,
   CorporateEmailError,
@@ -1884,10 +1885,7 @@ export const EmployeeModule = () => {
                               Gestor responsável
                             </label>
                             {editingEmployee?.orgLeadership?.isOrgLeader ? (
-                              <div className="rounded-lg border border-border bg-muted/30 px-3 py-2.5 text-xs text-muted-foreground">
-                                Líderes de diretoria/departamento não ficam subordinados a um
-                                departamento-membro no organograma.
-                              </div>
+                              <EffectiveManagerNote view={editingEmployee.effectiveManager ?? null} />
                             ) : formData.departmentId ? (
                               <>
                                 <input
@@ -1912,7 +1910,7 @@ export const EmployeeModule = () => {
                                 placeholder="Buscar colaborador ativo..."
                                 options={[
                                   { value: "", label: "— Sem gestor —", searchTerms: "sem" },
-                                  ...managerOptions,
+                                  ...managerOptions.filter((o) => o.value !== editingEmployee?.id),
                                 ]}
                                 value={formData.managerId ?? ""}
                                 onChange={(v) => {

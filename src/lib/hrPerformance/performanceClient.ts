@@ -224,12 +224,32 @@ export type DirectoryPerson = {
   departmentName: string;
   managerId: string | null;
   managerName: string | null;
+  /** CADASTRO | ORGANOGRAMA (hierarquia efetiva). */
+  managerSource?: string;
+  /** Por que não há líder, ou alerta da hierarquia. */
+  managerNote?: string | null;
   admissionDate: string | null;
   registration: string | null;
 };
 export const searchPerformanceDirectory = (query: string) => json<{ employees: DirectoryPerson[] }>(`${BASE}/directory?q=${encodeURIComponent(query)}`);
 export const previewPerformanceParticipants = (cycleId: string, employeeIds: string[]) =>
-  post<{ people: { employeeId: string; name: string; eligibility: string; reason: string; alreadyInCycle: boolean; managerName: string | null }[] }>(`${BASE}/cycles/${cycleId}/participants/preview`, { employeeIds });
+  post<{
+    people: {
+      employeeId: string;
+      name: string;
+      eligibility: string;
+      reason: string;
+      alreadyInCycle: boolean;
+      managerName: string | null;
+      /** CADASTRO | ORGANOGRAMA (hierarquia efetiva). */
+      managerSource: string;
+      /** Motivo de não haver líder, ou alerta da hierarquia. */
+      managerNote: string | null;
+    }[];
+  }>(`${BASE}/cycles/${cycleId}/participants/preview`, { employeeIds });
+/** Antes da abertura: líder de cada participante pela hierarquia efetiva (exceção do RH preservada). */
+export const syncPerformanceLeaders = (cycleId: string) =>
+  post<{ changed: number; withoutLeader: number; keptByHr: number }>(`${BASE}/cycles/${cycleId}/participants/sync-leaders`);
 export const savePerformanceParticipants = (cycleId: string, employeeIds: string[], exceptions: Record<string, string> = {}) =>
   post<{ eligible: number; notEligible: number; insufficient: number; added: number; duplicates: number; reactivated: number; missing: number }>(`${BASE}/cycles/${cycleId}/participants`, { employeeIds, exceptions });
 export const removePerformanceParticipant = (participantId: string, reason: string) => post(`${BASE}/participants/${participantId}/remove`, { reason });
@@ -320,7 +340,10 @@ export const fetchCalibrationQueue = (cycleId: string, filters: Record<string, s
   json<{ cycle: { id: string; name: string; status: string }; rules: PerformanceRules; rows: CalibrationRow[] }>(`${BASE}/cycles/${cycleId}/calibration?${new URLSearchParams(filters)}`);
 export const validatePerformanceTechnical = (participantId: string, decision: "VALIDATED" | "INSUFFICIENT", note: string) =>
   post(`${BASE}/participants/${participantId}/validation`, { decision, note });
-export const calibratePerformance = (participantId: string, input: { note: string; decision: "CONFIRM" | "ADJUST"; technicalBand?: string; potentialBand?: string }) =>
+export const calibratePerformance = (
+  participantId: string,
+  input: { note: string; decision: "CONFIRM" | "ADJUST"; technicalBand?: string; potentialBand?: string; acceptMissingLeader?: boolean }
+) =>
   post<{ reviewStatus: string; quadrant: string }>(`${BASE}/participants/${participantId}/calibration`, input);
 export type ResultHistory = {
   participant: { id: string; employeeName: string };

@@ -118,19 +118,24 @@ export function trainingValidityExpiresOn(completedOn: string, validityMonths: n
 
 /**
  * Escopo efetivo do ator, resolvido SEMPRE no servidor a partir da sessão e da hierarquia
- * oficial (`Employee.managerId`): DIRECT_REPORTS = liderados diretos; DESCENDANTS = árvore
- * oficial (CTE recursiva). Nenhum id vindo do cliente entra aqui. Reutilizar em exportações.
+ * efetiva (`orgHierarchy`: gestor do cadastro + liderança das unidades): DIRECT_REPORTS =
+ * liderados diretos; DESCENDANTS = árvore abaixo. Nenhum id vindo do cliente entra aqui.
  */
 export async function resolveCompetencyScope(
   db: CompetencyDb,
   input: { accessScope: PeopleAccessScope; actorEmployeeId: string | null },
   loadDescendantIds: (managerEmployeeId: string) => Promise<string[]>,
+  loadDirectReportIds?: (managerEmployeeId: string) => Promise<string[]>,
 ): Promise<CompetencyScope> {
   const { accessScope, actorEmployeeId } = input;
   let teamIds: string[] = [];
   if (actorEmployeeId && accessScope === "DIRECT_REPORTS") {
-    const rows = (await db.employee.findMany({ where: { managerId: actorEmployeeId } })) as { id: string }[];
-    teamIds = rows.map((r) => r.id);
+    if (loadDirectReportIds) {
+      teamIds = await loadDirectReportIds(actorEmployeeId);
+    } else {
+      const rows = (await db.employee.findMany({ where: { managerId: actorEmployeeId } })) as { id: string }[];
+      teamIds = rows.map((r) => r.id);
+    }
   } else if (actorEmployeeId && accessScope === "DESCENDANTS") {
     teamIds = await loadDescendantIds(actorEmployeeId);
   }

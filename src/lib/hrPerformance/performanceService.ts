@@ -635,7 +635,7 @@ export function applyParticipants(
       departmentName: employee.departmentName,
       managerId: employee.managerId && employee.managerId !== employee.id ? employee.managerId : null,
       managerName: employee.managerId && employee.managerId !== employee.id ? employee.managerName : null,
-      managerSource: "CADASTRO",
+      managerSource: employee.managerSource ?? "CADASTRO",
       admissionDate: employee.admissionDate ? iso(employee.admissionDate) : null,
       registration: employee.registration,
       frozen: false,
@@ -821,12 +821,63 @@ export function reassignLeader(
   return { ok: true, db, value: { participantId: participant.id, assignmentId } };
 }
 
+/**
+ * Atualiza o líder dos participantes pela hierarquia efetiva, antes da abertura.
+ * Exceção do RH (managerSource = RH) não é tocada. Depois da abertura, troca só com motivo.
+ */
+export function syncParticipantLeaders(
+  source: PerformanceDatabase,
+  input: { cycleId: string; employees: readonly EmployeeSnapshotSource[]; actorUserId: string | null; scope?: PerformanceScope },
+  options: ServiceOptions
+): ServiceResult<{ changed: number; withoutLeader: number; keptByHr: number }> {
+  const denied = hrOnly(input.scope ?? HR_SCOPE);
+  if (denied) return denied;
+  const db = cloneDb(source);
+  const cycle = db.cycles.find((c) => c.id === input.cycleId);
+  if (!cycle) return fail("NOT_FOUND", "Ciclo não encontrado.");
+  if (cycle.status !== "DRAFT" && cycle.status !== "PREPARED") {
+    return fail("CYCLE_FROZEN", "Depois da abertura, o líder só muda pela troca com motivo.");
+  }
+  const byId = new Map(input.employees.map((e) => [e.id, e]));
+  let changed = 0;
+  let withoutLeader = 0;
+  let keptByHr = 0;
+  for (const participant of liveParticipants(db, cycle.id)) {
+    if (participant.managerSource === "RH") {
+      keptByHr += 1;
+      continue;
+    }
+    const employee = byId.get(participant.employeeId);
+    if (!employee) continue;
+    const managerId = employee.managerId && employee.managerId !== participant.employeeId ? employee.managerId : null;
+    if (!managerId) withoutLeader += 1;
+    if (participant.managerId === managerId) continue;
+    participant.managerId = managerId;
+    participant.managerName = managerId ? employee.managerName : null;
+    participant.managerSource = employee.managerSource ?? "CADASTRO";
+    changed += 1;
+  }
+  audit(db, options.now(), input.actorUserId, "LEADERS_SYNCED", cycle.id, { changed, withoutLeader, keptByHr });
+  return { ok: true, db, value: { changed, withoutLeader, keptByHr } };
+}
+
+/** Elegíveis sem líder válido: a avaliação da liderança não teria quem fizesse. */
+function participantsWithoutLeader(db: PerformanceDatabase, cycleId: string) {
+  return eligibleParticipants(db, cycleId).filter((p) => !p.managerId || p.managerId === p.employeeId);
+}
+
 function pendingParticipants(db: PerformanceDatabase, cycleId: string) {
   return eligibleParticipants(db, cycleId).filter((participant) => {
     const self = activeAssignment(db, participant.id, "SELF");
     const leader = activeAssignment(db, participant.id, "LEADER");
-    return self?.status !== "SUBMITTED" || (participant.managerId != null && leader?.status !== "SUBMITTED");
+    // Sem tarefa do líder também é pendência: antes ela passava em silêncio.
+    return self?.status !== "SUBMITTED" || leader?.status !== "SUBMITTED";
   });
+}
+
+/** Avaliação da liderança enviada para a pessoa (a versão ativa). */
+export function hasSubmittedLeaderEvaluation(db: PerformanceDatabase, participantId: string): boolean {
+  return activeAssignment(db, participantId, "LEADER")?.status === "SUBMITTED";
 }
 
 export function transitionCycle(
@@ -873,6 +924,15 @@ export function transitionCycle(
       return fail("GOVERNANCE_BLOCKED", "A abertura pede a confirmação de que as regras ainda estão em proposta. O ciclo pode ficar preparado.");
     }
     if (eligibleParticipants(db, cycle.id).length === 0) return fail("PARTICIPANTS_REQUIRED", "Não há pessoa elegível para abrir o ciclo.");
+    const missingLeader = participantsWithoutLeader(db, cycle.id);
+    if (missingLeader.length > 0) {
+      const names = missingLeader.slice(0, 5).map((p) => p.employeeName).join(", ");
+      const more = missingLeader.length > 5 ? ` e mais ${missingLeader.length - 5}` : "";
+      return fail(
+        "LEADER_MISSING",
+        `${missingLeader.length} pessoa(s) elegível(is) sem líder: ${names}${more}. Atualize os líderes pelo organograma, escolha o líder ou retire a pessoa do ciclo.`
+      );
+    }
     if (!options.officialPublication) audit(db, now, input.actorUserId, "PILOT_OPEN", cycle.id, { homologated: false });
     ensureAssignments(db, cycle, now);
     cycle.openedAt = iso(now);
@@ -914,6 +974,12 @@ export function transitionCycle(
       const result = activeResult(db, participant.id);
       if (!result || result.reviewStatus !== "CALIBRATED") {
         return fail("CALIBRATION_REQUIRED", "Homologar o ciclo exige a calibração de cada pessoa elegível.");
+      }
+      if (!hasSubmittedLeaderEvaluation(db, participant.id) && !calibratedWithoutLeaderException(db, participant.id, result.id)) {
+        return fail(
+          "LEADER_EVALUATION_REQUIRED",
+          `${participant.employeeName} não tem avaliação do líder. Peça a avaliação, troque o líder ou registre a exceção na calibração.`
+        );
       }
       if (result.technicalValidation === "PENDING_VALIDATION") {
         return fail("VALIDATION_REQUIRED", "Há desempenho técnico sem validação da função.");
@@ -1203,6 +1269,8 @@ export function calibrate(
     decision?: "CONFIRM" | "ADJUST";
     technicalBand?: NineBoxBand | null;
     potentialBand?: NineBoxBand | null;
+    /** Exceção explícita: confirmar sem avaliação do líder (fica sem quadrante e auditado). */
+    acceptMissingLeader?: boolean;
     scope?: PerformanceScope;
   },
   options: ServiceOptions
@@ -1229,6 +1297,16 @@ export function calibrate(
     return fail("VALIDATION_REQUIRED", "Valide o desempenho técnico com a função antes de calibrar.");
   }
   const decision = input.decision ?? "CONFIRM";
+  const withoutLeader = !hasSubmittedLeaderEvaluation(db, participant.id);
+  if (withoutLeader && input.acceptMissingLeader !== true) {
+    return fail(
+      "LEADER_EVALUATION_REQUIRED",
+      "Não há avaliação do líder enviada. Peça a avaliação ou troque o líder; só registre a exceção se a pessoa realmente não puder ser avaliada pela liderança."
+    );
+  }
+  if (withoutLeader && decision === "ADJUST") {
+    return fail("INSUFFICIENT_EVIDENCE", "Sem avaliação do líder não há posição para ajustar.");
+  }
   let patch: Partial<ResultRecord> = { reviewStatus: "CALIBRATED", adjusted: false };
   if (decision === "ADJUST") {
     if (current.quadrant === UNCLASSIFIED_QUADRANT || current.nineX == null || current.nineY == null) {
@@ -1255,13 +1333,27 @@ export function calibrate(
     { ...patch, calibrationNote: note, calibratedByUserId: input.actorUserId, calibratedAt: iso(now) },
     now
   );
-  audit(db, now, input.actorUserId, decision === "ADJUST" ? "RESULT_ADJUSTED" : "RESULT_CALIBRATED", participant.id, {
-    from: current.id,
-    to: next.id,
-    fromQuadrant: current.quadrant,
-    toQuadrant: next.quadrant,
-  });
+  audit(
+    db,
+    now,
+    input.actorUserId,
+    withoutLeader ? CALIBRATED_WITHOUT_LEADER : decision === "ADJUST" ? "RESULT_ADJUSTED" : "RESULT_CALIBRATED",
+    participant.id,
+    {
+      from: current.id,
+      to: next.id,
+      fromQuadrant: current.quadrant,
+      toQuadrant: next.quadrant,
+    }
+  );
   return { ok: true, db, value: { reviewStatus: "CALIBRATED", quadrant: next.quadrant } };
+}
+
+const CALIBRATED_WITHOUT_LEADER = "RESULT_CALIBRATED_WITHOUT_LEADER";
+
+/** A versão ativa do resultado foi confirmada sem avaliação do líder, como exceção registrada. */
+function calibratedWithoutLeaderException(db: PerformanceDatabase, participantId: string, resultId: string): boolean {
+  return db.audits.some((a) => a.action === CALIBRATED_WITHOUT_LEADER && a.entityId === participantId && a.detail.to === resultId);
 }
 
 export function returnForRevision(

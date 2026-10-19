@@ -1,3 +1,5 @@
+import type { EffectiveManagerView } from "../lib/orgHierarchy";
+
 export interface Role {
   id: string;
   name: string;
@@ -99,6 +101,8 @@ export interface Employee extends EmployeeHrProfileFields {
       status: string | null;
     } | null;
   } | null;
+  /** Superior pela hierarquia efetiva (cadastro + liderança das unidades). Ver `orgHierarchy.ts`. */
+  effectiveManager?: EffectiveManagerView | null;
   /** Presente quando a pessoa lidera diretoria/departamento ativo. */
   orgLeadership?: {
     isOrgLeader: boolean;
