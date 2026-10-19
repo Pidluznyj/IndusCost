@@ -23,6 +23,7 @@ import {
   type StoredAnswer,
 } from "./performanceDomain.js";
 import { canSeeEmployee, type PerformanceScope } from "./performanceAccess.js";
+import { cycleGovernance, isHistoryCycle } from "./performanceLifecycle.js";
 import {
   activeAssignment,
   activeResult,
@@ -168,6 +169,7 @@ export function describeCycle(db: PerformanceDatabase, cycleId: string, scope: P
     });
   return {
     cycle,
+    governance: cycleGovernance(db, cycle),
     model: model
       ? {
           id: model.id,
@@ -325,7 +327,8 @@ export function dashboard(db: PerformanceDatabase, cycleId: string, scope: Perfo
   const pdiByStatus: Record<string, number> = {};
   for (const p of db.pdis.filter((pdi) => eligible.some((e) => e.id === pdi.participantId))) pdiByStatus[p.status] = (pdiByStatus[p.status] ?? 0) + 1;
   return {
-    cycle: { id: cycle.id, name: cycle.name, status: cycle.status, periodLabel: cycle.periodLabel },
+    cycle: { id: cycle.id, name: cycle.name, status: cycle.status, periodLabel: cycle.periodLabel, classification: cycle.classification, activation: cycle.activation },
+    governance: cycleGovernance(db, cycle),
     counts,
     cells,
     culture,
@@ -341,14 +344,21 @@ export function dashboard(db: PerformanceDatabase, cycleId: string, scope: Perfo
   };
 }
 
-export function cycleEvolution(db: PerformanceDatabase, scope: PerformanceScope, now: Date) {
+/** Evolução entre ciclos. Padrão: só ciclos ativos e oficiais (teste e inativo ficam fora). */
+export function cycleEvolution(db: PerformanceDatabase, scope: PerformanceScope, now: Date, includeNonOfficial = false) {
   return [...db.cycles]
+    .filter((cycle) => includeNonOfficial || isHistoryCycle(cycle))
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
     .map((cycle) => {
       const counts = dashboardCounts(db, cycle.id, scope, undefined, now);
       const model = modelOfCycle(db, cycle);
+      const governance = cycleGovernance(db, cycle);
       return {
         cycleId: cycle.id,
+        classification: cycle.classification,
+        activation: cycle.activation,
+        publication: governance.publication,
+        officialEligible: governance.officialEligible,
         name: cycle.name,
         periodLabel: cycle.periodLabel,
         status: cycle.status,
@@ -439,12 +449,16 @@ export function resultHistory(db: PerformanceDatabase, participantId: string, sc
 }
 
 /** Linha do tempo da pessoa. Só resultado homologado. Sinaliza troca de metodologia. */
-export function employeeHistory(db: PerformanceDatabase, employeeId: string, scope: PerformanceScope, includeInternal: boolean) {
+/**
+ * Histórico da pessoa. Padrão: só ciclos ativos e oficiais (piloto aparece com `officialEligible`
+ * falso e o motivo). `includeNonOfficial` (auditoria do RH) traz também teste e inativo, rotulados.
+ */
+export function employeeHistory(db: PerformanceDatabase, employeeId: string, scope: PerformanceScope, includeInternal: boolean, includeNonOfficial = false) {
   if (!canSeeEmployee(scope, employeeId)) return { ok: false as const, code: "FORBIDDEN", message: "Acesso negado." };
   const participants = db.participants
     .filter((p) => p.employeeId === employeeId && !p.removedAt)
     .map((p) => ({ participant: p, cycle: db.cycles.find((c) => c.id === p.cycleId)! }))
-    .filter((item) => item.cycle)
+    .filter((item) => item.cycle && (includeNonOfficial || isHistoryCycle(item.cycle)))
     .sort((a, b) => a.cycle.createdAt.localeCompare(b.cycle.createdAt));
   let previousKey: string | null = null;
   return {
@@ -463,6 +477,10 @@ export function employeeHistory(db: PerformanceDatabase, employeeId: string, sco
         cycleName: cycle.name,
         periodLabel: cycle.periodLabel,
         cycleStatus: cycle.status,
+        classification: cycle.classification,
+        activation: cycle.activation,
+        officialEligible: cycleGovernance(db, cycle).officialEligible,
+        notOfficialReasons: cycleGovernance(db, cycle).reasons,
         modelName: model?.name ?? "",
         modelVersion: model?.version ?? null,
         ruleSetId: rules?.ruleSetId ?? null,
@@ -503,6 +521,8 @@ export function pdiTracking(db: PerformanceDatabase, scope: PerformanceScope, fi
       const participant = db.participants.find((p) => p.id === pdi.participantId);
       const cycle = participant ? db.cycles.find((c) => c.id === participant.cycleId) : null;
       if (!participant || !cycle || !canLeadParticipant(db, scope, participant)) return null;
+      // Ciclo inativo sai do acompanhamento padrão; só aparece filtrando o próprio ciclo (auditoria).
+      if (cycle.activation !== "ACTIVE" && filters.cycleId !== cycle.id) return null;
       const open = pdi.status !== "DONE" && pdi.status !== "CANCELLED";
       const late = open && Boolean(pdi.dueAt && pdi.dueAt < today);
       const checkins = db.checkins.filter((c) => c.pdiId === pdi.id).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
@@ -592,7 +612,8 @@ export function reportData(
     : null;
   return {
     kind: input.kind,
-    cycle: { id: cycle.id, name: cycle.name, periodLabel: cycle.periodLabel, status: cycle.status, selfDueAt: cycle.selfDueAt, leaderDueAt: cycle.leaderDueAt },
+    cycle: { id: cycle.id, name: cycle.name, periodLabel: cycle.periodLabel, status: cycle.status, selfDueAt: cycle.selfDueAt, leaderDueAt: cycle.leaderDueAt, classification: cycle.classification },
+    governance: workspace.governance,
     model: workspace.model,
     questions,
     counts: workspace.counts,

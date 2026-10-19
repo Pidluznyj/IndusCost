@@ -76,7 +76,7 @@ export function draftCycle(employees = [ana, bia, bruno, recem, inativo, afastad
   const cycle = must(
     createCycle(
       published.db,
-      { name: "Ciclo 2026-S2", periodLabel: "2º semestre de 2026", modelId: published.modelId, selfDueAt: "2026-11-15", leaderDueAt: "2026-11-30", actorUserId: "rh", scope: hrScope },
+      { name: "Ciclo 2026-S2", periodLabel: "2º semestre de 2026", modelId: published.modelId, selfDueAt: "2026-11-15", leaderDueAt: "2026-11-30", actorUserId: "rh", classification: "OFFICIAL", scope: hrScope },
       openOptions
     )
   );

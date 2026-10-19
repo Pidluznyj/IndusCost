@@ -96,7 +96,7 @@ describe("hierarquia efetiva em PostgreSQL local", { skip }, () => {
     };
     const model = must(createDraftModel(emptyPerformanceDatabase(), { name: "Modelo", actorUserId: "rh", scope: hr }, options));
     let db = must(publishModel(model.db, { modelId: model.value.modelId, actorUserId: "rh", scope: hr }, options)).db;
-    const cycle = must(createCycle(db, { name: "Ciclo", periodLabel: "S2", modelId: model.value.modelId, selfDueAt: "2026-11-15", leaderDueAt: "2026-11-30", actorUserId: "rh", scope: hr }, options));
+    const cycle = must(createCycle(db, { name: "Ciclo", periodLabel: "S2", modelId: model.value.modelId, selfDueAt: "2026-11-15", leaderDueAt: "2026-11-30", actorUserId: "rh", classification: "OFFICIAL", scope: hr }, options));
     const jose = {
       id: id.jose, name: "José", status: "ACTIVE", roleId: id.role, roleName: "Gerente", departmentId: null, departmentName: "Comercial",
       managerId: m.managerId, managerName: m.managerName, managerSource: m.fromOrgChart ? ("ORGANOGRAMA" as const) : ("CADASTRO" as const), managerNote: m.note,

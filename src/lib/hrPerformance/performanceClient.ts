@@ -29,7 +29,17 @@ const put = <T>(path: string, body: unknown = {}) => json<T>(path, { method: "PU
 const BASE = "/api/hr/performance";
 
 // ------------------------------------------------------------------ acesso
-export type PerformanceCapabilities = { view: boolean; evaluate: boolean; manage: boolean; calibrate: boolean; report: boolean; invites: boolean; conduct: boolean };
+export type PerformanceCapabilities = {
+  view: boolean;
+  evaluate: boolean;
+  manage: boolean;
+  calibrate: boolean;
+  report: boolean;
+  invites: boolean;
+  conduct: boolean;
+  /** Classificar, inativar, reativar e excluir ciclo de teste: só o SUPER_ADMIN. */
+  lifecycle?: boolean;
+};
 export type PerformanceMe = { accessScope: string; actorEmployeeId: string | null; capabilities: PerformanceCapabilities; officialPublication: boolean };
 
 export const fetchPerformanceFeatureStatus = () => json<{ enabled: boolean }>(`${BASE}/feature-status`);
@@ -128,10 +138,44 @@ export type CycleSummary = {
   openedAt: string | null;
   closedAt: string | null;
   createdAt: string;
+  classification: CycleClassification;
+  activation: CycleActivation;
+  activationReason: string | null;
+  activationChangedAt: string | null;
+  /** Presente na lista de ciclos; no workspace vem em `CycleWorkspace.governance`. */
+  governance?: CycleGovernanceDto;
 };
 
+export type CycleClassification = "OFFICIAL" | "TEST";
+export type CycleActivation = "ACTIVE" | "INACTIVE";
+/** Predicado oficial único (ver `performanceLifecycle.ts`). */
+export type CycleGovernanceDto = {
+  classification: CycleClassification;
+  activation: CycleActivation;
+  status: string;
+  publication: "NOT_OPENED" | "PILOT" | "OFFICIAL";
+  homologated: boolean;
+  officialEligible: boolean;
+  reasons: string[];
+};
+export type CycleLifecycleInfo = {
+  cycle: { id: string; name: string; status: string; classification: CycleClassification; activation: CycleActivation; activationReason: string | null; activationChangedAt: string | null };
+  governance: CycleGovernanceDto;
+  deletion: { deletable: boolean; blockers: string[]; counts: Record<string, number> } | null;
+  history: { id: string; at: string; action: string; actorUserId: string | null; detail: Record<string, string | number | boolean | null> }[];
+  canManage: boolean;
+};
+export const fetchCycleLifecycle = (cycleId: string) => json<CycleLifecycleInfo>(`${BASE}/cycles/${cycleId}/lifecycle`);
+export const classifyPerformanceCycleAsTest = (cycleId: string, reason: string) => post(`${BASE}/cycles/${cycleId}/classification`, { classification: "TEST", reason });
+export const inactivatePerformanceCycle = (cycleId: string, reason: string) =>
+  post<{ revokedInvites: number; revokedSessions: number }>(`${BASE}/cycles/${cycleId}/inactivate`, { reason });
+export const reactivatePerformanceCycle = (cycleId: string, reason: string) =>
+  post<{ status: string; invitesNeedReissue: boolean }>(`${BASE}/cycles/${cycleId}/reactivate`, { reason });
+export const deletePerformanceTestCycle = (cycleId: string, reason: string, confirmation: string) =>
+  json<{ deleted: Record<string, number>; auditId: string }>(`${BASE}/cycles/${cycleId}`, { method: "DELETE", body: JSON.stringify({ reason, confirmation }) });
+
 export const fetchPerformanceCycles = () => json<{ cycles: CycleSummary[]; counts: Record<string, CycleCounts> }>(`${BASE}/cycles`);
-export const createPerformanceCycle = (input: { name: string; periodLabel: string; modelId: string; selfDueAt: string; leaderDueAt: string }) => post<{ cycleId: string }>(`${BASE}/cycles`, input);
+export const createPerformanceCycle = (input: { name: string; periodLabel: string; modelId: string; selfDueAt: string; leaderDueAt: string; classification: CycleClassification }) => post<{ cycleId: string }>(`${BASE}/cycles`, input);
 export const updatePerformanceCycle = (id: string, input: { name: string; periodLabel: string; selfDueAt: string; leaderDueAt: string; reason?: string }) => put(`${BASE}/cycles/${id}`, input);
 export const transitionPerformanceCycle = (id: string, input: { to: string; reason?: string; pilotAck?: boolean; acceptPending?: boolean }) =>
   post<{ status: string; pending?: number }>(`${BASE}/cycles/${id}/transition`, input);
@@ -207,6 +251,7 @@ export type WorkspacePerson = {
 
 export type CycleWorkspace = {
   cycle: CycleSummary;
+  governance: CycleGovernanceDto;
   model: { id: string; name: string; version: number; status: string; instructions: string | null; rules: PerformanceRules } | null;
   questions: { code: string; pillar: string; competency: string; selfText: string; leaderText: string; hint: string | null }[];
   people: WorkspacePerson[];
@@ -443,6 +488,11 @@ export type EmployeeHistory = {
     cycleName: string;
     periodLabel: string;
     cycleStatus: string;
+    classification?: CycleClassification;
+    activation?: CycleActivation;
+    /** Falso em piloto (sem publicação oficial); o motivo vem em `notOfficialReasons`. */
+    officialEligible?: boolean;
+    notOfficialReasons?: string[];
     modelName: string;
     modelVersion: number | null;
     ruleSetId: string | null;

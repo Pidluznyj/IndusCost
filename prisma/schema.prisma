@@ -1206,12 +1206,22 @@ model HrPerformanceCycle {
   closedAt            DateTime? @db.Timestamptz(6)
   createdAt           DateTime  @default(now()) @db.Timestamptz(6)
   updatedAt           DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+  /// OFFICIAL | TEST. Ciclos anteriores ficam OFFICIAL (conservador). TEST nunca compõe indicador oficial.
+  classification            String    @default("OFFICIAL")
+  classifiedAt              DateTime? @db.Timestamptz(6)
+  classifiedByUserId        String?   @db.Uuid
+  /// ACTIVE | INACTIVE, independente de `status`. Inativo congela o ciclo; reversível.
+  activation                String    @default("ACTIVE")
+  activationChangedAt       DateTime? @db.Timestamptz(6)
+  activationChangedByUserId String?   @db.Uuid
+  activationReason          String?
   model               HrPerformanceModel @relation(fields: [modelId], references: [id], onDelete: Restrict, onUpdate: NoAction)
   participants        HrPerformanceParticipant[]
   reports             HrPerformanceReportIssue[]
 
   @@index([status])
   @@index([modelId])
+  @@index([classification, activation])
 }
 
 model HrPerformanceParticipant {

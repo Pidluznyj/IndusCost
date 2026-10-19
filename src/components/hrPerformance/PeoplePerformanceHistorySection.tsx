@@ -29,6 +29,11 @@ export function PeoplePerformanceHistorySection({ employeeId }: { employeeId: st
           <li key={item.cycleId} className="rounded-lg border border-border p-3 text-sm">
             <p className="font-medium">
               {item.cycleName} · {item.periodLabel}
+              {item.officialEligible === false ? (
+                <span className="ml-2 rounded-full border border-amber-300 px-2 py-0.5 text-[11px] font-medium text-amber-800" title={(item.notOfficialReasons ?? []).join(" ")}>
+                  Não oficial
+                </span>
+              ) : null}
             </p>
             <p className="text-xs text-muted-foreground">
               {item.roleName} · {item.departmentName} · líder {item.managerName ?? "—"} · {ELIGIBILITY_LABELS[item.eligibility as keyof typeof ELIGIBILITY_LABELS] ?? item.eligibility} · modelo v{item.modelVersion}

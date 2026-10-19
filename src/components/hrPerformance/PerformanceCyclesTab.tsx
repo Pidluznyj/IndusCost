@@ -8,6 +8,7 @@ import {
   createPerformanceCycle,
   fetchPerformanceCycles,
   fetchPerformanceModels,
+  type CycleClassification,
   type CycleCounts,
   type CycleSummary,
   type ModelSummary,
@@ -15,6 +16,7 @@ import {
 } from "@/src/lib/hrPerformance/performanceClient";
 import { BTN_PRIMARY, CycleStatusBadge, ErrorBanner, PANEL, PanelState, PerformanceModal, addDaysIso, dateBr } from "./performanceUi";
 import { CycleDesk } from "./CycleDesk";
+import { CycleGovernanceBadges } from "./CycleLifecyclePanel";
 import { cn } from "@/src/lib/utils";
 
 export function PerformanceCyclesTab({
@@ -33,6 +35,8 @@ export function PerformanceCyclesTab({
   const [models, setModels] = useState<ModelSummary[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  // Inativos saem da visão padrão; o RH liga a opção para consultar ou reativar.
+  const [showInactive, setShowInactive] = useState(false);
 
   const reload = useCallback(async () => {
     try {
@@ -41,7 +45,9 @@ export function PerformanceCyclesTab({
       setCounts(payload.counts);
       setModels(modelPayload.models);
       setError(null);
-      if (!selectedId && payload.cycles[0]) onSelect(payload.cycles[0].id);
+      const firstActive = payload.cycles.find((c) => c.activation !== "INACTIVE");
+      if (selectedId && !payload.cycles.some((c) => c.id === selectedId)) onSelect(firstActive?.id ?? null);
+      else if (!selectedId && firstActive) onSelect(firstActive.id);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Não foi possível carregar os ciclos.");
     }
@@ -53,6 +59,8 @@ export function PerformanceCyclesTab({
 
   const canManage = me.capabilities.manage;
   const published = models.filter((m) => m.status === "PUBLISHED");
+  const inactiveCount = (cycles ?? []).filter((c) => c.activation === "INACTIVE").length;
+  const listed = (cycles ?? []).filter((c) => showInactive || c.activation !== "INACTIVE" || c.id === selectedId);
 
   return (
     <section className="space-y-4" data-testid="perf-cycles-tab">
@@ -67,6 +75,12 @@ export function PerformanceCyclesTab({
         ) : null}
       </div>
       <ErrorBanner message={error} />
+      {inactiveCount > 0 ? (
+        <label className="inline-flex items-center gap-2 text-sm text-muted-foreground">
+          <input type="checkbox" className="h-4 w-4" checked={showInactive} onChange={(e) => setShowInactive(e.target.checked)} data-testid="perf-show-inactive" />
+          Mostrar ciclos inativos ({inactiveCount})
+        </label>
+      ) : null}
       {cycles === null ? (
         <div className={PANEL}>
           <PanelState kind="loading" message="Carregando ciclos…" />
@@ -77,7 +91,7 @@ export function PerformanceCyclesTab({
         </div>
       ) : (
         <div className="flex gap-2 overflow-x-auto pb-1" role="tablist" aria-label="Ciclos" data-testid="perf-cycle-list">
-          {cycles.map((cycle) => {
+          {listed.map((cycle) => {
             const c = counts[cycle.id];
             const active = cycle.id === selectedId;
             return (
@@ -100,6 +114,11 @@ export function PerformanceCyclesTab({
                 <p className="mt-1 text-xs text-muted-foreground">
                   {cycle.periodLabel} · {cycle.modelName} v{cycle.modelVersion}
                 </p>
+                {cycle.classification === "TEST" || cycle.activation === "INACTIVE" ? (
+                  <div className="mt-1">
+                    <CycleGovernanceBadges governance={cycle.governance} compact />
+                  </div>
+                ) : null}
                 {c ? (
                   <p className="mt-1 text-xs text-muted-foreground">
                     {c.eligible} elegíveis · {c.selfSubmitted} autoavaliações · {c.leaderSubmitted} do líder
@@ -112,7 +131,15 @@ export function PerformanceCyclesTab({
       )}
       {selectedId ? (
         <React.Fragment key={selectedId}>
-          <CycleDesk cycleId={selectedId} me={me} onToast={onToast} onChanged={() => void reload()} />
+          <CycleDesk
+            cycleId={selectedId}
+            me={me}
+            onToast={onToast}
+            onChanged={(deleted?: boolean) => {
+              if (deleted) onSelect(null);
+              void reload();
+            }}
+          />
         </React.Fragment>
       ) : null}
       <CreateCycleOverlay
@@ -136,10 +163,12 @@ function CreateCycleOverlay({ open, models, onClose, onCreated }: { open: boolea
   const [modelId, setModelId] = useState("");
   const [selfDueAt, setSelfDueAt] = useState(addDaysIso(30));
   const [leaderDueAt, setLeaderDueAt] = useState(addDaysIso(45));
+  // Sem padrão: quem cria escolhe se o ciclo é oficial ou de teste.
+  const [classification, setClassification] = useState<"" | CycleClassification>("");
   useEffect(() => {
     if (open && !modelId && models[0]) setModelId(models[0].id);
   }, [open, models, modelId]);
-  const valid = name.trim().length >= 3 && periodLabel.trim().length >= 2 && Boolean(modelId) && Boolean(selfDueAt) && leaderDueAt >= selfDueAt;
+  const valid = name.trim().length >= 3 && periodLabel.trim().length >= 2 && Boolean(modelId) && Boolean(selfDueAt) && leaderDueAt >= selfDueAt && classification !== "";
   return (
     <PerformanceModal
       open={open}
@@ -152,7 +181,8 @@ function CreateCycleOverlay({ open, models, onClose, onCreated }: { open: boolea
       size="md"
       testId="perf-cycle-create"
       onSave={async () => {
-        const created = await createPerformanceCycle({ name, periodLabel, modelId, selfDueAt, leaderDueAt });
+        if (classification === "") return;
+        const created = await createPerformanceCycle({ name, periodLabel, modelId, selfDueAt, leaderDueAt, classification });
         onCreated(created.cycleId);
       }}
     >
@@ -162,6 +192,15 @@ function CreateCycleOverlay({ open, models, onClose, onCreated }: { open: boolea
         </OverlayField>
         <OverlayField label="Referência" required>
           {(p) => <OverlayInput {...p} value={periodLabel} placeholder="2º semestre de 2026" onChange={(e) => setPeriodLabel(e.target.value)} data-testid="perf-cycle-create-period" />}
+        </OverlayField>
+        <OverlayField label="Tipo do ciclo" required colSpan={2}>
+          {(p) => (
+            <OverlaySelect {...p} value={classification} onChange={(e) => setClassification(e.target.value as "" | CycleClassification)} data-testid="perf-cycle-create-classification">
+              <option value="">Escolha…</option>
+              <option value="OFFICIAL">Oficial — pode compor os indicadores oficiais</option>
+              <option value="TEST">Teste — nunca compõe indicadores oficiais</option>
+            </OverlaySelect>
+          )}
         </OverlayField>
         <OverlayField label="Modelo publicado" required colSpan={2}>
           {(p) => (

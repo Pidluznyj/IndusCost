@@ -11,6 +11,7 @@
  */
 import { Prisma, type PrismaClient } from "@prisma/client";
 import { proposedRules } from "./performanceDomain.js";
+import { applyCycleDeletion, DELETION_ORDER, inactiveCycleViolation, type CycleDeletionPlan, type DeletionCollection } from "./performanceLifecycle.js";
 import {
   PERFORMANCE_COLLECTIONS,
   diffPerformanceDatabase,
@@ -46,7 +47,14 @@ export type PerformanceStore = {
   read: () => Promise<PerformanceDatabase>;
   /** `before` é o estado lido; só a diferença é gravada. */
   write: (after: PerformanceDatabase, before: PerformanceDatabase) => Promise<void>;
+  /**
+   * Única exclusão física do módulo: ciclo de TESTE já inativo (ver `planCycleDeletion`). Transacional,
+   * com nova checagem dentro da transação e auditoria gravada fora dos registros apagados.
+   */
+  deleteTestCycle?: (plan: CycleDeletionPlan, expectedRevision: number) => Promise<Record<DeletionCollection, number>>;
 };
+
+export class DeletionIntegrityError extends Error {}
 
 const DELEGATE: Record<PerformanceCollection, string> = {
   models: "hrPerformanceModel",
@@ -70,7 +78,7 @@ const DELEGATE: Record<PerformanceCollection, string> = {
 const DATE_FIELDS: Record<PerformanceCollection, readonly string[]> = {
   models: ["publishedAt", "archivedAt", "createdAt"],
   questions: [],
-  cycles: ["openedAt", "closedAt", "createdAt"],
+  cycles: ["openedAt", "closedAt", "createdAt", "classifiedAt", "activationChangedAt"],
   participants: ["admissionDate", "addedAt", "removedAt"],
   assignments: ["submittedAt", "createdAt"],
   answers: [],
@@ -138,6 +146,10 @@ export function fromDbRow(collection: PerformanceCollection, row: Record<string,
     out.rules = out.rules && typeof out.rules === "object" ? { ...proposedRules(), ...(out.rules as object) } : proposedRules();
   }
   if (collection === "questions") out.roleExamples = Array.isArray(out.roleExamples) ? out.roleExamples : [];
+  if (collection === "cycles") {
+    out.classification = out.classification === "TEST" ? "TEST" : "OFFICIAL";
+    out.activation = out.activation === "INACTIVE" ? "INACTIVE" : "ACTIVE";
+  }
   if (collection === "audits") out.detail = (out.detail ?? {}) as object;
   if (collection === "reminders") out.status = "DRAFT";
   return out;
@@ -147,7 +159,62 @@ export function createPrismaPerformanceStore(db: PrismaClient): PerformanceStore
   return {
     read: () => loadPerformanceDatabase(db),
     write: (after, before) => savePerformanceDatabase(db, after, before),
+    deleteTestCycle: (plan, expectedRevision) => deleteTestCycleInDb(db, plan, expectedRevision),
   };
+}
+
+const DELETE_DELEGATE: Record<DeletionCollection, string> = {
+  checkins: "hrPerformancePdiCheckin",
+  pdis: "hrPerformancePdi",
+  feedbacks: "hrPerformanceFeedback",
+  results: "hrPerformanceResult",
+  sessions: "hrPerformanceSession",
+  invites: "hrPerformanceInvite",
+  answers: "hrPerformanceAnswer",
+  assignments: "hrPerformanceAssignment",
+  reminders: "hrPerformanceReminder",
+  participants: "hrPerformanceParticipant",
+  cycles: "hrPerformanceCycle",
+};
+
+async function deleteTestCycleInDb(db: PrismaClient, plan: CycleDeletionPlan, expectedRevision: number): Promise<Record<DeletionCollection, number>> {
+  return db.$transaction(
+    async (tx) => {
+      const locked = await tx.hrPerformanceGraphLock.updateMany({
+        where: { id: GRAPH_LOCK_ID, revision: expectedRevision },
+        data: { revision: { increment: 1 } },
+      });
+      if (locked.count !== 1) throw new GraphConflictError();
+      // Nova checagem dentro da transação: o estado lido pode ter mudado.
+      const cycle = await tx.hrPerformanceCycle.findUnique({ where: { id: plan.cycleId }, select: { classification: true, activation: true } });
+      if (!cycle || cycle.classification !== "TEST" || cycle.activation !== "INACTIVE") {
+        throw new DeletionIntegrityError("O ciclo deixou de ser teste inativo.");
+      }
+      if ((await tx.hrPerformanceReportIssue.count({ where: { cycleId: plan.cycleId } })) > 0) {
+        throw new DeletionIntegrityError("Há documento emitido para o ciclo.");
+      }
+      const deleted = {} as Record<DeletionCollection, number>;
+      for (const collection of DELETION_ORDER) {
+        const ids = plan.ids[collection];
+        const delegate = (tx as unknown as Record<string, { deleteMany: (args: unknown) => Promise<{ count: number }> }>)[DELETE_DELEGATE[collection]];
+        deleted[collection] = ids.length === 0 ? 0 : (await delegate.deleteMany({ where: { id: { in: ids } } })).count;
+        if (deleted[collection] !== plan.counts[collection]) {
+          throw new DeletionIntegrityError(`${collection}: esperado ${plan.counts[collection]}, apagado ${deleted[collection]}.`);
+        }
+      }
+      // Integridade: nada do ciclo pode sobrar.
+      const leftovers = await Promise.all([
+        tx.hrPerformanceCycle.count({ where: { id: plan.cycleId } }),
+        tx.hrPerformanceParticipant.count({ where: { cycleId: plan.cycleId } }),
+        tx.hrPerformanceAssignment.count({ where: { cycleId: plan.cycleId } }),
+        tx.hrPerformanceReminder.count({ where: { cycleId: plan.cycleId } }),
+      ]);
+      if (leftovers.some((n) => n > 0)) throw new DeletionIntegrityError("Sobraram registros do ciclo.");
+      await tx.hrPerformanceAuditEvent.create({ data: toDbRow("audits", plan.audit as unknown as Record<string, unknown>) as never });
+      return deleted;
+    },
+    { timeout: 30_000, maxWait: 10_000 }
+  );
 }
 
 export async function loadPerformanceDatabase(db: PrismaClient): Promise<PerformanceDatabase> {
@@ -164,7 +231,16 @@ export async function loadPerformanceDatabase(db: PrismaClient): Promise<Perform
 }
 
 /** Plano da gravação. Exportado para o teste provar que nada é apagado. */
+/** Gravação em ciclo inativo: recusada para todas as rotas, de uma vez. */
+export class CycleInactiveError extends Error {
+  constructor(public readonly cycleName: string) {
+    super(`Ciclo inativo: ${cycleName}`);
+  }
+}
+
 export function planPerformanceWrite(before: PerformanceDatabase, after: PerformanceDatabase) {
+  const blocked = inactiveCycleViolation(before, after);
+  if (blocked) throw new CycleInactiveError(blocked);
   const changes = diffPerformanceDatabase(before, after);
   for (const change of changes) {
     if (change.removed.length > 0) throw new HistoryIntegrityError(`${change.collection} removeria ${change.removed.length} registro(s)`);
@@ -220,6 +296,14 @@ export function createMemoryPerformanceStore(initial: PerformanceDatabase = empt
       if (before.graphRevision !== current.graphRevision) throw new GraphConflictError();
       planPerformanceWrite(before, after);
       current = { ...structuredClone(after), graphRevision: current.graphRevision + 1 };
+    },
+    deleteTestCycle: async (plan, expectedRevision) => {
+      if (expectedRevision !== current.graphRevision) throw new GraphConflictError();
+      const cycle = current.cycles.find((c) => c.id === plan.cycleId);
+      if (!cycle || cycle.classification !== "TEST" || cycle.activation !== "INACTIVE") throw new DeletionIntegrityError("O ciclo deixou de ser teste inativo.");
+      if (current.reports.some((r) => r.cycleId === plan.cycleId)) throw new DeletionIntegrityError("Há documento emitido para o ciclo.");
+      current = { ...applyCycleDeletion(current, plan), graphRevision: current.graphRevision + 1 };
+      return { ...plan.counts };
     },
     snapshot: () => structuredClone(current),
     seed: (next) => {

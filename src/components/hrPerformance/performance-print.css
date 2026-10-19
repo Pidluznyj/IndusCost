@@ -107,6 +107,19 @@
   margin: 1.5mm 0 0;
 }
 
+/* Ciclo de teste: aviso visível em cada documento, impresso em preto e branco também. */
+.perf-test-stamp {
+  border: 0.5mm solid #b91c1c;
+  color: #b91c1c;
+  font-weight: 700;
+  font-size: 9pt;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  padding: 1.5mm 3mm;
+  margin: 2mm 0 3mm;
+  text-align: center;
+}
+
 .perf-nine {
   display: grid;
   grid-template-columns: 14mm repeat(3, minmax(0, 1fr));

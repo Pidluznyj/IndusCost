@@ -174,7 +174,7 @@ describe("ciclo, participantes e elegibilidade", () => {
 
   it("valida prazos, audita mudança de prazo e troca líder por pessoa do cadastro com motivo", () => {
     const draft = draftCycle();
-    const bad = createCycle(draft.db, { name: "Ciclo", periodLabel: "S1", modelId: draft.modelId, selfDueAt: "2026-12-10", leaderDueAt: "2026-12-01", actorUserId: "rh", scope: hrScope }, openOptions);
+    const bad = createCycle(draft.db, { name: "Ciclo", periodLabel: "S1", modelId: draft.modelId, selfDueAt: "2026-12-10", leaderDueAt: "2026-12-01", actorUserId: "rh", classification: "OFFICIAL", scope: hrScope }, openOptions);
     assert.equal(bad.ok === false && bad.code, "INVALID_DATE");
     const updated = must(updateCycle(draft.db, { cycleId: draft.cycleId, name: "Ciclo 2026-S2", periodLabel: "2º semestre", selfDueAt: "2026-11-20", leaderDueAt: "2026-12-05", reason: null, actorUserId: "rh", scope: hrScope }, openOptions));
     const event = updated.db.audits.find((a) => a.action === "CYCLE_UPDATED")!;
@@ -616,7 +616,7 @@ describe("comportamento observável e exemplos por cargo (RFC-008/024)", () => {
     const copy = must(duplicateModel(db, { modelId, actorUserId: "rh", scope: hrScope }, openOptions));
     assert.equal(copy.db.questions.find((q) => q.modelId === copy.value.modelId && q.code === "DT-03")!.roleExamples.length, 2);
 
-    const cycle = must(createCycle(db, { name: "Ciclo", periodLabel: "S2", modelId, selfDueAt: "2026-11-15", leaderDueAt: "2026-11-30", actorUserId: "rh", scope: hrScope }, openOptions));
+    const cycle = must(createCycle(db, { name: "Ciclo", periodLabel: "S2", modelId, selfDueAt: "2026-11-15", leaderDueAt: "2026-11-30", actorUserId: "rh", classification: "OFFICIAL", scope: hrScope }, openOptions));
     let flow = must(applyParticipants(cycle.db, { cycleId: cycle.value.cycleId, employees: [ana], selectedIds: ["ana"], exceptions: {}, absenceIds: [], roleChangeIds: [], actorUserId: "rh", scope: hrScope }, openOptions)).db;
     flow = must(transitionCycle(flow, { cycleId: cycle.value.cycleId, to: "PREPARED", actorUserId: "rh", reversalReason: null, scope: hrScope }, openOptions)).db;
     flow = must(transitionCycle(flow, { cycleId: cycle.value.cycleId, to: "OPEN", actorUserId: "rh", reversalReason: null, scope: hrScope }, openOptions)).db;

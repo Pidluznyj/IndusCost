@@ -139,7 +139,7 @@ describe("rotas de desempenho", () => {
     const api = client(port);
     try {
       const me = await api.call("GET", "/api/hr/performance/me", undefined, { "x-actor": "leader" });
-      assert.deepEqual(me.json.capabilities, { view: true, evaluate: true, manage: false, calibrate: false, report: true, invites: false, conduct: false });
+      assert.deepEqual(me.json.capabilities, { view: true, evaluate: true, manage: false, calibrate: false, report: true, invites: false, conduct: false, lifecycle: false }, "ciclo de vida só para o SUPER_ADMIN");
       assert.equal((await api.call("POST", "/api/hr/performance/models", { name: "Modelo" }, { "x-actor": "viewer" })).status, 403);
       assert.equal((await api.call("GET", "/api/hr/performance/directory?q=ana", undefined, { "x-actor": "leader" })).status, 403, "busca no cadastro é do RH");
       const hrMe = await api.call("GET", "/api/hr/performance/me");
@@ -169,7 +169,7 @@ describe("rotas de desempenho", () => {
       assert.equal((await hr.call("POST", `/api/hr/performance/models/${modelId}/publish`)).status, 200);
       assert.equal((await hr.call("PUT", `/api/hr/performance/models/${modelId}/questions/DT-02`, { selfText: "Texto de pergunta nova", leaderText: "Texto de pergunta nova" })).json.error, "MODEL_LOCKED");
 
-      const cycle = await hr.call("POST", "/api/hr/performance/cycles", { name: "Ciclo 2026-S2", periodLabel: "2º semestre", modelId, selfDueAt: "2026-11-15", leaderDueAt: "2026-11-30" });
+      const cycle = await hr.call("POST", "/api/hr/performance/cycles", { name: "Ciclo 2026-S2", periodLabel: "2º semestre", modelId, selfDueAt: "2026-11-15", leaderDueAt: "2026-11-30", classification: "OFFICIAL" });
       assert.equal(cycle.status, 201);
       const cycleId = cycle.json.cycleId;
       const search = await hr.call("GET", "/api/hr/performance/directory?q=operad");

@@ -15575,6 +15575,11 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
       const authUser = (req as { appAuth?: AppAuthContext }).appAuth ?? (await getCurrentAppUser(req));
       return (authUser as { name?: string | null } | null)?.name ?? null;
     },
+    // Ciclo de vida dos ciclos (classificar, inativar, reativar, excluir teste): só SUPER_ADMIN ativo.
+    isSuperAdmin: async (req) => {
+      const authUser = (req as { appAuth?: AppAuthContext }).appAuth ?? (await getCurrentAppUser(req));
+      return Boolean(authUser && authUser.role === "SUPER_ADMIN" && authUser.isActive !== false);
+    },
     // Afastamento (HrAbsence) e mudança de função/setor (HrEmployeeHistory) no período de
     // referência vêm do cadastro oficial; a tela não informa isso à mão.
     loadEligibilitySignals: async (employeeIds, since) => {

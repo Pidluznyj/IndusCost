@@ -96,6 +96,7 @@ describe("persistência Prisma em PostgreSQL local", { skip }, () => {
       },
       actorUserId: async (req) => (actorOf(req) === "leader" ? LEADER_USER : HR_USER),
       actorName: async () => "RH de teste",
+      isSuperAdmin: async (req) => req.headers["x-actor"] === "super",
     });
     server = createServer(app);
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
@@ -116,7 +117,7 @@ describe("persistência Prisma em PostgreSQL local", { skip }, () => {
     const model = await call("POST", "/api/hr/performance/models", { name: "Modelo PG" });
     assert.equal(model.status, 201);
     assert.equal((await call("POST", `/api/hr/performance/models/${model.json.modelId}/publish`)).status, 200);
-    const cycle = await call("POST", "/api/hr/performance/cycles", { name: "Ciclo PG", periodLabel: "2026-S2", modelId: model.json.modelId, selfDueAt: "2026-11-15", leaderDueAt: "2026-11-30" });
+    const cycle = await call("POST", "/api/hr/performance/cycles", { name: "Ciclo PG", periodLabel: "2026-S2", modelId: model.json.modelId, selfDueAt: "2026-11-15", leaderDueAt: "2026-11-30", classification: "OFFICIAL" });
     const cycleId = cycle.json.cycleId;
     const added = await call("POST", `/api/hr/performance/cycles/${cycleId}/participants`, { employeeIds: [ids.ana, ids.bia, ids.caio] });
     assert.equal(added.json.eligible, 1);
@@ -175,5 +176,48 @@ describe("persistência Prisma em PostgreSQL local", { skip }, () => {
     assert.equal(issued.status, 200);
     const report = await prisma.hrPerformanceReportIssue.findUnique({ where: { code: issued.json.issue.code } });
     assert.equal(report?.kind, "consolidado");
+  });
+
+  it("ciclo de teste: inativo congela; com documento emitido não exclui; sem documento exclui em transação e a auditoria fica", async () => {
+    const reason = "Ciclo criado só para validar o fluxo.";
+    const first = await prisma.hrPerformanceCycle.findFirstOrThrow({ where: { name: "Ciclo PG" } });
+    assert.equal((await call("POST", `/api/hr/performance/cycles/${first.id}/classification`, { classification: "TEST", reason }, "super")).status, 200);
+    assert.equal((await call("POST", `/api/hr/performance/cycles/${first.id}/inactivate`, { reason }, "super")).status, 200);
+    const blocked = await call("DELETE", `/api/hr/performance/cycles/${first.id}`, { reason, confirmation: "Ciclo PG" }, "super");
+    assert.equal(blocked.json.error, "DELETE_BLOCKED", "documento emitido preserva o ciclo");
+    assert.equal(await prisma.hrPerformanceCycle.count({ where: { id: first.id } }), 1);
+
+    const models = await prisma.hrPerformanceModel.findFirstOrThrow({ where: { status: "PUBLISHED" } });
+    const created = await call("POST", "/api/hr/performance/cycles", { name: "Ciclo PG teste", periodLabel: "Teste", modelId: models.id, selfDueAt: "2026-11-15", leaderDueAt: "2026-11-30", classification: "TEST" });
+    assert.equal(created.status, 201, JSON.stringify(created.json));
+    const testId = created.json.cycleId as string;
+    assert.equal((await call("POST", `/api/hr/performance/cycles/${testId}/participants`, { employeeIds: [ids.ana] })).status, 200);
+    assert.equal((await call("POST", `/api/hr/performance/cycles/${testId}/transition`, { to: "PREPARED" })).status, 200);
+    assert.equal((await call("POST", `/api/hr/performance/cycles/${testId}/transition`, { to: "OPEN", pilotAck: true })).status, 200);
+    const task = await prisma.hrPerformanceAssignment.findFirstOrThrow({ where: { cycleId: testId, kind: "LEADER" } });
+    assert.equal((await call("PUT", `/api/hr/performance/assignments/${task.id}/answers`, { expectedVersion: task.version, answers: [{ code: "DT-01", answer: { kind: "score", score: 3 } }] }, "leader")).status, 200);
+    const auditsOfTest = await prisma.hrPerformanceAuditEvent.count({ where: { entityId: testId } });
+
+    assert.equal((await call("POST", `/api/hr/performance/cycles/${testId}/inactivate`, { reason }, "super")).status, 200);
+    const frozen = await call("PUT", `/api/hr/performance/assignments/${task.id}/answers`, { expectedVersion: task.version + 1, answers: [{ code: "DT-02", answer: { kind: "score", score: 3 } }] }, "leader");
+    assert.equal(frozen.json.error, "CYCLE_INACTIVE");
+    const deleted = await call("DELETE", `/api/hr/performance/cycles/${testId}`, { reason, confirmation: "Ciclo PG teste" }, "super");
+    assert.equal(deleted.status, 200, JSON.stringify(deleted.json));
+    assert.equal(deleted.json.deleted.cycles, 1);
+    assert.ok(deleted.json.deleted.answers >= 24);
+
+    for (const n of await Promise.all([
+      prisma.hrPerformanceCycle.count({ where: { id: testId } }),
+      prisma.hrPerformanceParticipant.count({ where: { cycleId: testId } }),
+      prisma.hrPerformanceAssignment.count({ where: { cycleId: testId } }),
+      prisma.hrPerformanceAnswer.count({ where: { assignmentId: task.id } }),
+    ])) assert.equal(n, 0, "nada do ciclo de teste sobra");
+    assert.ok((await prisma.hrPerformanceAuditEvent.count({ where: { entityId: testId } })) >= auditsOfTest + 2, "auditoria preservada (+ inativação e exclusão)");
+    assert.equal((await prisma.hrPerformanceAuditEvent.count({ where: { entityId: testId, action: "CYCLE_DELETED" } })), 1);
+    assert.equal(await prisma.hrPerformanceCycle.count({ where: { id: first.id } }), 1, "o outro ciclo continua");
+    const orphans = await prisma.$queryRawUnsafe<{ n: bigint }[]>(
+      `SELECT COUNT(*)::bigint AS n FROM "HrPerformanceAnswer" a LEFT JOIN "HrPerformanceAssignment" t ON t.id = a."assignmentId" WHERE t.id IS NULL`
+    );
+    assert.equal(Number(orphans[0]!.n), 0);
   });
 });

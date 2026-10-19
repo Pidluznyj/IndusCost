@@ -27,8 +27,10 @@ import {
   reportRows,
   resultHistory,
 } from "./performanceInsights.js";
-import { GraphConflictError, HistoryIntegrityError, type PerformanceStore } from "./performancePrisma.js";
+import { CycleInactiveError, DeletionIntegrityError, GraphConflictError, HistoryIntegrityError, type PerformanceStore } from "./performancePrisma.js";
+import { checkCycleDeletion, classifyCycle, cycleGovernance, cycleLifecycleHistory, inactivateCycle, planCycleDeletion, reactivateCycle } from "./performanceLifecycle.js";
 import { createRateLimiter } from "./performanceRateLimit.js";
+import { audit } from "./performanceService.js";
 import type { PerformanceDatabase } from "./performanceState.js";
 import {
   acknowledgeFeedback,
@@ -109,6 +111,8 @@ export type PerformanceRouteDeps = {
   actorName?: (req: express.Request) => Promise<string | null>;
   /** Mesma decisão do guard (deny > allow), para a tela esconder o que o servidor recusaria. */
   can?: (req: express.Request, resourceKey: string, action: string) => Promise<boolean>;
+  /** Ciclo de vida (classificar, inativar, reativar, excluir teste): só o SUPER_ADMIN. */
+  isSuperAdmin?: (req: express.Request) => Promise<boolean>;
 };
 
 function noStore(res: express.Response) {
@@ -167,6 +171,9 @@ const STATUS_BY_CODE: Record<string, number> = {
   JUSTIFICATION_REQUIRED: 400,
   EVIDENCE_REQUIRED: 400,
   LEADER_REQUIRED: 400,
+  CLASSIFICATION_REQUIRED: 400,
+  INVALID_CLASSIFICATION: 400,
+  CONFIRMATION_MISMATCH: 400,
 };
 
 function statusOf(code: string): number {
@@ -189,6 +196,10 @@ async function mutate<T>(store: PerformanceStore, res: express.Response, run: Mu
         await store.write(next, before);
       } catch (error) {
         if (error instanceof GraphConflictError) continue;
+        if (error instanceof CycleInactiveError) {
+          res.status(409).json({ error: "CYCLE_INACTIVE", message: "Ciclo inativo: nada pode ser alterado. O SUPER_ADMIN pode reativar." });
+          return { ok: false, code: "CYCLE_INACTIVE", message: error.message };
+        }
         if (error instanceof HistoryIntegrityError) {
           res.status(500).json({ error: "HISTORY_INTEGRITY", message: "A gravação foi recusada para preservar o histórico." });
           return { ok: false, code: "HISTORY_INTEGRITY", message: error.message };
@@ -261,6 +272,7 @@ function guardedApp(app: express.Application) {
     get: (path: string, ...handlers: unknown[]) => app.get(path, ...(wrap(handlers) as Handler[])),
     post: (path: string, ...handlers: unknown[]) => app.post(path, ...(wrap(handlers) as Handler[])),
     put: (path: string, ...handlers: unknown[]) => app.put(path, ...(wrap(handlers) as Handler[])),
+    delete: (path: string, ...handlers: unknown[]) => app.delete(path, ...(wrap(handlers) as Handler[])),
   };
 }
 
@@ -312,8 +324,9 @@ export function registerPerformanceRoutes(expressApp: express.Application, deps:
       invites: invitesCap && accessScope === "ALL",
       conduct: conductCap,
     };
+    const lifecycle = deps.isSuperAdmin ? await deps.isSuperAdmin(req) : false;
     noStore(res);
-    res.json({ accessScope, actorEmployeeId, capabilities, officialPublication: deps.options.officialPublication });
+    res.json({ accessScope, actorEmployeeId, capabilities: { ...capabilities, lifecycle }, officialPublication: deps.options.officialPublication });
   });
 
   // ---------------------------------------------------------------- modelos
@@ -444,7 +457,7 @@ export function registerPerformanceRoutes(expressApp: express.Application, deps:
     res.json({
       cycles: cycles.map((c) => {
         const model = db.models.find((m) => m.id === c.modelId);
-        return { ...c, modelName: model?.name ?? "", modelVersion: model?.version ?? null };
+        return { ...c, modelName: model?.name ?? "", modelVersion: model?.version ?? null, governance: cycleGovernance(db, c) };
       }),
       counts: Object.fromEntries(cycles.map((c) => [c.id, dashboardCounts(db, c.id, scope, undefined, now())])),
     });
@@ -465,6 +478,7 @@ export function registerPerformanceRoutes(expressApp: express.Application, deps:
             modelId: str(req.body?.modelId),
             selfDueAt: str(req.body?.selfDueAt),
             leaderDueAt: str(req.body?.leaderDueAt),
+            classification: str(req.body?.classification, 16),
             actorUserId,
             scope,
           },
@@ -515,9 +529,11 @@ export function registerPerformanceRoutes(expressApp: express.Application, deps:
 
   app.get("/api/hr/performance/evolution", ...view, async (req, res) => {
     const db = await deps.store.read();
-    const { scope } = await scopeOf(req);
+    const { scope, accessScope } = await scopeOf(req);
     noStore(res);
-    res.json({ cycles: cycleEvolution(db, scope, now()) });
+    // Teste e inativo só entram no filtro de auditoria do RH, rotulados.
+    const includeNonOfficial = accessScope === "ALL" && req.query.includeNonOfficial === "1";
+    res.json({ cycles: cycleEvolution(db, scope, now(), includeNonOfficial) });
   });
 
   app.get("/api/hr/performance/cycles/:id/calibration", ...calibrateGuard, async (req, res) => {
@@ -906,7 +922,8 @@ export function registerPerformanceRoutes(expressApp: express.Application, deps:
   app.get("/api/hr/performance/employees/:id/history", ...view, async (req, res) => {
     const { scope, accessScope } = await scopeOf(req);
     const db = await deps.store.read();
-    const result = employeeHistory(db, req.params.id, scope, accessScope === "ALL");
+    const includeNonOfficial = accessScope === "ALL" && req.query.includeNonOfficial === "1";
+    const result = employeeHistory(db, req.params.id, scope, accessScope === "ALL", includeNonOfficial);
     noStore(res);
     if (result.ok === false) return res.status(404).json({ error: result.code, message: "Registro não encontrado." });
     res.json(result);
@@ -915,15 +932,23 @@ export function registerPerformanceRoutes(expressApp: express.Application, deps:
   app.get("/api/hr/performance/cycles/:id/export", ...report, async (req, res) => {
     const { scope } = await scopeOf(req);
     const db = await deps.store.read();
-    if (!db.cycles.some((c) => c.id === req.params.id)) return res.status(404).json({ error: "NOT_FOUND", message: "Ciclo não encontrado." });
+    const exported = db.cycles.find((c) => c.id === req.params.id);
+    if (!exported) return res.status(404).json({ error: "NOT_FOUND", message: "Ciclo não encontrado." });
+    if (exported.activation !== "ACTIVE") {
+      noStore(res);
+      return res.status(409).json({ error: "CYCLE_INACTIVE", message: "Ciclo inativo não é exportado. Consulte o histórico de ações." });
+    }
     const rows = reportRows(db, req.params.id, scope);
     const actorUserId = await deps.actorUserId(req);
     const logged = await mutate(deps.store, res, (current) => recordExport(current, { cycleId: req.params.id, rows: rows.length, format: "CSV", actorUserId }, deps.options));
     if (res.headersSent || logged.ok === false) return;
     noStore(res);
-    const header = "nome,cargo,setor,elegibilidade,quadrante,cultura";
+    // A classificação vai em cada linha: o arquivo de um ciclo de teste não passa por oficial.
+    const governance = cycleGovernance(db, exported);
+    const classification = governance.officialEligible ? "OFICIAL" : exported.classification === "TEST" ? "TESTE - NAO OFICIAL" : "NAO OFICIAL";
+    const header = "nome,cargo,setor,elegibilidade,quadrante,cultura,classificacao_ciclo";
     const cell = (value: string) => (/[",\n\r]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value);
-    const body = rows.map((row) => [row.name, row.role, row.department, row.eligibility, row.quadrant, row.culture].map(cell).join(",")).join("\n");
+    const body = rows.map((row) => [row.name, row.role, row.department, row.eligibility, row.quadrant, row.culture, classification].map(cell).join(",")).join("\n");
     res.setHeader("Content-Disposition", 'attachment; filename="desempenho-ciclo.csv"');
     res.type("text/csv").send(`﻿${header}\n${body}`);
   });
@@ -950,6 +975,78 @@ export function registerPerformanceRoutes(expressApp: express.Application, deps:
     const data = reportData(db, { cycleId, kind, participantId }, scope, now());
     if (!data) return res.status(404).json({ error: "NOT_FOUND", message: "Ciclo não encontrado." });
     res.json({ issue: { ...outcome.value, kind, issuedByName: actorName }, data });
+  });
+
+  // ---------------------------------------------------------------- ciclo de vida (SUPER_ADMIN)
+  const superAdmin = async (req: express.Request) => (deps.isSuperAdmin ? deps.isSuperAdmin(req) : false);
+  const withAudit = (db: PerformanceDatabase, actorUserId: string | null, action: string, entityId: string, detail: Record<string, string | number | boolean | null>) => {
+    const next = structuredClone(db);
+    audit(next, now(), actorUserId, action, entityId, detail);
+    return next;
+  };
+  const lifecycleInput = async (req: express.Request) => ({
+    cycleId: req.params.id,
+    reason: str(req.body?.reason, 600),
+    actorUserId: await deps.actorUserId(req),
+    superAdmin: await superAdmin(req),
+    now: now(),
+  });
+
+  app.get("/api/hr/performance/cycles/:id/lifecycle", ...manage, async (req, res) => {
+    const db = await deps.store.read();
+    const cycle = db.cycles.find((c) => c.id === req.params.id);
+    noStore(res);
+    if (!cycle) return res.status(404).json({ error: "NOT_FOUND", message: "Ciclo não encontrado." });
+    res.json({
+      cycle: { id: cycle.id, name: cycle.name, status: cycle.status, classification: cycle.classification, activation: cycle.activation, activationReason: cycle.activationReason, activationChangedAt: cycle.activationChangedAt },
+      governance: cycleGovernance(db, cycle),
+      deletion: checkCycleDeletion(db, cycle.id),
+      history: cycleLifecycleHistory(db, cycle.id),
+      canManage: await superAdmin(req),
+    });
+  });
+
+  app.post("/api/hr/performance/cycles/:id/classification", ...manage, async (req, res) => {
+    const input = await lifecycleInput(req);
+    await mutateAdmin(deps.store, res, (db) => classifyCycle(db, { ...input, classification: str(req.body?.classification, 16) }));
+  });
+
+  app.post("/api/hr/performance/cycles/:id/inactivate", ...manage, async (req, res) => {
+    const input = await lifecycleInput(req);
+    await mutateAdmin(deps.store, res, (db) => inactivateCycle(db, input));
+  });
+
+  app.post("/api/hr/performance/cycles/:id/reactivate", ...manage, async (req, res) => {
+    const input = await lifecycleInput(req);
+    await mutateAdmin(deps.store, res, (db) => reactivateCycle(db, input));
+  });
+
+  /** Exclusão física de ciclo de TESTE já inativo. A auditoria fica; os dados do ciclo saem. */
+  app.delete("/api/hr/performance/cycles/:id", ...manage, async (req, res) => {
+    const input = await lifecycleInput(req);
+    noStore(res);
+    for (let attempt = 0; attempt < MAX_WRITE_ATTEMPTS; attempt += 1) {
+      const db = await deps.store.read();
+      const planned = planCycleDeletion(db, { ...input, confirmation: str(req.body?.confirmation, 200) });
+      if (planned.ok === false) {
+        if (planned.code === "DELETE_BLOCKED" && input.superAdmin) {
+          // A tentativa bloqueada também fica registrada.
+          await mutate(deps.store, res, (current) => ({ ok: true, db: withAudit(current, input.actorUserId, "CYCLE_DELETE_BLOCKED", req.params.id, { reason: input.reason, blockers: planned.message }), value: null }));
+          if (res.headersSent) return;
+        }
+        return res.status(statusOf(planned.code)).json({ error: planned.code, message: planned.message });
+      }
+      if (!deps.store.deleteTestCycle) return res.status(501).json({ error: "NOT_SUPPORTED", message: "Exclusão indisponível neste armazenamento." });
+      try {
+        const deleted = await deps.store.deleteTestCycle(planned.plan, db.graphRevision);
+        return res.json({ deleted, auditId: planned.plan.audit.id });
+      } catch (error) {
+        if (error instanceof GraphConflictError) continue;
+        if (error instanceof DeletionIntegrityError) return res.status(409).json({ error: "DELETE_INTEGRITY", message: `Exclusão cancelada sem apagar nada: ${error.message}` });
+        throw error;
+      }
+    }
+    res.status(409).json({ error: "VERSION_CONFLICT", message: "Muitas gravações ao mesmo tempo. Tente de novo." });
   });
 
   app.post("/api/hr/performance/conducts", ...conduct, async (req, res) => {

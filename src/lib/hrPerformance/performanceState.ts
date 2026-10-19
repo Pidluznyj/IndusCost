@@ -62,7 +62,29 @@ export type CycleRecord = {
   openedAt: string | null;
   closedAt: string | null;
   createdAt: string;
+  /** OFFICIAL compõe indicadores oficiais (se ativo, homologado e publicável); TEST nunca compõe. */
+  classification: CycleClassification;
+  classifiedAt: string | null;
+  classifiedByUserId: string | null;
+  /** Independente da situação operacional. INACTIVE congela o ciclo e o tira da visão padrão. */
+  activation: CycleActivation;
+  activationChangedAt: string | null;
+  activationChangedByUserId: string | null;
+  activationReason: string | null;
 };
+
+export type CycleClassification = "OFFICIAL" | "TEST";
+export type CycleActivation = "ACTIVE" | "INACTIVE";
+/** Campos que podem mudar num ciclo inativo (só pelas ações de ciclo de vida). */
+export const CYCLE_LIFECYCLE_FIELDS = [
+  "classification",
+  "classifiedAt",
+  "classifiedByUserId",
+  "activation",
+  "activationChangedAt",
+  "activationChangedByUserId",
+  "activationReason",
+] as const;
 
 export type ParticipantRecord = {
   id: string;

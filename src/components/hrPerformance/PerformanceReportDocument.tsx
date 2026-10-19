@@ -76,6 +76,13 @@ export function PerformanceReportDocument({ data, issue, branding }: { data: any
         ]}
         subtitle={`${cycle.name} · ${cycle.periodLabel} · ${label(CYCLE_STATUS_LABELS, cycle.status)} · modelo ${data.model?.name ?? ""} v${data.model?.version ?? ""}`}
       />
+      {cycle.classification === "TEST" ? (
+        <p className="perf-test-stamp" data-testid="perf-print-test-stamp">
+          Ciclo de teste — sem valor oficial. Este documento não compõe indicadores nem histórico oficial.
+        </p>
+      ) : data.governance && !data.governance.officialEligible ? (
+        <p className="perf-note">Resultado fora dos indicadores oficiais: {(data.governance.reasons ?? []).join(" ")}</p>
+      ) : null}
 
       {person ? (
         <dl className="perf-identity" data-testid="perf-print-identity">

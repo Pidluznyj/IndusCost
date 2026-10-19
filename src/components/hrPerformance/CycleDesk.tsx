@@ -5,7 +5,8 @@
  */
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
-import { CheckCircle2, ClipboardCopy, FileDown, Network, Pencil, Printer, QrCode, RotateCcw, Search, ShieldOff, UserMinus, UserPlus, UserRoundCog, Users } from "lucide-react";
+import { CheckCircle2, ClipboardCopy, FileDown, Network, Pencil, Printer, QrCode, RotateCcw, Search, Settings2, ShieldOff, UserMinus, UserPlus, UserRoundCog, Users } from "lucide-react";
+import { CycleGovernanceBadges, CycleLifecycleOverlay } from "./CycleLifecyclePanel";
 import { OverlayBadge, OverlayField, OverlayFieldGrid, OverlayInput, OverlaySelect, OverlayTextarea } from "@/src/components/ui/overlay";
 import { CYCLE_STATUSES, CYCLE_STATUS_LABELS, ELIGIBILITY_LABELS, forwardStatus, reversalStatus, type CycleStatus } from "@/src/lib/hrPerformance/performanceDomain";
 import {
@@ -105,12 +106,18 @@ const NEXT_LABEL: Partial<Record<CycleStatus, string>> = {
   HOMOLOGATED: "Encerrar ciclo",
 };
 
-export function CycleDesk({ cycleId, me, onToast, onChanged }: { cycleId: string; me: PerformanceMe; onToast: (message: string) => void; onChanged: () => void }) {
+export function CycleDesk({ cycleId, me: realMe, onToast, onChanged }: { cycleId: string; me: PerformanceMe; onToast: (message: string) => void; onChanged: (deleted?: boolean) => void }) {
   const [ws, setWs] = useState<CycleWorkspace | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [dialog, setDialog] = useState<Dialog>(null);
   const [issued, setIssued] = useState<IssuedInvite[]>([]);
   const [filters, setFilters] = useState({ text: "", department: "", role: "", manager: "", state: "" });
+  const [lifecycleOpen, setLifecycleOpen] = useState(false);
+  // Ciclo inativo: só consulta. A tela esconde as ações; o servidor recusa do mesmo jeito.
+  const inactive = ws?.cycle.activation === "INACTIVE";
+  const me: PerformanceMe = inactive
+    ? { ...realMe, capabilities: { ...realMe.capabilities, manage: false, evaluate: false, calibrate: false, invites: false, report: false } }
+    : realMe;
   const caps = me.capabilities;
 
   const reload = useCallback(async () => {
@@ -212,12 +219,18 @@ export function CycleDesk({ cycleId, me, onToast, onChanged }: { cycleId: string
           <div className="flex flex-wrap items-center gap-2">
             <h3 className="text-xl font-bold" data-testid="perf-cycle-title">{ws.cycle.name}</h3>
             <CycleStatusBadge status={status} />
+            <CycleGovernanceBadges governance={ws.governance} />
           </div>
           <p className="mt-1 text-sm text-muted-foreground">
             {ws.cycle.periodLabel} · {ws.model?.name} v{ws.model?.version} · autoavaliação até {dateBr(ws.cycle.selfDueAt)} · líder até {dateBr(ws.cycle.leaderDueAt)}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
+          {realMe.capabilities.manage ? (
+            <button type="button" className={BTN_SECONDARY} onClick={() => setLifecycleOpen(true)} data-testid="perf-cycle-lifecycle">
+              <Settings2 className="h-4 w-4" aria-hidden /> Ciclo de vida
+            </button>
+          ) : null}
           {caps.manage && status !== "HOMOLOGATED" && status !== "CLOSED" ? (
             <button type="button" className={BTN_SECONDARY} onClick={() => setDialog({ kind: "edit" })} data-testid="perf-cycle-edit">
               <Pencil className="h-4 w-4" aria-hidden /> Editar
@@ -265,6 +278,13 @@ export function CycleDesk({ cycleId, me, onToast, onChanged }: { cycleId: string
         })}
       </ol>
 
+      {inactive ? (
+        <InfoBanner tone="amber" testId="perf-cycle-inactive-banner">
+          Ciclo inativo{ws.cycle.activationReason ? ` (${ws.cycle.activationReason})` : ""}: somente consulta. Nada pode ser respondido, calibrado, homologado ou exportado, e ele não entra nos indicadores. O SUPER_ADMIN pode reativar em Ciclo de vida.
+        </InfoBanner>
+      ) : ws.cycle.classification === "TEST" ? (
+        <InfoBanner tone="slate" testId="perf-cycle-test-banner">Ciclo de teste: funciona normalmente, mas nunca compõe indicadores oficiais. Documentos e exportações saem rotulados.</InfoBanner>
+      ) : null}
       {status === "PREPARED" && !me.officialPublication ? (
         <InfoBanner tone="amber">A publicação oficial está desligada neste ambiente. Abrir o ciclo pede a confirmação de que perguntas e cortes ainda são proposta (piloto).</InfoBanner>
       ) : null}
@@ -390,6 +410,22 @@ export function CycleDesk({ cycleId, me, onToast, onChanged }: { cycleId: string
             setDialog(null);
             onToast(message);
             await reload();
+            onChanged();
+          }}
+        />
+      ) : null}
+      {lifecycleOpen ? (
+        <CycleLifecycleOverlay
+          cycleId={cycleId}
+          onToast={onToast}
+          onClose={() => setLifecycleOpen(false)}
+          onChanged={(deleted) => {
+            if (deleted) {
+              setLifecycleOpen(false);
+              onChanged(true);
+              return;
+            }
+            void reload();
             onChanged();
           }}
         />

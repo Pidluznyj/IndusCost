@@ -32,6 +32,19 @@ describe("migration aditiva", () => {
     assert.match(rules, /CREATE UNIQUE INDEX "HrPerformanceReportIssue_code_key"/);
   });
 
+  it("a migration de ciclo de vida só acrescenta colunas e mantém os ciclos antigos oficiais e ativos", () => {
+    const lifecycle = readFileSync(join(root, "prisma/migrations/20261022120000_hr_performance_cycle_lifecycle/migration.sql"), "utf8");
+    assert.equal(/DROP |DELETE FROM|TRUNCATE|UPDATE "/i.test(lifecycle), false, "nenhum dado existente é reescrito");
+    assert.equal(/ALTER TABLE "(?!HrPerformanceCycle")/.test(lifecycle), false, "só a tabela de ciclos");
+    assert.match(lifecycle, /"classification" TEXT NOT NULL DEFAULT 'OFFICIAL'/);
+    assert.match(lifecycle, /"activation" TEXT NOT NULL DEFAULT 'ACTIVE'/);
+    const alters = lifecycle.match(/ADD COLUMN\s+"\w+"\s+[^,;]+/g) ?? [];
+    assert.equal(alters.length, 7);
+    for (const column of alters) {
+      if (/NOT NULL/.test(column)) assert.match(column, /DEFAULT/, `coluna obrigatória precisa de default: ${column}`);
+    }
+  });
+
   it("flags nascem desligadas", () => {
     const example = readFileSync(join(root, ".env.example"), "utf8");
     assert.match(example, /^PERFORMANCE_CYCLE_ENABLED=0$/m);

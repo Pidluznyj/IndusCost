@@ -473,6 +473,8 @@ export function createCycle(
     selfDueAt: string;
     leaderDueAt: string;
     actorUserId: string | null;
+    /** Obrigatória: OFFICIAL compõe indicadores oficiais; TEST nunca compõe. */
+    classification: string;
     minObservationDays?: number;
     scope?: PerformanceScope;
   },
@@ -489,6 +491,10 @@ export function createCycle(
   if (periodLabel.length < 2) return fail("INVALID_PERIOD", "Informe a referência do ciclo, por exemplo 2º semestre de 2026.");
   if (!isIsoDate(input.selfDueAt) || !isIsoDate(input.leaderDueAt)) return fail("INVALID_DATE", "Informe os prazos da pessoa e do líder.");
   if (input.leaderDueAt < input.selfDueAt) return fail("INVALID_DATE", "O prazo do líder não pode vir antes do prazo da pessoa.");
+  if (input.classification !== "OFFICIAL" && input.classification !== "TEST") {
+    return fail("CLASSIFICATION_REQUIRED", "Diga se o ciclo é oficial ou de teste.");
+  }
+  const classification = input.classification;
   const cycleId = newId();
   db.cycles.push({
     id: cycleId,
@@ -503,8 +509,15 @@ export function createCycle(
     openedAt: null,
     closedAt: null,
     createdAt: iso(options.now()),
+    classification,
+    classifiedAt: iso(options.now()),
+    classifiedByUserId: input.actorUserId,
+    activation: "ACTIVE",
+    activationChangedAt: null,
+    activationChangedByUserId: null,
+    activationReason: null,
   });
-  audit(db, options.now(), input.actorUserId, "CYCLE_CREATED", cycleId, { status: "DRAFT", modelVersion: model.version });
+  audit(db, options.now(), input.actorUserId, "CYCLE_CREATED", cycleId, { status: "DRAFT", modelVersion: model.version, classification });
   return { ok: true, db, value: { cycleId } };
 }
 
@@ -986,7 +999,11 @@ export function transitionCycle(
       }
     }
     for (const participant of eligible) activeResult(db, participant.id)!.official = true;
-    audit(db, now, input.actorUserId, "RESULTS_HOMOLOGATED", cycle.id, { count: eligible.length });
+    audit(db, now, input.actorUserId, "RESULTS_HOMOLOGATED", cycle.id, {
+      count: eligible.length,
+      classification: cycle.classification,
+      officialPublication: options.officialPublication === true,
+    });
   }
   if (isReversal && cycle.status === "HOMOLOGATED") {
     let reopened = 0;
@@ -1530,7 +1547,9 @@ export function revokeInvite(
 function inviteContext(db: PerformanceDatabase, assignmentId: string) {
   const assignment = db.assignments.find((a) => a.id === assignmentId);
   const participant = assignment ? db.participants.find((p) => p.id === assignment.participantId) : null;
-  const cycle = participant ? db.cycles.find((c) => c.id === participant.cycleId) : null;
+  const found = participant ? db.cycles.find((c) => c.id === participant.cycleId) : null;
+  // Ciclo inativo não abre nada no portal: mesma resposta neutra de convite inválido.
+  const cycle = found && found.activation === "ACTIVE" ? found : null;
   return { assignment, participant, cycle };
 }
 
@@ -1791,7 +1810,8 @@ export function leaderQueue(db: PerformanceDatabase, scope: PerformanceScope, ac
       const participant = db.participants.find((p) => p.id === assignment.participantId);
       if (!participant || participant.removedAt) return null;
       const cycle = db.cycles.find((c) => c.id === participant.cycleId);
-      if (!cycle) return null;
+      // Ciclo inativo sai da visão operacional (continua consultável no histórico de auditoria).
+      if (!cycle || cycle.activation !== "ACTIVE") return null;
       const self = activeAssignment(db, participant.id, "SELF");
       const showSelf = Boolean(self && self.status === "SUBMITTED" && assignment.status === "SUBMITTED");
       const result = activeResult(db, participant.id);
