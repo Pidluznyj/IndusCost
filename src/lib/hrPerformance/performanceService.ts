@@ -187,10 +187,13 @@ function blankAnswers(db: PerformanceDatabase, assignmentId: string, modelId: st
   }
 }
 
-/** O avaliador atribuído pelo ciclo (ou o RH) escreve na avaliação da liderança. */
+/**
+ * Só o avaliador atribuído pelo ciclo escreve na avaliação da liderança. O RH não responde em
+ * nome de ninguém, nem com alcance de toda a organização: os caminhos formais são trocar o
+ * líder (com motivo) ou calibrar com exceção registrada.
+ */
 export function canActOnLeaderAssignment(scope: PerformanceScope, assignment: AssignmentRecord): boolean {
-  if (scope.kind === "ALL") return true;
-  const actor = scope.actorEmployeeId;
+  const actor = scope.actorEmployeeId ?? null;
   if (!actor || assignment.employeeId === actor) return false;
   return assignment.evaluatorEmployeeId === actor;
 }
@@ -2311,7 +2314,7 @@ export function dispatchReminders(options: ServiceOptions): ServiceResult<{ sent
 /** Exportação (CSV) também deixa rastro: quem exportou, quando e quantas linhas. */
 export function recordExport(
   source: PerformanceDatabase,
-  input: { cycleId: string; rows: number; format: "CSV"; actorUserId: string | null },
+  input: { cycleId: string; rows: number; format: "CSV" | "CSV_OPERACIONAL"; actorUserId: string | null },
   options: ServiceOptions
 ): ServiceResult<{ rows: number }> {
   const db = cloneDb(source);

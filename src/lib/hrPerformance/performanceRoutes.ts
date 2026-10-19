@@ -11,7 +11,9 @@ import { randomBytes } from "node:crypto";
 import type express from "express";
 import type { RequestHandler } from "express";
 import { buildPerformanceScope, type PerformanceAccessScope, type PerformanceScope } from "./performanceAccess.js";
-import { PERFORMANCE_RESOURCE_KEYS } from "./performanceAccessKeys.js";
+import { canSeeResultOf, NO_CAPS, resolvePerformanceCaps, type PerformanceCapabilityKey, type PerformanceCaps } from "./performancePermissions.js";
+import { redactCalibrationQueue, redactDashboard, redactLeadershipRows, redactWorkspace } from "./performanceDisclosure.js";
+import { OBLIGATION_STATUSES, trackingBoard, trackingCsv, type ObligationStatus, type OrgUnits, type TrackingModality } from "./performanceTracking.js";
 import { classifyEligibility, isCycleStatus, isNineBoxBand, parseAnswer, parseRules, type EmployeeSnapshotSource } from "./performanceDomain.js";
 import { requirePerformanceCycleEnabled } from "./performanceFeatureFlags.js";
 import {
@@ -100,11 +102,19 @@ const MAX_WRITE_ATTEMPTS = 4;
 export type PerformanceCapabilities = {
   view: boolean;
   evaluate: boolean;
+  /** Compatibilidade da tela: ciclos ou modelos. */
   manage: boolean;
   calibrate: boolean;
   report: boolean;
   invites: boolean;
   conduct: boolean;
+  track: boolean;
+  trackExport: boolean;
+  cycles: boolean;
+  models: boolean;
+  results: boolean;
+  calibrationView: boolean;
+  homologate: boolean;
 };
 
 export type PerformanceRouteDeps = {
@@ -126,6 +136,8 @@ export type PerformanceRouteDeps = {
   isSuperAdmin?: (req: express.Request) => Promise<boolean>;
   /** Avaliação 180°: liderados diretos ativos (hierarquia efetiva) na abertura do ciclo. */
   loadLeadershipSnapshot?: (employeeIds: string[]) => Promise<LeadershipSnapshot>;
+  /** Central de acompanhamento: diretoria de cada setor (organograma). */
+  loadOrgUnits?: () => Promise<{ id: string; name: string; directorateName: string | null }[]>;
 };
 
 function noStore(res: express.Response) {
@@ -292,21 +304,94 @@ function guardedApp(app: express.Application) {
 export function registerPerformanceRoutes(expressApp: express.Application, deps: PerformanceRouteDeps): void {
   const app = guardedApp(expressApp);
   const gate = requirePerformanceCycleEnabled(deps.enabled);
-  const view = [deps.requireAppAuth, gate, deps.requireResource(PERFORMANCE_RESOURCE_KEYS.module, "view")];
-  const manage = [deps.requireAppAuth, gate, deps.requireResource(PERFORMANCE_RESOURCE_KEYS.module, "manage")];
-  const evaluate = [deps.requireAppAuth, gate, deps.requireResource(PERFORMANCE_RESOURCE_KEYS.module, "update")];
-  const calibrateGuard = [deps.requireAppAuth, gate, deps.requireResource(PERFORMANCE_RESOURCE_KEYS.calibration, "manage")];
-  const report = [deps.requireAppAuth, gate, deps.requireResource(PERFORMANCE_RESOURCE_KEYS.reports, "view")];
-  const invites = [deps.requireAppAuth, gate, deps.requireResource(PERFORMANCE_RESOURCE_KEYS.invites, "manage")];
-  const conduct = [deps.requireAppAuth, gate, deps.requireResource(PERFORMANCE_RESOURCE_KEYS.conduct, "manage")];
+  /**
+   * Capacidades por requisição (RBAC oficial, `deps.can` = mesma decisão dos guards). Toda rota
+   * exige ver o módulo e ao menos uma das capacidades listadas; o conteúdo é cortado depois por
+   * `canSeeResultOf` (operacional vê situação, não nota).
+   */
+  type Access = {
+    caps: PerformanceCaps;
+    scope: PerformanceScope;
+    /** Escopo para CONTEÚDO de resultado: toda a organização só com `results`; senão, a própria equipe. */
+    resultScope: PerformanceScope;
+    actorEmployeeId: string | null;
+    accessScope: PerformanceAccessScope;
+    teamIds: ReadonlySet<string>;
+  };
+  const accessCache = new WeakMap<express.Request, Promise<Access>>();
+  const computeAccess = async (req: express.Request): Promise<Access> => {
+    const input = await deps.loadScope(req);
+    const superAdmin = deps.isSuperAdmin ? await deps.isSuperAdmin(req) : false;
+    const can = deps.can;
+    const caps = can ? await resolvePerformanceCaps({ can: (resource, action) => can(req, resource, action), employeesOrgWide: input.accessScope === "ALL", superAdmin }) : { ...NO_CAPS };
+    const actorEmployeeId = input.actorEmployeeId;
+    const limitedInput = input.accessScope === "ALL" ? { accessScope: "DIRECT_REPORTS" as const, actorEmployeeId, teamIds: input.teamIds } : input;
+    const limited = buildPerformanceScope(limitedInput);
+    const all: PerformanceScope = { kind: "ALL", actorEmployeeId };
+    return {
+      caps,
+      scope: caps.orgWide ? all : limited,
+      resultScope: caps.results ? all : limited,
+      actorEmployeeId,
+      accessScope: caps.orgWide ? "ALL" : limitedInput.accessScope,
+      teamIds: new Set(input.teamIds.filter((id) => id && id !== actorEmployeeId)),
+    };
+  };
+  const accessOf = (req: express.Request) => {
+    let pending = accessCache.get(req);
+    if (!pending) {
+      pending = computeAccess(req);
+      accessCache.set(req, pending);
+    }
+    return pending;
+  };
+  const need = (...anyOf: PerformanceCapabilityKey[]): RequestHandler[] => [
+    deps.requireAppAuth,
+    gate,
+    (req, res, next) => {
+      accessOf(req)
+        .then((access) => {
+          if (access.caps.view && anyOf.some((key) => access.caps[key])) return next();
+          noStore(res);
+          res.status(403).json({ error: "FORBIDDEN", message: "Seu perfil não permite esta ação no Desempenho." });
+        })
+        .catch(() => {
+          if (!res.headersSent) res.status(500).json({ error: "INTERNAL", message: "Falha interna. Tente de novo em instantes." });
+        });
+    },
+  ];
+  /** Resultado desta pessoa pode sair para quem pede? */
+  const resultGate = (access: Access, purpose: "read" | "calibration" = "read") => (participant: { employeeId: string; managerId: string | null }) =>
+    canSeeResultOf(access.caps, { orgWide: access.caps.orgWide, actorEmployeeId: access.actorEmployeeId, teamIds: access.teamIds }, participant, purpose);
+  const view = need("view");
+  const manage = need("cycles");
+  const modelsGuard = need("models");
+  const evaluate = need("evaluate");
+  const calibrateGuard = need("calibrate");
+  const calibrationRead = need("calibrationView", "calibrate");
+  const homologateGuard = need("homologate");
+  const report = need("reports");
+  const invites = need("invites");
+  const conduct = need("conduct");
+  const tracking = need("track");
+  const trackingExport = need("trackExport");
+  // Guardas compostas (qualquer uma das capacidades), com nome para a auditoria estática de rotas.
+  const leaderFormGuard = need("evaluate", "results", "calibrate");
+  const resultHistoryGuard = need("results", "calibrate");
+  const resultsWriteGuard = need("evaluate", "results");
+  const lifecycleReadGuard = need("cycles", "track");
+  const leadershipListGuard = need("evaluate", "calibrationView", "calibrate", "results");
+  const leadershipReadGuard = need("evaluate", "calibrate", "results");
+  const leadershipCalibrateGuard = need("evaluate", "calibrate");
+  const remindersGuard = need("cycles", "invites");
   const publicLimit = createRateLimiter("perf-public", { windowMs: 60_000, max: 240 });
   const publicAuthLimit = createRateLimiter("perf-public-auth", { windowMs: 60_000, max: 20 });
   const pub = [gate, publicLimit, requireJson];
   const pubAuth = [gate, publicLimit, publicAuthLimit, requireJson];
 
   const scopeOf = async (req: express.Request): Promise<{ scope: PerformanceScope; actorEmployeeId: string | null; accessScope: PerformanceAccessScope }> => {
-    const input = await deps.loadScope(req);
-    return { scope: buildPerformanceScope(input), actorEmployeeId: input.actorEmployeeId, accessScope: input.accessScope };
+    const access = await accessOf(req);
+    return { scope: access.scope, actorEmployeeId: access.actorEmployeeId, accessScope: access.accessScope };
   };
   const now = () => deps.options.now();
 
@@ -316,30 +401,26 @@ export function registerPerformanceRoutes(expressApp: express.Application, deps:
   });
 
   app.get("/api/hr/performance/me", deps.requireAppAuth, gate, async (req, res) => {
-    const { accessScope, actorEmployeeId } = await scopeOf(req);
-    const can = deps.can ?? (async () => false);
-    const keys = PERFORMANCE_RESOURCE_KEYS;
-    const [viewCap, evaluateCap, manageCap, calibrateCap, reportCap, invitesCap, conductCap] = await Promise.all([
-      can(req, keys.module, "view"),
-      can(req, keys.module, "update"),
-      can(req, keys.module, "manage"),
-      can(req, keys.calibration, "manage"),
-      can(req, keys.reports, "view"),
-      can(req, keys.invites, "manage"),
-      can(req, keys.conduct, "manage"),
-    ]);
+    const access = await accessOf(req);
+    const c = access.caps;
     const capabilities: PerformanceCapabilities = {
-      view: viewCap,
-      evaluate: evaluateCap,
-      manage: manageCap && accessScope === "ALL",
-      calibrate: calibrateCap && accessScope === "ALL",
-      report: reportCap,
-      invites: invitesCap && accessScope === "ALL",
-      conduct: conductCap,
+      view: c.view,
+      evaluate: c.evaluate,
+      manage: c.view && (c.cycles || c.models),
+      calibrate: c.view && c.calibrate,
+      report: c.view && c.reports,
+      invites: c.view && c.invites,
+      conduct: c.view && c.conduct,
+      track: c.view && c.track,
+      trackExport: c.view && c.trackExport,
+      cycles: c.view && c.cycles,
+      models: c.view && c.models,
+      results: c.view && c.results,
+      calibrationView: c.view && c.calibrationView,
+      homologate: c.view && c.homologate,
     };
-    const lifecycle = deps.isSuperAdmin ? await deps.isSuperAdmin(req) : false;
     noStore(res);
-    res.json({ accessScope, actorEmployeeId, capabilities: { ...capabilities, lifecycle }, officialPublication: deps.options.officialPublication });
+    res.json({ accessScope: access.accessScope, actorEmployeeId: access.actorEmployeeId, capabilities: { ...capabilities, lifecycle: c.lifecycle }, officialPublication: deps.options.officialPublication });
   });
 
   // ---------------------------------------------------------------- modelos
@@ -377,7 +458,7 @@ export function registerPerformanceRoutes(expressApp: express.Application, deps:
     res.json(detail);
   });
 
-  app.post("/api/hr/performance/models", ...manage, async (req, res) => {
+  app.post("/api/hr/performance/models", ...modelsGuard, async (req, res) => {
     const actorUserId = await deps.actorUserId(req);
     const { scope } = await scopeOf(req);
     await mutateAdmin(
@@ -388,7 +469,7 @@ export function registerPerformanceRoutes(expressApp: express.Application, deps:
     );
   });
 
-  app.put("/api/hr/performance/models/:id", ...manage, async (req, res) => {
+  app.put("/api/hr/performance/models/:id", ...modelsGuard, async (req, res) => {
     const actorUserId = await deps.actorUserId(req);
     const { scope } = await scopeOf(req);
     const body = req.body ?? {};
@@ -410,7 +491,7 @@ export function registerPerformanceRoutes(expressApp: express.Application, deps:
     });
   });
 
-  app.put("/api/hr/performance/models/:id/questions/:code", ...manage, async (req, res) => {
+  app.put("/api/hr/performance/models/:id/questions/:code", ...modelsGuard, async (req, res) => {
     const actorUserId = await deps.actorUserId(req);
     const { scope } = await scopeOf(req);
     await mutateAdmin(deps.store, res, (db) =>
@@ -437,26 +518,26 @@ export function registerPerformanceRoutes(expressApp: express.Application, deps:
     );
   });
 
-  app.post("/api/hr/performance/models/:id/questions/:code/move", ...manage, async (req, res) => {
+  app.post("/api/hr/performance/models/:id/questions/:code/move", ...modelsGuard, async (req, res) => {
     const actorUserId = await deps.actorUserId(req);
     const { scope } = await scopeOf(req);
     const direction = req.body?.direction === "up" ? "up" : "down";
     await mutateAdmin(deps.store, res, (db) => moveDraftQuestion(db, { modelId: req.params.id, code: req.params.code, direction, actorUserId, scope }, deps.options));
   });
 
-  app.post("/api/hr/performance/models/:id/publish", ...manage, async (req, res) => {
+  app.post("/api/hr/performance/models/:id/publish", ...modelsGuard, async (req, res) => {
     const actorUserId = await deps.actorUserId(req);
     const { scope } = await scopeOf(req);
     await mutateAdmin(deps.store, res, (db) => publishModel(db, { modelId: req.params.id, actorUserId, scope }, deps.options));
   });
 
-  app.post("/api/hr/performance/models/:id/duplicate", ...manage, async (req, res) => {
+  app.post("/api/hr/performance/models/:id/duplicate", ...modelsGuard, async (req, res) => {
     const actorUserId = await deps.actorUserId(req);
     const { scope } = await scopeOf(req);
     await mutateAdmin(deps.store, res, (db) => duplicateModel(db, { modelId: req.params.id, actorUserId, scope }, deps.options), 201);
   });
 
-  app.post("/api/hr/performance/models/:id/archive", ...manage, async (req, res) => {
+  app.post("/api/hr/performance/models/:id/archive", ...modelsGuard, async (req, res) => {
     const actorUserId = await deps.actorUserId(req);
     const { scope } = await scopeOf(req);
     await mutateAdmin(deps.store, res, (db) => archiveModel(db, { modelId: req.params.id, actorUserId, scope }, deps.options));
@@ -530,7 +611,7 @@ export function registerPerformanceRoutes(expressApp: express.Application, deps:
     const workspace = describeCycle(db, req.params.id, scope, now());
     noStore(res);
     if (!workspace) return res.status(404).json({ error: "NOT_FOUND", message: "Ciclo não encontrado." });
-    res.json(workspace);
+    res.json(redactWorkspace(workspace, resultGate(await accessOf(req))));
   });
 
   app.get("/api/hr/performance/cycles/:id/dashboard", ...view, async (req, res) => {
@@ -539,7 +620,8 @@ export function registerPerformanceRoutes(expressApp: express.Application, deps:
     const board = dashboard(db, req.params.id, scope, filtersFrom(req.query), now());
     noStore(res);
     if (!board) return res.status(404).json({ error: "NOT_FOUND", message: "Ciclo não encontrado." });
-    res.json(board);
+    const access = await accessOf(req);
+    res.json(redactDashboard(board, resultGate(access), access.caps.reports || access.caps.results));
   });
 
   app.get("/api/hr/performance/evolution", ...view, async (req, res) => {
@@ -551,13 +633,15 @@ export function registerPerformanceRoutes(expressApp: express.Application, deps:
     res.json({ cycles: cycleEvolution(db, scope, now(), includeNonOfficial) });
   });
 
-  app.get("/api/hr/performance/cycles/:id/calibration", ...calibrateGuard, async (req, res) => {
+  app.get("/api/hr/performance/cycles/:id/calibration", ...calibrationRead, async (req, res) => {
     const db = await deps.store.read();
     const { scope } = await scopeOf(req);
     const queue = calibrationQueue(db, req.params.id, scope, filtersFrom(req.query));
     noStore(res);
     if (!queue) return res.status(scope.kind === "ALL" ? 404 : 403).json({ error: scope.kind === "ALL" ? "NOT_FOUND" : "FORBIDDEN", message: "Fila de calibração indisponível." });
-    res.json(queue);
+    const access = await accessOf(req);
+    // Acompanhar calibração = situação de cada pessoa; médias, divergências e evidências só para quem calibra.
+    res.json(access.caps.calibrate || access.caps.results ? queue : redactCalibrationQueue(queue));
   });
 
   const signalsFor = async (ids: string[], cycleMinDays: number) => {
@@ -666,7 +750,8 @@ export function registerPerformanceRoutes(expressApp: express.Application, deps:
     const actorUserId = await deps.actorUserId(req);
     const { scope, actorEmployeeId } = await scopeOf(req);
     const to = req.body?.to;
-    const canReopen = to === "CALIBRATION" && deps.can ? await deps.can(req, PERFORMANCE_RESOURCE_KEYS.calibration, "manage") : false;
+    // Reabrir resultado homologado é decisão de homologação (concessão separada de calibrar).
+    const canReopen = to === "CALIBRATION" ? (await accessOf(req)).caps.homologate : false;
     if (to === "HOMOLOGATED") {
       noStore(res);
       return res.status(403).json({ error: "FORBIDDEN", message: "Homologar exige a permissão de calibração (use Homologar ciclo)." });
@@ -705,12 +790,60 @@ export function registerPerformanceRoutes(expressApp: express.Application, deps:
     );
   });
 
-  app.post("/api/hr/performance/cycles/:id/homologate", ...calibrateGuard, async (req, res) => {
+  app.post("/api/hr/performance/cycles/:id/homologate", ...homologateGuard, async (req, res) => {
     const actorUserId = await deps.actorUserId(req);
     const { scope, actorEmployeeId } = await scopeOf(req);
     await mutateAdmin(deps.store, res, (db) =>
       transitionCycle(db, { cycleId: req.params.id, to: "HOMOLOGATED", actorUserId, reversalReason: null, actorEmployeeId, canHomologate: true, scope }, deps.options)
     );
+  });
+
+  // ---------------------------------------------------------------- central de acompanhamento
+  // Só metadados operacionais (performanceTracking.ts): situação, responsável, prazo e motivo.
+  const orgUnits = async (): Promise<OrgUnits | null> => {
+    if (!deps.loadOrgUnits) return null;
+    const rows = await deps.loadOrgUnits();
+    return {
+      byDepartmentId: new Map(rows.map((r) => [r.id, r.directorateName ?? "Sem diretoria"])),
+      byDepartmentName: new Map(rows.map((r) => [r.name, r.directorateName ?? "Sem diretoria"])),
+    };
+  };
+  const trackingFilters = (query: express.Request["query"]) => {
+    const pick = (value: unknown) => (typeof value === "string" && value ? value.slice(0, 200) : null);
+    const modality = pick(query.modality);
+    const status = pick(query.status);
+    return {
+      department: pick(query.department),
+      directorate: pick(query.directorate),
+      manager: pick(query.manager),
+      modality: modality && ["INDIVIDUAL", "LIDERANCA", "CALIBRACAO", "FECHAMENTO"].includes(modality) ? (modality as TrackingModality) : null,
+      status: status && (OBLIGATION_STATUSES as readonly string[]).includes(status) ? (status as ObligationStatus) : null,
+    };
+  };
+
+  app.get("/api/hr/performance/cycles/:id/tracking", ...tracking, async (req, res) => {
+    const db = await deps.store.read();
+    const board = trackingBoard(db, req.params.id, trackingFilters(req.query), now(), await orgUnits());
+    noStore(res);
+    if (!board) return res.status(404).json({ error: "NOT_FOUND", message: "Ciclo não encontrado." });
+    res.json(board);
+  });
+
+  app.get("/api/hr/performance/cycles/:id/tracking/export", ...trackingExport, async (req, res) => {
+    const db = await deps.store.read();
+    const cycle = db.cycles.find((c) => c.id === req.params.id);
+    noStore(res);
+    if (!cycle) return res.status(404).json({ error: "NOT_FOUND", message: "Ciclo não encontrado." });
+    if (cycle.activation !== "ACTIVE") return res.status(409).json({ error: "CYCLE_INACTIVE", message: "Ciclo inativo não é exportado. Consulte o histórico de ações." });
+    const board = trackingBoard(db, cycle.id, trackingFilters(req.query), now(), await orgUnits())!;
+    const actorUserId = await deps.actorUserId(req);
+    const logged = await mutate(deps.store, res, (current) => recordExport(current, { cycleId: cycle.id, rows: board.rows.length, format: "CSV_OPERACIONAL", actorUserId }, deps.options));
+    if (res.headersSent || logged.ok === false) return;
+    noStore(res);
+    const governance = cycleGovernance(db, cycle);
+    const classification = governance.officialEligible ? "OFICIAL" : cycle.classification === "TEST" ? "TESTE - NAO OFICIAL" : "NAO OFICIAL";
+    res.setHeader("Content-Disposition", 'attachment; filename="desempenho-acompanhamento.csv"');
+    res.type("text/csv").send(trackingCsv(board, classification));
   });
 
   // ---------------------------------------------------------------- convites
@@ -754,7 +887,7 @@ export function registerPerformanceRoutes(expressApp: express.Application, deps:
     res.json({ items: leaderQueue(db, scope, actorEmployeeId), leadership: superiorLeadershipQueue(db, actorEmployeeId) });
   });
 
-  app.get("/api/hr/performance/assignments/:id", ...evaluate, async (req, res) => {
+  app.get("/api/hr/performance/assignments/:id", ...leaderFormGuard, async (req, res) => {
     const { scope, actorEmployeeId } = await scopeOf(req);
     const db = await deps.store.read();
     const kind = db.assignments.find((a) => a.id === req.params.id)?.kind;
@@ -762,6 +895,12 @@ export function registerPerformanceRoutes(expressApp: express.Application, deps:
     if (kind === "LEADERSHIP_UPWARD" || kind === "LEADERSHIP_SELF") {
       // Respostas da equipe e autoavaliação de liderança não abrem por aqui, para ninguém.
       return res.status(403).json({ error: "FORBIDDEN", message: "Esta avaliação não é consultada individualmente." });
+    }
+    const assignment = db.assignments.find((a) => a.id === req.params.id);
+    const access = await accessOf(req);
+    if (assignment && assignment.evaluatorEmployeeId !== actorEmployeeId && !(access.caps.results || access.caps.calibrate)) {
+      // Alcance operacional não abre respostas de avaliação de terceiros.
+      return res.status(403).json({ error: "FORBIDDEN", message: "Esta avaliação só é aberta por quem avalia ou por quem consulta resultados." });
     }
     const result = kind === "LEADERSHIP_SUPERIOR" ? readSuperiorLeadershipForm(db, req.params.id, actorEmployeeId, scope) : readLeaderForm(db, req.params.id, scope, actorEmployeeId);
     if (result.ok === false) return res.status(403).json({ error: result.code, message: result.message });
@@ -831,7 +970,7 @@ export function registerPerformanceRoutes(expressApp: express.Application, deps:
     );
   });
 
-  app.get("/api/hr/performance/participants/:id/results", ...calibrateGuard, async (req, res) => {
+  app.get("/api/hr/performance/participants/:id/results", ...resultHistoryGuard, async (req, res) => {
     const db = await deps.store.read();
     const { scope } = await scopeOf(req);
     const history = resultHistory(db, req.params.id, scope);
@@ -841,9 +980,9 @@ export function registerPerformanceRoutes(expressApp: express.Application, deps:
   });
 
   // ---------------------------------------------------------------- devolutiva e PDI
-  app.post("/api/hr/performance/participants/:id/feedback", ...evaluate, async (req, res) => {
+  app.post("/api/hr/performance/participants/:id/feedback", ...resultsWriteGuard, async (req, res) => {
     const actorUserId = await deps.actorUserId(req);
-    const { scope } = await scopeOf(req);
+    const scope = (await accessOf(req)).resultScope;
     await mutateAdmin(
       deps.store,
       res,
@@ -887,9 +1026,9 @@ export function registerPerformanceRoutes(expressApp: express.Application, deps:
     );
   });
 
-  app.post("/api/hr/performance/feedbacks/:id/pdi", ...evaluate, async (req, res) => {
+  app.post("/api/hr/performance/feedbacks/:id/pdi", ...resultsWriteGuard, async (req, res) => {
     const actorUserId = await deps.actorUserId(req);
-    const { scope } = await scopeOf(req);
+    const scope = (await accessOf(req)).resultScope;
     await mutateAdmin(
       deps.store,
       res,
@@ -914,17 +1053,17 @@ export function registerPerformanceRoutes(expressApp: express.Application, deps:
     );
   });
 
-  app.post("/api/hr/performance/pdis/:id/status", ...evaluate, async (req, res) => {
+  app.post("/api/hr/performance/pdis/:id/status", ...resultsWriteGuard, async (req, res) => {
     const actorUserId = await deps.actorUserId(req);
-    const { scope } = await scopeOf(req);
+    const scope = (await accessOf(req)).resultScope;
     await mutateAdmin(deps.store, res, (db) =>
       updatePdiStatus(db, { pdiId: req.params.id, status: req.body?.status, note: strOrNull(req.body?.note, 600), evidence: strOrNull(req.body?.evidence, 600), actorUserId, scope }, deps.options)
     );
   });
 
-  app.post("/api/hr/performance/pdis/:id/checkins", ...evaluate, async (req, res) => {
+  app.post("/api/hr/performance/pdis/:id/checkins", ...resultsWriteGuard, async (req, res) => {
     const actorUserId = await deps.actorUserId(req);
-    const { scope } = await scopeOf(req);
+    const scope = (await accessOf(req)).resultScope;
     await mutateAdmin(
       deps.store,
       res,
@@ -933,9 +1072,9 @@ export function registerPerformanceRoutes(expressApp: express.Application, deps:
     );
   });
 
-  app.get("/api/hr/performance/pdis", ...evaluate, async (req, res) => {
+  app.get("/api/hr/performance/pdis", ...resultsWriteGuard, async (req, res) => {
     const db = await deps.store.read();
-    const { scope } = await scopeOf(req);
+    const scope = (await accessOf(req)).resultScope;
     const due = req.query.due === "late" || req.query.due === "next30" ? req.query.due : "all";
     noStore(res);
     res.json({
@@ -950,17 +1089,25 @@ export function registerPerformanceRoutes(expressApp: express.Application, deps:
 
   // ---------------------------------------------------------------- histórico e relatórios
   app.get("/api/hr/performance/employees/:id/history", ...view, async (req, res) => {
-    const { scope, accessScope } = await scopeOf(req);
+    const access = await accessOf(req);
+    const scope = access.resultScope;
     const db = await deps.store.read();
-    const includeNonOfficial = accessScope === "ALL" && req.query.includeNonOfficial === "1";
-    const result = employeeHistory(db, req.params.id, scope, accessScope === "ALL", includeNonOfficial);
+    // Histórico traz resultado: toda a organização só com `results`; sem isso, a própria equipe.
+    const orgResults = scope.kind === "ALL";
+    const includeNonOfficial = orgResults && req.query.includeNonOfficial === "1";
+    const result = employeeHistory(db, req.params.id, scope, orgResults, includeNonOfficial);
     noStore(res);
     if (result.ok === false) return res.status(404).json({ error: result.code, message: "Registro não encontrado." });
     res.json(result);
   });
 
   app.get("/api/hr/performance/cycles/:id/export", ...report, async (req, res) => {
-    const { scope } = await scopeOf(req);
+    const access = await accessOf(req);
+    if (!access.caps.results) {
+      noStore(res);
+      return res.status(403).json({ error: "FORBIDDEN", message: "O CSV com quadrante e cultura exige consultar resultados. Use o relatório operacional da Central de acompanhamento." });
+    }
+    const scope = access.resultScope;
     const db = await deps.store.read();
     const exported = db.cycles.find((c) => c.id === req.params.id);
     if (!exported) return res.status(404).json({ error: "NOT_FOUND", message: "Ciclo não encontrado." });
@@ -994,7 +1141,11 @@ export function registerPerformanceRoutes(expressApp: express.Application, deps:
     const participantId = strOrNull(req.body?.participantId, 64);
     const actorUserId = await deps.actorUserId(req);
     const actorName = deps.actorName ? await deps.actorName(req) : null;
-    const { scope } = await scopeOf(req);
+    const access = await accessOf(req);
+    // Documento pessoal e Nine-Box nominal trazem resultado: escopo de resultado. Liderança: quem calibra.
+    // Consolidado: alcance do relatório, com o resultado de cada pessoa cortado abaixo.
+    const scope =
+      kind === "consolidado" ? access.scope : kind === "lideranca" ? (access.caps.calibrate || access.caps.results ? access.scope : access.resultScope) : access.resultScope;
     const outcome = await mutate(deps.store, res, (db) =>
       issueReport(db, { cycleId, kind, participantId, actorUserId, actorName, scope, randomSuffix: randomBytes(3).toString("hex") }, deps.options)
     );
@@ -1004,7 +1155,19 @@ export function registerPerformanceRoutes(expressApp: express.Application, deps:
     const db = await deps.store.read();
     const data = reportData(db, { cycleId, kind, participantId }, scope, now());
     if (!data) return res.status(404).json({ error: "NOT_FOUND", message: "Ciclo não encontrado." });
-    res.json({ issue: { ...outcome.value, kind, issuedByName: actorName }, data });
+    const gate = resultGate(access);
+    const byId = new Map(db.participants.map((p) => [p.id, p]));
+    const visibleResult = (participantId: string) => {
+      const p = byId.get(participantId);
+      return Boolean(p && gate(p));
+    };
+    res.json({
+      issue: { ...outcome.value, kind, issuedByName: actorName },
+      data: {
+        ...data,
+        people: data.people.map((p) => (visibleResult(p.participantId) ? p : { ...p, result: null, resultHidden: true })),
+      },
+    });
   });
 
   // ---------------------------------------------------------------- ciclo de vida (SUPER_ADMIN)
@@ -1022,7 +1185,7 @@ export function registerPerformanceRoutes(expressApp: express.Application, deps:
     now: now(),
   });
 
-  app.get("/api/hr/performance/cycles/:id/lifecycle", ...manage, async (req, res) => {
+  app.get("/api/hr/performance/cycles/:id/lifecycle", ...lifecycleReadGuard, async (req, res) => {
     const db = await deps.store.read();
     const cycle = db.cycles.find((c) => c.id === req.params.id);
     noStore(res);
@@ -1036,23 +1199,23 @@ export function registerPerformanceRoutes(expressApp: express.Application, deps:
     });
   });
 
-  app.post("/api/hr/performance/cycles/:id/classification", ...manage, async (req, res) => {
+  app.post("/api/hr/performance/cycles/:id/classification", ...view, async (req, res) => {
     const input = await lifecycleInput(req);
     await mutateAdmin(deps.store, res, (db) => classifyCycle(db, { ...input, classification: str(req.body?.classification, 16) }));
   });
 
-  app.post("/api/hr/performance/cycles/:id/inactivate", ...manage, async (req, res) => {
+  app.post("/api/hr/performance/cycles/:id/inactivate", ...view, async (req, res) => {
     const input = await lifecycleInput(req);
     await mutateAdmin(deps.store, res, (db) => inactivateCycle(db, input));
   });
 
-  app.post("/api/hr/performance/cycles/:id/reactivate", ...manage, async (req, res) => {
+  app.post("/api/hr/performance/cycles/:id/reactivate", ...view, async (req, res) => {
     const input = await lifecycleInput(req);
     await mutateAdmin(deps.store, res, (db) => reactivateCycle(db, input));
   });
 
   /** Exclusão física de ciclo de TESTE já inativo. A auditoria fica; os dados do ciclo saem. */
-  app.delete("/api/hr/performance/cycles/:id", ...manage, async (req, res) => {
+  app.delete("/api/hr/performance/cycles/:id", ...view, async (req, res) => {
     const input = await lifecycleInput(req);
     noStore(res);
     for (let attempt = 0; attempt < MAX_WRITE_ATTEMPTS; attempt += 1) {
@@ -1080,13 +1243,13 @@ export function registerPerformanceRoutes(expressApp: express.Application, deps:
   });
 
   // ---------------------------------------------------------------- liderança (180°)
-  app.post("/api/hr/performance/models/leadership", ...manage, async (req, res) => {
+  app.post("/api/hr/performance/models/leadership", ...modelsGuard, async (req, res) => {
     const actorUserId = await deps.actorUserId(req);
     const { scope } = await scopeOf(req);
     await mutateAdmin(deps.store, res, (db) => createLeadershipModel(db, { name: str(req.body?.name, 120), actorUserId, scope }, deps.options), 201);
   });
 
-  app.put("/api/hr/performance/models/:id/leadership-questions/:code", ...manage, async (req, res) => {
+  app.put("/api/hr/performance/models/:id/leadership-questions/:code", ...modelsGuard, async (req, res) => {
     const actorUserId = await deps.actorUserId(req);
     const { scope } = await scopeOf(req);
     await mutateAdmin(deps.store, res, (db) =>
@@ -1115,26 +1278,32 @@ export function registerPerformanceRoutes(expressApp: express.Application, deps:
   });
 
   /** RH (escopo total) precisa da permissão de calibração; líder vê só quem ele calibra. */
-  const leadershipAccess = async (req: express.Request) => {
-    const { scope, actorEmployeeId } = await scopeOf(req);
-    if (scope.kind === "ALL") {
-      const allowed = deps.can ? await deps.can(req, PERFORMANCE_RESOURCE_KEYS.calibration, "manage") : false;
-      if (!allowed) return null;
-    }
-    return { scope, actorEmployeeId };
+  /**
+   * Liderança com alcance de toda a organização: calibrar (ou consultar resultados) para o
+   * comparativo; acompanhar calibração para a lista, sem índice. Sem isso, vale ser o superior.
+   */
+  const leadershipAccess = async (req: express.Request, purpose: "list" | "read" | "calibrate") => {
+    const access = await accessOf(req);
+    const actorEmployeeId = access.actorEmployeeId;
+    const c = access.caps;
+    const orgOk = purpose === "calibrate" ? c.calibrate : purpose === "read" ? c.calibrate || c.results : c.calibrationView || c.results;
+    if (orgOk) return { scope: access.scope, actorEmployeeId, showIndex: c.calibrate || c.results };
+    if (!c.evaluate) return null;
+    const team: PerformanceScope = access.scope.kind === "ALL" ? buildPerformanceScope({ accessScope: "DIRECT_REPORTS", actorEmployeeId, teamIds: [...access.teamIds] }) : access.scope;
+    return { scope: team, actorEmployeeId, showIndex: true };
   };
 
-  app.get("/api/hr/performance/cycles/:id/leadership", ...evaluate, async (req, res) => {
-    const access = await leadershipAccess(req);
+  app.get("/api/hr/performance/cycles/:id/leadership", ...leadershipListGuard, async (req, res) => {
+    const access = await leadershipAccess(req, "list");
     noStore(res);
     if (!access) return res.status(403).json({ error: "FORBIDDEN", message: "A calibração de liderança exige a permissão de calibração." });
     const rows = leadershipCalibrationList(await deps.store.read(), req.params.id, access.scope, access.actorEmployeeId);
     if (!rows) return res.status(404).json({ error: "NOT_FOUND", message: "Ciclo não encontrado." });
-    res.json({ rows });
+    res.json({ rows: access.showIndex ? rows : redactLeadershipRows(rows) });
   });
 
-  app.get("/api/hr/performance/participants/:id/leadership", ...evaluate, async (req, res) => {
-    const access = await leadershipAccess(req);
+  app.get("/api/hr/performance/participants/:id/leadership", ...leadershipReadGuard, async (req, res) => {
+    const access = await leadershipAccess(req, "read");
     noStore(res);
     if (!access) return res.status(403).json({ error: "FORBIDDEN", message: "A calibração de liderança exige a permissão de calibração." });
     const view = leadershipComparison(await deps.store.read(), req.params.id, access.scope, access.actorEmployeeId);
@@ -1142,8 +1311,8 @@ export function registerPerformanceRoutes(expressApp: express.Application, deps:
     res.json(view);
   });
 
-  app.post("/api/hr/performance/participants/:id/leadership/calibration", ...evaluate, async (req, res) => {
-    const access = await leadershipAccess(req);
+  app.post("/api/hr/performance/participants/:id/leadership/calibration", ...leadershipCalibrateGuard, async (req, res) => {
+    const access = await leadershipAccess(req, "calibrate");
     if (!access) {
       noStore(res);
       return res.status(403).json({ error: "FORBIDDEN", message: "A calibração de liderança exige a permissão de calibração." });
@@ -1174,7 +1343,7 @@ export function registerPerformanceRoutes(expressApp: express.Application, deps:
     await mutateAdmin(deps.store, res, (db) => recordConduct(db, { employeeId: str(req.body?.employeeId, 64), summary: str(req.body?.summary, 1000), actorUserId }, deps.options), 201);
   });
 
-  app.post("/api/hr/performance/cycles/:id/reminders", ...manage, async (req, res) => {
+  app.post("/api/hr/performance/cycles/:id/reminders", ...remindersGuard, async (req, res) => {
     const actorUserId = await deps.actorUserId(req);
     const outcome = await mutate(deps.store, res, (db) => planReminders(db, { cycleId: req.params.id, actorUserId }, deps.options));
     if (res.headersSent) return;

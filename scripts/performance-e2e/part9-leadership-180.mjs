@@ -265,14 +265,23 @@ try {
   const leaderTeam = await api(leader, "GET", "/api/hr/performance/team");
   step("9.08 líder não lê avaliação da equipe nem a própria comparação durante a coleta", ownView.status >= 400 && !JSON.stringify(leaderTeam.body).includes(SECRET), `comparação → ${ownView.status}`);
 
-  // ------------------------------------------------------------ RH: avaliações individuais, consolidação
+  // ------------------------------------------------------------ avaliações individuais pelos próprios líderes, consolidação
+  // Ninguém responde em nome do líder (nem o SUPER_ADMIN): Bruno avalia a equipe, Carla avalia Bruno e Marcos.
+  // Marcos não tem usuário no roteiro: Otávio segue sem avaliação do líder e é calibrado com exceção registrada.
   const ws2 = await must(hr, "GET", `/api/hr/performance/cycles/${cycleId}/workspace`);
+  const employeeOf = (name) => ws2.people.find((p) => p.participant.employeeName.includes(name));
+  const evaluatorPage = { [employeeOf("Bruno").participant.employeeId]: leader, [employeeOf("Carla").participant.employeeId]: carla };
   for (const p of ws2.people) {
     if (!p.leader || p.leader.status === "SUBMITTED") continue;
-    const s = await must(hr, "PUT", `/api/hr/performance/assignments/${p.leader.id}/answers`, { expectedVersion: p.leader.version, answers: ws2.questions.map((q) => ({ code: q.code, answer: { kind: "score", score: 3 } })) });
-    await must(hr, "POST", `/api/hr/performance/assignments/${p.leader.id}/submit`, { expectedVersion: s.version });
+    const page = evaluatorPage[p.leader.evaluatorEmployeeId];
+    if (!page) continue;
+    const s = await must(page, "PUT", `/api/hr/performance/assignments/${p.leader.id}/answers`, { expectedVersion: p.leader.version, answers: ws2.questions.map((q) => ({ code: q.code, answer: { kind: "score", score: 3 } })) });
+    await must(page, "POST", `/api/hr/performance/assignments/${p.leader.id}/submit`, { expectedVersion: s.version });
   }
-  await must(hr, "POST", `/api/hr/performance/cycles/${cycleId}/transition`, { to: "CONSOLIDATION" });
+  const otavioTask = employeeOf("Otávio").leader;
+  const hrForLeader = await api(hr, "PUT", `/api/hr/performance/assignments/${otavioTask.id}/answers`, { expectedVersion: otavioTask.version, answers: [] });
+  step("9.08b nem o SUPER_ADMIN responde a avaliação no lugar do líder", hrForLeader.status === 403, `${hrForLeader.status} ${hrForLeader.body.error}`);
+  await must(hr, "POST", `/api/hr/performance/cycles/${cycleId}/transition`, { to: "CONSOLIDATION", acceptPending: true });
   await must(hr, "POST", `/api/hr/performance/cycles/${cycleId}/transition`, { to: "CALIBRATION" });
   const ws3 = await must(hr, "GET", `/api/hr/performance/cycles/${cycleId}/workspace`);
   // Topo da estrutura não tem líder: a calibração individual registra a exceção (auditada).
@@ -280,7 +289,7 @@ try {
     if (p.result?.technicalValidation === "PENDING_VALIDATION") {
       await must(hr, "POST", `/api/hr/performance/participants/${p.participant.id}/validation`, { decision: "VALIDATED", note: "Critério da função conferido no roteiro local" });
     }
-    await must(hr, "POST", `/api/hr/performance/participants/${p.participant.id}/calibration`, { note: "Calibração individual conferida no roteiro local", decision: "CONFIRM", acceptMissingLeader: !p.leader });
+    await must(hr, "POST", `/api/hr/performance/participants/${p.participant.id}/calibration`, { note: "Calibração individual conferida no roteiro local", decision: "CONFIRM", acceptMissingLeader: p.leader?.status !== "SUBMITTED" });
   }
 
   // 9.09 homologação bloqueada sem calibração de liderança

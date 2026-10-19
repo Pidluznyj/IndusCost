@@ -24,6 +24,11 @@ const HR: Actor = {
     "admin.employees.performance.calibration:manage",
     "admin.employees.performance.reports:view",
     "admin.employees.performance.invites:manage",
+    // RH Gestor: resultados e homologação são concessões explícitas.
+    "admin.employees.performance.results:view",
+    "admin.employees.performance.homologation:manage",
+    "admin.employees.performance.tracking:view",
+    "admin.employees.performance.tracking:export",
   ],
 };
 const LEADER: Actor = {
@@ -139,7 +144,7 @@ describe("rotas de desempenho", () => {
     const api = client(port);
     try {
       const me = await api.call("GET", "/api/hr/performance/me", undefined, { "x-actor": "leader" });
-      assert.deepEqual(me.json.capabilities, { view: true, evaluate: true, manage: false, calibrate: false, report: true, invites: false, conduct: false, lifecycle: false }, "ciclo de vida só para o SUPER_ADMIN");
+      assert.deepEqual(me.json.capabilities, { view: true, evaluate: true, manage: false, calibrate: false, report: true, invites: false, conduct: false, track: false, trackExport: false, cycles: false, models: false, results: false, calibrationView: false, homologate: false, lifecycle: false }, "ciclo de vida só para o SUPER_ADMIN");
       assert.equal((await api.call("POST", "/api/hr/performance/models", { name: "Modelo" }, { "x-actor": "viewer" })).status, 403);
       assert.equal((await api.call("GET", "/api/hr/performance/directory?q=ana", undefined, { "x-actor": "leader" })).status, 403, "busca no cadastro é do RH");
       const hrMe = await api.call("GET", "/api/hr/performance/me");
@@ -363,6 +368,7 @@ describe("robustez", () => {
       },
       requireAppAuth: (_req, _res, next) => next(),
       requireResource: () => (_req, _res, next) => next(),
+      can: async () => true,
       loadScope: async () => ({ accessScope: "ALL", actorEmployeeId: null, teamIds: [] }),
       loadEmployees: async () => [],
       actorUserId: async () => null,

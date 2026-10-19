@@ -46,6 +46,23 @@ Três entregas empilhadas, **commitadas só localmente**: nada foi enviado, mesc
 
 O branch 3 contém os três. Publicar o 3 na `main` publica os três.
 
+**Atualização — branch 4 `feat/performance-hr-roles`**, sobre o 3: permissões específicas de RH (RH Operacional × RH Gestor) e Central de acompanhamento ([PERMISSOES_RH.md](PERMISSOES_RH.md)). O branch não tem migration. Os gates do branch 4 estão em [EVIDENCIAS_TESTES.md](EVIDENCIAS_TESTES.md) §9, e todos ficaram iguais aos da `main`:
+- tipagem: 1370 erros;
+- suíte de unidade: as mesmas 4 falhas;
+- consistência de permissões: 3 achados.
+
+Os testes do próprio branch passaram:
+- módulo: 115/115;
+- integração PostgreSQL: 6/6;
+- navegador: 55/55 + 39/39.
+
+**Antes de implantar, as mudanças de comportamento do §6 daquele documento precisam ser combinadas com o RH:**
+- editor de RH sem SUPER_ADMIN perde, pelo atalho, resultado, calibrar, homologar e ocorrência;
+- homologar fica separado de calibrar;
+- ninguém grava a avaliação no lugar do líder.
+
+Publicar o branch 4 publica os quatro.
+
 ### Migrations novas, nesta ordem, todas aditivas
 
 | Migration | Branch | Efeito em dados existentes |

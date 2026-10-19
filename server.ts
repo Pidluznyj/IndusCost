@@ -268,6 +268,7 @@ import { registerHrOrgStructureRoutes } from "./src/lib/hrOrgStructureRoutes.js"
 import { registerEmployeesDashboardRoutes } from "./src/lib/employeesDashboardRoutes.js";
 import { registerCompetencyRoutes } from "./src/lib/competencies/competencyRoutes.js";
 import { registerPerformanceRoutes } from "./src/lib/hrPerformance/performanceRoutes.js";
+import { STRICT_PERFORMANCE_RESOURCES } from "./src/lib/hrPerformance/performancePermissions.js";
 import { createPrismaPerformanceStore } from "./src/lib/hrPerformance/performancePrisma.js";
 import { createPerformancePublicHostGuard } from "./src/lib/hrPerformance/performancePublicSurface.js";
 import {
@@ -15473,8 +15474,9 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     },
     store: createPrismaPerformanceStore(prisma),
     requireAppAuth,
+    // Resultado, calibração, homologação e conduta: só concessão explícita (sem atalho do editor de RH).
     requireResource: (resourceKey, action) =>
-      resourceKey === "admin.employees.performance.conduct"
+      STRICT_PERFORMANCE_RESOURCES.includes(resourceKey)
         ? requireResource(resourceKey, action)
         : requireResourceOrHrEditor(resourceKey, action),
     loadScope: async (req) => {
@@ -15483,7 +15485,8 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
       const accessScope = resolveCompetencyAccessScope(employeePermCheck(authUser));
       const actorEmployeeId = (authUser as { employeeId?: string | null } | null)?.employeeId ?? null;
       let teamIds: string[] = [];
-      if (actorEmployeeId && accessScope === "DIRECT_REPORTS") {
+      // Com alcance total a equipe direta também é carregada: sem `results`, o RH-líder vê resultado só dela.
+      if (actorEmployeeId && (accessScope === "DIRECT_REPORTS" || accessScope === "ALL")) {
         teamIds = await loadDirectReportIds(prisma, actorEmployeeId);
       } else if (actorEmployeeId && accessScope === "DESCENDANTS") {
         teamIds = await loadDescendantEmployeeIds(prisma, actorEmployeeId);
@@ -15577,6 +15580,11 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     },
     // Avaliação 180°: liderados diretos ativos pela hierarquia efetiva, no instante da abertura.
     loadLeadershipSnapshot: (employeeIds) => loadDirectReportsSnapshot(prisma, employeeIds),
+    // Central de acompanhamento: diretoria de cada setor (somente leitura do organograma).
+    loadOrgUnits: async () => {
+      const rows = await prisma.hrDepartment.findMany({ select: { id: true, name: true, directorate: { select: { name: true } } } });
+      return rows.map((row) => ({ id: row.id, name: row.name, directorateName: row.directorate?.name ?? null }));
+    },
     // Ciclo de vida dos ciclos (classificar, inativar, reativar, excluir teste): só SUPER_ADMIN ativo.
     isSuperAdmin: async (req) => {
       const authUser = (req as { appAuth?: AppAuthContext }).appAuth ?? (await getCurrentAppUser(req));
@@ -15617,7 +15625,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
       try {
         const decision = await authorizeResourceRequest(req, resourceKey, action);
         if (decision.ok) return true;
-        if (resourceKey === "admin.employees.performance.conduct") return false;
+        if (STRICT_PERFORMANCE_RESOURCES.includes(resourceKey)) return false;
         // `=== false`: sem strictNullChecks o `!decision.ok` não estreita a união.
         if (!(decision.ok === false && decision.status === 403 && decision.source === "DENY_DEFAULT")) return false;
         const authUser = (req as { appAuth?: AppAuthContext }).appAuth ?? (await getCurrentAppUser(req));

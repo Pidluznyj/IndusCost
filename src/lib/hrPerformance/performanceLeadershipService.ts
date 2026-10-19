@@ -209,7 +209,7 @@ function blankLeadershipAssignment(
   return assignment;
 }
 
-function activeKind(db: PerformanceDatabase, participantId: string, kind: LeadershipAssignmentKind) {
+export function activeKind(db: PerformanceDatabase, participantId: string, kind: LeadershipAssignmentKind) {
   return db.assignments.find((a) => a.participantId === participantId && a.kind === kind && a.active) ?? null;
 }
 

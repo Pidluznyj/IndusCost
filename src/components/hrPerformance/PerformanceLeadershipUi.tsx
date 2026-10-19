@@ -373,7 +373,8 @@ export function SuperiorLeadershipOverlay({ assignmentId, onClose, onDone }: { a
 
 // ---------------------------------------------------------------- calibração
 
-export function LeadershipCalibrationSection({ cycleId, onToast }: { cycleId: string; onToast: (m: string) => void }) {
+/** `canOpen` falso: só acompanha a situação (sem índice e sem abrir o comparativo). */
+export function LeadershipCalibrationSection({ cycleId, onToast, canOpen = true }: { cycleId: string; onToast: (m: string) => void; canOpen?: boolean }) {
   const [rows, setRows] = useState<LeadershipListRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState<string | null>(null);
@@ -430,9 +431,11 @@ export function LeadershipCalibrationSection({ cycleId, onToast }: { cycleId: st
                   </td>
                   <td className="px-2 py-2 tabular-nums">{formatScore(r.calibratedIndex)}</td>
                   <td className="px-3 py-2 text-right">
+                    {canOpen ? (
                     <button type="button" className={BTN_GHOST} onClick={() => setOpen(r.participantId)} data-testid={`perf-leadership-open-${r.employeeName}`}>
                       <Scale className="h-3.5 w-3.5" aria-hidden /> {r.status === "CALIBRATED" || r.status === "EXCEPTION" || r.status === "HOMOLOGATED" ? "Ver" : "Calibrar"}
                     </button>
+                    ) : null}
                   </td>
                 </tr>
               ))}

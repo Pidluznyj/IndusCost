@@ -72,6 +72,8 @@ describe("persistência Prisma em PostgreSQL local", { skip }, () => {
       store: createPrismaPerformanceStore(prisma),
       requireAppAuth: (_req, _res, next) => next(),
       requireResource: () => (_req, _res, next) => next(),
+      // Líder: só o módulo (ver e avaliar); RH: tudo.
+      can: async (req, resource) => actorOf(req) !== "leader" || resource === "admin.employees.performance",
       loadScope: async (req) =>
         actorOf(req) === "leader"
           ? { accessScope: "DIRECT_REPORTS", actorEmployeeId: ids.bruno, teamIds: [ids.ana, ids.bia, ids.caio] }

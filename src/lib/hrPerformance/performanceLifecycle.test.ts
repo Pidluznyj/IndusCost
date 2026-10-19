@@ -245,6 +245,7 @@ describe("rotas: permissões, exportação e relatórios", () => {
       store,
       requireAppAuth: (_req, _res, next) => next(),
       requireResource: () => (_req, _res, next) => next(),
+      can: async () => true,
       loadScope: async () => ({ accessScope: "ALL", actorEmployeeId: null, teamIds: [] }),
       loadEmployees: async (ids) => [ana, bia, bruno, recem, outroSetor].filter((e) => ids.includes(e.id)),
       actorUserId: async (req) => (isSuper(req) ? "u-sa" : "u-rh"),

@@ -18,7 +18,9 @@ export type PermissionTemplateId =
   | "fleet_financial"
   | "fleet_maintenance"
   | "fleet_requester"
-  | "fleet_viewer";
+  | "fleet_viewer"
+  | "hr_performance_operational"
+  | "hr_performance_manager";
 
 export const PERMISSION_TEMPLATES: Record<
   PermissionTemplateId,
@@ -247,6 +249,37 @@ export const PERMISSION_TEMPLATES: Record<
     label: "Frota — Visualizador",
     description: "Somente leitura operacional (sem valores financeiros).",
     permissions: ["fleet.view"],
+  },
+  // Desempenho: operacional acompanha e conduz o processo sem abrir respostas; gestor soma
+  // resultados, calibração e homologação. Ocorrências restritas ficam fora dos dois.
+  hr_performance_operational: {
+    label: "RH Operacional — Desempenho",
+    description: "Acompanha ciclos de toda a organização, prepara ciclos, emite e revoga convites e exporta o andamento. Não vê notas, comentários nem respostas.",
+    permissions: [
+      "employees.performance.view",
+      "employees.performance.tracking",
+      "employees.performance.tracking.export",
+      "employees.performance.cycles.manage",
+      "employees.performance.invites",
+      "employees.performance.calibration.view",
+    ],
+  },
+  hr_performance_manager: {
+    label: "RH Gestor — Desempenho",
+    description: "Tudo do RH Operacional, mais modelos, resultados individuais, relatórios, calibração e homologação. Ocorrências restritas exigem concessão à parte.",
+    permissions: [
+      "employees.performance.view",
+      "employees.performance.tracking",
+      "employees.performance.tracking.export",
+      "employees.performance.cycles.manage",
+      "employees.performance.invites",
+      "employees.performance.calibration.view",
+      "employees.performance.models.manage",
+      "employees.performance.results",
+      "employees.performance.report",
+      "employees.performance.calibrate",
+      "employees.performance.homologate.manage",
+    ],
   },
 };
 

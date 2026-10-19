@@ -181,4 +181,22 @@ export const SYSTEM_ACCESS_PROFILE_SEEDS: AccessProfileSeed[] = [
     isSystem: true,
     isActive: true,
   },
+  {
+    systemKey: "hr_performance_operational",
+    name: PERMISSION_TEMPLATES.hr_performance_operational.label,
+    description: PERMISSION_TEMPLATES.hr_performance_operational.description,
+    roleBase: null,
+    permissions: tplPerms("hr_performance_operational"),
+    isSystem: true,
+    isActive: true,
+  },
+  {
+    systemKey: "hr_performance_manager",
+    name: PERMISSION_TEMPLATES.hr_performance_manager.label,
+    description: PERMISSION_TEMPLATES.hr_performance_manager.description,
+    roleBase: null,
+    permissions: tplPerms("hr_performance_manager"),
+    isSystem: true,
+    isActive: true,
+  },
 ];

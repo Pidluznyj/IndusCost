@@ -308,7 +308,8 @@ describe("180°: confidencialidade nas rotas", () => {
       store,
       requireAppAuth: (_req, _res, next) => next(),
       requireResource: () => (_req, _res, next) => next(),
-      can: async (req, resource) => (resource.endsWith(".calibration") ? actorOf(req as never).calibrate : true),
+      // Sem calibrar e sem consultar resultados: o comparativo de liderança fica fechado.
+      can: async (req, resource) => (resource.endsWith(".calibration") || resource.endsWith(".results") ? actorOf(req as never).calibrate : true),
       loadScope: async (req) => ({ accessScope: actorOf(req as never).accessScope, actorEmployeeId: actorOf(req as never).employeeId, teamIds: [] }),
       loadEmployees: async () => [],
       actorUserId: async () => "u-1",

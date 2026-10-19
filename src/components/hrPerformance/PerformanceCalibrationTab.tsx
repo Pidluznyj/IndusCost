@@ -47,7 +47,23 @@ type Dialog =
   | { kind: "homologate" }
   | null;
 
-export function PerformanceCalibrationTab({ cycleId, onToast }: { cycleId: string | null; onToast: (message: string) => void }) {
+/**
+ * `canCalibrate` = calibrar (vê médias, divergências e evidências); sem isso a aba só acompanha a
+ * situação (o servidor já corta o conteúdo). `canHomologate` é concessão separada.
+ */
+export function PerformanceCalibrationTab({
+  cycleId,
+  onToast,
+  canCalibrate = true,
+  canHomologate: mayHomologate = true,
+  canSeeHistory = true,
+}: {
+  cycleId: string | null;
+  onToast: (message: string) => void;
+  canCalibrate?: boolean;
+  canHomologate?: boolean;
+  canSeeHistory?: boolean;
+}) {
   const [data, setData] = useState<Awaited<ReturnType<typeof fetchCalibrationQueue>> | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [department, setDepartment] = useState("");
@@ -89,10 +105,17 @@ export function PerformanceCalibrationTab({ cycleId, onToast }: { cycleId: strin
           </p>
           <p>A nota oficial usa a avaliação do líder; a autoavaliação aparece para comparar. Divergência não muda nota sozinha. Cultura não entra na Nine-Box.</p>
         </div>
-        <button type="button" className={BTN_PRIMARY} disabled={!canHomologate} onClick={() => setDialog({ kind: "homologate" })} title={canHomologate ? undefined : "Exige o ciclo em calibração, todos calibrados, técnico validado e nenhuma revisão aberta"} data-testid="perf-homologate">
-          <ShieldCheck className="h-4 w-4" aria-hidden /> Homologar ciclo
-        </button>
+        {mayHomologate ? (
+          <button type="button" className={BTN_PRIMARY} disabled={!canHomologate} onClick={() => setDialog({ kind: "homologate" })} title={canHomologate ? undefined : "Exige o ciclo em calibração, todos calibrados, técnico validado e nenhuma revisão aberta"} data-testid="perf-homologate">
+            <ShieldCheck className="h-4 w-4" aria-hidden /> Homologar ciclo
+          </button>
+        ) : null}
       </div>
+      {!canCalibrate ? (
+        <InfoBanner tone="slate" testId="perf-calibration-readonly">
+          Você acompanha a situação da calibração. Médias, posições, divergências e evidências aparecem só para quem calibra ou consulta resultados.
+        </InfoBanner>
+      ) : null}
       {!stageOk ? <InfoBanner tone="slate">A calibração acontece na consolidação e na calibração. Situação atual: {data.cycle.status === "OPEN" ? "coleta aberta" : data.cycle.status}.</InfoBanner> : null}
       <ErrorBanner message={error} />
       <div className="flex flex-wrap gap-2">
@@ -151,7 +174,11 @@ export function PerformanceCalibrationTab({ cycleId, onToast }: { cycleId: strin
                       <ValidationBadge value={row.result?.technicalValidation} />
                     </td>
                     <td className="px-2 py-3">
-                      {row.result ? (
+                      {row.result && (row.result as { hidden?: boolean }).hidden ? (
+                        <span className="text-xs text-muted-foreground" data-testid={`perf-cal-status-${row.employeeName}`}>
+                          {row.result.official ? "Homologado" : row.result.reviewStatus === "CALIBRATED" ? "Calibrado" : "Aguardando calibração"}
+                        </span>
+                      ) : row.result ? (
                         <div className="flex flex-col items-start gap-1">
                           <span>{quadrantText(row.result.quadrant)}</span>
                           <OfficialBadge official={row.result.official} adjusted={row.result.adjusted} />
@@ -165,28 +192,30 @@ export function PerformanceCalibrationTab({ cycleId, onToast }: { cycleId: strin
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex flex-wrap justify-end gap-1">
-                        {stageOk && row.result && !row.result.official && row.result.technicalValidation !== "INSUFFICIENT" ? (
+                        {canCalibrate && stageOk && row.result && !row.result.official && row.result.technicalValidation !== "INSUFFICIENT" ? (
                           <button type="button" className={BTN_GHOST} onClick={() => setDialog({ kind: "validate", row })} data-testid={`perf-cal-validate-${row.employeeName}`}>
                             Validar técnico
                           </button>
                         ) : null}
-                        {stageOk && !row.result?.official ? (
+                        {canCalibrate && stageOk && !row.result?.official ? (
                           <button type="button" className={BTN_GHOST} onClick={() => setDialog({ kind: "calibrate", row })} disabled={row.result?.technicalValidation === "PENDING_VALIDATION"} data-testid={`perf-cal-calibrate-${row.employeeName}`}>
                             <Scale className="h-3.5 w-3.5" aria-hidden /> Calibrar
                           </button>
                         ) : null}
-                        {stageOk && row.leaderStatus === "SUBMITTED" && row.leaderAssignmentId ? (
+                        {canCalibrate && stageOk && row.leaderStatus === "SUBMITTED" && row.leaderAssignmentId ? (
                           <button type="button" className={BTN_GHOST} onClick={() => setDialog({ kind: "return", row })} data-testid={`perf-cal-return-${row.employeeName}`}>
                             <RotateCcw className="h-3.5 w-3.5" aria-hidden /> Pedir revisão
                           </button>
                         ) : null}
-                        <button type="button" className={BTN_GHOST} onClick={() => setDialog({ kind: "history", row })}>
-                          <History className="h-3.5 w-3.5" aria-hidden /> Versões ({row.versions})
-                        </button>
+                        {canSeeHistory ? (
+                          <button type="button" className={BTN_GHOST} onClick={() => setDialog({ kind: "history", row })}>
+                            <History className="h-3.5 w-3.5" aria-hidden /> Versões ({row.versions})
+                          </button>
+                        ) : null}
                       </div>
                     </td>
                   </tr>
-                  {expanded === row.participantId ? (
+                  {expanded === row.participantId && canCalibrate ? (
                     <tr>
                       <td colSpan={7} className="bg-muted/30 px-4 py-3">
                         <CalibrationDetail row={row} />
@@ -248,7 +277,7 @@ export function PerformanceCalibrationTab({ cycleId, onToast }: { cycleId: strin
           <p className="text-sm">{data.rows.length} resultado(s) serão homologados. Nenhuma promoção, remuneração ou penalidade é aplicada automaticamente.</p>
         </PerformanceModal>
       ) : null}
-      {cycleId ? <LeadershipCalibrationSection cycleId={cycleId} onToast={onToast} /> : null}
+      {cycleId ? <LeadershipCalibrationSection cycleId={cycleId} onToast={onToast} canOpen={canCalibrate || canSeeHistory} /> : null}
     </section>
   );
 }

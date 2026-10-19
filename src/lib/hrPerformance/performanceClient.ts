@@ -37,9 +37,65 @@ export type PerformanceCapabilities = {
   report: boolean;
   invites: boolean;
   conduct: boolean;
+  /** Central de acompanhamento (toda a organização, só situação). */
+  track?: boolean;
+  trackExport?: boolean;
+  cycles?: boolean;
+  models?: boolean;
+  /** Notas e conteúdo de resultado de toda a organização. */
+  results?: boolean;
+  calibrationView?: boolean;
+  homologate?: boolean;
   /** Classificar, inativar, reativar e excluir ciclo de teste: só o SUPER_ADMIN. */
   lifecycle?: boolean;
 };
+
+// ------------------------------------------------------------------ central de acompanhamento
+export type ObligationStatus = "NOT_APPLICABLE" | "PENDING" | "STARTED" | "SUBMITTED" | "OVERDUE" | "DONE";
+export type ObligationKey = "self" | "leader" | "upward" | "leadershipSelf" | "superior" | "calibration" | "leadershipCalibration" | "homologation" | "feedback";
+export type TrackingObligation = { key: ObligationKey; status: ObligationStatus; responsible: string | null; dueAt: string | null; reason: string | null; at: string | null };
+export type TrackingRow = {
+  participantId: string;
+  employeeId: string;
+  employeeName: string;
+  roleName: string;
+  departmentName: string;
+  directorateName: string;
+  managerName: string | null;
+  managerSource: string;
+  eligibility: string;
+  isLeader: boolean;
+  selfAssignmentId: string | null;
+  journeyStarted: boolean;
+  journeyDone: boolean;
+  obligations: TrackingObligation[];
+};
+export type CoverageRow = { group: string; eligible: number; completed: number; leaderCompleted: number };
+export type TrackingBoard = {
+  cycle: { id: string; name: string; status: string; periodLabel: string; selfDueAt: string; leaderDueAt: string; classification: string; activation: string; leadership: boolean };
+  indicators: {
+    eligible: number;
+    invitesGenerated: number;
+    invitesDelivered: number | null;
+    invitesAccessed: number;
+    surveysStarted: number;
+    surveysCompleted: number;
+    participantsPending: number;
+    leaderEvaluationsPending: number;
+    calibrationsPending: number;
+    overdueObligations: number;
+    homologated: number;
+    feedbackDone: number;
+  };
+  coverage: { byDepartment: CoverageRow[]; byDirectorate: CoverageRow[] };
+  rows: TrackingRow[];
+  filters: { departments: string[]; directorates: string[]; managers: string[]; modalities: string[]; statuses: ObligationStatus[] };
+  labels: Record<ObligationKey, string>;
+};
+export type TrackingFilterInput = { department?: string; directorate?: string; manager?: string; modality?: string; status?: string };
+const trackingQuery = (filters: TrackingFilterInput) => new URLSearchParams(Object.entries(filters).filter(([, v]) => Boolean(v)) as [string, string][]).toString();
+export const fetchTrackingBoard = (cycleId: string, filters: TrackingFilterInput = {}) => json<TrackingBoard>(`${BASE}/cycles/${cycleId}/tracking?${trackingQuery(filters)}`);
+export const trackingExportUrl = (cycleId: string, filters: TrackingFilterInput = {}) => `${BASE}/cycles/${cycleId}/tracking/export?${trackingQuery(filters)}`;
 export type PerformanceMe = { accessScope: string; actorEmployeeId: string | null; capabilities: PerformanceCapabilities; officialPublication: boolean };
 
 export const fetchPerformanceFeatureStatus = () => json<{ enabled: boolean }>(`${BASE}/feature-status`);

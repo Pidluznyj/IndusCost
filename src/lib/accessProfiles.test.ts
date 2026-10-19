@@ -23,8 +23,21 @@ describe("accessProfilesSeedData", () => {
     assert.ok(names.includes("Engenharia / Custos"));
     assert.ok(names.includes("Administração do Sistema"));
     assert.ok(names.includes("Frota — Administrador"));
-    assert.equal(SYSTEM_ACCESS_PROFILE_SEEDS.length, 15);
+    assert.ok(names.includes("RH Operacional — Desempenho"));
+    assert.ok(names.includes("RH Gestor — Desempenho"));
+    assert.equal(SYSTEM_ACCESS_PROFILE_SEEDS.length, 17);
     assert.ok(SYSTEM_ACCESS_PROFILE_SEEDS.every((s) => s.isSystem));
+  });
+
+  it("RH Operacional de desempenho não recebe resultado, calibração, homologação nem ocorrência", () => {
+    const op = SYSTEM_ACCESS_PROFILE_SEEDS.find((s) => s.systemKey === "hr_performance_operational")!;
+    for (const key of ["employees.performance.tracking", "employees.performance.invites", "employees.performance.cycles.manage"]) assert.ok(op.permissions.includes(key), key);
+    for (const key of ["employees.performance.results", "employees.performance.calibrate", "employees.performance.homologate.manage", "employees.performance.conduct", "employees.edit"]) {
+      assert.equal(op.permissions.includes(key), false, key);
+    }
+    const manager = SYSTEM_ACCESS_PROFILE_SEEDS.find((s) => s.systemKey === "hr_performance_manager")!;
+    for (const key of ["employees.performance.results", "employees.performance.calibrate", "employees.performance.homologate.manage"]) assert.ok(manager.permissions.includes(key), key);
+    assert.equal(manager.permissions.includes("employees.performance.conduct"), false, "ocorrência é concessão à parte");
   });
 
   it("admin profile includes users.manage and access profile permissions", () => {

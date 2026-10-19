@@ -57,7 +57,7 @@ export function PerformanceCyclesTab({
     void reload();
   }, []);
 
-  const canManage = me.capabilities.manage;
+  const canManage = me.capabilities.cycles ?? me.capabilities.manage;
   const published = models.filter((m) => m.status === "PUBLISHED" && m.kind !== "LEADERSHIP");
   const leadershipModels = models.filter((m) => m.status === "PUBLISHED" && m.kind === "LEADERSHIP");
   const inactiveCount = (cycles ?? []).filter((c) => c.activation === "INACTIVE").length;

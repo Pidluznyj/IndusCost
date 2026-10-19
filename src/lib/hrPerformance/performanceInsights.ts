@@ -300,6 +300,7 @@ export type NineBoxCell = {
   departmentName: string;
   roleName: string;
   managerName: string | null;
+  managerId: string | null;
   technical: string | null;
   potential: string | null;
   culture: string | null;
@@ -355,6 +356,7 @@ export function dashboard(db: PerformanceDatabase, cycleId: string, scope: Perfo
       departmentName: p.departmentName,
       roleName: p.roleName,
       managerName: p.managerName,
+      managerId: p.managerId,
       technical: result ? formatPillarMean(result.technicalSum, result.technicalCount) : null,
       potential: result ? formatPillarMean(result.potentialSum, result.potentialCount) : null,
       culture: result ? formatPillarMean(result.cultureSum, result.cultureCount) : null,

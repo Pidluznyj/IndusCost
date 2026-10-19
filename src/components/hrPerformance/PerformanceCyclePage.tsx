@@ -16,8 +16,9 @@ import { PerformanceCalibrationTab } from "./PerformanceCalibrationTab";
 import { PerformanceNineBoxTab } from "./PerformanceNineBoxTab";
 import { PerformancePdiTab } from "./PerformancePdiTab";
 import { PerformanceDashboardTab } from "./PerformanceDashboardTab";
+import { PerformanceTrackingTab } from "./PerformanceTrackingTab";
 
-type TabId = "ciclos" | "equipe" | "calibracao" | "ninebox" | "pdi" | "painel" | "modelos";
+type TabId = "acompanhamento" | "ciclos" | "equipe" | "calibracao" | "ninebox" | "pdi" | "painel" | "modelos";
 const TAB_KEY = "ic-perf-tab";
 const CYCLE_KEY = "ic-perf-cycle";
 
@@ -65,11 +66,14 @@ function PerformanceModule() {
   const tabs = useMemo(
     () =>
       [
+        // Abas por capacidade: o RH Operacional vê acompanhamento, ciclos, calibração (situação), painel e modelos;
+        // Nine-Box e devolutivas só para quem avalia a equipe ou consulta resultados.
+        caps?.track ? { id: "acompanhamento" as const, label: "Acompanhamento" } : null,
         caps?.view ? { id: "ciclos" as const, label: "Ciclos" } : null,
         caps?.evaluate ? { id: "equipe" as const, label: "Minha equipe" } : null,
-        caps?.calibrate ? { id: "calibracao" as const, label: "Calibração" } : null,
-        caps?.view ? { id: "ninebox" as const, label: "Nine-Box" } : null,
-        caps?.evaluate ? { id: "pdi" as const, label: "Devolutivas e PDI" } : null,
+        caps?.calibrate || caps?.calibrationView ? { id: "calibracao" as const, label: "Calibração" } : null,
+        caps?.evaluate || caps?.results ? { id: "ninebox" as const, label: "Nine-Box" } : null,
+        caps?.evaluate || caps?.results ? { id: "pdi" as const, label: "Devolutivas e PDI" } : null,
         caps?.view ? { id: "painel" as const, label: "Painel" } : null,
         caps?.view ? { id: "modelos" as const, label: "Modelos" } : null,
       ].filter((t): t is NonNullable<typeof t> => t !== null),
@@ -104,17 +108,20 @@ function PerformanceModule() {
         </InfoBanner>
       ) : null}
       <OverlayTabs<TabId> tabs={tabs} active={active} onChange={selectTab} variant="pill" ariaLabel="Seções de desempenho" testId="perf-tabs" />
+      {active === "acompanhamento" ? <PerformanceTrackingTab cycleId={cycleId} caps={caps} onSelectCycle={selectCycle} onToast={toast.setToast} /> : null}
       {active === "ciclos" ? (
         <React.Fragment key={version}>
           <PerformanceCyclesTab me={me} selectedId={cycleId} onSelect={selectCycle} onToast={toast.setToast} />
         </React.Fragment>
       ) : null}
       {active === "equipe" ? <PerformanceTeamTab onToast={toast.setToast} actorName={actorName} linkedEmployee={Boolean(me.actorEmployeeId)} /> : null}
-      {active === "calibracao" ? <PerformanceCalibrationTab cycleId={cycleId} onToast={toast.setToast} /> : null}
+      {active === "calibracao" ? (
+        <PerformanceCalibrationTab cycleId={cycleId} onToast={toast.setToast} canCalibrate={Boolean(caps.calibrate)} canHomologate={Boolean(caps.homologate ?? caps.calibrate)} canSeeHistory={Boolean(caps.calibrate || caps.results)} />
+      ) : null}
       {active === "ninebox" ? <PerformanceNineBoxTab cycleId={cycleId} canReport={caps.report} /> : null}
       {active === "pdi" ? <PerformancePdiTab cycleId={cycleId} canReport={caps.report} actorName={actorName} onToast={toast.setToast} /> : null}
       {active === "painel" ? <PerformanceDashboardTab cycleId={cycleId} /> : null}
-      {active === "modelos" ? <PerformanceModelsTab canManage={caps.manage} onToast={toast.setToast} onChanged={() => setVersion((v) => v + 1)} /> : null}
+      {active === "modelos" ? <PerformanceModelsTab canManage={Boolean(caps.models ?? caps.manage)} onToast={toast.setToast} onChanged={() => setVersion((v) => v + 1)} /> : null}
       {toast.node}
     </div>
   );

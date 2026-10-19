@@ -88,3 +88,18 @@ Ainda em aberto:
 | Topo da estrutura | Calibrado com exceção registrada (não há superior) | RH |
 
 Pré-requisito técnico: `npm run audit:org-hierarchy` sem líderes ambíguos ou sem gestor antes de abrir ciclo com 180°. O retrato da liderança é gravado na abertura e não muda depois.
+
+## 10. Permissões de RH (branch `feat/performance-hr-roles`)
+
+Antes de implantar, combinar com o RH as mudanças de comportamento (detalhes em [PERMISSOES_RH.md](PERMISSOES_RH.md) §6):
+- editor de RH sem SUPER_ADMIN perde, pelo atalho, resultado, calibrar, homologar e ocorrência;
+- homologar passa a ser permissão separada de calibrar;
+- ninguém grava a avaliação no lugar do líder.
+
+Atribuir o perfil **RH Gestor — Desempenho** a quem hoje calibra e homologa em homologação.
+
+| Item | Proposta | Quem decide |
+| --- | --- | --- |
+| Divisão dos dois perfis | Operacional: acompanha, prepara ciclos, convida, acompanha calibração. Gestor: soma modelos, resultados, relatórios, calibrar, homologar | RH |
+| Quem recebe resultados e ocorrência | Concessão nominal, revisada periodicamente | RH + LGPD |
+| Confirmação de entrega do convite | Não existe; a central mostra só "acessado com código" | RH |

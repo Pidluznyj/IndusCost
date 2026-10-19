@@ -117,9 +117,11 @@ export function CycleDesk({ cycleId, me: realMe, onToast, onChanged }: { cycleId
   // Ciclo inativo: só consulta. A tela esconde as ações; o servidor recusa do mesmo jeito.
   const inactive = ws?.cycle.activation === "INACTIVE";
   const me: PerformanceMe = inactive
-    ? { ...realMe, capabilities: { ...realMe.capabilities, manage: false, evaluate: false, calibrate: false, invites: false, report: false } }
+    ? { ...realMe, capabilities: { ...realMe.capabilities, manage: false, cycles: false, evaluate: false, calibrate: false, homologate: false, invites: false, report: false } }
     : realMe;
   const caps = me.capabilities;
+  // Preparar o ciclo (participantes, líderes, transições): permissão de ciclos; perfis anteriores usam `manage`.
+  const canCycles = caps.cycles ?? caps.manage;
 
   const reload = useCallback(async () => {
     try {
@@ -228,17 +230,17 @@ export function CycleDesk({ cycleId, me: realMe, onToast, onChanged }: { cycleId
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          {realMe.capabilities.manage ? (
+          {realMe.capabilities.cycles || realMe.capabilities.track || realMe.capabilities.manage ? (
             <button type="button" className={BTN_SECONDARY} onClick={() => setLifecycleOpen(true)} data-testid="perf-cycle-lifecycle">
               <Settings2 className="h-4 w-4" aria-hidden /> Ciclo de vida
             </button>
           ) : null}
-          {caps.manage && status !== "HOMOLOGATED" && status !== "CLOSED" ? (
+          {canCycles && status !== "HOMOLOGATED" && status !== "CLOSED" ? (
             <button type="button" className={BTN_SECONDARY} onClick={() => setDialog({ kind: "edit" })} data-testid="perf-cycle-edit">
               <Pencil className="h-4 w-4" aria-hidden /> Editar
             </button>
           ) : null}
-          {caps.manage && preOpen ? (
+          {canCycles && preOpen ? (
             <button
               type="button"
               className={BTN_SECONDARY}
@@ -249,12 +251,13 @@ export function CycleDesk({ cycleId, me: realMe, onToast, onChanged }: { cycleId
               <Network className="h-4 w-4" aria-hidden /> Atualizar líderes
             </button>
           ) : null}
-          {caps.manage && back ? (
+          {/* Reabrir resultado homologado é decisão de homologação (o servidor também exige). */}
+          {canCycles && back && (status !== "HOMOLOGATED" || (caps.homologate ?? caps.calibrate)) ? (
             <button type="button" className={BTN_SECONDARY} onClick={() => setDialog({ kind: "transition", to: back, reversal: true })} data-testid="perf-cycle-back">
               <RotateCcw className="h-4 w-4" aria-hidden /> Voltar para {CYCLE_STATUS_LABELS[back].toLowerCase()}
             </button>
           ) : null}
-          {next && (next === "HOMOLOGATED" ? caps.calibrate : caps.manage) ? (
+          {next && (next === "HOMOLOGATED" ? caps.homologate ?? caps.calibrate : canCycles) ? (
             <button type="button" className={BTN_PRIMARY} onClick={() => setDialog({ kind: "transition", to: next, reversal: false })} data-testid="perf-cycle-next">
               {NEXT_LABEL[status]}
             </button>
@@ -307,7 +310,7 @@ export function CycleDesk({ cycleId, me: realMe, onToast, onChanged }: { cycleId
             Pessoas <span className="font-normal text-muted-foreground">({live.length} no ciclo{counts.removed ? ` · ${counts.removed} retiradas` : ""})</span>
           </h4>
           <div className="flex flex-wrap gap-2">
-            {caps.manage && preOpen ? (
+            {canCycles && preOpen ? (
               <button type="button" className={BTN_PRIMARY} onClick={() => setDialog({ kind: "add" })} data-testid="perf-add-people">
                 <UserPlus className="h-4 w-4" aria-hidden /> Incluir pessoas
               </button>
@@ -324,9 +327,11 @@ export function CycleDesk({ cycleId, me: realMe, onToast, onChanged }: { cycleId
             ) : null}
             {caps.report ? (
               <>
-                <a className={BTN_SECONDARY} href={performanceExportUrl(cycleId)} data-testid="perf-export-csv">
-                  <FileDown className="h-4 w-4" aria-hidden /> CSV
-                </a>
+                {caps.results !== false ? (
+                  <a className={BTN_SECONDARY} href={performanceExportUrl(cycleId)} data-testid="perf-export-csv">
+                    <FileDown className="h-4 w-4" aria-hidden /> CSV
+                  </a>
+                ) : null}
                 <a className={BTN_SECONDARY} href={performanceReportPrintUrl(cycleId, "consolidado")} target="_blank" rel="noopener" data-testid="perf-report-cycle">
                   <Printer className="h-4 w-4" aria-hidden /> Relatório do ciclo
                 </a>
@@ -547,6 +552,8 @@ function PersonRow({
 }) {
   const p = item.participant;
   const caps = me.capabilities;
+  const canCycles = caps.cycles ?? caps.manage;
+  const resultHidden = Boolean((item.result as { hidden?: boolean } | null)?.hidden);
   const preOpen = status === "DRAFT" || status === "PREPARED";
   const removed = Boolean(p.removedAt);
   const selfOpen = item.self && item.self.status !== "SUBMITTED";
@@ -601,7 +608,11 @@ function PersonRow({
         ) : null}
       </td>
       <td className="px-2 py-3">
-        {item.result ? (
+        {item.result && resultHidden ? (
+          <span className="text-xs text-muted-foreground" data-testid={`perf-result-restricted-${p.employeeName}`} title="Resultado restrito a quem consulta resultados">
+            {item.result.official ? "Homologado" : item.result.reviewStatus === "CALIBRATED" ? "Calibrado" : "Preliminar"} · resultado restrito
+          </span>
+        ) : item.result ? (
           <div className="flex flex-col items-start gap-1">
             <span className="text-sm">{quadrantText(item.result.quadrant)}</span>
             <OfficialBadge official={item.result.official} adjusted={item.result.adjusted} />
@@ -613,7 +624,7 @@ function PersonRow({
       </td>
       <td className="py-3 pl-2">
         <div className="flex flex-wrap justify-end gap-1">
-          {!removed && caps.manage && preOpen ? (
+          {!removed && canCycles && preOpen ? (
             <>
               <button type="button" className={BTN_GHOST} onClick={() => onDialog({ kind: "exception", person: item })} data-testid={`perf-exception-${p.employeeName}`}>
                 <CheckCircle2 className="h-3.5 w-3.5" aria-hidden /> Exceção
@@ -641,7 +652,7 @@ function PersonRow({
               </button>
             </>
           ) : null}
-          {!removed && caps.manage && !preOpen && status !== "HOMOLOGATED" && status !== "CLOSED" && p.eligibility === "ELIGIBLE" ? (
+          {!removed && canCycles && !preOpen && status !== "HOMOLOGATED" && status !== "CLOSED" && p.eligibility === "ELIGIBLE" ? (
             <>
               <button type="button" className={BTN_GHOST} onClick={() => onDialog({ kind: "leader", person: item })} data-testid={`perf-leader-${p.employeeName}`}>
                 <UserRoundCog className="h-3.5 w-3.5" aria-hidden /> Trocar líder
@@ -651,7 +662,7 @@ function PersonRow({
               </button>
             </>
           ) : null}
-          {me.capabilities.report && item.result ? (
+          {me.capabilities.report && item.result && !resultHidden ? (
             <a className={BTN_GHOST} href={performanceReportPrintUrl(cycleId, "individual", p.id)} target="_blank" rel="noopener" data-testid={`perf-report-${p.employeeName}`}>
               <Printer className="h-3.5 w-3.5" aria-hidden /> PDF
             </a>

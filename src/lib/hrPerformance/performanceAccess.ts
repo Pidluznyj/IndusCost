@@ -5,7 +5,7 @@
 export type PerformanceAccessScope = "ALL" | "DIRECT_REPORTS" | "DESCENDANTS" | "SELF" | "NONE";
 
 export type PerformanceScope =
-  | { kind: "ALL" }
+  | { kind: "ALL"; actorEmployeeId?: string | null }
   | {
       kind: "LIMITED";
       actorEmployeeId: string | null;
@@ -18,7 +18,7 @@ export function buildPerformanceScope(input: {
   actorEmployeeId: string | null;
   teamIds?: readonly string[];
 }): PerformanceScope {
-  if (input.accessScope === "ALL") return { kind: "ALL" };
+  if (input.accessScope === "ALL") return { kind: "ALL", actorEmployeeId: input.actorEmployeeId };
   const actor = input.actorEmployeeId;
   const team = new Set((input.teamIds ?? []).filter((id) => id && id !== actor));
   const hasTeam = input.accessScope === "DIRECT_REPORTS" || input.accessScope === "DESCENDANTS";

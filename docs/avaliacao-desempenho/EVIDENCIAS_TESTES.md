@@ -181,3 +181,41 @@ Integridade no PostgreSQL (`scripts/performance-e2e/check180.mts`, somente leitu
 - Partes 1–8: 55/55, igual à `main`. Dois ajustes no roteiro por regras novas e intencionais: a parte 1 escolhe o tipo do ciclo, que não tem valor padrão; a parte 6 marca a exceção ao calibrar quem não tem avaliação do líder.
 - Uma rodada intermediária falhou por tempo na parte 3 (campo de evidência) e não se repetiu. A integração PostgreSQL teve 1 falha isolada em 8 rodadas, logo depois da correção do teste, também não reproduzida.
 - `tsc` completo: 1370, igual à `main`, nenhum no módulo. Suíte de unidade: 5241 testes, as mesmas 4 falhas da `main`. Build, `check:browser-bundle` (66 artefatos) e checagens de import: OK.
+
+## 9. Permissões específicas de RH e Central de acompanhamento (19/10/2026, local)
+
+Branch `feat/performance-hr-roles`. Desenho e matriz completa em [PERMISSOES_RH.md](PERMISSOES_RH.md).
+
+### Navegador — parte 10 (`scripts/performance-e2e/part10-hr-roles.mjs`)
+
+Usuários fictícios sem `employees.edit` e sem vínculo de colaborador (`seedHrRoles.mts`), ligados aos perfis de sistema **RH Operacional — Desempenho** e **RH Gestor — Desempenho**.
+
+| Passo | Resultado |
+| --- | --- |
+| 10.01 operacional: abas Acompanhamento, Ciclos, Calibração, Painel, Modelos; sem Nine-Box, Devolutivas, Minha equipe | PASS |
+| 10.02 central: enviada, iniciada (em preenchimento), pendente com o líder responsável e o prazo | PASS |
+| 10.03 filtros de modalidade (liderança) e situação (pendente) | PASS |
+| 10.04 reemitir convite (código novo) e revogar convite comprometido com motivo | PASS |
+| 10.05 CSV operacional (situação, responsável, prazo, motivo), sem nota nem comentário | PASS |
+| 10.06 mesa do ciclo homologado: "resultado restrito" para as 10 pessoas; sem "voltar para calibração" | PASS |
+| 10.07 calibração em modo acompanhamento: nenhum botão de calibrar, homologar ou comparativo | PASS |
+| 10.08 API direta do operacional: 403 em versões do resultado, CSV com notas, comparativo de liderança, ocorrência, calibrar e homologar; Nine-Box nominal vazia | PASS |
+| 10.09 gestor: Nine-Box, resultados, comparativo de liderança e CSV com notas, sem comentário da equipe | PASS |
+| 10.10 líder: sem a aba e 403 na central | PASS |
+
+Estável em 4 rodadas seguidas, depois da correção abaixo. A parte 9 foi refeita com a regra nova (cada líder grava a própria avaliação) e passou: 19/19, mais 10/10 no PostgreSQL.
+
+### Defeitos achados e corrigidos
+
+- **Seletor de ciclo vazio.** Ao escolher o ciclo antes de a lista carregar, o seletor nativo devolvia `""`. A tela tratava esse valor como ciclo escolhido e escondia o botão do CSV, e as ações seguintes falhavam de forma intermitente. Agora o vazio é ignorado.
+- **"Voltar para calibração" visível sem permissão de homologar** (o servidor já recusava). O botão agora só aparece para quem homologa.
+- **Auditoria estática de rotas.** Guardas compostas escritas direto na rota não eram reconhecidas e apareciam como "mutação sem guard". Agora são guardas com nome; a consistência voltou a 3 achados, os mesmos da `main`.
+
+### Regressão
+
+- Módulo e perfis: 115/115.
+- Integração PostgreSQL: 6/6.
+- Partes 1–8: 55/55.
+- Suíte de unidade: 5253 testes, com as mesmas 4 falhas da `main`.
+- `tsc`: 1370, igual à `main`.
+- Build, `check:browser-bundle` (66 artefatos) e checagens de import: OK.
