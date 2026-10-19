@@ -36,6 +36,8 @@ try {
     } else {
       await hr.type('[data-testid="perf-calibrate-note"]', "Leitura do RH confirma a posição calculada.");
     }
+    // Sem avaliação do líder (Otávio: Marcos não tem usuário no roteiro), a calibração exige exceção explícita.
+    if (await hr.eval(`Boolean(document.querySelector('[data-testid="perf-accept-missing-leader"]'))`)) await hr.click('[data-testid="perf-accept-missing-leader"]');
     await hr.clickTestId("perf-calibrate-dialog-save");
     await hr.waitFor(`document.querySelector('[data-testid="perf-cal-row-${row}"]').innerText.includes("calibrado")`, { label: `calibrado ${name}` });
   }

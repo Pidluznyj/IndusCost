@@ -34,6 +34,51 @@ Observação: no log do servidor local apareceu uma vez `Unique constraint faile
 
 Com isso, os bloqueios (1) e (3) de "deploy técnico em homologação" foram atendidos no ambiente local. Ainda faltam o preflight e o backup no servidor de homologação (seções 4.2 e 5) e a aprovação do procedimento de deploy. **Atenção:** com o código na `main`, o próximo deploy de produção pelo wrapper oficial também aplica as duas migrations (aditivas, inertes com a flag desligada).
 
+## Atualização de 19/10/2026 — três branches locais sobre a `main` (`ca8db5d`)
+
+Três entregas empilhadas, **commitadas só localmente**: nada foi enviado, mesclado ou implantado.
+
+| Ordem | Branch | Commits | Conteúdo | Documento |
+| --- | --- | --- | --- | --- |
+| 1 | `fix/org-hierarchy-effective-manager` | `0101e6a` | Hierarquia efetiva como fonte única do gestor (Pessoas, organograma, Desempenho) | `docs/hr/hierarquia-efetiva.md` |
+| 2 | `feat/performance-cycle-lifecycle` | `64286aa` | Ciclo oficial/teste, inativação, reativação e exclusão segura de ciclo de teste | [CICLO_DE_VIDA_DOS_CICLOS.md](CICLO_DE_VIDA_DOS_CICLOS.md) |
+| 3 | `feat/performance-leadership-180` | `0d04f19`, `4cbe904` e o commit de validação | Avaliação 180° de liderança | [AVALIACAO_180_LIDERANCA.md](AVALIACAO_180_LIDERANCA.md) |
+
+O branch 3 contém os três. Publicar o 3 na `main` publica os três.
+
+### Migrations novas, nesta ordem, todas aditivas
+
+| Migration | Branch | Efeito em dados existentes |
+| --- | --- | --- |
+| `20261022120000_hr_performance_cycle_lifecycle` | 2 | Ciclos existentes ficam `OFFICIAL` e `ACTIVE`; colunas novas nulas |
+| `20261023120000_hr_performance_leadership_180` | 3 | Modelos ficam `INDIVIDUAL`, ciclos sem liderança, participantes `isLeader = false`; tabela nova vazia |
+
+A hierarquia (branch 1) não tem migration. Nenhuma das duas reescreve, apaga ou renomeia dados. Aplicar **antes** do código.
+
+### Gates medidos no branch 3 (local, 19/10/2026)
+
+| Gate | Resultado |
+| --- | --- |
+| Testes do módulo (`src/lib/hrPerformance/*.test.ts`) | 93/93 |
+| Suíte de unidade completa | 5241 testes, 4 falhas, **as mesmas 4 da `main`** |
+| `tsc` completo | 1370 = 1370 da `main`; zero erro novo, zero no módulo |
+| Build de produção + `check:browser-bundle` | OK, 66 artefatos sem Prisma |
+| `check:frontend-server-imports` / `check:server-imports` | OK / OK |
+| Integração PostgreSQL (Desempenho + hierarquia) | 6/6 em 7 de 8 rodadas; 1 falha isolada não reproduzida (ver evidências) |
+| Navegador, fluxo original (partes 1–8) | 55/55, igual à `main`; uma rodada intermediária teve falha de tempo na parte 3 que não se repetiu |
+| Navegador, 180° (parte 9) + integridade no PostgreSQL | 18/18 + 10/10 |
+
+### Veredito para estes três branches
+
+| Etapa | Situação | Bloqueio exato |
+| --- | --- | --- |
+| Commit local | **FEITO** | — |
+| Push e PR | **APTO** | Aguarda pedido do responsável |
+| Deploy técnico em homologação | **APTO com condições** | Backup e preflight (seções 4.2 e 5); `migrate deploy` das duas migrations antes do código; `npm run audit:org-hierarchy` (somente leitura) e correção dos líderes ambíguos ou sem gestor antes de abrir ciclo com 180° |
+| Ciclo "Teste" já existente em homologação | **Procedimento pronto** | Classificar como teste e inativar pela tela, só SUPER_ADMIN ([CICLO_DE_VIDA_DOS_CICLOS.md](CICLO_DE_VIDA_DOS_CICLOS.md)); nada por SQL |
+| Piloto com colaboradores | **NÃO APTO** | As mesmas pendências de RH/LGPD de antes, mais as da 180° ([PENDENCIAS_HOMOLOGACAO.md](PENDENCIAS_HOMOLOGACAO.md) §9) |
+| Produção | **NÃO APTO** | Sem autorização; piloto não aprovado |
+
 ## 1. Referência
 
 | Item | Valor |

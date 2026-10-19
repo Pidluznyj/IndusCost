@@ -330,5 +330,6 @@ export const LEADERSHIP_SCALE = FREQUENCY_SCALE;
 export function strengthsAndPriorities(scores: Record<string, number>, questions: readonly Pick<LeadershipQuestion, "code" | "competency">[]) {
   const rows = questions.map((q) => ({ code: q.code, competency: q.competency, score: scores[q.code] })).filter((r) => isFrequencyScore(r.score));
   const sorted = [...rows].sort((a, b) => b.score - a.score || a.code.localeCompare(b.code));
-  return { strengths: sorted.filter((r) => r.score >= 3).slice(0, 3), priorities: [...sorted].reverse().filter((r) => r.score <= 2).slice(0, 3) };
+  // Critério explícito, sem escolher entre empates: forte = 4 (sempre ou quase sempre); prioridade = 1 ou 2.
+  return { strengths: sorted.filter((r) => r.score === 4).slice(0, 3), priorities: [...sorted].reverse().filter((r) => r.score <= 2).slice(0, 3) };
 }

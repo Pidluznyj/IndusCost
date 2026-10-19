@@ -138,3 +138,46 @@ O repositório não tem `@types/react`; por isso `key` em componente próprio ge
 - Os testes do módulo não estavam registrados em lugar nenhum (`scripts/unit-test-files.txt` nem `package.json`), então `npm test` não os rodava. Foram registrados os 6 arquivos na lista canônica e criado `npm run test:performance`. Nenhum teste foi alterado. `npm run test:performance` → 50/50; os mesmos arquivos pelo runner canônico (`node --import tsx --test …`) → 50/50. O teste de integração fica como suíte pulada sem `PERFORMANCE_PG_TEST_URL` (por isso `skipped 0` e `suites 22`).
 - A suíte de unidade passa a ter os 50 testes do módulo além dos 4918 medidos na seção 5. A contagem nova não foi medida.
 - Detalhes de release, integração com a `main` e GO/NO-GO: [RELEASE_READINESS.md](RELEASE_READINESS.md).
+
+## 8. Hierarquia efetiva, ciclo de vida e avaliação 180° (19/10/2026, local)
+
+Branch `feat/performance-leadership-180`, que contém os três branches. Banco local descartável (`perf_e2e`, PostgreSQL 17 embarcado), dados fictícios `[DEMO]`.
+
+### Navegador — parte 9 (`scripts/performance-e2e/part9-leadership-180.mjs`)
+
+Pré-requisito: `npx tsx scripts/performance-e2e/seedLeadership180.mts` depois do seed base. Bruno lidera 8 pessoas (6 no ciclo), Marcos lidera 1, e Carla lidera os dois a partir da diretoria raiz (topo). O usuário `gerente.teste@induscost.test` fica vinculado a Carla.
+
+| Passo | Resultado |
+| --- | --- |
+| 9.01 modelo de liderança pela tela, 8 competências, publicado | PASS |
+| 9.02 ciclo com modelo de liderança pela tela | PASS |
+| 9.03 abertura: líderes pela hierarquia efetiva; Carla no topo (`TOPO`) | PASS |
+| 9.04 celular (390 px), liderada: autoavaliação → avaliação do líder; nota 1 salva como rascunho, "Próxima" travado até comentário válido; sem rolagem lateral | PASS |
+| 9.05 celular, líder: 3 etapas na mesma sessão ("Etapa 3 de 3 · Sua liderança") | PASS |
+| 9.06 demais respondentes pela API pública (mesmas rotas do celular) | PASS |
+| 9.07 gerente avalia a liderança pela tela; envio travado sem comentário na nota 4 | PASS |
+| 9.08 líder não lê a avaliação da equipe nem a própria comparação (403) | PASS |
+| 9.09 homologação recusada sem calibração de liderança (`LEADERSHIP_CALIBRATION_REQUIRED`) | PASS |
+| 9.10 equipe suficiente (6 de 6): média exibida, sem comentário | PASS |
+| 9.11 / 9.11b equipe pequena (1): "Amostra insuficiente para divulgação", API sem média | PASS |
+| 9.12 topo calibrado pelo RH com exceção registrada | PASS |
+| 9.13 homologação: liderança oficial | PASS |
+| 9.14 PDF de liderança emitido pela gerente, sem comentário da equipe | PASS |
+| 9.15 PDI com competência LD aceito para o líder, recusado para liderada | PASS |
+| 9.16 painel com bloco de liderança separado da Nine-Box | PASS |
+| 9.17 comentário da equipe ausente de todas as respostas de RH, superior e líder | PASS |
+
+Integridade no PostgreSQL (`scripts/performance-e2e/check180.mts`, somente leitura): 10/10. Cobre tarefas por perspectiva (9 da equipe, 3 autoavaliações, 2 do superior), o líder efetivo de cada avaliação da equipe, o retrato gravado na abertura, o comentário guardado nas notas extremas, uma versão ativa e oficial por líder, notas inteiras de 1 a 4, a exceção do topo, a Nine-Box sem liderança e a trilha de auditoria.
+
+### Defeitos achados no navegador e corrigidos
+
+- **Rascunho recusado no celular.** Ao tocar numa nota extrema, o salvamento automático era recusado pelo servidor por falta de comentário ("Não salvou" e erro vermelho duplicado). Agora o rascunho aceita a nota antes do comentário, a tela trava "Próxima" e o envio confere no servidor. O teste do serviço foi atualizado para provar que o envio continua recusando nota 4 sem comentário e comentário artificial.
+- **PDF de liderança com regras da Nine-Box.** "Regras e limites" mostrava os cortes da Nine-Box. Agora mostra as regras da liderança, e a situação vem do resultado de liderança.
+- **Pontos fortes por empate.** Com todas as notas 3, o documento listava três competências arbitrárias. Agora ponto forte é nota 4 e prioridade é nota 1 ou 2.
+- **Teste de integração não repetível.** A preparação apagava as pessoas fictícias sem apagar o afastamento delas, o que quebrava a segunda rodada. Corrigido só no teste.
+
+### Regressão
+
+- Partes 1–8: 55/55, igual à `main`. Dois ajustes no roteiro por regras novas e intencionais: a parte 1 escolhe o tipo do ciclo, que não tem valor padrão; a parte 6 marca a exceção ao calibrar quem não tem avaliação do líder.
+- Uma rodada intermediária falhou por tempo na parte 3 (campo de evidência) e não se repetiu. A integração PostgreSQL teve 1 falha isolada em 8 rodadas, logo depois da correção do teste, também não reproduzida.
+- `tsc` completo: 1370, igual à `main`, nenhum no módulo. Suíte de unidade: 5241 testes, as mesmas 4 falhas da `main`. Build, `check:browser-bundle` (66 artefatos) e checagens de import: OK.

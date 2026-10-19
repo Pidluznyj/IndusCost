@@ -20,6 +20,7 @@ const isLocal = /@(127\.0\.0\.1|localhost)(:\d+)?\//.test(url);
 const skip = !url ? "PERFORMANCE_PG_TEST_URL não definida" : !isLocal ? "URL não é local: recusado" : false;
 
 const PERFORMANCE_TABLES = [
+  "HrPerformanceLeadershipResult",
   "HrPerformanceReportIssue",
   "HrPerformanceReminder",
   "HrPerformanceAuditEvent",
@@ -50,6 +51,8 @@ describe("persistência Prisma em PostgreSQL local", { skip }, () => {
   before(async () => {
     prisma = new PrismaClient({ datasources: { db: { url } } });
     for (const table of PERFORMANCE_TABLES) await prisma.$executeRawUnsafe(`DELETE FROM "${table}"`);
+    // Repetível: o teste não limpa ao final (para inspeção), então a rodada seguinte remove o afastamento antes das pessoas.
+    await prisma.hrAbsence.deleteMany({ where: { employee: { name: { startsWith: "[TESTE-PERF]" } } } });
     await prisma.employee.deleteMany({ where: { name: { startsWith: "[TESTE-PERF]" } } });
     await prisma.role.deleteMany({ where: { name: "[TESTE-PERF] Operador" } });
     await prisma.role.create({ data: { id: ids.role, name: "[TESTE-PERF] Operador", baseSalary: 0 } });

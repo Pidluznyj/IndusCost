@@ -158,8 +158,13 @@ describe("180°: jornada no celular", () => {
     assert.match(form.questions[0]!.text, /^Meu líder /);
     const stale = publicSave(db, { sessionToken: token, expectedVersion: form.version, answers: [], step: "SELF" }, openOptions);
     assert.equal(stale.ok === false && stale.code, "STEP_CHANGED", "etapa já enviada não volta");
-    assert.equal(answerCurrent(db, token, 4, null).ok, false, "nota 4 sem comentário");
-    assert.equal(answerCurrent(db, token, 1, "aaaaaaaaaaaaaaaaaaaa").ok, false, "comentário artificial");
+    // Rascunho aceita a nota extrema antes do comentário; o envio é que exige comentário real.
+    const submitNow = (current: typeof db) =>
+      publicSubmit(current, { sessionToken: token, expectedVersion: must(publicForm(current, { sessionToken: token }, openOptions)).value.version, confirm: true, step: "LEADERSHIP_UPWARD" }, openOptions);
+    db = must(answerCurrent(db, token, 4, null)).db;
+    assert.equal(submitNow(db).ok, false, "nota 4 sem comentário não envia");
+    db = must(answerCurrent(db, token, 1, "aaaaaaaaaaaaaaaaaaaa")).db;
+    assert.equal(submitNow(db).ok, false, "comentário artificial não envia");
     db = must(answerCurrent(db, token, 4, COMMENT)).db;
     const done = must(publicSubmit(db, { sessionToken: token, expectedVersion: must(publicForm(db, { sessionToken: token }, openOptions)).value.version, confirm: true, step: "LEADERSHIP_UPWARD" }, openOptions));
     assert.equal(done.value.done, true);

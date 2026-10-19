@@ -23,7 +23,6 @@ import {
   justificationReasons,
   LEADERSHIP_CODES,
   LEADERSHIP_JUSTIFICATION_MIN,
-  leadershipAnswerProblem,
   parseLeadershipRules,
   personalPerspective,
   PROPOSED_LEADERSHIP_QUESTIONS,
@@ -289,15 +288,17 @@ export function leadershipQuestionsFor(db: PerformanceDatabase, assignment: Assi
 
 // ---------------------------------------------------------------- respostas
 
-/** Valida e grava uma resposta de liderança. O comentário fica na coluna `evidence`. */
+/**
+ * Grava uma resposta de liderança como rascunho. O comentário fica na coluna `evidence`.
+ * O salvamento automático aceita nota extrema ainda sem comentário (a pessoa toca na nota e
+ * depois escreve); a exigência do comentário é conferida no envio (`leadershipSubmitProblem`).
+ */
 export function applyLeadershipAnswer(
   row: { kind: string; score: number | null; evidence: string | null },
-  answer: AnswerInput,
-  rules: LeadershipRules
+  answer: AnswerInput
 ): { code: string; message: string } | null {
   const comment = answer.kind === "pending" ? null : (answer.evidence ?? "").replace(/\s+/g, " ").trim().slice(0, 600) || null;
-  const problem = leadershipAnswerProblem(answer.kind === "score" ? { kind: "score", score: answer.score, comment } : answer.kind === "notObserved" ? { kind: "notObserved", comment } : { kind: "pending" }, rules);
-  if (problem) return { code: "COMMENT_REQUIRED", message: problem };
+  if (answer.kind === "score" && !isFrequencyScore(answer.score)) return { code: "INVALID_ANSWER", message: "Escolha uma resposta da escala." };
   if (answer.kind === "pending") {
     row.kind = "pending";
     row.score = null;

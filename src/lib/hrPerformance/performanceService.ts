@@ -1165,7 +1165,7 @@ export function saveAnswers(
     const row = db.answers.find((a) => a.assignmentId === assignment.id && a.questionCode === item.code);
     if (!row) return fail("NOT_FOUND", "Pergunta não faz parte desta versão.");
     if (isLeadershipKind(assignment.kind)) {
-      const leadershipProblem = applyLeadershipAnswer(row, item.answer, leadershipRulesOf(db, assignment.modelId));
+      const leadershipProblem = applyLeadershipAnswer(row, item.answer);
       if (leadershipProblem) return fail(leadershipProblem.code, leadershipProblem.message);
       continue;
     }

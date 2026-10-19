@@ -152,7 +152,9 @@ describe("comparação e justificativa", () => {
   it("pontos fortes e prioridades pela nota calibrada", () => {
     const scores = Object.fromEntries(LEADERSHIP_CODES.map((c, i) => [c, i < 2 ? 4 : i < 6 ? 3 : 2]));
     const out = strengthsAndPriorities(scores, questions);
-    assert.deepEqual(out.strengths.map((s) => s.code), ["LD-01", "LD-02", "LD-03"]);
+    assert.deepEqual(out.strengths.map((s) => s.code), ["LD-01", "LD-02"], "só nota 4 é ponto forte");
     assert.deepEqual(out.priorities.map((s) => s.code), ["LD-08", "LD-07"]);
+    const flat = strengthsAndPriorities(Object.fromEntries(LEADERSHIP_CODES.map((c) => [c, 3])), questions);
+    assert.deepEqual([flat.strengths.length, flat.priorities.length], [0, 0], "tudo 3: nada escolhido por empate");
   });
 });

@@ -613,10 +613,10 @@ export function LeadershipCalibrationOverlay({ participantId, onClose, onDone }:
                 </div>
                 <div className="rounded-lg border border-border p-3 text-xs">
                   <p>
-                    <strong>Mais fortes:</strong> {view.result.strengths.map((s) => s.competency).join(", ") || "—"}
+                    <strong>Pontos fortes (nota 4):</strong> {view.result.strengths.map((s) => s.competency).join(", ") || "—"}
                   </p>
                   <p>
-                    <strong>Prioridades de desenvolvimento:</strong> {view.result.priorities.map((s) => s.competency).join(", ") || "—"}
+                    <strong>Prioridades de desenvolvimento (nota 1 ou 2):</strong> {view.result.priorities.map((s) => s.competency).join(", ") || "—"}
                   </p>
                 </div>
               </div>

@@ -109,7 +109,19 @@ export function PerformanceReportDocument({ data, issue, branding }: { data: any
           </div>
           <div>
             <dt>Situação do resultado</dt>
-            <dd>{person.result ? (official ? "Oficial · homologado" : "Preliminar") : "Sem resultado"}</dd>
+            <dd>
+              {kind === "lideranca"
+                ? data.leadership?.result
+                  ? data.leadership.result.official
+                    ? "Liderança oficial · homologada"
+                    : "Liderança calibrada · preliminar"
+                  : "Liderança sem calibração"
+                : person.result
+                  ? official
+                    ? "Oficial · homologado"
+                    : "Preliminar"
+                  : "Sem resultado"}
+            </dd>
           </div>
         </dl>
       ) : null}
@@ -123,11 +135,19 @@ export function PerformanceReportDocument({ data, issue, branding }: { data: any
       {kind === "lideranca" && data.leadership ? <LeadershipSection view={data.leadership} /> : null}
 
       <PrintSection title="Regras e limites">
+        {kind === "lideranca" && data.leadership ? (
+          <p className="perf-note">
+            Três perspectivas sobre as mesmas oito competências, na escala de 1 a 4; “{NOT_OBSERVED_LABEL}” não pontua. A média da equipe só aparece com {data.leadership.rules.minRespondents} ou mais respostas
+            válidas por competência, e respostas ou comentários individuais da equipe não são exibidos a ninguém. Notas 1 e 4 exigem comentário. O índice calibrado é a média simples das
+            competências calibradas; falta de dado nunca conta como zero. A liderança não entra na Nine-Box. Nenhuma promoção, remuneração ou penalidade é aplicada por este documento.
+          </p>
+        ) : (
         <p className="perf-note">
           Média por pilar = soma das notas de 1 a 4 ÷ respostas válidas; “{NOT_OBSERVED_LABEL}” não pontua. Mínimo de {rules?.minValidAnswers ?? 3} respostas válidas por pilar. Cortes da Nine-Box:
           abaixo de {rules ? formatCut(rules.nineBoxLowCut) : "2,50"} é baixo; a partir de {rules ? formatCut(rules.nineBoxHighCut) : "3,50"} é alto. A cultura é indicador próprio e não entra na matriz. Nenhuma
           promoção, remuneração ou penalidade é aplicada por este documento.
         </p>
+        )}
       </PrintSection>
     </PrintDocumentShell>
   );
@@ -279,11 +299,11 @@ function LeadershipSection({ view }: { view: any }) {
                 </td>
               </tr>
               <tr>
-                <th>Mais fortes</th>
+                <th>Pontos fortes (nota 4)</th>
                 <td>{r.strengths.map((s: any) => s.competency).join(", ") || "—"}</td>
               </tr>
               <tr>
-                <th>Prioridades de desenvolvimento</th>
+                <th>Prioridades (nota 1 ou 2)</th>
                 <td>{r.priorities.map((s: any) => s.competency).join(", ") || "—"}</td>
               </tr>
               <tr>

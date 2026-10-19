@@ -70,3 +70,21 @@ Piloto com 8 a 12 pessoas reais, um líder e um RH, depois de 1 a 6. Roteiro sug
 
 - A cadeia de migrations do repositório não aplica a partir de banco vazio (`20260410120000_purchases_block1` pede `Material`). Preexistente.
 - A impressão da avaliação de experiência (`hr-evaluation-print.css`) provavelmente sai em branco pelo mesmo motivo que o PDF deste módulo saía: `src/reports-print.css` esconde `body *` e aquela folha não revela o conteúdo. Não foi alterada; vale conferir.
+
+## 9. Avaliação 180° de liderança (branch `feat/performance-leadership-180`)
+
+Decisões já aprovadas pelo RH para o piloto (registradas em [AVALIACAO_180_LIDERANCA.md](AVALIACAO_180_LIDERANCA.md) §3): comentário da equipe guardado e não lido por ninguém; média da equipe só com 5 ou mais respostas; nota calibrada inteira de 1 a 4; índice como média simples das competências com dado.
+
+Ainda em aberto:
+
+| Item | Proposta no código | Quem decide |
+| --- | --- | --- |
+| Textos das 8 competências (LD-01..LD-08) e das três frases | Proposta inicial do modelo | RH (editável no modelo de liderança, em rascunho) |
+| Comentário mínimo em nota 1 ou 4 | 15 letras | RH (regra do modelo) |
+| Divergência que pede justificativa na calibração | 1,5 ponto | RH (regra do modelo) |
+| Base legal, aviso e retenção do comentário da equipe guardado e não lido | Sem parecer | Jurídico/LGPD |
+| Avaliação da equipe no modo assistido (quem ajuda vê as respostas sobre o líder) | Permitido, como os demais formulários | RH + Jurídico |
+| Tela própria para o líder ver o resultado homologado | Não existe: o líder recebe o documento emitido pelo superior na devolutiva | RH |
+| Topo da estrutura | Calibrado com exceção registrada (não há superior) | RH |
+
+Pré-requisito técnico: `npm run audit:org-hierarchy` sem líderes ambíguos ou sem gestor antes de abrir ciclo com 180°. O retrato da liderança é gravado na abertura e não muda depois.
