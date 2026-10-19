@@ -269,6 +269,7 @@ import { registerEmployeesDashboardRoutes } from "./src/lib/employeesDashboardRo
 import { registerCompetencyRoutes } from "./src/lib/competencies/competencyRoutes.js";
 import { registerPerformanceRoutes } from "./src/lib/hrPerformance/performanceRoutes.js";
 import { createPrismaPerformanceStore } from "./src/lib/hrPerformance/performancePrisma.js";
+import { createPerformancePublicHostGuard } from "./src/lib/hrPerformance/performancePublicSurface.js";
 import {
   isIdentityOtpEnabled,
   isOfficialPublicationEnabled,
@@ -1145,6 +1146,8 @@ async function startServer() {
   // Superfície pública da Satisfação: teto próprio de 64 KB, antes do parser
   // global — corpo já parseado aqui não é relido pelo de 10 MB.
   app.use("/api/public/satisfaction", createSatisfactionPublicBodyParser());
+  // Portal de Desempenho e Cultura: respostas curtas; teto próprio de 64 KB.
+  app.use("/api/public/performance", express.json({ limit: "64kb" }));
   app.use(express.json({ limit: "10mb" }));
   app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
@@ -1155,6 +1158,9 @@ async function startServer() {
   // Registrado aqui de propósito: antes de qualquer rota, inclusive as
   // públicas da própria Satisfação.
   app.use(createSatisfactionPublicHostGuard());
+  // Desempenho e Cultura — mesma 2ª barreira, com allowlist própria (/avaliacao e
+  // /api/public/performance/*). Sem PERFORMANCE_PUBLIC_HOSTS não muda nada.
+  app.use(createPerformancePublicHostGuard());
 
   // Superfície pública da Satisfação (sem autenticação IndusCost).
   registerSatisfactionPublicRoutes(app);
@@ -15416,9 +15422,16 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
       const term = query.trim();
       const rows = await prisma.employee.findMany({
         where: term
-          ? { OR: [{ name: { contains: term, mode: "insensitive" } }, { department: { contains: term, mode: "insensitive" } }] }
+          ? {
+              OR: [
+                { name: { contains: term, mode: "insensitive" } },
+                { socialName: { contains: term, mode: "insensitive" } },
+                { department: { contains: term, mode: "insensitive" } },
+                { Role: { name: { contains: term, mode: "insensitive" } } },
+              ],
+            }
           : { status: "ACTIVE" },
-        take: 40,
+        take: 60,
         orderBy: { name: "asc" },
         select: {
           id: true,
@@ -15452,6 +15465,59 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     actorUserId: async (req) => {
       const authUser = (req as { appAuth?: AppAuthContext }).appAuth ?? (await getCurrentAppUser(req));
       return authUser?.id ?? null;
+    },
+    actorName: async (req) => {
+      const authUser = (req as { appAuth?: AppAuthContext }).appAuth ?? (await getCurrentAppUser(req));
+      return (authUser as { name?: string | null } | null)?.name ?? null;
+    },
+    // Afastamento (HrAbsence) e mudança de função/setor (HrEmployeeHistory) no período de
+    // referência vêm do cadastro oficial; a tela não informa isso à mão.
+    loadEligibilitySignals: async (employeeIds, since) => {
+      if (employeeIds.length === 0) return { absenceIds: [], roleChangeIds: [] };
+      const [absences, history] = await Promise.all([
+        prisma.hrAbsence.findMany({
+          where: {
+            employeeId: { in: employeeIds },
+            status: { notIn: ["CANCELLED", "CANCELED"] },
+            startDate: { lte: new Date() },
+            OR: [{ endDate: null }, { endDate: { gte: since } }],
+          },
+          select: { employeeId: true },
+        }),
+        prisma.hrEmployeeHistory.findMany({
+          where: { employeeId: { in: employeeIds }, effectiveDate: { gte: since } },
+          select: { employeeId: true, previousRoleId: true, newRoleId: true, previousDepartmentId: true, newDepartmentId: true, previousDepartment: true, newDepartment: true },
+        }),
+      ]);
+      const roleChangeIds = history
+        .filter(
+          (row) =>
+            (row.newRoleId != null && row.previousRoleId != null && row.newRoleId !== row.previousRoleId) ||
+            (row.newDepartmentId != null && row.previousDepartmentId != null && row.newDepartmentId !== row.previousDepartmentId) ||
+            (row.newDepartment != null && row.previousDepartment != null && row.newDepartment !== row.previousDepartment)
+        )
+        .map((row) => row.employeeId);
+      return { absenceIds: [...new Set(absences.map((row) => row.employeeId))], roleChangeIds: [...new Set(roleChangeIds)] };
+    },
+    // Mesma régua dos guards: grant oficial, ou editor de RH sem deny explícito
+    // (conduta segue estrita, sem o atalho do editor de RH).
+    can: async (req, resourceKey, action) => {
+      try {
+        const decision = await authorizeResourceRequest(req, resourceKey, action);
+        if (decision.ok) return true;
+        if (resourceKey === "admin.employees.performance.conduct") return false;
+        // `=== false`: sem strictNullChecks o `!decision.ok` não estreita a união.
+        if (!(decision.ok === false && decision.status === 403 && decision.source === "DENY_DEFAULT")) return false;
+        const authUser = (req as { appAuth?: AppAuthContext }).appAuth ?? (await getCurrentAppUser(req));
+        return Boolean(
+          authUser &&
+            authUser.isActive !== false &&
+            employeePermCheck(authUser).isHrEditor &&
+            !(authUser.canonicalAccess?.overrideDenied ?? []).includes(`${resourceKey}:${action}`)
+        );
+      } catch {
+        return false;
+      }
     },
   });
 
@@ -17518,6 +17584,20 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
       }
     });
 
+    // /avaliacao -> portal de Desempenho e Cultura (entry separado, como /r).
+    app.get("/avaliacao", async (req, res, next) => {
+      try {
+        const template = await fs.readFile(path.join(process.cwd(), "avaliacao.html"), "utf-8");
+        const html = await vite.transformIndexHtml(req.originalUrl, template);
+        res
+          .status(200)
+          .set({ "Content-Type": "text/html", "Cache-Control": "no-store", "Referrer-Policy": "no-referrer", "X-Robots-Tag": "noindex, nofollow, noarchive" })
+          .end(html);
+      } catch (err) {
+        next(err);
+      }
+    });
+
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), "dist");
@@ -17545,6 +17625,14 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
       setSpaHtmlNoCacheHeaders(res);
       res.set("X-Robots-Tag", "noindex, nofollow, noarchive");
       res.sendFile(path.join(distPath, "satisfacao.html"));
+    });
+
+    // /avaliacao -> bundle público do portal de Desempenho e Cultura.
+    app.get("/avaliacao", (_req, res) => {
+      setSpaHtmlNoCacheHeaders(res);
+      res.set("X-Robots-Tag", "noindex, nofollow, noarchive");
+      res.set("Referrer-Policy", "no-referrer");
+      res.sendFile(path.join(distPath, "avaliacao.html"));
     });
 
     app.get("*", (req, res) => {

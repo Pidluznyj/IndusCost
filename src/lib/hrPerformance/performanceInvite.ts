@@ -7,6 +7,8 @@ import { createHash, randomBytes, randomInt, timingSafeEqual } from "node:crypto
 export const LINK_TOKEN_BYTES = 32;
 export const OTP_ATTEMPT_LIMIT = 5;
 export const SESSION_TTL_MS = 8 * 60 * 60 * 1000;
+/** Validade máxima do convite. Nunca passa do prazo da autoavaliação (mínimo de um dia). */
+export const INVITE_TTL_DAYS = 14;
 
 export function newLinkToken(): string {
   return randomBytes(LINK_TOKEN_BYTES).toString("base64url");

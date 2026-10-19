@@ -1,5 +1,34 @@
 # Relatório de validação final — Avaliação de Desempenho, Cultura e Potencial
 
+## Revisão do Claude Code — 16/10/2026
+
+Worktree `induscost-claude`, branch `feature/avaliacao-desempenho-claude`, origem `2824a790`. Tudo local, com dados fictícios. Sem commit, push, merge, deploy, SSH, Nomus ou banco real. As migrations foram aplicadas só em PostgreSQL local descartável (porta 54329), conferido antes de cada comando.
+
+### Veredito
+
+- **APTO para revisão de código e para homologação técnica**, depois das duas migrations e do `permissions:seed`, com as flags ligadas só no ambiente de homologação.
+- **NÃO APTO para uso com pessoas reais** enquanto RH e jurídico não fecharem as decisões de [PENDENCIAS_HOMOLOGACAO.md](PENDENCIAS_HOMOLOGACAO.md) (textos e regras, LGPD, conduta, canal de lembrete, exposição do portal).
+- **NÃO APTO para produção.**
+
+A jornada inteira funciona pela tela, no navegador real: modelo com as 12 perguntas editáveis, ciclo, seleção de pessoas em lote, líder escolhido visualmente, convite com QR, portal no celular, preenchimento assistido, avaliação do líder com evidência, consolidação, calibração com revisão, homologação, Nine-Box, cultura separada, devolutiva, PDI, painel, PDF institucional e histórico na ficha.
+
+### Números
+
+| Item | Resultado |
+| --- | --- |
+| RFCs | 36 PASS, 0 PARTIAL, 0 FAIL, 4 BLOCKED por dependência externa (025, 037, 039, 040) — [MATRIZ_CONFORMIDADE_RFC.md](MATRIZ_CONFORMIDADE_RFC.md) |
+| Testes do módulo | 50/50; integração PostgreSQL 1/1 |
+| Navegador real | 55/55 verificações, sem erro de console |
+| Regressão | 4918 testes de unidade, as mesmas 4 falhas na base e no branch; navegação/sidebar/rotas 105/105; competências 116/116 |
+| Tipos | `tsc` 1370 erros na base e no branch, zero novo |
+| Build | produção e bundle do navegador OK |
+
+Detalhe e reprodução em [EVIDENCIAS_TESTES.md](EVIDENCIAS_TESTES.md). O texto abaixo é a auditoria anterior (Cursor), mantida como estava.
+
+---
+
+## Auditoria anterior (Cursor), sem alteração
+
 Data da revisão: 16/10/2026.  
 Ambiente: Windows 10 local, repositório IndusCost, branch `feat/desempenho-cultura-potencial`, HEAD ainda `9d833ade4547cecd1871d26067aff141a375ca87` (nenhum commit desta entrega).  
 Banco: a migration não foi aplicada. Nenhum `migrate`, backfill, Nomus, SSH, cron ou deploy.

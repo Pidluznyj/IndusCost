@@ -23,3 +23,15 @@ Nada nesta lista está homologado. O código usa os valores como **proposta** pa
 | Modelo inicial | Nasce `DRAFT` e `EM_VALIDACAO`. Publicar versão não declara o questionário homologado. | PROPOSTA |
 
 Identificadores no código: `culture-proposal-unapproved-v0`, `nine-box-proposal-unapproved-v0`, `performance-mean-v0`.
+
+## Atualização de 16/10/2026 (Claude Code)
+
+A tabela acima continua valendo como proposta. Mudanças desde então:
+
+- Dica por função: agora há exemplos por cargo por pergunta (até 12), editáveis no modelo; o modelo inicial nasce sem exemplos. Continua PROPOSTA.
+- Cortes, faixas de cultura, divergência, mínimo por pilar, observação e evidência viraram **regras da versão do modelo** (editáveis antes de publicar e gravadas no resultado). Os valores padrão são os da tabela. Continuam PROPOSTA.
+- Identidade: código de 6 dígitos falado pelo RH, fora da folha do QR. 5 erros bloqueiam o convite. Continua PROPOSTA.
+- Propostas novas: sessão do portal de 8 h; sessão assistida de 30 min; convite válido por até 14 dias, limitado ao prazo da autoavaliação; limite de 240 requisições/min por IP no portal e 20/min nas chamadas de autenticação.
+- Condutas: registro restrito sem tela de fluxo; depende de processo de RH e parecer jurídico.
+
+Lista consolidada do que falta decidir: [PENDENCIAS_HOMOLOGACAO.md](PENDENCIAS_HOMOLOGACAO.md).

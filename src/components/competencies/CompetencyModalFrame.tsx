@@ -18,6 +18,7 @@ export function CompetencyModalFrame({
   onClose,
   size = "lg",
   testId,
+  eyebrow = "Gestão de pessoas · Competências",
   children,
 }: {
   open: boolean;
@@ -31,6 +32,8 @@ export function CompetencyModalFrame({
   onClose: () => void;
   size?: OverlaySize;
   testId: string;
+  /** Linha acima do título. Padrão do módulo de Competências. */
+  eyebrow?: string;
   children: React.ReactNode;
 }) {
   const titleId = useId();
@@ -58,7 +61,7 @@ export function CompetencyModalFrame({
 
   return (
     <Overlay open={open} onClose={close} size={size} ariaLabelledBy={titleId} testId={testId}>
-      <OverlayHeader titleId={titleId} eyebrow="Gestão de pessoas · Competências" title={title} subtitle={subtitle} onClose={close} />
+      <OverlayHeader titleId={titleId} eyebrow={eyebrow} title={title} subtitle={subtitle} onClose={close} />
       <OverlayBody>
         {error ? (
           <div role="alert" data-testid={`${testId}-error`} className="mb-4 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">

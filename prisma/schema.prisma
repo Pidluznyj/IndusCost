@@ -872,7 +872,13 @@ model HrPerformanceModel {
   status          String
   version         Int
   governance      String    @default("EM_VALIDACAO")
+  description     String?
+  /// Orientação de período de referência lida antes das perguntas.
+  instructions    String?
+  /// Regras versionadas com o modelo (cortes, mínimos, evidência). NULL = proposta padrão.
+  rules           Json?
   publishedAt     DateTime? @db.Timestamptz(6)
+  archivedAt      DateTime? @db.Timestamptz(6)
   createdByUserId String?   @db.Uuid
   createdAt       DateTime  @default(now()) @db.Timestamptz(6)
   updatedAt       DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
@@ -888,10 +894,17 @@ model HrPerformanceQuestion {
   modelId    String @db.Uuid
   code       String
   pillar     String
+  competency String @default("")
   sortOrder  Int
   selfText   String
   leaderText String
   hint       String?
+  /// Comportamento observável descrito para quem avalia (valores e competências).
+  description     String?
+  positiveExample String?
+  negativeExample String?
+  /// Exemplos por cargo: [{ roleName, text }]. Mudança só em nova versão do modelo.
+  roleExamples    Json?
   model      HrPerformanceModel @relation(fields: [modelId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@unique([modelId, code])
@@ -914,6 +927,7 @@ model HrPerformanceCycle {
   updatedAt           DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
   model               HrPerformanceModel @relation(fields: [modelId], references: [id], onDelete: Restrict, onUpdate: NoAction)
   participants        HrPerformanceParticipant[]
+  reports             HrPerformanceReportIssue[]
 
   @@index([status])
   @@index([modelId])
@@ -924,17 +938,27 @@ model HrPerformanceParticipant {
   cycleId            String  @db.Uuid
   employeeId         String  @db.Uuid
   employeeName       String
+  employeeStatus     String?
   eligibility        String
   eligibilityReason  String
+  eligibilityException String?
+  absenceInWindow    Boolean @default(false)
+  roleChangedInWindow Boolean @default(false)
   roleId             String  @db.Uuid
   roleName           String
   departmentId       String? @db.Uuid
   departmentName     String
   managerId          String? @db.Uuid
   managerName        String?
+  /// CADASTRO = líder da ficha; RH = exceção atribuída e justificada.
+  managerSource      String  @default("CADASTRO")
   admissionDate      DateTime? @db.Timestamptz(6)
   registration       String?
   frozen             Boolean @default(false)
+  addedAt            DateTime @default(now()) @db.Timestamptz(6)
+  /// Remoção lógica. O registro e o histórico ficam.
+  removedAt          DateTime? @db.Timestamptz(6)
+  removedReason      String?
   cycle              HrPerformanceCycle @relation(fields: [cycleId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   employee           Employee @relation("PerformanceSubject", fields: [employeeId], references: [id], onDelete: Restrict, onUpdate: NoAction)
   assignments        HrPerformanceAssignment[]
@@ -959,6 +983,8 @@ model HrPerformanceAssignment {
   active               Boolean   @default(true)
   submittedAt          DateTime? @db.Timestamptz(6)
   assistedByUserId     String?   @db.Uuid
+  returnReason         String?
+  createdAt            DateTime  @default(now()) @db.Timestamptz(6)
   participant          HrPerformanceParticipant @relation(fields: [participantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   evaluator            Employee @relation("PerformanceEvaluator", fields: [evaluatorEmployeeId], references: [id], onDelete: Restrict, onUpdate: NoAction)
   answers              HrPerformanceAnswer[]
@@ -990,6 +1016,7 @@ model HrPerformanceInvite {
   otpDigest      String
   expiresAt      DateTime  @db.Timestamptz(6)
   revokedAt      DateTime? @db.Timestamptz(6)
+  revokedReason  String?
   failedAttempts Int       @default(0)
   locked         Boolean   @default(false)
   createdAt      DateTime  @default(now()) @db.Timestamptz(6)
@@ -1006,6 +1033,7 @@ model HrPerformanceSession {
   sessionDigest    String    @unique
   expiresAt        DateTime  @db.Timestamptz(6)
   assistantUserId  String?   @db.Uuid
+  assistReason     String?
   revoked          Boolean   @default(false)
   assignment       HrPerformanceAssignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
@@ -1037,6 +1065,12 @@ model HrPerformanceResult {
   nineBoxRuleId         String
   cultureRuleId         String
   supersedesId          String? @db.Uuid
+  /// Regras usadas no cálculo desta versão (reprodutibilidade).
+  ruleSnapshot          Json?
+  adjusted              Boolean @default(false)
+  calibrationNote       String?
+  calibratedByUserId    String? @db.Uuid
+  calibratedAt          DateTime? @db.Timestamptz(6)
   createdAt             DateTime @default(now()) @db.Timestamptz(6)
   participant           HrPerformanceParticipant @relation(fields: [participantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
@@ -1058,7 +1092,13 @@ model HrPerformanceFeedback {
   acknowledgedAt     DateTime? @db.Timestamptz(6)
   agreedAt           DateTime? @db.Timestamptz(6)
   contestation       String?
+  collaboratorNote   String?
+  /// SELF = a própria pessoa; ASSISTED = registrada presencialmente pelo RH/líder.
+  acknowledgedVia    String?
+  acknowledgedByUserId String? @db.Uuid
   internalNotes      String?
+  createdByUserId    String?   @db.Uuid
+  createdAt          DateTime  @default(now()) @db.Timestamptz(6)
   participant        HrPerformanceParticipant @relation(fields: [participantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   pdis               HrPerformancePdi[]
 
@@ -1070,11 +1110,17 @@ model HrPerformancePdi {
   participantId String    @db.Uuid
   feedbackId    String    @db.Uuid
   title         String
+  objective     String?
+  competencyCode String?
   priority      Boolean
   justification String?
   ownerName     String
   dueAt         String?
   status        String
+  evidence      String?
+  createdAt     DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt     DateTime  @default(now()) @db.Timestamptz(6)
+  completedAt   DateTime? @db.Timestamptz(6)
   feedback      HrPerformanceFeedback @relation(fields: [feedbackId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   checkins      HrPerformancePdiCheckin[]
 
@@ -1132,6 +1178,22 @@ model HrPerformanceReminder {
   status     String @default("DRAFT")
 
   @@index([cycleId, status])
+}
+
+/// Emissão de documento do ciclo. O código é o identificador impresso no PDF.
+model HrPerformanceReportIssue {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code           String   @unique
+  kind           String
+  cycleId        String   @db.Uuid
+  participantId  String?  @db.Uuid
+  version        Int
+  issuedByUserId String?  @db.Uuid
+  issuedByName   String?
+  issuedAt       DateTime @db.Timestamptz(6)
+  cycle          HrPerformanceCycle @relation(fields: [cycleId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@index([cycleId, kind])
 }
 
 model Material {

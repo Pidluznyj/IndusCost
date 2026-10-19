@@ -1,0 +1,310 @@
+/*
+ * Portal do colaborador (Desempenho e Cultura) — CSS próprio e autocontido, no mesmo
+ * espírito do formulário público de Satisfação: quem responde não baixa o design
+ * system administrativo. Mobile first, alvos de toque de 56 px, foco visível,
+ * contraste AA, texto grande.
+ */
+
+.pp {
+  --pp-bg: #f1f5f9;
+  --pp-surface: #ffffff;
+  --pp-ink: #0f172a;
+  --pp-ink-soft: #334155;
+  --pp-ink-faint: #475569;
+  --pp-border: #cbd5e1;
+  --pp-brand: #1d4ed8;
+  --pp-brand-ink: #ffffff;
+  --pp-brand-soft: #dbeafe;
+  --pp-danger: #b91c1c;
+  --pp-danger-soft: #fef2f2;
+  --pp-warn: #92400e;
+  --pp-warn-soft: #fffbeb;
+  --pp-ok: #047857;
+  --pp-ok-soft: #ecfdf5;
+  min-height: 100vh;
+  min-height: 100dvh;
+  background: var(--pp-bg);
+  color: var(--pp-ink);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-size: 18px;
+  line-height: 1.45;
+  -webkit-text-size-adjust: 100%;
+}
+
+.pp *,
+.pp *::before,
+.pp *::after {
+  box-sizing: border-box;
+}
+
+.pp-main {
+  margin: 0 auto;
+  width: 100%;
+  max-width: 560px;
+  padding: 16px 16px calc(24px + env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+.pp-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 15px;
+  color: var(--pp-ink-faint);
+}
+
+.pp-brand {
+  font-weight: 700;
+  color: var(--pp-brand);
+}
+
+.pp-card {
+  background: var(--pp-surface);
+  border: 1px solid var(--pp-border);
+  border-radius: 16px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.pp h1 {
+  font-size: 26px;
+  line-height: 1.2;
+  margin: 0;
+}
+
+.pp h2 {
+  font-size: 24px;
+  line-height: 1.3;
+  margin: 0;
+  font-weight: 600;
+}
+
+.pp p {
+  margin: 0;
+}
+
+.pp-muted {
+  color: var(--pp-ink-faint);
+  font-size: 16px;
+}
+
+.pp-pillar {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--pp-brand);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.pp-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pp-progress-bar {
+  height: 10px;
+  border-radius: 999px;
+  background: #e2e8f0;
+  overflow: hidden;
+}
+
+.pp-progress-bar > span {
+  display: block;
+  height: 100%;
+  background: var(--pp-brand);
+  transition: width 0.2s ease;
+}
+
+.pp-options {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.pp-btn,
+.pp-option {
+  appearance: none;
+  font: inherit;
+  min-height: 56px;
+  border-radius: 14px;
+  border: 2px solid var(--pp-border);
+  background: var(--pp-surface);
+  color: var(--pp-ink);
+  padding: 12px 16px;
+  text-align: left;
+  cursor: pointer;
+  width: 100%;
+  touch-action: manipulation;
+}
+
+.pp-option[aria-pressed="true"] {
+  border-color: var(--pp-brand);
+  background: var(--pp-brand-soft);
+  font-weight: 700;
+}
+
+.pp-option-na {
+  font-size: 16px;
+}
+
+.pp-btn {
+  text-align: center;
+  font-weight: 700;
+}
+
+.pp-btn-primary {
+  background: var(--pp-brand);
+  border-color: var(--pp-brand);
+  color: var(--pp-brand-ink);
+}
+
+.pp-btn:disabled,
+.pp-option:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.pp-btn:focus-visible,
+.pp-option:focus-visible,
+.pp-input:focus-visible,
+.pp-check input:focus-visible {
+  outline: 3px solid #f59e0b;
+  outline-offset: 2px;
+}
+
+.pp-nav {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: auto;
+  position: sticky;
+  bottom: 0;
+  padding-top: 8px;
+  padding-bottom: env(safe-area-inset-bottom);
+  background: linear-gradient(to top, var(--pp-bg) 70%, transparent);
+}
+
+.pp-input {
+  font: inherit;
+  font-size: 28px;
+  letter-spacing: 0.3em;
+  text-align: center;
+  min-height: 64px;
+  border-radius: 14px;
+  border: 2px solid var(--pp-border);
+  padding: 8px 12px;
+  width: 100%;
+}
+
+.pp-status {
+  font-size: 15px;
+  min-height: 22px;
+}
+
+.pp-status-ok {
+  color: var(--pp-ok);
+}
+
+.pp-status-warn {
+  color: var(--pp-warn);
+}
+
+.pp-alert {
+  border-radius: 12px;
+  padding: 12px 14px;
+  font-size: 16px;
+}
+
+.pp-alert-danger {
+  background: var(--pp-danger-soft);
+  color: var(--pp-danger);
+  border: 1px solid #fecaca;
+}
+
+.pp-alert-warn {
+  background: var(--pp-warn-soft);
+  color: var(--pp-warn);
+  border: 1px solid #fde68a;
+}
+
+.pp-alert-ok {
+  background: var(--pp-ok-soft);
+  color: var(--pp-ok);
+  border: 1px solid #a7f3d0;
+}
+
+.pp-review {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.pp-review li {
+  border: 1px solid var(--pp-border);
+  border-radius: 12px;
+  padding: 12px;
+  background: var(--pp-surface);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pp-review-answer {
+  font-weight: 700;
+}
+
+.pp-review-missing {
+  color: var(--pp-danger);
+  font-weight: 700;
+}
+
+.pp-link {
+  appearance: none;
+  background: none;
+  border: none;
+  color: var(--pp-brand);
+  font: inherit;
+  font-size: 16px;
+  font-weight: 700;
+  text-decoration: underline;
+  padding: 8px 0;
+  min-height: 44px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.pp-check {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  font-size: 17px;
+}
+
+.pp-check input {
+  width: 28px;
+  height: 28px;
+  flex: none;
+  margin-top: 2px;
+}
+
+@media (min-width: 640px) {
+  .pp-main {
+    padding-top: 32px;
+  }
+}
+
+/* Foco programático no título a cada tela (leitor de tela) sem moldura visual. */
+.pp [tabindex="-1"]:focus {
+  outline: none;
+}

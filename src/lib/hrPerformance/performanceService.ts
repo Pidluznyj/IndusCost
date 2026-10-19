@@ -1,39 +1,68 @@
 /**
  * Casos de uso do módulo. Funções puras sobre o estado: a rota persiste o retorno.
  * Não grava token, OTP nem texto de evidência na auditoria.
+ *
+ * Autorização: toda mutação recebe o escopo (`PerformanceScope`). Ações de RH exigem
+ * escopo ALL; ações da liderança exigem ser o avaliador atribuído ou ter a pessoa no
+ * escopo de escrita. A interface não é a fronteira de segurança.
  */
 import {
   ALGORITHM_ID,
+  PDI_STATUS_LABELS,
+  PILLARS,
   PROPOSED_BASE_QUESTIONS,
-  PROPOSED_DIVERGENCE_THRESHOLD,
-  PROPOSED_MIN_OBSERVATION_DAYS,
-  PROPOSED_MIN_VALID_ANSWERS,
+  PROPOSED_MODEL_INSTRUCTIONS,
+  QUESTIONS_PER_PILLAR,
+  ROLE_EXAMPLES_MAX,
+  UNCLASSIFIED_QUADRANT,
   aggregatePillar,
   classifyEligibility,
   cultureBand,
+  evidenceRequired,
   evidenceSatisfied,
   findDivergences,
-  neutralizeSpreadsheetCell,
+  isIsoDate,
+  isNineBoxBand,
+  isPdiStatus,
   nextCycleStatus,
   placeNineBox,
+  proposedRules,
+  quadrantLabel,
+  validateRules,
+  EVIDENCE_MAX_CHARS,
   type AnswerInput,
+  type CycleStatus,
   type EmployeeSnapshotSource,
+  type NineBoxBand,
+  type PdiStatus,
+  type PerformanceRules,
   type StoredAnswer,
 } from "./performanceDomain.js";
-import { buildInviteHashUrl, digestSecret, gateInvite, newLinkToken, newOtpCode, newSessionToken, publicFailureMessage, secretsMatch, SESSION_TTL_MS, OTP_ATTEMPT_LIMIT } from "./performanceInvite.js";
 import {
-  canEvaluateEmployee,
-  canSeeEmployee,
-  leaderQueueIncludes,
-  type PerformanceScope,
-} from "./performanceAccess.js";
+  buildInviteHashUrl,
+  digestSecret,
+  gateInvite,
+  newLinkToken,
+  newOtpCode,
+  newSessionToken,
+  publicFailureMessage,
+  secretsMatch,
+  SESSION_TTL_MS,
+  OTP_ATTEMPT_LIMIT,
+  INVITE_TTL_DAYS,
+} from "./performanceInvite.js";
+import { canEvaluateEmployee, canSeeEmployee, type PerformanceScope } from "./performanceAccess.js";
 import {
   cloneDb,
   newId,
   type AnswerRecord,
   type AssignmentRecord,
+  type CycleRecord,
+  type ModelRecord,
+  type ParticipantRecord,
   type PerformanceDatabase,
   type ResultRecord,
+  type RoleExample,
 } from "./performanceState.js";
 
 export type ServiceOptions = {
@@ -46,16 +75,28 @@ export type ServiceOptions = {
 
 export type ServiceError = { ok: false; code: string; message: string; db?: PerformanceDatabase };
 export type ServiceOk<T> = { ok: true; db: PerformanceDatabase; value: T };
+export type ServiceResult<T> = ServiceOk<T> | ServiceError;
 
-function fail(code: string, message: string): ServiceError {
+export const HR_SCOPE: PerformanceScope = { kind: "ALL" };
+
+export function fail(code: string, message: string): ServiceError {
   return { ok: false, code, message };
 }
 
-function iso(date: Date): string {
+export function iso(date: Date): string {
   return date.toISOString();
 }
 
-function audit(
+function clean(value: string | null | undefined, max = 2000): string {
+  return (value ?? "").trim().slice(0, max);
+}
+
+function cleanOrNull(value: string | null | undefined, max = 2000): string | null {
+  const text = clean(value, max);
+  return text.length > 0 ? text : null;
+}
+
+export function audit(
   db: PerformanceDatabase,
   now: Date,
   actorUserId: string | null,
@@ -66,15 +107,41 @@ function audit(
   db.audits.push({ id: newId(), at: iso(now), actorUserId, action, entityId, detail });
 }
 
-function questionsOf(db: PerformanceDatabase, modelId: string) {
+const FORBIDDEN_MESSAGE = "Você não tem acesso a esta pessoa ou ação.";
+
+function hrOnly(scope: PerformanceScope): ServiceError | null {
+  return scope.kind === "ALL" ? null : fail("FORBIDDEN", FORBIDDEN_MESSAGE);
+}
+
+export function questionsOf(db: PerformanceDatabase, modelId: string) {
   return db.questions.filter((q) => q.modelId === modelId).sort((a, b) => a.sortOrder - b.sortOrder);
 }
 
-function activeAssignment(db: PerformanceDatabase, participantId: string, kind: "SELF" | "LEADER") {
+export function modelOfCycle(db: PerformanceDatabase, cycle: CycleRecord): ModelRecord | null {
+  return db.models.find((m) => m.id === cycle.modelId) ?? null;
+}
+
+export function rulesOfCycle(db: PerformanceDatabase, cycle: CycleRecord): PerformanceRules {
+  return modelOfCycle(db, cycle)?.rules ?? proposedRules();
+}
+
+export function activeAssignment(db: PerformanceDatabase, participantId: string, kind: "SELF" | "LEADER") {
   return db.assignments.find((a) => a.participantId === participantId && a.kind === kind && a.active) ?? null;
 }
 
-function toStored(db: PerformanceDatabase, assignmentId: string): StoredAnswer[] {
+export function liveParticipants(db: PerformanceDatabase, cycleId: string): ParticipantRecord[] {
+  return db.participants.filter((p) => p.cycleId === cycleId && !p.removedAt);
+}
+
+export function eligibleParticipants(db: PerformanceDatabase, cycleId: string): ParticipantRecord[] {
+  return liveParticipants(db, cycleId).filter((p) => p.eligibility === "ELIGIBLE");
+}
+
+export function activeResult(db: PerformanceDatabase, participantId: string): ResultRecord | null {
+  return db.results.find((r) => r.participantId === participantId && r.active) ?? null;
+}
+
+export function toStored(db: PerformanceDatabase, assignmentId: string): StoredAnswer[] {
   return db.answers
     .filter((a) => a.assignmentId === assignmentId)
     .map((a) => ({
@@ -100,12 +167,36 @@ function blankAnswers(db: PerformanceDatabase, assignmentId: string, modelId: st
   }
 }
 
+/** O avaliador atribuído pelo ciclo (ou o RH) escreve na avaliação da liderança. */
+export function canActOnLeaderAssignment(scope: PerformanceScope, assignment: AssignmentRecord): boolean {
+  if (scope.kind === "ALL") return true;
+  const actor = scope.actorEmployeeId;
+  if (!actor || assignment.employeeId === actor) return false;
+  return assignment.evaluatorEmployeeId === actor;
+}
+
+/** RH ou a liderança da pessoa (avaliador do ciclo ou escopo de escrita). */
+export function canLeadParticipant(db: PerformanceDatabase, scope: PerformanceScope, participant: ParticipantRecord): boolean {
+  if (scope.kind === "ALL") return true;
+  const actor = scope.actorEmployeeId;
+  if (!actor || participant.employeeId === actor) return false;
+  const leader = activeAssignment(db, participant.id, "LEADER");
+  if (leader && leader.evaluatorEmployeeId === actor) return true;
+  return canEvaluateEmployee(scope, participant.employeeId);
+}
+
+// ---------------------------------------------------------------------------
+// Modelos
+// ---------------------------------------------------------------------------
+
 export function createDraftModel(
   source: PerformanceDatabase,
-  input: { name: string; actorUserId: string | null },
+  input: { name: string; description?: string | null; instructions?: string | null; actorUserId: string | null; scope?: PerformanceScope },
   options: ServiceOptions
-): ServiceOk<{ modelId: string }> | ServiceError {
-  const name = input.name.trim();
+): ServiceResult<{ modelId: string }> {
+  const denied = hrOnly(input.scope ?? HR_SCOPE);
+  if (denied) return denied;
+  const name = clean(input.name, 120);
   if (name.length < 3) return fail("INVALID_NAME", "Informe um nome para o modelo.");
   const db = cloneDb(source);
   const modelId = newId();
@@ -113,11 +204,16 @@ export function createDraftModel(
     id: modelId,
     lineageId: modelId,
     name,
+    description: cleanOrNull(input.description, 600),
+    instructions: cleanOrNull(input.instructions, 600) ?? PROPOSED_MODEL_INSTRUCTIONS,
     status: "DRAFT",
     version: 1,
     governance: "EM_VALIDACAO",
+    rules: proposedRules(),
     publishedAt: null,
+    archivedAt: null,
     createdByUserId: input.actorUserId,
+    createdAt: iso(options.now()),
   });
   for (const question of PROPOSED_BASE_QUESTIONS) {
     db.questions.push({
@@ -125,27 +221,94 @@ export function createDraftModel(
       modelId,
       code: question.code,
       pillar: question.pillar,
+      competency: question.competency,
       sortOrder: question.sortOrder,
       selfText: question.selfText,
       leaderText: question.leaderText,
       hint: null,
+      description: question.description || null,
+      positiveExample: question.positiveExample || null,
+      negativeExample: question.negativeExample || null,
+      roleExamples: [],
     });
   }
   audit(db, options.now(), input.actorUserId, "MODEL_DRAFT_CREATED", modelId, { governance: "EM_VALIDACAO" });
   return { ok: true, db, value: { modelId } };
 }
 
+function draftModel(db: PerformanceDatabase, modelId: string): ModelRecord | ServiceError {
+  const model = db.models.find((m) => m.id === modelId);
+  if (!model) return fail("NOT_FOUND", "Modelo não encontrado.");
+  if (model.status !== "DRAFT") return fail("MODEL_LOCKED", "Modelo publicado não é alterado. Duplique para criar uma nova versão.");
+  return model;
+}
+
+export function updateModelDraft(
+  source: PerformanceDatabase,
+  input: {
+    modelId: string;
+    name?: string;
+    description?: string | null;
+    instructions?: string | null;
+    rules?: PerformanceRules;
+    actorUserId: string | null;
+    scope?: PerformanceScope;
+  },
+  options: ServiceOptions
+): ServiceResult<{ modelId: string }> {
+  const denied = hrOnly(input.scope ?? HR_SCOPE);
+  if (denied) return denied;
+  const db = cloneDb(source);
+  const model = draftModel(db, input.modelId);
+  if ("ok" in model) return model;
+  if (input.name !== undefined) {
+    const name = clean(input.name, 120);
+    if (name.length < 3) return fail("INVALID_NAME", "Informe um nome para o modelo.");
+    model.name = name;
+  }
+  if (input.description !== undefined) model.description = cleanOrNull(input.description, 600);
+  if (input.instructions !== undefined) {
+    const instructions = cleanOrNull(input.instructions, 600);
+    if (!instructions || instructions.length < 10) return fail("INVALID_TEXT", "Escreva a orientação que a pessoa lê antes de responder.");
+    model.instructions = instructions;
+  }
+  if (input.rules) {
+    const problem = validateRules(input.rules);
+    if (problem) return fail("INVALID_RULES", problem);
+    model.rules = { ...input.rules, ruleSetId: input.rules.ruleSetId.trim() };
+  }
+  audit(db, options.now(), input.actorUserId, "MODEL_DRAFT_UPDATED", model.id, {
+    rules: Boolean(input.rules),
+    ruleSetId: model.rules.ruleSetId,
+  });
+  return { ok: true, db, value: { modelId: model.id } };
+}
+
 export function updateDraftQuestion(
   source: PerformanceDatabase,
-  input: { modelId: string; code: string; selfText: string; leaderText: string; hint: string | null; actorUserId: string | null },
+  input: {
+    modelId: string;
+    code: string;
+    competency?: string;
+    selfText: string;
+    leaderText: string;
+    hint: string | null;
+    description?: string | null;
+    positiveExample?: string | null;
+    negativeExample?: string | null;
+    roleExamples?: readonly RoleExample[];
+    actorUserId: string | null;
+    scope?: PerformanceScope;
+  },
   options: ServiceOptions
-): ServiceOk<{ code: string }> | ServiceError {
+): ServiceResult<{ code: string }> {
+  const denied = hrOnly(input.scope ?? HR_SCOPE);
+  if (denied) return denied;
   const db = cloneDb(source);
-  const model = db.models.find((m) => m.id === input.modelId);
-  if (!model) return fail("NOT_FOUND", "Modelo não encontrado.");
-  if (model.status !== "DRAFT") return fail("MODEL_LOCKED", "Modelo publicado não é alterado. Duplique para uma nova versão.");
-  const selfText = input.selfText.trim();
-  const leaderText = input.leaderText.trim();
+  const model = draftModel(db, input.modelId);
+  if ("ok" in model) return model;
+  const selfText = clean(input.selfText, 240);
+  const leaderText = clean(input.leaderText, 240);
   if (selfText.length < 8 || leaderText.length < 8) return fail("INVALID_TEXT", "Escreva a pergunta para a pessoa e para o líder.");
   const siblings = questionsOf(db, model.id).filter((q) => q.code !== input.code);
   if (siblings.some((q) => q.selfText.trim().toLowerCase() === selfText.toLowerCase())) {
@@ -153,33 +316,94 @@ export function updateDraftQuestion(
   }
   const question = db.questions.find((q) => q.modelId === model.id && q.code === input.code);
   if (!question) return fail("NOT_FOUND", "Pergunta não encontrada.");
+  if (input.competency !== undefined) {
+    const competency = clean(input.competency, 80);
+    if (competency.length < 3) return fail("INVALID_TEXT", "Informe a competência observada pela pergunta.");
+    question.competency = competency;
+  }
   question.selfText = selfText;
   question.leaderText = leaderText;
-  question.hint = input.hint?.trim() || null;
+  question.hint = cleanOrNull(input.hint, 300);
+  if (input.description !== undefined) question.description = cleanOrNull(input.description, 400);
+  if (input.positiveExample !== undefined) question.positiveExample = cleanOrNull(input.positiveExample, 300);
+  if (input.negativeExample !== undefined) question.negativeExample = cleanOrNull(input.negativeExample, 300);
+  if (input.roleExamples !== undefined) {
+    const rows = input.roleExamples
+      .map((row) => ({ roleName: clean(row?.roleName, 80), text: clean(row?.text, 300) }))
+      .filter((row) => row.roleName || row.text);
+    if (rows.length > ROLE_EXAMPLES_MAX) return fail("INVALID_TEXT", `No máximo ${ROLE_EXAMPLES_MAX} exemplos por cargo em cada pergunta.`);
+    if (rows.some((row) => row.roleName.length < 2 || row.text.length < 5)) return fail("INVALID_TEXT", "Cada exemplo por cargo precisa do cargo e de um texto.");
+    const roles = rows.map((row) => row.roleName.toLowerCase());
+    if (new Set(roles).size !== roles.length) return fail("INVALID_TEXT", "Há cargo repetido nos exemplos desta pergunta.");
+    question.roleExamples = rows;
+  }
   audit(db, options.now(), input.actorUserId, "MODEL_QUESTION_EDITED", question.id, { code: question.code });
   return { ok: true, db, value: { code: question.code } };
 }
 
+/** Reordena dentro do pilar. Os três blocos continuam na ordem técnico → cultura → potencial. */
+export function moveDraftQuestion(
+  source: PerformanceDatabase,
+  input: { modelId: string; code: string; direction: "up" | "down"; actorUserId: string | null; scope?: PerformanceScope },
+  options: ServiceOptions
+): ServiceResult<{ code: string }> {
+  const denied = hrOnly(input.scope ?? HR_SCOPE);
+  if (denied) return denied;
+  const db = cloneDb(source);
+  const model = draftModel(db, input.modelId);
+  if ("ok" in model) return model;
+  const ordered = questionsOf(db, model.id);
+  const index = ordered.findIndex((q) => q.code === input.code);
+  if (index < 0) return fail("NOT_FOUND", "Pergunta não encontrada.");
+  const current = ordered[index]!;
+  const neighbor = ordered[input.direction === "up" ? index - 1 : index + 1];
+  if (!neighbor || neighbor.pillar !== current.pillar) return fail("EDGE_OF_PILLAR", "A pergunta já está no limite do seu pilar.");
+  const swap = current.sortOrder;
+  current.sortOrder = neighbor.sortOrder;
+  neighbor.sortOrder = swap;
+  audit(db, options.now(), input.actorUserId, "MODEL_QUESTION_MOVED", current.id, { code: current.code, direction: input.direction });
+  return { ok: true, db, value: { code: current.code } };
+}
+
+export function modelProblems(db: PerformanceDatabase, model: ModelRecord): string[] {
+  const problems: string[] = [];
+  const questions = questionsOf(db, model.id);
+  if (questions.length !== PILLARS.length * QUESTIONS_PER_PILLAR) problems.push("A versão-base precisa das 12 perguntas.");
+  for (const pillar of PILLARS) {
+    if (questions.filter((q) => q.pillar === pillar).length !== QUESTIONS_PER_PILLAR) problems.push("Cada pilar precisa de quatro perguntas.");
+  }
+  if (questions.some((q) => q.selfText.trim().length < 8 || q.leaderText.trim().length < 8)) {
+    problems.push("Toda pergunta precisa de texto para a pessoa e para o líder.");
+  }
+  if (questions.some((q) => (q.competency ?? "").trim().length < 3)) problems.push("Toda pergunta precisa da competência observada.");
+  const texts = questions.map((q) => q.selfText.trim().toLowerCase());
+  if (new Set(texts).size !== texts.length) problems.push("Há perguntas repetidas.");
+  if (!model.instructions || model.instructions.trim().length < 10) problems.push("Escreva a orientação de período de referência.");
+  const rules = validateRules(model.rules);
+  if (rules) problems.push(rules);
+  return [...new Set(problems)];
+}
+
 export function publishModel(
   source: PerformanceDatabase,
-  input: { modelId: string; actorUserId: string | null },
+  input: { modelId: string; actorUserId: string | null; scope?: PerformanceScope },
   options: ServiceOptions
-): ServiceOk<{ modelId: string }> | ServiceError {
+): ServiceResult<{ modelId: string }> {
+  const denied = hrOnly(input.scope ?? HR_SCOPE);
+  if (denied) return denied;
   const db = cloneDb(source);
   const model = db.models.find((m) => m.id === input.modelId);
   if (!model) return fail("NOT_FOUND", "Modelo não encontrado.");
   if (model.status === "PUBLISHED") return { ok: true, db: source, value: { modelId: model.id } };
   if (model.status !== "DRAFT") return fail("MODEL_LOCKED", "Só um rascunho pode ser publicado.");
-  const questions = questionsOf(db, model.id);
-  if (questions.length !== 12) return fail("INVALID_MODEL", "A versão-base precisa das 12 perguntas.");
-  if (questions.some((q) => q.selfText.trim().length < 8 || q.leaderText.trim().length < 8)) {
-    return fail("INVALID_TEXT", "Toda pergunta precisa de texto para a pessoa e para o líder.");
-  }
+  const problems = modelProblems(db, model);
+  if (problems.length > 0) return fail("INVALID_MODEL", problems[0]!);
   model.status = "PUBLISHED";
   model.publishedAt = iso(options.now());
   model.governance = "EM_VALIDACAO";
   audit(db, options.now(), input.actorUserId, "MODEL_PUBLISHED", model.id, {
     version: model.version,
+    ruleSetId: model.rules.ruleSetId,
     homologated: false,
   });
   return { ok: true, db, value: { modelId: model.id } };
@@ -187,26 +411,30 @@ export function publishModel(
 
 export function duplicateModel(
   source: PerformanceDatabase,
-  input: { modelId: string; actorUserId: string | null },
+  input: { modelId: string; actorUserId: string | null; scope?: PerformanceScope },
   options: ServiceOptions
-): ServiceOk<{ modelId: string }> | ServiceError {
+): ServiceResult<{ modelId: string }> {
+  const denied = hrOnly(input.scope ?? HR_SCOPE);
+  if (denied) return denied;
   const db = cloneDb(source);
   const model = db.models.find((m) => m.id === input.modelId);
   if (!model) return fail("NOT_FOUND", "Modelo não encontrado.");
   const copyId = newId();
   const nextVersion = Math.max(...db.models.filter((m) => m.lineageId === model.lineageId).map((m) => m.version)) + 1;
   db.models.push({
+    ...model,
     id: copyId,
-    lineageId: model.lineageId,
-    name: model.name,
     status: "DRAFT",
     version: nextVersion,
     governance: "EM_VALIDACAO",
+    rules: { ...model.rules },
     publishedAt: null,
+    archivedAt: null,
     createdByUserId: input.actorUserId,
+    createdAt: iso(options.now()),
   });
   for (const question of questionsOf(db, model.id)) {
-    db.questions.push({ ...question, id: newId(), modelId: copyId });
+    db.questions.push({ ...question, id: newId(), modelId: copyId, roleExamples: (question.roleExamples ?? []).map((row) => ({ ...row })) });
   }
   audit(db, options.now(), input.actorUserId, "MODEL_DUPLICATED", copyId, { from: model.id, version: nextVersion });
   return { ok: true, db, value: { modelId: copyId } };
@@ -214,56 +442,27 @@ export function duplicateModel(
 
 export function archiveModel(
   source: PerformanceDatabase,
-  input: { modelId: string; actorUserId: string | null },
+  input: { modelId: string; actorUserId: string | null; scope?: PerformanceScope },
   options: ServiceOptions
-): ServiceOk<{ modelId: string }> | ServiceError {
+): ServiceResult<{ modelId: string }> {
+  const denied = hrOnly(input.scope ?? HR_SCOPE);
+  if (denied) return denied;
   const db = cloneDb(source);
   const model = db.models.find((m) => m.id === input.modelId);
   if (!model) return fail("NOT_FOUND", "Modelo não encontrado.");
+  if (model.status === "ARCHIVED") return { ok: true, db: source, value: { modelId: model.id } };
   if (db.cycles.some((c) => c.modelId === model.id && c.status !== "CLOSED")) {
     return fail("MODEL_IN_USE", "Este modelo está num ciclo que ainda não encerrou.");
   }
   model.status = "ARCHIVED";
-  audit(db, options.now(), input.actorUserId, "MODEL_ARCHIVED", model.id, {});
+  model.archivedAt = iso(options.now());
+  audit(db, options.now(), input.actorUserId, "MODEL_ARCHIVED", model.id, { version: model.version });
   return { ok: true, db, value: { modelId: model.id } };
 }
 
-export function reassignLeader(
-  source: PerformanceDatabase,
-  input: { participantId: string; managerId: string; managerName: string; actorUserId: string | null },
-  options: ServiceOptions
-): ServiceOk<{ participantId: string }> | ServiceError {
-  const db = cloneDb(source);
-  const participant = db.participants.find((p) => p.id === input.participantId);
-  if (!participant) return fail("NOT_FOUND", "Participante não encontrado.");
-  if (input.managerId === participant.employeeId) return fail("SELF_EVALUATOR", "A pessoa não avalia a si mesma como líder.");
-  const cycle = db.cycles.find((c) => c.id === participant.cycleId);
-  if (!cycle || cycle.status === "HOMOLOGATED" || cycle.status === "CLOSED") {
-    return fail("CYCLE_FROZEN", "O ciclo encerrado preserva o avaliador da época.");
-  }
-  const leader = activeAssignment(db, participant.id, "LEADER");
-  if (leader && (leader.status === "SUBMITTED" || leader.status === "IN_PROGRESS")) {
-    return fail("ASSIGNMENT_LOCKED", "A avaliação do líder já começou. Devolva para revisão antes de trocar.");
-  }
-  participant.managerId = input.managerId;
-  participant.managerName = input.managerName;
-  if (leader && leader.status === "NOT_STARTED") leader.evaluatorEmployeeId = input.managerId;
-  audit(db, options.now(), input.actorUserId, "LEADER_REASSIGNED", participant.id, {});
-  return { ok: true, db, value: { participantId: participant.id } };
-}
-
-export function updatePdiStatus(
-  source: PerformanceDatabase,
-  input: { pdiId: string; status: "PLANNED" | "IN_PROGRESS" | "DONE" | "SUSPENDED" | "CANCELLED"; actorUserId: string | null },
-  options: ServiceOptions
-): ServiceOk<{ pdiId: string }> | ServiceError {
-  const db = cloneDb(source);
-  const pdi = db.pdis.find((p) => p.id === input.pdiId);
-  if (!pdi) return fail("NOT_FOUND", "PDI não encontrado.");
-  pdi.status = input.status;
-  audit(db, options.now(), input.actorUserId, "PDI_STATUS", pdi.id, { status: input.status });
-  return { ok: true, db, value: { pdiId: pdi.id } };
-}
+// ---------------------------------------------------------------------------
+// Ciclos e participantes
+// ---------------------------------------------------------------------------
 
 export function createCycle(
   source: PerformanceDatabase,
@@ -275,32 +474,112 @@ export function createCycle(
     leaderDueAt: string;
     actorUserId: string | null;
     minObservationDays?: number;
+    scope?: PerformanceScope;
   },
   options: ServiceOptions
-): ServiceOk<{ cycleId: string }> | ServiceError {
+): ServiceResult<{ cycleId: string }> {
+  const denied = hrOnly(input.scope ?? HR_SCOPE);
+  if (denied) return denied;
   const db = cloneDb(source);
   const model = db.models.find((m) => m.id === input.modelId);
   if (!model || model.status !== "PUBLISHED") return fail("MODEL_REQUIRED", "Escolha um modelo publicado.");
-  const name = input.name.trim();
+  const name = clean(input.name, 120);
   if (name.length < 3) return fail("INVALID_NAME", "Informe o nome do ciclo.");
+  const periodLabel = clean(input.periodLabel, 80);
+  if (periodLabel.length < 2) return fail("INVALID_PERIOD", "Informe a referência do ciclo, por exemplo 2º semestre de 2026.");
+  if (!isIsoDate(input.selfDueAt) || !isIsoDate(input.leaderDueAt)) return fail("INVALID_DATE", "Informe os prazos da pessoa e do líder.");
+  if (input.leaderDueAt < input.selfDueAt) return fail("INVALID_DATE", "O prazo do líder não pode vir antes do prazo da pessoa.");
   const cycleId = newId();
   db.cycles.push({
     id: cycleId,
     name,
-    periodLabel: input.periodLabel.trim(),
+    periodLabel,
     status: "DRAFT",
     modelId: model.id,
     selfDueAt: input.selfDueAt,
     leaderDueAt: input.leaderDueAt,
     ownerUserId: input.actorUserId,
-    minObservationDays: input.minObservationDays ?? PROPOSED_MIN_OBSERVATION_DAYS,
+    minObservationDays: input.minObservationDays ?? model.rules.minObservationDays,
     openedAt: null,
     closedAt: null,
+    createdAt: iso(options.now()),
   });
-  audit(db, options.now(), input.actorUserId, "CYCLE_CREATED", cycleId, { status: "DRAFT" });
+  audit(db, options.now(), input.actorUserId, "CYCLE_CREATED", cycleId, { status: "DRAFT", modelVersion: model.version });
   return { ok: true, db, value: { cycleId } };
 }
 
+export function updateCycle(
+  source: PerformanceDatabase,
+  input: {
+    cycleId: string;
+    name: string;
+    periodLabel: string;
+    selfDueAt: string;
+    leaderDueAt: string;
+    reason: string | null;
+    actorUserId: string | null;
+    scope: PerformanceScope;
+  },
+  options: ServiceOptions
+): ServiceResult<{ cycleId: string }> {
+  const denied = hrOnly(input.scope);
+  if (denied) return denied;
+  const db = cloneDb(source);
+  const cycle = db.cycles.find((c) => c.id === input.cycleId);
+  if (!cycle) return fail("NOT_FOUND", "Ciclo não encontrado.");
+  if (cycle.status === "HOMOLOGATED" || cycle.status === "CLOSED") return fail("CYCLE_FROZEN", "Ciclo homologado ou encerrado não muda.");
+  const name = clean(input.name, 120);
+  const periodLabel = clean(input.periodLabel, 80);
+  if (name.length < 3 || periodLabel.length < 2) return fail("INVALID_NAME", "Informe o nome e a referência do ciclo.");
+  if (!isIsoDate(input.selfDueAt) || !isIsoDate(input.leaderDueAt)) return fail("INVALID_DATE", "Informe os prazos da pessoa e do líder.");
+  if (input.leaderDueAt < input.selfDueAt) return fail("INVALID_DATE", "O prazo do líder não pode vir antes do prazo da pessoa.");
+  const datesChanged = cycle.selfDueAt !== input.selfDueAt || cycle.leaderDueAt !== input.leaderDueAt;
+  const reason = clean(input.reason, 300);
+  if (datesChanged && cycle.status !== "DRAFT" && cycle.status !== "PREPARED" && reason.length < 8) {
+    return fail("NOTE_REQUIRED", "Diga por que o prazo mudou depois da abertura.");
+  }
+  audit(db, options.now(), input.actorUserId, "CYCLE_UPDATED", cycle.id, {
+    selfDueFrom: cycle.selfDueAt,
+    selfDueTo: input.selfDueAt,
+    leaderDueFrom: cycle.leaderDueAt,
+    leaderDueTo: input.leaderDueAt,
+    reason: reason || null,
+  });
+  cycle.name = name;
+  cycle.periodLabel = periodLabel;
+  cycle.selfDueAt = input.selfDueAt;
+  cycle.leaderDueAt = input.leaderDueAt;
+  return { ok: true, db, value: { cycleId: cycle.id } };
+}
+
+function classifyParticipant(participant: ParticipantRecord, cycle: CycleRecord, now: Date) {
+  return classifyEligibility({
+    employee: {
+      status: participant.employeeStatus,
+      admissionDate: participant.admissionDate ? new Date(participant.admissionDate) : null,
+      terminationDate: null,
+    },
+    asOf: now,
+    minObservationDays: cycle.minObservationDays,
+    absenceOverlapsReference: participant.absenceInWindow,
+    roleChangedInsideWindow: participant.roleChangedInWindow,
+    exceptionReason: participant.eligibilityException,
+  });
+}
+
+function countEligibility(db: PerformanceDatabase, cycleId: string) {
+  const live = liveParticipants(db, cycleId);
+  return {
+    eligible: live.filter((p) => p.eligibility === "ELIGIBLE").length,
+    notEligible: live.filter((p) => p.eligibility === "NOT_ELIGIBLE").length,
+    insufficient: live.filter((p) => p.eligibility === "INSUFFICIENT_EVIDENCE").length,
+  };
+}
+
+/**
+ * Inclui pessoas do cadastro oficial no ciclo. Incremental: quem já está não duplica;
+ * quem foi removido antes da abertura volta com um snapshot novo.
+ */
 export function applyParticipants(
   source: PerformanceDatabase,
   input: {
@@ -311,80 +590,147 @@ export function applyParticipants(
     absenceIds: readonly string[];
     roleChangeIds: readonly string[];
     actorUserId: string | null;
+    scope?: PerformanceScope;
   },
   options: ServiceOptions
-): ServiceOk<{ eligible: number; notEligible: number; insufficient: number }> | ServiceError {
+): ServiceResult<{ eligible: number; notEligible: number; insufficient: number; added: number; duplicates: number; reactivated: number; missing: number }> {
+  const denied = hrOnly(input.scope ?? HR_SCOPE);
+  if (denied) return denied;
   const db = cloneDb(source);
   const cycle = db.cycles.find((c) => c.id === input.cycleId);
   if (!cycle) return fail("NOT_FOUND", "Ciclo não encontrado.");
   if (cycle.status !== "DRAFT" && cycle.status !== "PREPARED") {
     return fail("CYCLE_FROZEN", "Participantes já foram congelados na abertura.");
   }
-  const selected = new Set(input.selectedIds);
-  const wanted = input.employees.filter((e) => selected.has(e.id));
-  const seen = new Set<string>();
-  db.participants = db.participants.filter((p) => p.cycleId !== cycle.id);
-  let eligible = 0;
-  let notEligible = 0;
-  let insufficient = 0;
-  for (const employee of wanted) {
-    if (seen.has(employee.id)) continue;
-    seen.add(employee.id);
-    const decision = classifyEligibility({
-      employee,
-      asOf: options.now(),
-      minObservationDays: cycle.minObservationDays,
-      absenceOverlapsReference: input.absenceIds.includes(employee.id),
-      roleChangedInsideWindow: input.roleChangeIds.includes(employee.id),
-      exceptionReason: input.exceptions[employee.id] ?? null,
-    });
-    if (decision.state === "ELIGIBLE") eligible += 1;
-    else if (decision.state === "NOT_ELIGIBLE") notEligible += 1;
-    else insufficient += 1;
-    db.participants.push({
-      id: newId(),
+  const byId = new Map(input.employees.map((e) => [e.id, e]));
+  const wanted = [...new Set(input.selectedIds)];
+  let added = 0;
+  let duplicates = 0;
+  let reactivated = 0;
+  let missing = 0;
+  const now = options.now();
+  for (const employeeId of wanted) {
+    const employee = byId.get(employeeId);
+    if (!employee) {
+      missing += 1;
+      continue;
+    }
+    const existing = db.participants.find((p) => p.cycleId === cycle.id && p.employeeId === employee.id);
+    if (existing && !existing.removedAt) {
+      duplicates += 1;
+      continue;
+    }
+    const exception = cleanOrNull(input.exceptions[employee.id], 300);
+    const snapshot: Omit<ParticipantRecord, "id" | "eligibility" | "eligibilityReason"> = {
       cycleId: cycle.id,
       employeeId: employee.id,
       employeeName: employee.name,
-      eligibility: decision.state,
-      eligibilityReason: decision.reason,
+      employeeStatus: employee.terminationDate ? "INACTIVE" : employee.status ?? "ACTIVE",
+      eligibilityException: exception,
+      absenceInWindow: input.absenceIds.includes(employee.id),
+      roleChangedInWindow: input.roleChangeIds.includes(employee.id),
       roleId: employee.roleId,
       roleName: employee.roleName,
       departmentId: employee.departmentId,
       departmentName: employee.departmentName,
-      managerId: employee.managerId,
-      managerName: employee.managerName,
+      managerId: employee.managerId && employee.managerId !== employee.id ? employee.managerId : null,
+      managerName: employee.managerId && employee.managerId !== employee.id ? employee.managerName : null,
+      managerSource: "CADASTRO",
       admissionDate: employee.admissionDate ? iso(employee.admissionDate) : null,
       registration: employee.registration,
       frozen: false,
+      addedAt: iso(now),
+      removedAt: null,
+      removedReason: null,
+    };
+    const decision = classifyEligibility({
+      employee,
+      asOf: now,
+      minObservationDays: cycle.minObservationDays,
+      absenceOverlapsReference: snapshot.absenceInWindow,
+      roleChangedInsideWindow: snapshot.roleChangedInWindow,
+      exceptionReason: exception,
     });
+    if (existing) {
+      Object.assign(existing, snapshot, { eligibility: decision.state, eligibilityReason: decision.reason });
+      reactivated += 1;
+    } else {
+      db.participants.push({ id: newId(), ...snapshot, eligibility: decision.state, eligibilityReason: decision.reason });
+      added += 1;
+    }
   }
-  audit(db, options.now(), input.actorUserId, "PARTICIPANTS_SET", cycle.id, { eligible, notEligible, insufficient });
-  return { ok: true, db, value: { eligible, notEligible, insufficient } };
+  const counts = countEligibility(db, cycle.id);
+  audit(db, now, input.actorUserId, "PARTICIPANTS_ADDED", cycle.id, { added, reactivated, duplicates, missing, ...counts });
+  return { ok: true, db, value: { ...counts, added, duplicates, reactivated, missing } };
 }
 
-function ensureAssignments(db: PerformanceDatabase, cycleId: string, modelId: string) {
-  const participants = db.participants.filter((p) => p.cycleId === cycleId && p.eligibility === "ELIGIBLE");
-  for (const participant of participants) {
-    participant.frozen = true;
-    if (!activeAssignment(db, participant.id, "SELF")) {
-      const id = newId();
-      db.assignments.push(blankAssignment(id, participant, "SELF", participant.employeeId));
-      blankAnswers(db, id, modelId);
-    }
-    if (participant.managerId && participant.managerId !== participant.employeeId && !activeAssignment(db, participant.id, "LEADER")) {
-      const id = newId();
-      db.assignments.push(blankAssignment(id, participant, "LEADER", participant.managerId));
-      blankAnswers(db, id, modelId);
+/** Antes da abertura: tira a pessoa da lista. Depois: retira do ciclo com motivo, sem apagar o que já existe. */
+export function removeParticipant(
+  source: PerformanceDatabase,
+  input: { participantId: string; reason: string; actorUserId: string | null; scope: PerformanceScope },
+  options: ServiceOptions
+): ServiceResult<{ participantId: string }> {
+  const denied = hrOnly(input.scope);
+  if (denied) return denied;
+  const db = cloneDb(source);
+  const participant = db.participants.find((p) => p.id === input.participantId);
+  if (!participant || participant.removedAt) return fail("NOT_FOUND", "Participante não encontrado.");
+  const cycle = db.cycles.find((c) => c.id === participant.cycleId);
+  if (!cycle) return fail("NOT_FOUND", "Ciclo não encontrado.");
+  if (cycle.status === "HOMOLOGATED" || cycle.status === "CLOSED") return fail("CYCLE_FROZEN", "Ciclo homologado preserva os participantes.");
+  const reason = clean(input.reason, 300);
+  const opened = cycle.status !== "DRAFT" && cycle.status !== "PREPARED";
+  if (reason.length < (opened ? 8 : 3)) {
+    return fail("NOTE_REQUIRED", opened ? "Diga por que a pessoa sai do ciclo (desligamento, afastamento…)." : "Informe o motivo da remoção.");
+  }
+  const now = options.now();
+  participant.removedAt = iso(now);
+  participant.removedReason = reason;
+  if (opened) {
+    for (const assignment of db.assignments.filter((a) => a.participantId === participant.id && a.active)) {
+      for (const invite of db.invites.filter((i) => i.assignmentId === assignment.id && !i.revokedAt)) {
+        invite.revokedAt = iso(now);
+        invite.revokedReason = "Pessoa retirada do ciclo";
+      }
+      for (const session of db.sessions.filter((s) => s.assignmentId === assignment.id && !s.revoked)) session.revoked = true;
     }
   }
+  audit(db, now, input.actorUserId, opened ? "PARTICIPANT_WITHDRAWN" : "PARTICIPANT_REMOVED", participant.id, { cycleStatus: cycle.status });
+  return { ok: true, db, value: { participantId: participant.id } };
+}
+
+export function setEligibilityException(
+  source: PerformanceDatabase,
+  input: { participantId: string; reason: string | null; actorUserId: string | null; scope: PerformanceScope },
+  options: ServiceOptions
+): ServiceResult<{ eligibility: string }> {
+  const denied = hrOnly(input.scope);
+  if (denied) return denied;
+  const db = cloneDb(source);
+  const participant = db.participants.find((p) => p.id === input.participantId && !p.removedAt);
+  if (!participant) return fail("NOT_FOUND", "Participante não encontrado.");
+  const cycle = db.cycles.find((c) => c.id === participant.cycleId);
+  if (!cycle || (cycle.status !== "DRAFT" && cycle.status !== "PREPARED")) {
+    return fail("CYCLE_FROZEN", "A elegibilidade é congelada na abertura.");
+  }
+  const reason = cleanOrNull(input.reason, 300);
+  if (reason && reason.length < 8) return fail("NOTE_REQUIRED", "Justifique a exceção com pelo menos 8 caracteres.");
+  participant.eligibilityException = reason;
+  const decision = classifyParticipant(participant, cycle, options.now());
+  participant.eligibility = decision.state;
+  participant.eligibilityReason = decision.reason;
+  audit(db, options.now(), input.actorUserId, reason ? "ELIGIBILITY_EXCEPTION_SET" : "ELIGIBILITY_EXCEPTION_CLEARED", participant.id, {
+    eligibility: decision.state,
+  });
+  return { ok: true, db, value: { eligibility: decision.state } };
 }
 
 function blankAssignment(
   id: string,
   participant: { id: string; cycleId: string; employeeId: string },
   kind: "SELF" | "LEADER",
-  evaluatorEmployeeId: string
+  evaluatorEmployeeId: string,
+  now: Date
 ): AssignmentRecord {
   return {
     id,
@@ -400,75 +746,219 @@ function blankAssignment(
     active: true,
     submittedAt: null,
     assistedByUserId: null,
+    returnReason: null,
+    createdAt: iso(now),
   };
+}
+
+function ensureAssignments(db: PerformanceDatabase, cycle: CycleRecord, now: Date) {
+  for (const participant of eligibleParticipants(db, cycle.id)) {
+    participant.frozen = true;
+    if (!activeAssignment(db, participant.id, "SELF")) {
+      const id = newId();
+      db.assignments.push(blankAssignment(id, participant, "SELF", participant.employeeId, now));
+      blankAnswers(db, id, cycle.modelId);
+    }
+    if (participant.managerId && participant.managerId !== participant.employeeId && !activeAssignment(db, participant.id, "LEADER")) {
+      const id = newId();
+      db.assignments.push(blankAssignment(id, participant, "LEADER", participant.managerId, now));
+      blankAnswers(db, id, cycle.modelId);
+    }
+  }
+  for (const participant of liveParticipants(db, cycle.id)) participant.frozen = true;
+}
+
+/**
+ * Troca o avaliador (exceção do RH, com motivo). Depois da abertura, a avaliação anterior
+ * fica inativa e preservada; nasce uma nova tarefa para o novo líder.
+ */
+export function reassignLeader(
+  source: PerformanceDatabase,
+  input: { participantId: string; managerId: string; managerName: string; reason: string; actorUserId: string | null; scope?: PerformanceScope },
+  options: ServiceOptions
+): ServiceResult<{ participantId: string; assignmentId: string | null }> {
+  const denied = hrOnly(input.scope ?? HR_SCOPE);
+  if (denied) return denied;
+  const db = cloneDb(source);
+  const participant = db.participants.find((p) => p.id === input.participantId && !p.removedAt);
+  if (!participant) return fail("NOT_FOUND", "Participante não encontrado.");
+  if (!input.managerId) return fail("LEADER_REQUIRED", "Escolha o líder na lista de pessoas.");
+  if (input.managerId === participant.employeeId) return fail("SELF_EVALUATOR", "A pessoa não avalia a si mesma como líder.");
+  const reason = clean(input.reason, 300);
+  if (reason.length < 8) return fail("NOTE_REQUIRED", "Justifique a troca de líder com pelo menos 8 caracteres.");
+  const cycle = db.cycles.find((c) => c.id === participant.cycleId);
+  if (!cycle || cycle.status === "HOMOLOGATED" || cycle.status === "CLOSED") {
+    return fail("CYCLE_FROZEN", "O ciclo homologado preserva o avaliador da época.");
+  }
+  const now = options.now();
+  const previousManager = participant.managerId;
+  participant.managerId = input.managerId;
+  participant.managerName = clean(input.managerName, 160) || null;
+  participant.managerSource = "RH";
+  let assignmentId: string | null = null;
+  const opened = cycle.status !== "DRAFT" && cycle.status !== "PREPARED";
+  if (opened && participant.eligibility === "ELIGIBLE") {
+    const current = activeAssignment(db, participant.id, "LEADER");
+    if (current && current.evaluatorEmployeeId === input.managerId) return fail("SAME_LEADER", "Esta pessoa já é a avaliadora.");
+    const id = newId();
+    const next = blankAssignment(id, participant, "LEADER", input.managerId, now);
+    if (current) {
+      current.active = false;
+      next.revision = current.revision + 1;
+      next.supersedesId = current.id;
+    }
+    db.assignments.push(next);
+    blankAnswers(db, id, cycle.modelId);
+    assignmentId = id;
+    if (activeResult(db, participant.id)) recompute(db, participant.id, now);
+  }
+  audit(db, now, input.actorUserId, "LEADER_REASSIGNED", participant.id, {
+    from: previousManager,
+    to: input.managerId,
+    reason,
+    afterOpening: opened,
+  });
+  return { ok: true, db, value: { participantId: participant.id, assignmentId } };
+}
+
+function pendingParticipants(db: PerformanceDatabase, cycleId: string) {
+  return eligibleParticipants(db, cycleId).filter((participant) => {
+    const self = activeAssignment(db, participant.id, "SELF");
+    const leader = activeAssignment(db, participant.id, "LEADER");
+    return self?.status !== "SUBMITTED" || (participant.managerId != null && leader?.status !== "SUBMITTED");
+  });
 }
 
 export function transitionCycle(
   source: PerformanceDatabase,
-  input: { cycleId: string; to: import("./performanceDomain.js").CycleStatus; actorUserId: string | null; reversalReason: string | null; pilotAck?: boolean; actorEmployeeId?: string | null; acceptPending?: boolean },
+  input: {
+    cycleId: string;
+    to: CycleStatus;
+    actorUserId: string | null;
+    reversalReason: string | null;
+    pilotAck?: boolean;
+    actorEmployeeId?: string | null;
+    acceptPending?: boolean;
+    /** Só a rota de homologação (permissão de calibração) passa `true`. */
+    canHomologate?: boolean;
+    scope?: PerformanceScope;
+  },
   options: ServiceOptions
-): ServiceOk<{ status: string }> | ServiceError {
+): ServiceResult<{ status: string; pending?: number }> {
+  const denied = hrOnly(input.scope ?? HR_SCOPE);
+  if (denied) return denied;
   const db = cloneDb(source);
   const cycle = db.cycles.find((c) => c.id === input.cycleId);
   if (!cycle) return fail("NOT_FOUND", "Ciclo não encontrado.");
-  const step = nextCycleStatus(cycle.status, input.to, Boolean(input.reversalReason?.trim()));
+  const reason = clean(input.reversalReason, 300);
+  const isReversal = nextCycleStatus(cycle.status, input.to, true).ok && nextCycleStatus(cycle.status, input.to, false).ok === false;
+  if (isReversal && reason.length < 8) return fail("NOTE_REQUIRED", "Voltar a situação do ciclo exige um motivo com pelo menos 8 caracteres.");
+  const step = nextCycleStatus(cycle.status, input.to, reason.length >= 8);
   if (step.ok === false) return fail(step.code, "Esta mudança de situação não é permitida.");
-  if (input.to === "PREPARED") {
-    const model = db.models.find((m) => m.id === cycle.modelId);
-    if (!model || model.status !== "PUBLISHED") return fail("MODEL_REQUIRED", "Publique o modelo antes de preparar o ciclo.");
-    if (!db.participants.some((p) => p.cycleId === cycle.id)) return fail("PARTICIPANTS_REQUIRED", "Selecione as pessoas do ciclo.");
+  const now = options.now();
+  if (input.to === "HOMOLOGATED" && input.canHomologate !== true) {
+    return fail("FORBIDDEN", "Homologar exige a permissão de calibração.");
   }
-  if (input.to === "OPEN") {
+  if (isReversal && cycle.status === "HOMOLOGATED" && input.canHomologate !== true) {
+    return fail("FORBIDDEN", "Reabrir resultados homologados exige a permissão de calibração.");
+  }
+  if (input.to === "PREPARED" && !isReversal) {
+    const model = modelOfCycle(db, cycle);
+    if (!model || model.status !== "PUBLISHED") return fail("MODEL_REQUIRED", "Publique o modelo antes de preparar o ciclo.");
+    if (liveParticipants(db, cycle.id).length === 0) return fail("PARTICIPANTS_REQUIRED", "Selecione as pessoas do ciclo.");
+  }
+  let pending = 0;
+  if (input.to === "OPEN" && !isReversal) {
     if (!options.officialPublication && input.pilotAck !== true) {
       return fail("GOVERNANCE_BLOCKED", "A abertura pede a confirmação de que as regras ainda estão em proposta. O ciclo pode ficar preparado.");
     }
-    if (!options.officialPublication) {
-      audit(db, options.now(), input.actorUserId, "PILOT_OPEN", cycle.id, { homologated: false });
-    }
-    const eligible = db.participants.filter((p) => p.cycleId === cycle.id && p.eligibility === "ELIGIBLE");
-    if (eligible.length === 0) return fail("PARTICIPANTS_REQUIRED", "Não há pessoa elegível para abrir o ciclo.");
-    ensureAssignments(db, cycle.id, cycle.modelId);
-    cycle.openedAt = iso(options.now());
+    if (eligibleParticipants(db, cycle.id).length === 0) return fail("PARTICIPANTS_REQUIRED", "Não há pessoa elegível para abrir o ciclo.");
+    if (!options.officialPublication) audit(db, now, input.actorUserId, "PILOT_OPEN", cycle.id, { homologated: false });
+    ensureAssignments(db, cycle, now);
+    cycle.openedAt = iso(now);
   }
-  if (input.to === "CONSOLIDATION" && input.acceptPending !== true) {
-    const eligible = db.participants.filter((p) => p.cycleId === cycle.id && p.eligibility === "ELIGIBLE");
-    const pending = eligible.filter((participant) => {
+  if (input.to === "CONSOLIDATION" && !isReversal) {
+    pending = pendingParticipants(db, cycle.id).length;
+    if (pending > 0 && input.acceptPending !== true) {
+      return fail("PENDING_ASSIGNMENTS", `Ainda há ${pending} pessoa(s) sem autoavaliação ou sem avaliação do líder. Confirme para seguir mesmo assim.`);
+    }
+    if (pending > 0) audit(db, now, input.actorUserId, "PENDING_ACCEPTED", cycle.id, { pending, stage: "CONSOLIDATION" });
+    let revoked = 0;
+    for (const participant of liveParticipants(db, cycle.id)) {
       const self = activeAssignment(db, participant.id, "SELF");
-      const leader = activeAssignment(db, participant.id, "LEADER");
-      return self?.status !== "SUBMITTED" || (participant.managerId && leader?.status !== "SUBMITTED");
-    });
-    if (pending.length > 0) {
-      return fail("PENDING_ASSIGNMENTS", `Ainda há ${pending.length} pessoa(s) sem autoavaliação ou sem avaliação do líder. Confirme para seguir mesmo assim.`);
+      if (!self || self.status === "SUBMITTED") continue;
+      for (const invite of db.invites.filter((i) => i.assignmentId === self.id && !i.revokedAt)) {
+        invite.revokedAt = iso(now);
+        invite.revokedReason = "Coleta encerrada";
+        revoked += 1;
+      }
+      for (const session of db.sessions.filter((s) => s.assignmentId === self.id && !s.revoked)) session.revoked = true;
+    }
+    if (revoked > 0) audit(db, now, input.actorUserId, "INVITES_REVOKED_AT_CLOSE", cycle.id, { revoked });
+  }
+  if (input.to === "CALIBRATION" && !isReversal) {
+    for (const participant of eligibleParticipants(db, cycle.id)) {
+      if (!activeResult(db, participant.id)) recompute(db, participant.id, now);
     }
   }
   if (input.to === "HOMOLOGATED") {
-    const eligible = db.participants.filter((p) => p.cycleId === cycle.id && p.eligibility === "ELIGIBLE");
+    const eligible = eligibleParticipants(db, cycle.id);
     if (input.actorEmployeeId && eligible.some((p) => p.employeeId === input.actorEmployeeId)) {
       return fail("SELF_HOMOLOGATION", "Quem participa do ciclo não homologa o próprio resultado.");
     }
     for (const participant of eligible) {
-      const result = db.results.find((r) => r.participantId === participant.id && r.active);
+      const leader = activeAssignment(db, participant.id, "LEADER");
+      if (leader && (leader.status === "RETURNED" || (leader.status === "IN_PROGRESS" && leader.revision > 1))) {
+        return fail("REVISION_OPEN", `A revisão do líder de ${participant.employeeName} ainda não voltou.`);
+      }
+      const result = activeResult(db, participant.id);
       if (!result || result.reviewStatus !== "CALIBRATED") {
         return fail("CALIBRATION_REQUIRED", "Homologar o ciclo exige a calibração de cada pessoa elegível.");
       }
       if (result.technicalValidation === "PENDING_VALIDATION") {
         return fail("VALIDATION_REQUIRED", "Há desempenho técnico sem validação da função.");
       }
-      result.official = true;
     }
+    for (const participant of eligible) activeResult(db, participant.id)!.official = true;
+    audit(db, now, input.actorUserId, "RESULTS_HOMOLOGATED", cycle.id, { count: eligible.length });
   }
-  if (input.to === "CLOSED") cycle.closedAt = iso(options.now());
-  if (input.reversalReason?.trim() && input.to !== "OPEN") {
-    audit(db, options.now(), input.actorUserId, "CYCLE_REVERSED", cycle.id, { to: input.to, reason: input.reversalReason.trim() });
+  if (isReversal && cycle.status === "HOMOLOGATED") {
+    let reopened = 0;
+    for (const participant of eligibleParticipants(db, cycle.id)) {
+      const result = activeResult(db, participant.id);
+      if (result?.official) {
+        result.official = false;
+        reopened += 1;
+      }
+    }
+    audit(db, now, input.actorUserId, "RESULTS_REOPENED", cycle.id, { reopened });
+  }
+  if (input.to === "CLOSED") {
+    const withoutFeedback = eligibleParticipants(db, cycle.id).filter(
+      (p) => activeResult(db, p.id)?.official && !db.feedbacks.some((f) => f.participantId === p.id)
+    ).length;
+    if (withoutFeedback > 0 && input.acceptPending !== true) {
+      return fail("PENDING_FEEDBACK", `${withoutFeedback} pessoa(s) ainda sem devolutiva registrada. Confirme para encerrar mesmo assim.`);
+    }
+    if (withoutFeedback > 0) audit(db, now, input.actorUserId, "PENDING_ACCEPTED", cycle.id, { pending: withoutFeedback, stage: "CLOSED" });
+    pending = withoutFeedback;
+    cycle.closedAt = iso(now);
+  }
+  if (isReversal) {
+    audit(db, now, input.actorUserId, "CYCLE_REVERSED", cycle.id, { from: cycle.status, to: input.to, reason });
   }
   cycle.status = input.to;
-  audit(db, options.now(), input.actorUserId, "CYCLE_TRANSITION", cycle.id, { status: input.to });
-  return { ok: true, db, value: { status: cycle.status } };
+  audit(db, now, input.actorUserId, "CYCLE_TRANSITION", cycle.id, { status: input.to });
+  return { ok: true, db, value: { status: cycle.status, pending } };
 }
 
-function applyAnswer(row: AnswerRecord, kind: AssignmentRecord["kind"], answer: AnswerInput): ServiceError | null {
-  if (!evidenceSatisfied(kind, answer)) {
-    return fail("EVIDENCE_REQUIRED", "Nas notas 1 e 4, o líder escreve um exemplo curto do que observou.");
+// ---------------------------------------------------------------------------
+// Respostas
+// ---------------------------------------------------------------------------
+
+function applyAnswer(row: AnswerRecord, kind: AssignmentRecord["kind"], answer: AnswerInput, rules: PerformanceRules): ServiceError | null {
+  if (!evidenceSatisfied(kind, answer, rules)) {
+    return fail("EVIDENCE_REQUIRED", `Nas notas 1 e 4, escreva um exemplo do que você observou (mínimo de ${rules.evidenceMinChars} caracteres).`);
   }
   if (answer.kind === "pending") {
     row.kind = "pending";
@@ -476,16 +966,22 @@ function applyAnswer(row: AnswerRecord, kind: AssignmentRecord["kind"], answer: 
     row.evidence = null;
     return null;
   }
+  const evidence = kind === "LEADER" ? cleanOrNull(answer.evidence ?? null, EVIDENCE_MAX_CHARS) : null;
   if (answer.kind === "notObserved") {
     row.kind = "notObserved";
     row.score = null;
-    row.evidence = null;
+    row.evidence = evidence;
     return null;
   }
   row.kind = "score";
   row.score = answer.score;
-  row.evidence = answer.evidence?.trim() || null;
+  row.evidence = evidence;
   return null;
+}
+
+function collectionOpenFor(cycle: CycleRecord, assignment: AssignmentRecord): boolean {
+  if (assignment.kind === "SELF") return cycle.status === "OPEN";
+  return cycle.status === "OPEN" || cycle.status === "CONSOLIDATION" || cycle.status === "CALIBRATION";
 }
 
 export function saveAnswers(
@@ -499,13 +995,14 @@ export function saveAnswers(
     assistedByUserId?: string | null;
   },
   options: ServiceOptions
-): ServiceOk<{ version: number }> | ServiceError {
+): ServiceResult<{ version: number }> {
   const db = cloneDb(source);
   const assignment = db.assignments.find((a) => a.id === input.assignmentId && a.active);
   if (!assignment) return fail("NOT_FOUND", "Tarefa não encontrada.");
-  if (assignment.status === "SUBMITTED") return fail("ASSIGNMENT_LOCKED", "Esta resposta já foi enviada.");
-  if (assignment.version !== input.expectedVersion) return fail("VERSION_CONFLICT", "A tarefa mudou em outro lugar. Atualize a tela.");
-  if (assignment.kind === "LEADER" && !canEvaluateEmployee(input.scope, assignment.employeeId)) {
+  const participant = db.participants.find((p) => p.id === assignment.participantId);
+  const cycle = participant ? db.cycles.find((c) => c.id === participant.cycleId) : null;
+  if (!participant || !cycle || participant.removedAt) return fail("NOT_FOUND", "Tarefa não encontrada.");
+  if (assignment.kind === "LEADER" && !canActOnLeaderAssignment(input.scope, assignment)) {
     return fail("FORBIDDEN", "Você não avalia esta pessoa.");
   }
   if (assignment.kind === "SELF" && input.scope.kind !== "ALL") {
@@ -513,10 +1010,14 @@ export function saveAnswers(
     const assisted = Boolean(input.assistedByUserId);
     if (!assisted && actor !== assignment.employeeId) return fail("FORBIDDEN", "A autoavaliação é só da própria pessoa.");
   }
+  if (assignment.status === "SUBMITTED") return fail("ASSIGNMENT_LOCKED", "Esta resposta já foi enviada.");
+  if (!collectionOpenFor(cycle, assignment)) return fail("COLLECTION_CLOSED", "A coleta deste ciclo está fechada.");
+  if (assignment.version !== input.expectedVersion) return fail("VERSION_CONFLICT", "A avaliação mudou em outro lugar. Atualize a tela para ver a versão atual.");
+  const rules = rulesOfCycle(db, cycle);
   for (const item of input.answers) {
     const row = db.answers.find((a) => a.assignmentId === assignment.id && a.questionCode === item.code);
     if (!row) return fail("NOT_FOUND", "Pergunta não faz parte desta versão.");
-    const problem = applyAnswer(row, assignment.kind, item.answer);
+    const problem = applyAnswer(row, assignment.kind, item.answer, rules);
     if (problem) return problem;
   }
   assignment.version += 1;
@@ -525,6 +1026,7 @@ export function saveAnswers(
   audit(db, options.now(), input.actorUserId, "ANSWERS_SAVED", assignment.id, {
     version: assignment.version,
     count: input.answers.length,
+    assisted: Boolean(input.assistedByUserId),
   });
   return { ok: true, db, value: { version: assignment.version } };
 }
@@ -537,50 +1039,66 @@ export function submitAssignment(
   source: PerformanceDatabase,
   input: { assignmentId: string; expectedVersion: number; actorUserId: string | null; scope: PerformanceScope; assistedConfirmation: boolean },
   options: ServiceOptions
-): ServiceOk<{ status: string }> | ServiceError {
+): ServiceResult<{ status: string }> {
   const assignment = source.assignments.find((a) => a.id === input.assignmentId && a.active);
   if (!assignment) return fail("NOT_FOUND", "Tarefa não encontrada.");
+  if (assignment.kind === "LEADER" && !canActOnLeaderAssignment(input.scope, assignment)) return fail("FORBIDDEN", "Você não avalia esta pessoa.");
   if (assignment.status === "SUBMITTED") return { ok: true, db: source, value: { status: "SUBMITTED" } };
   if (assignment.assistedByUserId && !input.assistedConfirmation) {
     return fail("ASSIST_CONFIRMATION", "A pessoa precisa confirmar as respostas antes do envio.");
   }
   if (pendingCount(source, assignment.id) > 0) return fail("INCOMPLETE", "Ainda há pergunta sem resposta.");
+  const cycle = source.cycles.find((c) => c.id === assignment.cycleId);
+  if (cycle) {
+    const rules = rulesOfCycle(source, cycle);
+    const missingEvidence = source.answers.some(
+      (a) =>
+        a.assignmentId === assignment.id &&
+        a.kind === "score" &&
+        evidenceRequired(assignment.kind, { kind: "score", score: a.score!, evidence: a.evidence }, rules) &&
+        !evidenceSatisfied(assignment.kind, { kind: "score", score: a.score!, evidence: a.evidence }, rules)
+    );
+    if (missingEvidence) return fail("EVIDENCE_REQUIRED", "Há nota 1 ou 4 sem exemplo observado.");
+  }
   const saved = saveAnswers(source, { ...input, answers: [] }, options);
   if (saved.ok === false) return saved;
   const db = saved.db;
   const current = db.assignments.find((a) => a.id === assignment.id)!;
   current.status = "SUBMITTED";
   current.submittedAt = iso(options.now());
-  recompute(db, current.participantId);
-  audit(db, options.now(), input.actorUserId, "ASSIGNMENT_SUBMITTED", current.id, { kind: current.kind });
+  recompute(db, current.participantId, options.now());
+  audit(db, options.now(), input.actorUserId, "ASSIGNMENT_SUBMITTED", current.id, {
+    kind: current.kind,
+    revision: current.revision,
+    assisted: Boolean(current.assistedByUserId),
+  });
   for (const session of db.sessions.filter((s) => s.assignmentId === current.id)) session.revoked = true;
   return { ok: true, db, value: { status: "SUBMITTED" } };
 }
 
-function recompute(db: PerformanceDatabase, participantId: string) {
+/** Recalcula o resultado preliminar. Só a avaliação ENVIADA do líder entra na nota oficial. */
+export function recompute(db: PerformanceDatabase, participantId: string, now: Date) {
   const participant = db.participants.find((p) => p.id === participantId);
   const cycle = participant ? db.cycles.find((c) => c.id === participant.cycleId) : null;
   if (!participant || !cycle) return;
+  const model = modelOfCycle(db, cycle);
+  const rules = model?.rules ?? proposedRules();
   const leader = activeAssignment(db, participant.id, "LEADER");
-  const sourceAnswers = leader ? toStored(db, leader.id) : [];
-  const minValid = PROPOSED_MIN_VALID_ANSWERS;
-  const technical = aggregatePillar(sourceAnswers, "TECHNICAL", minValid);
-  const culture = aggregatePillar(sourceAnswers, "CULTURE", minValid);
-  const potential = aggregatePillar(sourceAnswers, "POTENTIAL", minValid);
-  const cultureResult = cultureBand(sourceAnswers, minValid);
-  const previous = db.results.find((r) => r.participantId === participant.id && r.active);
+  const sourceAnswers = leader && leader.status === "SUBMITTED" ? toStored(db, leader.id) : [];
+  const technical = aggregatePillar(sourceAnswers, "TECHNICAL", rules.minValidAnswers);
+  const culture = aggregatePillar(sourceAnswers, "CULTURE", rules.minValidAnswers);
+  const potential = aggregatePillar(sourceAnswers, "POTENTIAL", rules.minValidAnswers);
+  const cultureResult = cultureBand(sourceAnswers, rules);
+  const previous = activeResult(db, participant.id);
+  const sameTechnical = previous && previous.technicalSum === technical.sum && previous.technicalCount === technical.count;
   const technicalValidation = technical.insufficient
     ? "INSUFFICIENT"
-    : previous?.technicalValidation === "VALIDATED"
+    : previous?.technicalValidation === "VALIDATED" && sameTechnical
       ? "VALIDATED"
       : "PENDING_VALIDATION";
-  const placement = placeNineBox({
-    technical,
-    potential,
-    technicalValidation,
-  });
+  const placement = placeNineBox({ technical, potential, technicalValidation, rules });
   if (previous) previous.active = false;
-  const next: ResultRecord = {
+  db.results.push({
     id: newId(),
     participantId: participant.id,
     version: (previous?.version ?? 0) + 1,
@@ -592,7 +1110,7 @@ function recompute(db: PerformanceDatabase, participantId: string) {
     potentialSum: potential.sum,
     potentialCount: potential.count,
     technicalValidation,
-    validationNote: previous?.validationNote ?? null,
+    validationNote: technicalValidation === "VALIDATED" ? previous?.validationNote ?? null : null,
     cultureBand: cultureResult.band,
     cultureBasis: cultureResult.basis,
     quadrant: placement.quadrant,
@@ -605,532 +1123,165 @@ function recompute(db: PerformanceDatabase, participantId: string) {
     nineBoxRuleId: placement.ruleId,
     cultureRuleId: cultureResult.ruleId,
     supersedesId: previous?.id ?? null,
+    ruleSnapshot: { ...rules, modelId: cycle.modelId, modelVersion: model?.version ?? 0 },
+    adjusted: false,
+    calibrationNote: null,
+    calibratedByUserId: null,
+    calibratedAt: null,
+    createdAt: iso(now),
+  });
+}
+
+function nextResultVersion(db: PerformanceDatabase, current: ResultRecord, patch: Partial<ResultRecord>, now: Date): ResultRecord {
+  current.active = false;
+  const next: ResultRecord = {
+    ...current,
+    ...patch,
+    id: newId(),
+    version: current.version + 1,
+    active: true,
+    official: false,
+    supersedesId: current.id,
+    createdAt: iso(now),
   };
   db.results.push(next);
+  return next;
 }
 
 export function validateTechnical(
   source: PerformanceDatabase,
-  input: { participantId: string; decision: "VALIDATED" | "INSUFFICIENT"; note: string; actorUserId: string | null },
+  input: { participantId: string; decision: "VALIDATED" | "INSUFFICIENT"; note: string; actorUserId: string | null; scope?: PerformanceScope },
   options: ServiceOptions
-): ServiceOk<{ quadrant: string }> | ServiceError {
-  const note = input.note.trim();
+): ServiceResult<{ quadrant: string }> {
+  const denied = hrOnly(input.scope ?? HR_SCOPE);
+  if (denied) return denied;
+  if (input.decision !== "VALIDATED" && input.decision !== "INSUFFICIENT") return fail("INVALID_DECISION", "Escolha validar ou marcar evidência insuficiente.");
+  const note = clean(input.note, 600);
   if (note.length < 8) return fail("NOTE_REQUIRED", "Registre o critério da função usado nesta validação.");
   const db = cloneDb(source);
-  const current = db.results.find((r) => r.participantId === input.participantId && r.active);
+  const current = activeResult(db, input.participantId);
   if (!current) return fail("NOT_FOUND", "Ainda não há resultado do líder.");
-  if (current.official) return fail("RESULT_LOCKED", "Resultado homologado só muda por revisão.");
-  const previousId = current.id;
-  current.active = false;
-  const technical = { sum: current.technicalSum, count: current.technicalCount, insufficient: current.technicalCount < PROPOSED_MIN_VALID_ANSWERS, display: null };
-  const potential = { sum: current.potentialSum, count: current.potentialCount, insufficient: current.potentialCount < PROPOSED_MIN_VALID_ANSWERS, display: null };
-  const placement = placeNineBox({ technical, potential, technicalValidation: input.decision });
-  db.results.push({
-    ...current,
-    id: newId(),
-    version: current.version + 1,
-    active: true,
-    technicalValidation: input.decision,
-    validationNote: note,
-    quadrant: placement.quadrant,
-    nineBoxReason: placement.reason,
-    nineX: placement.x,
-    nineY: placement.y,
-    official: false,
-    reviewStatus: "PRELIMINARY",
-    supersedesId: previousId,
-  });
+  if (current.official) return fail("RESULT_LOCKED", "Resultado homologado só muda por revisão formal do ciclo.");
+  const participant = db.participants.find((p) => p.id === input.participantId)!;
+  const cycle = db.cycles.find((c) => c.id === participant.cycleId)!;
+  const rules = current.ruleSnapshot ?? rulesOfCycle(db, cycle);
+  const technical = { sum: current.technicalSum, count: current.technicalCount, notObserved: 0, insufficient: current.technicalCount < rules.minValidAnswers, display: null };
+  const potential = { sum: current.potentialSum, count: current.potentialCount, notObserved: 0, insufficient: current.potentialCount < rules.minValidAnswers, display: null };
+  if (input.decision === "VALIDATED" && technical.insufficient) {
+    return fail("INSUFFICIENT_EVIDENCE", "Com menos respostas válidas que o mínimo, o técnico não pode ser validado.");
+  }
+  const placement = placeNineBox({ technical, potential, technicalValidation: input.decision, rules });
+  nextResultVersion(
+    db,
+    current,
+    {
+      technicalValidation: input.decision,
+      validationNote: note,
+      quadrant: placement.quadrant,
+      nineBoxReason: placement.reason,
+      nineX: placement.x,
+      nineY: placement.y,
+      reviewStatus: "PRELIMINARY",
+      adjusted: false,
+      calibrationNote: null,
+      calibratedAt: null,
+      calibratedByUserId: null,
+    },
+    options.now()
+  );
   audit(db, options.now(), input.actorUserId, "TECHNICAL_VALIDATED", input.participantId, { decision: input.decision });
   return { ok: true, db, value: { quadrant: placement.quadrant } };
 }
 
 export function calibrate(
   source: PerformanceDatabase,
-  input: { participantId: string; note: string; actorUserId: string | null; actorEmployeeId: string | null },
+  input: {
+    participantId: string;
+    note: string;
+    actorUserId: string | null;
+    actorEmployeeId: string | null;
+    decision?: "CONFIRM" | "ADJUST";
+    technicalBand?: NineBoxBand | null;
+    potentialBand?: NineBoxBand | null;
+    scope?: PerformanceScope;
+  },
   options: ServiceOptions
-): ServiceOk<{ reviewStatus: string }> | ServiceError {
-  const note = input.note.trim();
-  if (note.length < 8) return fail("NOTE_REQUIRED", "A calibração precisa de um motivo.");
+): ServiceResult<{ reviewStatus: string; quadrant: string }> {
+  const denied = hrOnly(input.scope ?? HR_SCOPE);
+  if (denied) return denied;
+  const note = clean(input.note, 600);
+  if (note.length < 8) return fail("NOTE_REQUIRED", "A calibração precisa de um motivo com pelo menos 8 caracteres.");
   const db = cloneDb(source);
-  const participant = db.participants.find((p) => p.id === input.participantId);
+  const participant = db.participants.find((p) => p.id === input.participantId && !p.removedAt);
   if (!participant) return fail("NOT_FOUND", "Participante não encontrado.");
   if (input.actorEmployeeId && input.actorEmployeeId === participant.employeeId) {
     return fail("SELF_HOMOLOGATION", "A pessoa não calibra o próprio resultado.");
   }
-  const current = db.results.find((r) => r.participantId === participant.id && r.active);
-  if (!current) return fail("NOT_FOUND", "Sem resultado para calibrar.");
-  const previousId = current.id;
-  current.active = false;
-  db.results.push({
-    ...current,
-    id: newId(),
-    version: current.version + 1,
-    active: true,
-    reviewStatus: "CALIBRATED",
-    official: false,
-    supersedesId: previousId,
-  });
-  audit(db, options.now(), input.actorUserId, "RESULT_CALIBRATED", participant.id, { from: previousId });
-  return { ok: true, db, value: { reviewStatus: "CALIBRATED" } };
-}
-
-export function issueInvite(
-  source: PerformanceDatabase,
-  input: { assignmentId: string; actorUserId: string | null },
-  options: ServiceOptions
-): ServiceOk<{ url: string; otp: string; inviteId: string }> | ServiceError {
-  const db = cloneDb(source);
-  const assignment = db.assignments.find((a) => a.id === input.assignmentId && a.active && a.kind === "SELF");
-  if (!assignment) return fail("NOT_FOUND", "Convite só existe para a autoavaliação.");
-  if (assignment.status === "SUBMITTED") return fail("ASSIGNMENT_LOCKED", "A pesquisa já foi enviada.");
-  for (const invite of db.invites.filter((i) => i.assignmentId === assignment.id && !i.revokedAt)) {
-    invite.revokedAt = iso(options.now());
-  }
-  const token = newLinkToken();
-  const otp = newOtpCode();
-  const inviteId = newId();
-  const expires = new Date(options.now().getTime() + 14 * 24 * 60 * 60 * 1000);
-  db.invites.push({
-    id: inviteId,
-    assignmentId: assignment.id,
-    linkDigest: digestSecret(token),
-    otpDigest: digestSecret(otp),
-    expiresAt: iso(expires),
-    revokedAt: null,
-    failedAttempts: 0,
-    locked: false,
-  });
-  audit(db, options.now(), input.actorUserId, "INVITE_ISSUED", inviteId, { assignmentId: assignment.id });
-  return { ok: true, db, value: { url: buildInviteHashUrl(options.publicOrigin, token), otp, inviteId } };
-}
-
-export function exchangeLink(
-  source: PerformanceDatabase,
-  input: { token: string },
-  options: ServiceOptions
-): ServiceOk<{ sessionToken: string; phase: "LINK" }> | ServiceError {
-  const db = cloneDb(source);
-  const digest = digestSecret(input.token);
-  const invite = db.invites.find((i) => secretsMatch(i.linkDigest, digest));
-  const assignment = invite ? db.assignments.find((a) => a.id === invite.assignmentId) : null;
-  const gate = gateInvite({
-    found: Boolean(invite),
-    expiresAt: invite ? new Date(invite.expiresAt) : null,
-    revokedAt: invite?.revokedAt ? new Date(invite.revokedAt) : null,
-    locked: Boolean(invite?.locked),
-    submitted: assignment?.status === "SUBMITTED",
-    now: options.now(),
-  });
-  if (!gate.ok || !invite) return fail("INVITE_REJECTED", publicFailureMessage());
-  const sessionToken = newSessionToken();
-  db.sessions.push({
-    id: newId(),
-    inviteId: invite.id,
-    assignmentId: invite.assignmentId,
-    phase: "LINK",
-    sessionDigest: digestSecret(sessionToken),
-    expiresAt: iso(new Date(options.now().getTime() + SESSION_TTL_MS)),
-    assistantUserId: null,
-    revoked: false,
-  });
-  audit(db, options.now(), null, "INVITE_LINK_EXCHANGED", invite.id, {});
-  return { ok: true, db, value: { sessionToken, phase: "LINK" } };
-}
-
-export function verifyOtp(
-  source: PerformanceDatabase,
-  input: { sessionToken: string; otp: string },
-  options: ServiceOptions
-): ServiceOk<{ sessionToken: string }> | ServiceError {
-  const db = cloneDb(source);
-  const session = liveSession(db, input.sessionToken, options.now());
-  if (!session || session.phase !== "LINK" || !session.inviteId) return fail("INVITE_REJECTED", publicFailureMessage());
-  const invite = db.invites.find((i) => i.id === session.inviteId);
-  if (!invite || invite.locked) return fail("INVITE_REJECTED", publicFailureMessage());
-  if (!secretsMatch(invite.otpDigest, digestSecret(input.otp))) {
-    invite.failedAttempts += 1;
-    if (invite.failedAttempts >= OTP_ATTEMPT_LIMIT) invite.locked = true;
-    audit(db, options.now(), null, "OTP_FAILED", invite.id, { locked: invite.locked });
-    return { ok: false, code: "INVITE_REJECTED", message: publicFailureMessage(), db };
-  }
-  const sessionToken = newSessionToken();
-  session.revoked = true;
-  db.sessions.push({
-    id: newId(),
-    inviteId: invite.id,
-    assignmentId: invite.assignmentId,
-    phase: "VERIFIED",
-    sessionDigest: digestSecret(sessionToken),
-    expiresAt: iso(new Date(options.now().getTime() + SESSION_TTL_MS)),
-    assistantUserId: null,
-    revoked: false,
-  });
-  audit(db, options.now(), null, "OTP_VERIFIED", invite.id, {});
-  return { ok: true, db, value: { sessionToken } };
-}
-
-function liveSession(db: PerformanceDatabase, token: string, now: Date) {
-  const digest = digestSecret(token);
-  return (
-    db.sessions.find(
-      (s) => secretsMatch(s.sessionDigest, digest) && !s.revoked && new Date(s.expiresAt).getTime() > now.getTime()
-    ) ?? null
-  );
-}
-
-export function publicForm(
-  source: PerformanceDatabase,
-  input: { sessionToken: string },
-  options: ServiceOptions
-): ServiceOk<{ employeeName: string; questions: { code: string; text: string; pillar: string }[]; answers: AnswerRecord[]; version: number; periodLabel: string }> | ServiceError {
-  const session = liveSession(source, input.sessionToken, options.now());
-  if (!session || (session.phase !== "VERIFIED" && session.phase !== "ASSISTED")) return fail("INVITE_REJECTED", publicFailureMessage());
-  const assignment = source.assignments.find((a) => a.id === session.assignmentId);
-  const participant = assignment ? source.participants.find((p) => p.id === assignment.participantId) : null;
-  const cycle = participant ? source.cycles.find((c) => c.id === participant.cycleId) : null;
-  if (!assignment || !participant || !cycle) return fail("INVITE_REJECTED", publicFailureMessage());
-  const questions = questionsOf(source, cycle.modelId).map((q) => ({ code: q.code, text: q.selfText, pillar: q.pillar }));
-  const answers = source.answers.filter((a) => a.assignmentId === assignment.id);
-  return {
-    ok: true,
-    db: source,
-    value: { employeeName: participant.employeeName, questions, answers, version: assignment.version, periodLabel: cycle.periodLabel },
-  };
-}
-
-export function leaderQueue(db: PerformanceDatabase, scope: PerformanceScope, actorEmployeeId: string | null) {
-  return db.assignments
-    .filter((a) => a.active && a.kind === "LEADER" && leaderQueueIncludes(scope, a.employeeId, actorEmployeeId))
-    .map((assignment) => {
-      const participant = db.participants.find((p) => p.id === assignment.participantId);
-      const self = participant ? activeAssignment(db, participant.id, "SELF") : null;
-      const showSelf = Boolean(self && assignment.status === "SUBMITTED");
-      return {
-        assignmentId: assignment.id,
-        employeeName: participant?.employeeName ?? "",
-        roleName: participant?.roleName ?? "",
-        departmentName: participant?.departmentName ?? "",
-        status: assignment.status,
-        version: assignment.version,
-        selfVisible: showSelf,
-        divergences: showSelf && self ? findDivergences(toStored(db, self.id), toStored(db, assignment.id), PROPOSED_DIVERGENCE_THRESHOLD) : [],
-      };
-    });
-}
-
-export function readLeaderForm(db: PerformanceDatabase, assignmentId: string, scope: PerformanceScope, actorEmployeeId: string | null) {
-  const assignment = db.assignments.find((a) => a.id === assignmentId && a.active && a.kind === "LEADER");
-  if (!assignment || !leaderQueueIncludes(scope, assignment.employeeId, actorEmployeeId)) return fail("FORBIDDEN", "Acesso negado.");
-  const participant = db.participants.find((p) => p.id === assignment.participantId)!;
   const cycle = db.cycles.find((c) => c.id === participant.cycleId)!;
-  const self = activeAssignment(db, participant.id, "SELF");
-  const selfReleased = assignment.status === "SUBMITTED" && self?.status === "SUBMITTED";
-  return {
-    ok: true as const,
-    assignment,
-    questions: questionsOf(db, cycle.modelId).map((q) => ({ code: q.code, text: q.leaderText, pillar: q.pillar, hint: q.hint })),
-    answers: db.answers.filter((a) => a.assignmentId === assignment.id),
-    selfAnswers: selfReleased && self ? db.answers.filter((a) => a.assignmentId === self.id) : [],
-    divergences: selfReleased && self ? findDivergences(toStored(db, self.id), toStored(db, assignment.id), PROPOSED_DIVERGENCE_THRESHOLD) : [],
-  };
-}
-
-export function dashboardCounts(db: PerformanceDatabase, cycleId: string) {
-  const participants = db.participants.filter((p) => p.cycleId === cycleId);
-  const eligible = participants.filter((p) => p.eligibility === "ELIGIBLE");
-  const assignments = db.assignments.filter((a) => a.cycleId === cycleId && a.active);
-  const invited = new Set(db.invites.filter((i) => assignments.some((a) => a.id === i.assignmentId)).map((i) => i.assignmentId));
-  const self = assignments.filter((a) => a.kind === "SELF");
-  const leader = assignments.filter((a) => a.kind === "LEADER");
-  return {
-    eligible: eligible.length,
-    notEligible: participants.filter((p) => p.eligibility === "NOT_ELIGIBLE").length,
-    insufficient: participants.filter((p) => p.eligibility === "INSUFFICIENT_EVIDENCE").length,
-    invited: invited.size,
-    selfStarted: self.filter((a) => a.status !== "NOT_STARTED").length,
-    selfSubmitted: self.filter((a) => a.status === "SUBMITTED").length,
-    leaderSubmitted: leader.filter((a) => a.status === "SUBMITTED").length,
-    calibrated: db.results.filter((r) => r.active && r.reviewStatus === "CALIBRATED" && eligible.some((p) => p.id === r.participantId)).length,
-    feedback: db.feedbacks.filter((f) => eligible.some((p) => p.id === f.participantId)).length,
-    pdiOpen: db.pdis.filter((p) => p.status !== "DONE" && p.status !== "CANCELLED" && eligible.some((e) => e.id === p.participantId)).length,
-    selfPending: eligible.length - self.filter((a) => a.status === "SUBMITTED").length,
-    leaderPending: eligible.filter((p) => p.managerId).length - leader.filter((a) => a.status === "SUBMITTED").length,
-    pdiLate: db.pdis.filter((p) => p.status !== "DONE" && p.status !== "CANCELLED" && p.dueAt && p.dueAt < new Date().toISOString().slice(0, 10) && eligible.some((e) => e.id === p.participantId)).length,
-  };
-}
-
-export function describeCycle(db: PerformanceDatabase, cycleId: string, scope: PerformanceScope) {
-  const cycle = db.cycles.find((c) => c.id === cycleId);
-  if (!cycle) return null;
-  const now = Date.now();
-  const people = db.participants
-    .filter((p) => p.cycleId === cycleId && (scope.kind === "ALL" || scope.visible.has(p.employeeId)))
-    .map((participant) => {
-      const self = activeAssignment(db, participant.id, "SELF");
-      const leader = activeAssignment(db, participant.id, "LEADER");
-      const result = db.results.find((r) => r.participantId === participant.id && r.active) ?? null;
-      const feedback = db.feedbacks.find((f) => f.participantId === participant.id) ?? null;
-      const pdis = db.pdis.filter((p) => p.participantId === participant.id);
-      const invite = self ? db.invites.filter((i) => i.assignmentId === self.id).at(-1) ?? null : null;
-      const inviteStatus = !invite
-        ? "NONE"
-        : invite.revokedAt
-          ? "REVOKED"
-          : invite.locked
-            ? "LOCKED"
-            : new Date(invite.expiresAt).getTime() <= now
-              ? "EXPIRED"
-              : "ACTIVE";
-      const divergences =
-        self?.status === "SUBMITTED" && leader?.status === "SUBMITTED"
-          ? findDivergences(toStored(db, self.id), toStored(db, leader.id), PROPOSED_DIVERGENCE_THRESHOLD)
-          : [];
-      return {
-        participant,
-        self: self ? { id: self.id, status: self.status, version: self.version } : null,
-        leader: leader ? { id: leader.id, status: leader.status, version: leader.version, evaluatorEmployeeId: leader.evaluatorEmployeeId } : null,
-        result: result
-          ? {
-              id: result.id,
-              quadrant: result.quadrant,
-              official: result.official,
-              reviewStatus: result.reviewStatus,
-              technicalValidation: result.technicalValidation,
-              cultureBand: result.cultureBand,
-              technicalSum: result.technicalSum,
-              technicalCount: result.technicalCount,
-              potentialSum: result.potentialSum,
-              potentialCount: result.potentialCount,
-              cultureSum: result.cultureSum,
-              cultureCount: result.cultureCount,
-              nineBoxReason: result.nineBoxReason,
-            }
-          : null,
-        feedback: feedback
-          ? { id: feedback.id, strength: feedback.strength, improvement: feedback.improvement, action: feedback.action, acknowledgedAt: feedback.acknowledgedAt, agreedAt: feedback.agreedAt, contestation: feedback.contestation }
-          : null,
-        pdis: pdis.map((p) => ({ id: p.id, title: p.title, status: p.status, dueAt: p.dueAt, priority: p.priority, ownerName: p.ownerName })),
-        inviteStatus,
-        inviteExpiresAt: invite?.expiresAt ?? null,
-        divergences,
-      };
-    });
-  return { cycle, people, questions: questionsOf(db, cycle.modelId) };
-}
-
-export function claimAssisted(
-  source: PerformanceDatabase,
-  input: { token: string },
-  options: ServiceOptions
-): ServiceOk<{ sessionToken: string }> | ServiceError {
-  const session = liveSession(source, input.token, options.now());
-  if (!session || session.phase !== "ASSISTED") return fail("INVITE_REJECTED", publicFailureMessage());
-  return { ok: true, db: source, value: { sessionToken: input.token } };
-}
-
-export function createFeedback(
-  source: PerformanceDatabase,
-  input: { participantId: string; strength: string; improvement: string; action: string; ownerName: string; dueAt: string | null; conversationAt: string | null; leaderEmployeeId: string; actorUserId: string | null },
-  options: ServiceOptions
-): ServiceOk<{ feedbackId: string }> | ServiceError {
-  const db = cloneDb(source);
-  const participant = db.participants.find((p) => p.id === input.participantId);
-  const cycle = participant ? db.cycles.find((c) => c.id === participant.cycleId) : null;
-  const result = db.results.find((r) => r.participantId === input.participantId && r.active && r.official);
-  if (!participant || !cycle || !result) return fail("NOT_HOMOLOGATED", "A devolutiva oficial só existe depois da homologação.");
-  if (cycle.status !== "HOMOLOGATED" && cycle.status !== "CLOSED") return fail("NOT_HOMOLOGATED", "O ciclo ainda não está homologado.");
-  const feedbackId = newId();
-  db.feedbacks.push({
-    id: feedbackId,
-    participantId: participant.id,
-    resultId: result.id,
-    strength: input.strength.trim(),
-    improvement: input.improvement.trim(),
-    action: input.action.trim(),
-    ownerName: input.ownerName.trim(),
-    dueAt: input.dueAt,
-    conversationAt: input.conversationAt,
-    leaderEmployeeId: input.leaderEmployeeId,
-    viewedAt: null,
-    acknowledgedAt: null,
-    agreedAt: null,
-    contestation: null,
-    internalNotes: null,
-  });
-  audit(db, options.now(), input.actorUserId, "FEEDBACK_CREATED", feedbackId, {});
-  return { ok: true, db, value: { feedbackId } };
-}
-
-export function acknowledgeFeedback(
-  source: PerformanceDatabase,
-  input: { feedbackId: string; action: "VIEWED" | "ACKNOWLEDGED" | "AGREED" | "CONTESTED"; note: string | null; actorEmployeeId: string },
-  options: ServiceOptions
-): ServiceOk<{ action: string }> | ServiceError {
-  const db = cloneDb(source);
-  const feedback = db.feedbacks.find((f) => f.id === input.feedbackId);
-  const participant = feedback ? db.participants.find((p) => p.id === feedback.participantId) : null;
-  if (!feedback || !participant || participant.employeeId !== input.actorEmployeeId) return fail("FORBIDDEN", "A devolutiva é só da própria pessoa.");
-  const at = iso(options.now());
-  if (input.action === "VIEWED") feedback.viewedAt = at;
-  if (input.action === "ACKNOWLEDGED") feedback.acknowledgedAt = at;
-  if (input.action === "AGREED") feedback.agreedAt = at;
-  if (input.action === "CONTESTED") feedback.contestation = input.note?.trim() || "Contestação registrada.";
-  audit(db, options.now(), null, "FEEDBACK_ACK", feedback.id, { action: input.action });
-  return { ok: true, db, value: { action: input.action } };
-}
-
-export function createPdi(
-  source: PerformanceDatabase,
-  input: { feedbackId: string; title: string; priority: boolean; justification: string | null; ownerName: string; dueAt: string | null; actorUserId: string | null },
-  options: ServiceOptions
-): ServiceOk<{ pdiId: string }> | ServiceError {
-  const db = cloneDb(source);
-  const feedback = db.feedbacks.find((f) => f.id === input.feedbackId);
-  if (!feedback) return fail("NOT_FOUND", "Devolutiva não encontrada.");
-  const existingPriority = db.pdis.some((p) => p.feedbackId === feedback.id && p.priority && p.status !== "CANCELLED");
-  if (!input.priority && !input.justification?.trim()) return fail("JUSTIFICATION_REQUIRED", "Ação extra precisa de justificativa.");
-  if (input.priority && existingPriority) return fail("PRIORITY_EXISTS", "Já existe uma ação prioritária. As demais pedem justificativa.");
-  const pdiId = newId();
-  db.pdis.push({
-    id: pdiId,
-    participantId: feedback.participantId,
-    feedbackId: feedback.id,
-    title: input.title.trim(),
-    priority: input.priority,
-    justification: input.justification?.trim() || null,
-    ownerName: input.ownerName.trim(),
-    dueAt: input.dueAt,
-    status: "PLANNED",
-  });
-  audit(db, options.now(), input.actorUserId, "PDI_CREATED", pdiId, { priority: input.priority });
-  return { ok: true, db, value: { pdiId } };
-}
-
-export function addCheckin(
-  source: PerformanceDatabase,
-  input: { pdiId: string; note: string; obstacle: string | null; nextStep: string | null; actorUserId: string | null },
-  options: ServiceOptions
-): ServiceOk<{ checkinId: string }> | ServiceError {
-  const db = cloneDb(source);
-  const pdi = db.pdis.find((p) => p.id === input.pdiId);
-  if (!pdi) return fail("NOT_FOUND", "PDI não encontrado.");
-  const checkinId = newId();
-  db.checkins.push({
-    id: checkinId,
-    pdiId: pdi.id,
-    note: input.note.trim(),
-    obstacle: input.obstacle?.trim() || null,
-    nextStep: input.nextStep?.trim() || null,
-    authorUserId: input.actorUserId,
-    createdAt: iso(options.now()),
-  });
-  audit(db, options.now(), input.actorUserId, "PDI_CHECKIN", pdi.id, {});
-  return { ok: true, db, value: { checkinId } };
-}
-
-export function recordConduct(
-  source: PerformanceDatabase,
-  input: { employeeId: string; summary: string; actorUserId: string | null },
-  options: ServiceOptions
-): ServiceOk<{ conductId: string }> | ServiceError {
-  const db = cloneDb(source);
-  const before = db.results.map((r) => r.id);
-  const conductId = newId();
-  db.conducts.push({ id: conductId, employeeId: input.employeeId, status: "RECORDED", summary: input.summary.trim(), proven: false });
-  audit(db, options.now(), input.actorUserId, "CONDUCT_RECORDED", conductId, { proven: false });
-  const after = db.results.map((r) => r.id);
-  if (before.join() !== after.join()) return fail("CONDUCT_LEAK", "Ocorrência não pode alterar resultado.");
-  return { ok: true, db, value: { conductId } };
-}
-
-export function employeeHistory(db: PerformanceDatabase, employeeId: string, scope: PerformanceScope, includeInternal: boolean) {
-  if (!canSeeEmployee(scope, employeeId)) return fail("FORBIDDEN", "Acesso negado.");
-  const participants = db.participants.filter((p) => p.employeeId === employeeId);
-  return {
-    ok: true as const,
-    cycles: participants.map((participant) => {
-      const cycle = db.cycles.find((c) => c.id === participant.cycleId);
-      const result = db.results.find((r) => r.participantId === participant.id && r.active && r.official);
-      const feedback = db.feedbacks.find((f) => f.participantId === participant.id);
-      return {
-        cycleName: cycle?.name ?? "",
-        periodLabel: cycle?.periodLabel ?? "",
-        roleName: participant.roleName,
-        departmentName: participant.departmentName,
-        eligibility: participant.eligibility,
-        quadrant: result?.quadrant ?? null,
-        cultureBand: result?.cultureBand ?? null,
-        feedback: feedback
-          ? {
-              strength: feedback.strength,
-              improvement: feedback.improvement,
-              acknowledgedAt: feedback.acknowledgedAt,
-              agreedAt: feedback.agreedAt,
-              contestation: feedback.contestation,
-              internalNotes: includeInternal ? feedback.internalNotes : null,
-            }
-          : null,
-      };
-    }),
-  };
-}
-
-export function planReminders(
-  source: PerformanceDatabase,
-  input: { cycleId: string; actorUserId: string | null },
-  options: ServiceOptions
-): ServiceOk<{ drafted: number; dispatched: number }> | ServiceError {
-  const db = cloneDb(source);
-  const cycle = db.cycles.find((c) => c.id === input.cycleId);
-  if (!cycle) return fail("NOT_FOUND", "Ciclo não encontrado.");
-  let drafted = 0;
-  for (const assignment of db.assignments.filter((a) => a.cycleId === cycle.id && a.active && a.status !== "SUBMITTED")) {
-    const exists = db.reminders.some((r) => r.cycleId === cycle.id && r.employeeId === assignment.evaluatorEmployeeId && r.audience === (assignment.kind === "SELF" ? "SELF" : "LEADER"));
-    if (exists) continue;
-    db.reminders.push({
-      id: newId(),
-      cycleId: cycle.id,
-      employeeId: assignment.evaluatorEmployeeId,
-      audience: assignment.kind === "SELF" ? "SELF" : "LEADER",
-      status: "DRAFT",
-    });
-    drafted += 1;
+  if (cycle.status !== "CONSOLIDATION" && cycle.status !== "CALIBRATION") {
+    return fail("CYCLE_STAGE", "A calibração acontece na consolidação ou na calibração do ciclo.");
   }
-  audit(db, options.now(), input.actorUserId, "REMINDERS_DRAFTED", cycle.id, { drafted, dispatched: 0 });
-  return { ok: true, db, value: { drafted, dispatched: options.remindersEnabled ? 0 : 0 } };
-}
-
-export function dispatchReminders(options: ServiceOptions): ServiceOk<{ sent: number }> | ServiceError {
-  if (!options.remindersEnabled) return fail("REMINDERS_DISABLED", "Lembretes externos permanecem desligados.");
-  return fail("REMINDERS_DISABLED", "Nenhum canal de envio foi autorizado.");
-}
-
-export function reportRows(db: PerformanceDatabase, cycleId: string, scope: PerformanceScope) {
-  return db.participants
-    .filter((p) => p.cycleId === cycleId && canSeeEmployee(scope, p.employeeId))
-    .map((participant) => {
-      const result = db.results.find((r) => r.participantId === participant.id && r.active);
-      return {
-        name: neutralizeSpreadsheetCell(participant.employeeName),
-        role: neutralizeSpreadsheetCell(participant.roleName),
-        department: neutralizeSpreadsheetCell(participant.departmentName),
-        eligibility: participant.eligibility,
-        quadrant: result?.official ? result.quadrant : "preliminar",
-        culture: result?.cultureBand ?? "",
-      };
-    });
+  const now = options.now();
+  if (!activeResult(db, participant.id)) recompute(db, participant.id, now);
+  const current = activeResult(db, participant.id)!;
+  if (current.official) return fail("RESULT_LOCKED", "Resultado homologado só muda por revisão formal do ciclo.");
+  if (current.technicalValidation === "PENDING_VALIDATION") {
+    return fail("VALIDATION_REQUIRED", "Valide o desempenho técnico com a função antes de calibrar.");
+  }
+  const decision = input.decision ?? "CONFIRM";
+  let patch: Partial<ResultRecord> = { reviewStatus: "CALIBRATED", adjusted: false };
+  if (decision === "ADJUST") {
+    if (current.quadrant === UNCLASSIFIED_QUADRANT || current.nineX == null || current.nineY == null) {
+      return fail("INSUFFICIENT_EVIDENCE", "Sem evidência suficiente não há quadrante para ajustar.");
+    }
+    if (!isNineBoxBand(input.technicalBand) || !isNineBoxBand(input.potentialBand)) {
+      return fail("INVALID_BAND", "Escolha a faixa de desempenho e de potencial.");
+    }
+    if (input.technicalBand === current.nineX && input.potentialBand === current.nineY) {
+      return fail("NO_CHANGE", "A posição escolhida é a mesma. Use Confirmar.");
+    }
+    patch = {
+      reviewStatus: "CALIBRATED",
+      adjusted: true,
+      nineX: input.technicalBand,
+      nineY: input.potentialBand,
+      quadrant: quadrantLabel(input.technicalBand, input.potentialBand),
+      nineBoxReason: "Posição ajustada na calibração, com justificativa registrada. As notas originais continuam na versão anterior.",
+    };
+  }
+  const next = nextResultVersion(
+    db,
+    current,
+    { ...patch, calibrationNote: note, calibratedByUserId: input.actorUserId, calibratedAt: iso(now) },
+    now
+  );
+  audit(db, now, input.actorUserId, decision === "ADJUST" ? "RESULT_ADJUSTED" : "RESULT_CALIBRATED", participant.id, {
+    from: current.id,
+    to: next.id,
+    fromQuadrant: current.quadrant,
+    toQuadrant: next.quadrant,
+  });
+  return { ok: true, db, value: { reviewStatus: "CALIBRATED", quadrant: next.quadrant } };
 }
 
 export function returnForRevision(
   source: PerformanceDatabase,
-  input: { assignmentId: string; reason: string; actorUserId: string | null },
+  input: { assignmentId: string; reason: string; actorUserId: string | null; scope?: PerformanceScope },
   options: ServiceOptions
-): ServiceOk<{ assignmentId: string }> | ServiceError {
-  const reason = input.reason.trim();
+): ServiceResult<{ assignmentId: string }> {
+  const denied = hrOnly(input.scope ?? HR_SCOPE);
+  if (denied) return denied;
+  const reason = clean(input.reason, 600);
   if (reason.length < 8) return fail("NOTE_REQUIRED", "Diga o que precisa ser revisto.");
   const db = cloneDb(source);
   const current = db.assignments.find((a) => a.id === input.assignmentId && a.active);
   if (!current || current.status !== "SUBMITTED") return fail("NOT_SUBMITTED", "Só uma resposta enviada volta para revisão.");
+  if (current.kind !== "LEADER") return fail("NOT_LEADER", "Só a avaliação da liderança volta para revisão.");
+  const cycle = db.cycles.find((c) => c.id === current.cycleId);
+  if (!cycle || !["OPEN", "CONSOLIDATION", "CALIBRATION"].includes(cycle.status)) {
+    return fail("CYCLE_STAGE", "A revisão só é pedida antes da homologação.");
+  }
+  if (activeResult(db, current.participantId)?.official) return fail("RESULT_LOCKED", "Resultado homologado só muda por revisão formal do ciclo.");
   current.active = false;
   const nextId = newId();
   db.assignments.push({
@@ -1142,38 +1293,306 @@ export function returnForRevision(
     supersedesId: current.id,
     active: true,
     submittedAt: null,
+    returnReason: reason,
+    createdAt: iso(options.now()),
   });
   for (const answer of db.answers.filter((a) => a.assignmentId === current.id)) {
     db.answers.push({ ...answer, id: newId(), assignmentId: nextId });
   }
-  audit(db, options.now(), input.actorUserId, "ASSIGNMENT_RETURNED", nextId, { revision: current.revision + 1 });
+  audit(db, options.now(), input.actorUserId, "ASSIGNMENT_RETURNED", nextId, { revision: current.revision + 1, previous: current.id });
   return { ok: true, db, value: { assignmentId: nextId } };
+}
+
+// ---------------------------------------------------------------------------
+// Convites e portal
+// ---------------------------------------------------------------------------
+
+function inviteExpiry(cycle: CycleRecord, now: Date): Date {
+  const max = now.getTime() + INVITE_TTL_DAYS * 86_400_000;
+  const dueEnd = new Date(`${cycle.selfDueAt}T23:59:59.000-03:00`).getTime();
+  const floor = now.getTime() + 86_400_000;
+  return new Date(Math.max(floor, Math.min(max, Number.isNaN(dueEnd) ? max : dueEnd)));
+}
+
+type IssuedInvite = { participantId: string; employeeName: string; roleName: string; url: string; otp: string; inviteId: string; expiresAt: string };
+
+function issueInto(db: PerformanceDatabase, assignmentId: string, actorUserId: string | null, now: Date, options: ServiceOptions): IssuedInvite | ServiceError {
+  const assignment = db.assignments.find((a) => a.id === assignmentId && a.active && a.kind === "SELF");
+  if (!assignment) return fail("NOT_FOUND", "Convite só existe para a autoavaliação.");
+  if (assignment.status === "SUBMITTED") return fail("ASSIGNMENT_LOCKED", "A pesquisa já foi enviada.");
+  const participant = db.participants.find((p) => p.id === assignment.participantId);
+  const cycle = participant ? db.cycles.find((c) => c.id === participant.cycleId) : null;
+  if (!participant || !cycle || participant.removedAt) return fail("NOT_FOUND", "Participante fora do ciclo.");
+  if (cycle.status !== "OPEN") return fail("CYCLE_STAGE", "Convites só são emitidos com o ciclo aberto.");
+  for (const invite of db.invites.filter((i) => i.assignmentId === assignment.id && !i.revokedAt)) {
+    invite.revokedAt = iso(now);
+    invite.revokedReason = "Reemissão";
+  }
+  for (const session of db.sessions.filter((s) => s.assignmentId === assignment.id && s.phase !== "ASSISTED" && !s.revoked)) session.revoked = true;
+  const token = newLinkToken();
+  const otp = newOtpCode();
+  const inviteId = newId();
+  const expires = inviteExpiry(cycle, now);
+  db.invites.push({
+    id: inviteId,
+    assignmentId: assignment.id,
+    linkDigest: digestSecret(token),
+    otpDigest: digestSecret(otp),
+    expiresAt: iso(expires),
+    revokedAt: null,
+    revokedReason: null,
+    failedAttempts: 0,
+    locked: false,
+    createdAt: iso(now),
+  });
+  audit(db, now, actorUserId, "INVITE_ISSUED", inviteId, { assignmentId: assignment.id });
+  return {
+    participantId: participant.id,
+    employeeName: participant.employeeName,
+    roleName: participant.roleName,
+    url: buildInviteHashUrl(options.publicOrigin, token),
+    otp,
+    inviteId,
+    expiresAt: iso(expires),
+  };
+}
+
+export function issueInvite(
+  source: PerformanceDatabase,
+  input: { assignmentId: string; actorUserId: string | null; scope?: PerformanceScope },
+  options: ServiceOptions
+): ServiceResult<IssuedInvite> {
+  const denied = hrOnly(input.scope ?? HR_SCOPE);
+  if (denied) return denied;
+  const db = cloneDb(source);
+  const issued = issueInto(db, input.assignmentId, input.actorUserId, options.now(), options);
+  if ("ok" in issued) return issued;
+  return { ok: true, db, value: issued };
+}
+
+/** Lote: emite para quem ainda não respondeu. `onlyMissing` preserva convites ativos. */
+export function issueInvitesBatch(
+  source: PerformanceDatabase,
+  input: { cycleId: string; participantIds: readonly string[] | null; onlyMissing: boolean; actorUserId: string | null; scope: PerformanceScope },
+  options: ServiceOptions
+): ServiceResult<{ issued: IssuedInvite[]; skipped: number }> {
+  const denied = hrOnly(input.scope);
+  if (denied) return denied;
+  const db = cloneDb(source);
+  const cycle = db.cycles.find((c) => c.id === input.cycleId);
+  if (!cycle) return fail("NOT_FOUND", "Ciclo não encontrado.");
+  if (cycle.status !== "OPEN") return fail("CYCLE_STAGE", "Convites só são emitidos com o ciclo aberto.");
+  const now = options.now();
+  const wanted = input.participantIds ? new Set(input.participantIds) : null;
+  const issued: IssuedInvite[] = [];
+  let skipped = 0;
+  for (const participant of eligibleParticipants(db, cycle.id)) {
+    if (wanted && !wanted.has(participant.id)) continue;
+    const self = activeAssignment(db, participant.id, "SELF");
+    if (!self || self.status === "SUBMITTED") {
+      skipped += 1;
+      continue;
+    }
+    if (input.onlyMissing) {
+      const live = db.invites.some(
+        (i) => i.assignmentId === self.id && !i.revokedAt && !i.locked && new Date(i.expiresAt).getTime() > now.getTime()
+      );
+      if (live) {
+        skipped += 1;
+        continue;
+      }
+    }
+    const result = issueInto(db, self.id, input.actorUserId, now, options);
+    if ("ok" in result) return result;
+    issued.push(result);
+  }
+  audit(db, now, input.actorUserId, "INVITES_BATCH", cycle.id, { issued: issued.length, skipped });
+  return { ok: true, db, value: { issued, skipped } };
+}
+
+export function revokeInvite(
+  source: PerformanceDatabase,
+  input: { assignmentId: string; reason: string; actorUserId: string | null; scope: PerformanceScope },
+  options: ServiceOptions
+): ServiceResult<{ revoked: number }> {
+  const denied = hrOnly(input.scope);
+  if (denied) return denied;
+  const reason = clean(input.reason, 300);
+  if (reason.length < 3) return fail("NOTE_REQUIRED", "Informe o motivo da revogação.");
+  const db = cloneDb(source);
+  const assignment = db.assignments.find((a) => a.id === input.assignmentId && a.kind === "SELF");
+  if (!assignment) return fail("NOT_FOUND", "Convite não encontrado.");
+  const now = options.now();
+  let revoked = 0;
+  for (const invite of db.invites.filter((i) => i.assignmentId === assignment.id && !i.revokedAt)) {
+    invite.revokedAt = iso(now);
+    invite.revokedReason = reason;
+    revoked += 1;
+  }
+  for (const session of db.sessions.filter((s) => s.assignmentId === assignment.id && !s.revoked)) session.revoked = true;
+  if (revoked === 0) return fail("NO_ACTIVE_INVITE", "Não há convite ativo para revogar.");
+  audit(db, now, input.actorUserId, "INVITE_REVOKED", assignment.id, { revoked });
+  return { ok: true, db, value: { revoked } };
+}
+
+function inviteContext(db: PerformanceDatabase, assignmentId: string) {
+  const assignment = db.assignments.find((a) => a.id === assignmentId);
+  const participant = assignment ? db.participants.find((p) => p.id === assignment.participantId) : null;
+  const cycle = participant ? db.cycles.find((c) => c.id === participant.cycleId) : null;
+  return { assignment, participant, cycle };
+}
+
+export function exchangeLink(
+  source: PerformanceDatabase,
+  input: { token: string },
+  options: ServiceOptions
+): ServiceResult<{ sessionToken: string; phase: "LINK" }> {
+  if (!input.token || input.token.length > 200) return fail("INVITE_REJECTED", publicFailureMessage());
+  const db = cloneDb(source);
+  const digest = digestSecret(input.token);
+  const invite = db.invites.find((i) => secretsMatch(i.linkDigest, digest));
+  const { assignment, participant, cycle } = invite ? inviteContext(db, invite.assignmentId) : { assignment: null, participant: null, cycle: null };
+  const gate = gateInvite({
+    found: Boolean(invite),
+    expiresAt: invite ? new Date(invite.expiresAt) : null,
+    revokedAt: invite?.revokedAt ? new Date(invite.revokedAt) : null,
+    locked: Boolean(invite?.locked),
+    submitted: assignment?.status === "SUBMITTED",
+    now: options.now(),
+  });
+  if (!gate.ok || !invite || !assignment?.active || !participant || participant.removedAt || cycle?.status !== "OPEN") {
+    return fail("INVITE_REJECTED", publicFailureMessage());
+  }
+  const sessionToken = newSessionToken();
+  db.sessions.push({
+    id: newId(),
+    inviteId: invite.id,
+    assignmentId: invite.assignmentId,
+    phase: "LINK",
+    sessionDigest: digestSecret(sessionToken),
+    expiresAt: iso(new Date(options.now().getTime() + SESSION_TTL_MS)),
+    assistantUserId: null,
+    assistReason: null,
+    revoked: false,
+  });
+  audit(db, options.now(), null, "INVITE_LINK_EXCHANGED", invite.id, {});
+  return { ok: true, db, value: { sessionToken, phase: "LINK" } };
+}
+
+export function verifyOtp(
+  source: PerformanceDatabase,
+  input: { sessionToken: string; otp: string },
+  options: ServiceOptions
+): ServiceResult<{ sessionToken: string }> {
+  const db = cloneDb(source);
+  const session = liveSession(db, input.sessionToken, options.now());
+  if (!session || session.phase !== "LINK" || !session.inviteId) return fail("INVITE_REJECTED", publicFailureMessage());
+  const invite = db.invites.find((i) => i.id === session.inviteId);
+  if (!invite || invite.locked || invite.revokedAt || new Date(invite.expiresAt).getTime() <= options.now().getTime()) {
+    return fail("INVITE_REJECTED", publicFailureMessage());
+  }
+  const otp = String(input.otp ?? "").replace(/\D/g, "").slice(0, 12);
+  if (!secretsMatch(invite.otpDigest, digestSecret(otp))) {
+    invite.failedAttempts += 1;
+    if (invite.failedAttempts >= OTP_ATTEMPT_LIMIT) invite.locked = true;
+    audit(db, options.now(), null, "OTP_FAILED", invite.id, { locked: invite.locked, attempts: invite.failedAttempts });
+    return { ok: false, code: "INVITE_REJECTED", message: invite.locked ? "Convite bloqueado. Procure o RH para um novo." : "Código incorreto. Confira com o RH.", db };
+  }
+  const sessionToken = newSessionToken();
+  session.revoked = true;
+  db.sessions.push({
+    id: newId(),
+    inviteId: invite.id,
+    assignmentId: invite.assignmentId,
+    phase: "VERIFIED",
+    sessionDigest: digestSecret(sessionToken),
+    expiresAt: iso(new Date(options.now().getTime() + SESSION_TTL_MS)),
+    assistantUserId: null,
+    assistReason: null,
+    revoked: false,
+  });
+  audit(db, options.now(), null, "OTP_VERIFIED", invite.id, {});
+  return { ok: true, db, value: { sessionToken } };
+}
+
+export function liveSession(db: PerformanceDatabase, token: string, now: Date) {
+  if (!token) return null;
+  const digest = digestSecret(token);
+  return (
+    db.sessions.find(
+      (s) => secretsMatch(s.sessionDigest, digest) && !s.revoked && new Date(s.expiresAt).getTime() > now.getTime()
+    ) ?? null
+  );
+}
+
+function formSession(db: PerformanceDatabase, token: string, now: Date) {
+  const session = liveSession(db, token, now);
+  if (!session || (session.phase !== "VERIFIED" && session.phase !== "ASSISTED")) return null;
+  const { assignment, participant, cycle } = inviteContext(db, session.assignmentId);
+  if (!assignment || !assignment.active || !participant || participant.removedAt || !cycle) return null;
+  return { session, assignment, participant, cycle };
+}
+
+export type PublicFormValue = {
+  employeeName: string;
+  periodLabel: string;
+  cycleName: string;
+  instructions: string;
+  questions: { code: string; text: string; pillar: string }[];
+  answers: { questionCode: string; kind: string; score: number | null }[];
+  version: number;
+  status: string;
+  assisted: boolean;
+  expiresAt: string;
+  dueAt: string;
+};
+
+export function publicForm(source: PerformanceDatabase, input: { sessionToken: string }, options: ServiceOptions): ServiceResult<PublicFormValue> {
+  const ctx = formSession(source, input.sessionToken, options.now());
+  if (!ctx || ctx.cycle.status !== "OPEN" || ctx.assignment.status === "SUBMITTED") return fail("INVITE_REJECTED", publicFailureMessage());
+  const model = modelOfCycle(source, ctx.cycle);
+  const questions = questionsOf(source, ctx.cycle.modelId).map((q) => ({ code: q.code, text: q.selfText, pillar: q.pillar }));
+  const answers = source.answers
+    .filter((a) => a.assignmentId === ctx.assignment.id)
+    .map((a) => ({ questionCode: a.questionCode, kind: a.kind, score: a.score }));
+  return {
+    ok: true,
+    db: source,
+    value: {
+      employeeName: ctx.participant.employeeName.split(/\s+/)[0] ?? ctx.participant.employeeName,
+      periodLabel: ctx.cycle.periodLabel,
+      cycleName: ctx.cycle.name,
+      instructions: model?.instructions ?? PROPOSED_MODEL_INSTRUCTIONS,
+      questions,
+      answers,
+      version: ctx.assignment.version,
+      status: ctx.assignment.status,
+      assisted: ctx.session.phase === "ASSISTED",
+      expiresAt: ctx.session.expiresAt,
+      dueAt: ctx.cycle.selfDueAt,
+    },
+  };
 }
 
 export function publicSave(
   source: PerformanceDatabase,
-  input: { sessionToken: string; expectedVersion: number; answers: readonly { code: string; answer: AnswerInput }[]; confirm?: boolean },
+  input: { sessionToken: string; expectedVersion: number; answers: readonly { code: string; answer: AnswerInput }[] },
   options: ServiceOptions
-): ServiceOk<{ version: number }> | ServiceError {
-  const session = liveSession(source, input.sessionToken, options.now());
-  if (!session || (session.phase !== "VERIFIED" && session.phase !== "ASSISTED")) {
-    return fail("INVITE_REJECTED", publicFailureMessage());
-  }
-  const assignment = source.assignments.find((a) => a.id === session.assignmentId);
-  const participant = assignment ? source.participants.find((p) => p.id === assignment.participantId) : null;
-  if (!assignment || !participant) return fail("INVITE_REJECTED", publicFailureMessage());
+): ServiceResult<{ version: number }> {
+  const ctx = formSession(source, input.sessionToken, options.now());
+  if (!ctx) return fail("INVITE_REJECTED", publicFailureMessage());
   return saveAnswers(
     source,
     {
-      assignmentId: assignment.id,
+      assignmentId: ctx.assignment.id,
       expectedVersion: input.expectedVersion,
-      answers: input.answers,
-      actorUserId: session.assistantUserId,
-      assistedByUserId: session.phase === "ASSISTED" ? session.assistantUserId : null,
+      answers: input.answers.map((item) => ({ code: item.code, answer: item.answer.kind === "score" ? { kind: "score", score: item.answer.score } : item.answer })),
+      actorUserId: ctx.session.assistantUserId,
+      assistedByUserId: ctx.session.phase === "ASSISTED" ? ctx.session.assistantUserId : null,
       scope: {
         kind: "LIMITED",
-        actorEmployeeId: participant.employeeId,
-        visible: new Set([participant.employeeId]),
+        actorEmployeeId: ctx.participant.employeeId,
+        visible: new Set([ctx.participant.employeeId]),
         writable: new Set<string>(),
       },
     },
@@ -1185,25 +1604,21 @@ export function publicSubmit(
   source: PerformanceDatabase,
   input: { sessionToken: string; expectedVersion: number; confirm: boolean },
   options: ServiceOptions
-): ServiceOk<{ status: string }> | ServiceError {
-  const session = liveSession(source, input.sessionToken, options.now());
-  if (!session || (session.phase !== "VERIFIED" && session.phase !== "ASSISTED")) {
-    return fail("INVITE_REJECTED", publicFailureMessage());
-  }
-  const assignment = source.assignments.find((a) => a.id === session.assignmentId);
-  const participant = assignment ? source.participants.find((p) => p.id === assignment.participantId) : null;
-  if (!assignment || !participant) return fail("INVITE_REJECTED", publicFailureMessage());
+): ServiceResult<{ status: string }> {
+  const ctx = formSession(source, input.sessionToken, options.now());
+  if (!ctx) return fail("INVITE_REJECTED", publicFailureMessage());
+  if (ctx.cycle.status !== "OPEN") return fail("COLLECTION_CLOSED", "A coleta deste ciclo está fechada.");
   return submitAssignment(
     source,
     {
-      assignmentId: assignment.id,
+      assignmentId: ctx.assignment.id,
       expectedVersion: input.expectedVersion,
-      actorUserId: session.assistantUserId,
-      assistedConfirmation: session.phase === "ASSISTED" ? input.confirm : true,
+      actorUserId: ctx.session.assistantUserId,
+      assistedConfirmation: ctx.session.phase === "ASSISTED" ? input.confirm === true : true,
       scope: {
         kind: "LIMITED",
-        actorEmployeeId: participant.employeeId,
-        visible: new Set([participant.employeeId]),
+        actorEmployeeId: ctx.participant.employeeId,
+        visible: new Set([ctx.participant.employeeId]),
         writable: new Set<string>(),
       },
     },
@@ -1211,16 +1626,34 @@ export function publicSubmit(
   );
 }
 
+/** Encerra a sessão do aparelho (botão Sair ou fim do preenchimento assistido). */
+export function publicLogout(source: PerformanceDatabase, input: { sessionToken: string }, options: ServiceOptions): ServiceResult<{ ended: boolean }> {
+  const db = cloneDb(source);
+  const session = liveSession(db, input.sessionToken, options.now());
+  if (!session) return { ok: true, db: source, value: { ended: false } };
+  session.revoked = true;
+  audit(db, options.now(), session.assistantUserId, "PORTAL_SESSION_ENDED", session.assignmentId, { phase: session.phase });
+  return { ok: true, db, value: { ended: true } };
+}
+
+/** Preenchimento assistido em aparelho da empresa. O motivo fica registrado; a autoria é da pessoa. */
 export function openAssisted(
   source: PerformanceDatabase,
-  input: { assignmentId: string; assistantUserId: string; actorEmployeeId: string | null },
+  input: { assignmentId: string; assistantUserId: string | null; actorEmployeeId: string | null; reason: string; scope?: PerformanceScope },
   options: ServiceOptions
-): ServiceOk<{ sessionToken: string }> | ServiceError {
+): ServiceResult<{ sessionToken: string }> {
+  const denied = hrOnly(input.scope ?? HR_SCOPE);
+  if (denied) return denied;
+  const reason = clean(input.reason, 300);
+  if (reason.length < 8) return fail("NOTE_REQUIRED", "Registre o motivo do preenchimento assistido.");
   const db = cloneDb(source);
   const assignment = db.assignments.find((a) => a.id === input.assignmentId && a.active && a.kind === "SELF");
   if (!assignment) return fail("NOT_FOUND", "Autoavaliação não encontrada.");
   if (assignment.status === "SUBMITTED") return fail("ASSIGNMENT_LOCKED", "A pesquisa já foi enviada.");
-  assignment.assistedByUserId = input.assistantUserId;
+  if (input.actorEmployeeId && input.actorEmployeeId === assignment.employeeId) return fail("FORBIDDEN", "A própria pessoa não abre o modo assistido para si.");
+  const { participant, cycle } = inviteContext(db, assignment.id);
+  if (!participant || participant.removedAt || cycle?.status !== "OPEN") return fail("CYCLE_STAGE", "O preenchimento assistido só acontece com o ciclo aberto.");
+  for (const session of db.sessions.filter((s) => s.assignmentId === assignment.id && s.phase === "ASSISTED" && !s.revoked)) session.revoked = true;
   const sessionToken = newSessionToken();
   db.sessions.push({
     id: newId(),
@@ -1228,10 +1661,470 @@ export function openAssisted(
     assignmentId: assignment.id,
     phase: "ASSISTED",
     sessionDigest: digestSecret(sessionToken),
-    expiresAt: iso(new Date(options.now().getTime() + SESSION_TTL_MS)),
+    expiresAt: iso(new Date(options.now().getTime() + 30 * 60 * 1000)),
     assistantUserId: input.assistantUserId,
+    assistReason: reason,
     revoked: false,
   });
-  audit(db, options.now(), input.assistantUserId, "ASSISTED_OPENED", assignment.id, {});
+  audit(db, options.now(), input.assistantUserId, "ASSISTED_OPENED", assignment.id, { reason });
   return { ok: true, db, value: { sessionToken } };
+}
+
+/** Troca o token de abertura (que passou pela URL) por uma sessão nova, de uso no aparelho. */
+export function claimAssisted(
+  source: PerformanceDatabase,
+  input: { token: string },
+  options: ServiceOptions
+): ServiceResult<{ sessionToken: string }> {
+  const db = cloneDb(source);
+  const session = liveSession(db, input.token, options.now());
+  if (!session || session.phase !== "ASSISTED") return fail("INVITE_REJECTED", publicFailureMessage());
+  session.revoked = true;
+  const sessionToken = newSessionToken();
+  db.sessions.push({ ...session, id: newId(), sessionDigest: digestSecret(sessionToken), revoked: false, expiresAt: iso(new Date(options.now().getTime() + SESSION_TTL_MS)) });
+  audit(db, options.now(), session.assistantUserId, "ASSISTED_CLAIMED", session.assignmentId, {});
+  return { ok: true, db, value: { sessionToken } };
+}
+
+// ---------------------------------------------------------------------------
+// Liderança
+// ---------------------------------------------------------------------------
+
+export function leaderQueue(db: PerformanceDatabase, scope: PerformanceScope, actorEmployeeId: string | null) {
+  return db.assignments
+    .filter((a) => a.active && a.kind === "LEADER")
+    .filter((a) => (actorEmployeeId ? a.evaluatorEmployeeId === actorEmployeeId && a.employeeId !== actorEmployeeId : false))
+    .filter((a) => canActOnLeaderAssignment(scope.kind === "ALL" ? { kind: "LIMITED", actorEmployeeId, visible: new Set(), writable: new Set() } : scope, a))
+    .map((assignment) => {
+      const participant = db.participants.find((p) => p.id === assignment.participantId);
+      if (!participant || participant.removedAt) return null;
+      const cycle = db.cycles.find((c) => c.id === participant.cycleId);
+      if (!cycle) return null;
+      const self = activeAssignment(db, participant.id, "SELF");
+      const showSelf = Boolean(self && self.status === "SUBMITTED" && assignment.status === "SUBMITTED");
+      const result = activeResult(db, participant.id);
+      const feedback = db.feedbacks.find((f) => f.participantId === participant.id) ?? null;
+      return {
+        assignmentId: assignment.id,
+        participantId: participant.id,
+        employeeName: participant.employeeName,
+        roleName: participant.roleName,
+        departmentName: participant.departmentName,
+        cycleId: cycle.id,
+        cycleName: cycle.name,
+        cycleStatus: cycle.status,
+        dueAt: cycle.leaderDueAt,
+        status: assignment.status,
+        version: assignment.version,
+        revision: assignment.revision,
+        returnReason: assignment.returnReason,
+        editable: collectionOpenFor(cycle, assignment) && assignment.status !== "SUBMITTED",
+        selfVisible: showSelf,
+        divergences:
+          showSelf && self ? findDivergences(toStored(db, self.id), toStored(db, assignment.id), rulesOfCycle(db, cycle).divergenceThreshold) : [],
+        officialResult: result?.official
+          ? { quadrant: result.quadrant, cultureBand: result.cultureBand, technicalSum: result.technicalSum, technicalCount: result.technicalCount, potentialSum: result.potentialSum, potentialCount: result.potentialCount }
+          : null,
+        feedback: feedback ? { id: feedback.id, acknowledgedAt: feedback.acknowledgedAt, createdAt: feedback.createdAt } : null,
+        pdis: db.pdis.filter((p) => p.participantId === participant.id).map((p) => ({ id: p.id, title: p.title, status: p.status, dueAt: p.dueAt })),
+      };
+    })
+    .filter((item): item is NonNullable<typeof item> => item !== null);
+}
+
+export function readLeaderForm(db: PerformanceDatabase, assignmentId: string, scope: PerformanceScope, actorEmployeeId: string | null) {
+  const assignment = db.assignments.find((a) => a.id === assignmentId && a.active && a.kind === "LEADER");
+  const allowed =
+    assignment &&
+    (scope.kind === "ALL"
+      ? true
+      : Boolean(actorEmployeeId && assignment.evaluatorEmployeeId === actorEmployeeId && assignment.employeeId !== actorEmployeeId));
+  if (!assignment || !allowed) return fail("FORBIDDEN", "Acesso negado.");
+  const participant = db.participants.find((p) => p.id === assignment.participantId);
+  if (!participant || participant.removedAt) return fail("FORBIDDEN", "Acesso negado.");
+  const cycle = db.cycles.find((c) => c.id === participant.cycleId)!;
+  const model = modelOfCycle(db, cycle);
+  const rules = rulesOfCycle(db, cycle);
+  const self = activeAssignment(db, participant.id, "SELF");
+  const selfReleased = assignment.status === "SUBMITTED" && self?.status === "SUBMITTED";
+  return {
+    ok: true as const,
+    assignment: {
+      id: assignment.id,
+      status: assignment.status,
+      version: assignment.version,
+      revision: assignment.revision,
+      returnReason: assignment.returnReason,
+      submittedAt: assignment.submittedAt,
+    },
+    employee: { name: participant.employeeName, roleName: participant.roleName, departmentName: participant.departmentName },
+    cycle: { id: cycle.id, name: cycle.name, periodLabel: cycle.periodLabel, status: cycle.status, dueAt: cycle.leaderDueAt },
+    editable: collectionOpenFor(cycle, assignment) && assignment.status !== "SUBMITTED",
+    instructions: model?.instructions ?? PROPOSED_MODEL_INSTRUCTIONS,
+    rules: { requireExtremeEvidence: rules.requireExtremeEvidence, evidenceMinChars: rules.evidenceMinChars },
+    questions: questionsOf(db, cycle.modelId).map((q) => ({
+      code: q.code,
+      text: q.leaderText,
+      pillar: q.pillar,
+      competency: q.competency,
+      hint: q.hint,
+      description: q.description,
+      positiveExample: q.positiveExample,
+      negativeExample: q.negativeExample,
+      // Só o exemplo do cargo da pessoa avaliada (snapshot do ciclo).
+      roleExample: (q.roleExamples ?? []).find((row) => row.roleName.trim().toLowerCase() === participant.roleName.trim().toLowerCase())?.text ?? null,
+    })),
+    answers: db.answers
+      .filter((a) => a.assignmentId === assignment.id)
+      .map((a) => ({ questionCode: a.questionCode, kind: a.kind, score: a.score, evidence: a.evidence })),
+    selfAnswers: selfReleased && self
+      ? db.answers.filter((a) => a.assignmentId === self.id).map((a) => ({ questionCode: a.questionCode, kind: a.kind, score: a.score }))
+      : [],
+    divergences: selfReleased && self ? findDivergences(toStored(db, self.id), toStored(db, assignment.id), rules.divergenceThreshold) : [],
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Devolutiva e PDI
+// ---------------------------------------------------------------------------
+
+export function createFeedback(
+  source: PerformanceDatabase,
+  input: {
+    participantId: string;
+    strength: string;
+    improvement: string;
+    action: string;
+    ownerName: string;
+    dueAt: string | null;
+    conversationAt: string | null;
+    leaderEmployeeId?: string | null;
+    actorUserId: string | null;
+    scope?: PerformanceScope;
+  },
+  options: ServiceOptions
+): ServiceResult<{ feedbackId: string }> {
+  const scope = input.scope ?? HR_SCOPE;
+  const db = cloneDb(source);
+  const participant = db.participants.find((p) => p.id === input.participantId && !p.removedAt);
+  if (!participant) return fail("NOT_FOUND", "Participante não encontrado.");
+  if (!canLeadParticipant(db, scope, participant)) return fail("FORBIDDEN", FORBIDDEN_MESSAGE);
+  const cycle = db.cycles.find((c) => c.id === participant.cycleId);
+  const result = db.results.find((r) => r.participantId === input.participantId && r.active && r.official);
+  if (!cycle || !result) return fail("NOT_HOMOLOGATED", "A devolutiva oficial só existe depois da homologação.");
+  if (cycle.status !== "HOMOLOGATED" && cycle.status !== "CLOSED") return fail("NOT_HOMOLOGATED", "O ciclo ainda não está homologado.");
+  if (db.feedbacks.some((f) => f.participantId === participant.id)) return fail("FEEDBACK_EXISTS", "A devolutiva desta pessoa já foi registrada.");
+  const strength = clean(input.strength, 600);
+  const improvement = clean(input.improvement, 600);
+  const action = clean(input.action, 600);
+  if (strength.length < 3 || improvement.length < 3 || action.length < 3) {
+    return fail("INVALID_TEXT", "Preencha o ponto forte, o ponto de desenvolvimento e a ação combinada.");
+  }
+  const ownerName = clean(input.ownerName, 160);
+  if (ownerName.length < 2) return fail("INVALID_TEXT", "Informe o responsável pela ação.");
+  if (input.dueAt && !isIsoDate(input.dueAt)) return fail("INVALID_DATE", "Prazo inválido.");
+  if (input.conversationAt && !isIsoDate(input.conversationAt)) return fail("INVALID_DATE", "Data da conversa inválida.");
+  const leader = activeAssignment(db, participant.id, "LEADER");
+  const leaderEmployeeId =
+    leader?.evaluatorEmployeeId ?? participant.managerId ?? (scope.kind === "LIMITED" ? scope.actorEmployeeId : null) ?? input.leaderEmployeeId ?? null;
+  if (!leaderEmployeeId) return fail("LEADER_REQUIRED", "Atribua o líder antes de registrar a devolutiva.");
+  const feedbackId = newId();
+  const now = options.now();
+  db.feedbacks.push({
+    id: feedbackId,
+    participantId: participant.id,
+    resultId: result.id,
+    strength,
+    improvement,
+    action,
+    ownerName,
+    dueAt: input.dueAt,
+    conversationAt: input.conversationAt,
+    leaderEmployeeId,
+    viewedAt: null,
+    acknowledgedAt: null,
+    agreedAt: null,
+    contestation: null,
+    collaboratorNote: null,
+    acknowledgedVia: null,
+    acknowledgedByUserId: null,
+    internalNotes: null,
+    createdByUserId: input.actorUserId,
+    createdAt: iso(now),
+  });
+  audit(db, now, input.actorUserId, "FEEDBACK_CREATED", feedbackId, { participantId: participant.id, resultVersion: result.version });
+  return { ok: true, db, value: { feedbackId } };
+}
+
+/**
+ * Ciência, concordância e contestação são registros separados. Ciência não é concordância.
+ * A própria pessoa registra (SELF) ou o RH/líder registra presencialmente (ASSISTED).
+ */
+export function acknowledgeFeedback(
+  source: PerformanceDatabase,
+  input: {
+    feedbackId: string;
+    action: "VIEWED" | "ACKNOWLEDGED" | "AGREED" | "CONTESTED";
+    note: string | null;
+    actorEmployeeId: string | null;
+    actorUserId?: string | null;
+    assisted?: boolean;
+    scope?: PerformanceScope;
+  },
+  options: ServiceOptions
+): ServiceResult<{ action: string }> {
+  const db = cloneDb(source);
+  const feedback = db.feedbacks.find((f) => f.id === input.feedbackId);
+  const participant = feedback ? db.participants.find((p) => p.id === feedback.participantId) : null;
+  if (!feedback || !participant) return fail("FORBIDDEN", "A devolutiva é só da própria pessoa.");
+  const self = Boolean(input.actorEmployeeId && participant.employeeId === input.actorEmployeeId);
+  const assisted = !self && input.assisted === true && Boolean(input.scope) && canLeadParticipant(db, input.scope!, participant);
+  if (!self && !assisted) return fail("FORBIDDEN", "A devolutiva é só da própria pessoa.");
+  if (!["VIEWED", "ACKNOWLEDGED", "AGREED", "CONTESTED"].includes(input.action)) return fail("INVALID_ACTION", "Ação inválida.");
+  const note = cleanOrNull(input.note, 600);
+  if (input.action === "CONTESTED" && (!note || note.length < 8)) return fail("NOTE_REQUIRED", "Descreva o fato contestado com pelo menos 8 caracteres.");
+  const at = iso(options.now());
+  if (input.action === "VIEWED") feedback.viewedAt = feedback.viewedAt ?? at;
+  if (input.action === "ACKNOWLEDGED") {
+    feedback.acknowledgedAt = feedback.acknowledgedAt ?? at;
+    feedback.viewedAt = feedback.viewedAt ?? at;
+    feedback.acknowledgedVia = self ? "SELF" : "ASSISTED";
+    feedback.acknowledgedByUserId = input.actorUserId ?? null;
+  }
+  if (input.action === "AGREED") feedback.agreedAt = feedback.agreedAt ?? at;
+  if (input.action === "CONTESTED") feedback.contestation = note;
+  if (note && input.action !== "CONTESTED") feedback.collaboratorNote = note;
+  audit(db, options.now(), input.actorUserId ?? null, "FEEDBACK_ACK", feedback.id, { action: input.action, via: self ? "SELF" : "ASSISTED" });
+  return { ok: true, db, value: { action: input.action } };
+}
+
+export function createPdi(
+  source: PerformanceDatabase,
+  input: {
+    feedbackId: string;
+    title: string;
+    objective?: string | null;
+    competencyCode?: string | null;
+    priority: boolean;
+    justification: string | null;
+    ownerName: string;
+    dueAt: string | null;
+    actorUserId: string | null;
+    scope?: PerformanceScope;
+  },
+  options: ServiceOptions
+): ServiceResult<{ pdiId: string }> {
+  const scope = input.scope ?? HR_SCOPE;
+  const db = cloneDb(source);
+  const feedback = db.feedbacks.find((f) => f.id === input.feedbackId);
+  if (!feedback) return fail("NOT_FOUND", "Devolutiva não encontrada.");
+  const participant = db.participants.find((p) => p.id === feedback.participantId)!;
+  if (!canLeadParticipant(db, scope, participant)) return fail("FORBIDDEN", FORBIDDEN_MESSAGE);
+  const title = clean(input.title, 200);
+  if (title.length < 3) return fail("INVALID_TEXT", "Descreva a ação do PDI.");
+  const ownerName = clean(input.ownerName, 160);
+  if (ownerName.length < 2) return fail("INVALID_TEXT", "Informe o responsável.");
+  if (!input.dueAt || !isIsoDate(input.dueAt)) return fail("INVALID_DATE", "Informe o prazo da ação.");
+  const cycle = db.cycles.find((c) => c.id === participant.cycleId)!;
+  const competencyCode = cleanOrNull(input.competencyCode, 20);
+  if (competencyCode && !questionsOf(db, cycle.modelId).some((q) => q.code === competencyCode)) {
+    return fail("INVALID_COMPETENCY", "Competência não faz parte do modelo deste ciclo.");
+  }
+  const existingPriority = db.pdis.some((p) => p.feedbackId === feedback.id && p.priority && p.status !== "CANCELLED");
+  const priority = input.priority && !existingPriority;
+  if (input.priority && existingPriority) return fail("PRIORITY_EXISTS", "Já existe uma ação prioritária. As demais pedem justificativa.");
+  const justification = cleanOrNull(input.justification, 600);
+  if (!priority && (!justification || justification.length < 8)) return fail("JUSTIFICATION_REQUIRED", "Ação extra precisa de justificativa.");
+  const pdiId = newId();
+  const now = iso(options.now());
+  db.pdis.push({
+    id: pdiId,
+    participantId: feedback.participantId,
+    feedbackId: feedback.id,
+    title,
+    objective: cleanOrNull(input.objective, 600),
+    competencyCode,
+    priority,
+    justification: priority ? null : justification,
+    ownerName,
+    dueAt: input.dueAt,
+    status: "PLANNED",
+    evidence: null,
+    createdAt: now,
+    updatedAt: now,
+    completedAt: null,
+  });
+  audit(db, options.now(), input.actorUserId, "PDI_CREATED", pdiId, { priority });
+  return { ok: true, db, value: { pdiId } };
+}
+
+const FINAL_PDI: readonly PdiStatus[] = ["DONE", "CANCELLED"];
+
+export function updatePdiStatus(
+  source: PerformanceDatabase,
+  input: { pdiId: string; status: PdiStatus; note?: string | null; evidence?: string | null; actorUserId: string | null; scope?: PerformanceScope },
+  options: ServiceOptions
+): ServiceResult<{ pdiId: string }> {
+  const scope = input.scope ?? HR_SCOPE;
+  if (!isPdiStatus(input.status)) return fail("INVALID_STATUS", "Situação do PDI inválida.");
+  const db = cloneDb(source);
+  const pdi = db.pdis.find((p) => p.id === input.pdiId);
+  if (!pdi) return fail("NOT_FOUND", "PDI não encontrado.");
+  const participant = db.participants.find((p) => p.id === pdi.participantId)!;
+  if (!canLeadParticipant(db, scope, participant)) return fail("FORBIDDEN", FORBIDDEN_MESSAGE);
+  if (FINAL_PDI.includes(pdi.status)) return fail("PDI_CLOSED", "Ação concluída ou cancelada fica preservada como está.");
+  if (pdi.status === input.status) return fail("SAME_STATUS", "A ação já está nesta situação.");
+  const note = cleanOrNull(input.note, 600);
+  if ((input.status === "DONE" || input.status === "CANCELLED" || input.status === "SUSPENDED") && (!note || note.length < 8)) {
+    return fail("NOTE_REQUIRED", "Registre o que aconteceu (mínimo de 8 caracteres).");
+  }
+  const now = iso(options.now());
+  const from = pdi.status;
+  pdi.status = input.status;
+  pdi.updatedAt = now;
+  if (input.status === "DONE") {
+    pdi.completedAt = now;
+    pdi.evidence = cleanOrNull(input.evidence, 600) ?? note;
+  }
+  if (note) {
+    db.checkins.push({ id: newId(), pdiId: pdi.id, note: `Situação: ${PDI_STATUS_LABELS[from]} → ${PDI_STATUS_LABELS[input.status]}. ${note}`, obstacle: null, nextStep: null, authorUserId: input.actorUserId, createdAt: now });
+  }
+  audit(db, options.now(), input.actorUserId, "PDI_STATUS", pdi.id, { from, to: input.status });
+  return { ok: true, db, value: { pdiId: pdi.id } };
+}
+
+export function addCheckin(
+  source: PerformanceDatabase,
+  input: { pdiId: string; note: string; obstacle: string | null; nextStep: string | null; actorUserId: string | null; scope?: PerformanceScope },
+  options: ServiceOptions
+): ServiceResult<{ checkinId: string }> {
+  const scope = input.scope ?? HR_SCOPE;
+  const db = cloneDb(source);
+  const pdi = db.pdis.find((p) => p.id === input.pdiId);
+  if (!pdi) return fail("NOT_FOUND", "PDI não encontrado.");
+  const participant = db.participants.find((p) => p.id === pdi.participantId)!;
+  if (!canLeadParticipant(db, scope, participant)) return fail("FORBIDDEN", FORBIDDEN_MESSAGE);
+  if (FINAL_PDI.includes(pdi.status)) return fail("PDI_CLOSED", "Ação concluída ou cancelada fica preservada como está.");
+  const note = clean(input.note, 600);
+  if (note.length < 3) return fail("INVALID_TEXT", "Escreva o progresso observado.");
+  const checkinId = newId();
+  const now = iso(options.now());
+  db.checkins.push({
+    id: checkinId,
+    pdiId: pdi.id,
+    note,
+    obstacle: cleanOrNull(input.obstacle, 600),
+    nextStep: cleanOrNull(input.nextStep, 600),
+    authorUserId: input.actorUserId,
+    createdAt: now,
+  });
+  pdi.updatedAt = now;
+  if (pdi.status === "PLANNED") pdi.status = "IN_PROGRESS";
+  audit(db, options.now(), input.actorUserId, "PDI_CHECKIN", pdi.id, {});
+  return { ok: true, db, value: { checkinId } };
+}
+
+// ---------------------------------------------------------------------------
+// Ocorrências, lembretes e relatórios
+// ---------------------------------------------------------------------------
+
+export function recordConduct(
+  source: PerformanceDatabase,
+  input: { employeeId: string; summary: string; actorUserId: string | null },
+  options: ServiceOptions
+): ServiceResult<{ conductId: string }> {
+  const summary = clean(input.summary, 1000);
+  if (summary.length < 8) return fail("INVALID_TEXT", "Descreva o relato com pelo menos 8 caracteres.");
+  if (!input.employeeId) return fail("NOT_FOUND", "Pessoa não informada.");
+  const db = cloneDb(source);
+  const before = db.results.map((r) => `${r.id}:${r.quadrant}:${r.cultureBand}`);
+  const conductId = newId();
+  db.conducts.push({ id: conductId, employeeId: input.employeeId, status: "RECORDED", summary, proven: false });
+  audit(db, options.now(), input.actorUserId, "CONDUCT_RECORDED", conductId, { proven: false });
+  const after = db.results.map((r) => `${r.id}:${r.quadrant}:${r.cultureBand}`);
+  if (before.join() !== after.join()) return fail("CONDUCT_LEAK", "Ocorrência não pode alterar resultado.");
+  return { ok: true, db, value: { conductId } };
+}
+
+export function planReminders(
+  source: PerformanceDatabase,
+  input: { cycleId: string; actorUserId: string | null },
+  options: ServiceOptions
+): ServiceResult<{ drafted: number; dispatched: number }> {
+  const db = cloneDb(source);
+  const cycle = db.cycles.find((c) => c.id === input.cycleId);
+  if (!cycle) return fail("NOT_FOUND", "Ciclo não encontrado.");
+  let drafted = 0;
+  const live = new Set(liveParticipants(db, cycle.id).map((p) => p.id));
+  for (const assignment of db.assignments.filter((a) => a.cycleId === cycle.id && a.active && a.status !== "SUBMITTED" && live.has(a.participantId))) {
+    const audience = assignment.kind === "SELF" ? "SELF" : "LEADER";
+    const exists = db.reminders.some((r) => r.cycleId === cycle.id && r.employeeId === assignment.evaluatorEmployeeId && r.audience === audience);
+    if (exists) continue;
+    db.reminders.push({ id: newId(), cycleId: cycle.id, employeeId: assignment.evaluatorEmployeeId, audience, status: "DRAFT" });
+    drafted += 1;
+  }
+  audit(db, options.now(), input.actorUserId, "REMINDERS_DRAFTED", cycle.id, { drafted, dispatched: 0 });
+  return { ok: true, db, value: { drafted, dispatched: 0 } };
+}
+
+export function dispatchReminders(options: ServiceOptions): ServiceResult<{ sent: number }> {
+  if (!options.remindersEnabled) return fail("REMINDERS_DISABLED", "Lembretes externos permanecem desligados.");
+  return fail("REMINDERS_DISABLED", "Nenhum canal de envio foi autorizado.");
+}
+
+/** Exportação (CSV) também deixa rastro: quem exportou, quando e quantas linhas. */
+export function recordExport(
+  source: PerformanceDatabase,
+  input: { cycleId: string; rows: number; format: "CSV"; actorUserId: string | null },
+  options: ServiceOptions
+): ServiceResult<{ rows: number }> {
+  const db = cloneDb(source);
+  if (!db.cycles.some((c) => c.id === input.cycleId)) return fail("NOT_FOUND", "Ciclo não encontrado.");
+  audit(db, options.now(), input.actorUserId, "EXPORT", input.cycleId, { format: input.format, rows: input.rows });
+  return { ok: true, db, value: { rows: input.rows } };
+}
+
+export const REPORT_KINDS = ["individual", "devolutiva", "pdi", "consolidado", "ninebox", "historico"] as const;
+export type ReportKind = (typeof REPORT_KINDS)[number];
+export const PERSONAL_REPORT_KINDS: readonly ReportKind[] = ["individual", "devolutiva", "pdi", "historico"];
+
+export function isReportKind(value: unknown): value is ReportKind {
+  return typeof value === "string" && (REPORT_KINDS as readonly string[]).includes(value);
+}
+
+/** Código rastreável do documento: DCP-AAAAMMDD-XXXXXX. A versão conta emissões do mesmo documento. */
+export function issueReport(
+  source: PerformanceDatabase,
+  input: { cycleId: string; kind: ReportKind; participantId: string | null; actorUserId: string | null; actorName: string | null; scope: PerformanceScope; randomSuffix: string },
+  options: ServiceOptions
+): ServiceResult<{ code: string; version: number; issuedAt: string }> {
+  const db = cloneDb(source);
+  const cycle = db.cycles.find((c) => c.id === input.cycleId);
+  if (!cycle) return fail("NOT_FOUND", "Ciclo não encontrado.");
+  if (PERSONAL_REPORT_KINDS.includes(input.kind)) {
+    const participant = db.participants.find((p) => p.id === input.participantId && p.cycleId === cycle.id);
+    if (!participant) return fail("NOT_FOUND", "Escolha a pessoa do documento.");
+    if (!canSeeEmployee(input.scope, participant.employeeId)) return fail("FORBIDDEN", FORBIDDEN_MESSAGE);
+  } else if (input.scope.kind !== "ALL") {
+    return fail("FORBIDDEN", "Relatórios do ciclo inteiro são do RH.");
+  }
+  const now = options.now();
+  const stamp = iso(now).slice(0, 10).replace(/-/g, "");
+  const code = `DCP-${stamp}-${input.randomSuffix.toUpperCase().replace(/[^0-9A-F]/g, "").slice(0, 6).padEnd(6, "0")}`;
+  if (db.reports.some((r) => r.code === code)) return fail("CODE_COLLISION", "Tente emitir de novo.");
+  const version =
+    db.reports.filter((r) => r.kind === input.kind && r.cycleId === cycle.id && (r.participantId ?? null) === (input.participantId ?? null)).length + 1;
+  db.reports.push({
+    id: newId(),
+    code,
+    kind: input.kind,
+    cycleId: cycle.id,
+    participantId: PERSONAL_REPORT_KINDS.includes(input.kind) ? input.participantId : null,
+    version,
+    issuedByUserId: input.actorUserId,
+    issuedByName: cleanOrNull(input.actorName, 160),
+    issuedAt: iso(now),
+  });
+  audit(db, now, input.actorUserId, "REPORT_ISSUED", cycle.id, { code, kind: input.kind, version });
+  return { ok: true, db, value: { code, version, issuedAt: iso(now) } };
 }

@@ -54,6 +54,9 @@ export default defineConfig(({mode}) => {
           // Quem responde a pesquisa não deve baixar o bundle administrativo —
           // nem com as rotas apenas escondidas visualmente.
           satisfaction: path.resolve(__dirname, 'satisfacao.html'),
+          // Portal de Desempenho e Cultura: mesmo motivo — o colaborador no celular
+          // recebe só o formulário, nunca o bundle administrativo.
+          performance: path.resolve(__dirname, 'avaliacao.html'),
         },
       },
     },

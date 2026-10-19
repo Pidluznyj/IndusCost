@@ -1,0 +1,175 @@
+/**
+ * Documentos de Desempenho e Cultura e fichas de convite — A4 retrato.
+ * Reutiliza .print-doc-header / .print-section / .print-table do padrão IndusCost.
+ * Vale só nas rotas de impressão (classe no body).
+ */
+@media print {
+  /*
+   * src/reports-print.css aplica `body * { visibility: hidden }` em QUALQUER impressão do
+   * app. Sem este !important a folha sai em branco (só o rodapé de @page) — achado ao gerar o
+   * PDF real no navegador. Mesmo padrão de inventory-labels-print.css.
+   */
+  body.perf-print-route .perf-print-page,
+  body.perf-print-route .perf-print-page * {
+    visibility: visible !important;
+  }
+
+  html,
+  body.perf-print-route {
+    background: #fff !important;
+    overflow: visible !important;
+  }
+
+  body.perf-print-route .print-no-print,
+  body.perf-print-route button {
+    display: none !important;
+  }
+
+  body.perf-print-route .perf-print-page {
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #fff !important;
+    box-shadow: none !important;
+  }
+
+  .perf-invite-card {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .perf-invite-card:nth-child(2n) {
+    break-after: page;
+    page-break-after: always;
+  }
+}
+
+.perf-print-page {
+  max-width: 210mm;
+  margin: 0 auto;
+}
+
+.perf-sheet {
+  background: #fff;
+  color: #0f172a;
+  font-size: 9.5pt;
+  line-height: 1.4;
+  padding: 0;
+}
+
+.perf-sheet .print-doc-logo {
+  height: 44px;
+}
+
+.perf-identity {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 2mm 6mm;
+  margin: 3mm 0;
+}
+
+.perf-identity dt {
+  font-size: 7.5pt;
+  font-weight: 700;
+  color: #475569;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.perf-identity dd {
+  margin: 0;
+  font-size: 9.5pt;
+  overflow-wrap: break-word;
+  hyphens: auto;
+}
+
+.perf-sheet .print-table th,
+.perf-sheet .print-table td {
+  border: 1px solid #cbd5e1;
+  padding: 1.6mm 2mm;
+  vertical-align: top;
+  text-align: left;
+  overflow-wrap: break-word;
+  hyphens: auto;
+}
+
+.perf-sheet .print-table th {
+  background: #f1f5f9;
+  font-size: 8pt;
+  font-weight: 700;
+  color: #334155;
+}
+
+.perf-note {
+  font-size: 8pt;
+  color: #64748b;
+  margin: 1.5mm 0 0;
+}
+
+.perf-nine {
+  display: grid;
+  grid-template-columns: 14mm repeat(3, minmax(0, 1fr));
+  gap: 1.5mm;
+}
+
+.perf-nine-cell {
+  border: 1px solid #cbd5e1;
+  min-height: 24mm;
+  padding: 1.5mm;
+  font-size: 8pt;
+}
+
+.perf-nine-cell strong {
+  font-size: 13pt;
+  display: block;
+}
+
+.perf-nine-axis {
+  font-size: 7.5pt;
+  font-weight: 700;
+  color: #475569;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.perf-sign {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12mm;
+  margin-top: 14mm;
+}
+
+.perf-sign div {
+  border-top: 1px solid #0f172a;
+  padding-top: 1.5mm;
+  font-size: 8pt;
+  text-align: center;
+}
+
+.perf-invite-card {
+  border: 1px dashed #94a3b8;
+  border-radius: 3mm;
+  padding: 5mm 6mm;
+  margin: 0 0 5mm;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2mm;
+}
+
+.perf-invite-qr {
+  display: flex;
+  justify-content: center;
+  padding: 1mm 0;
+}
+
+.perf-invite-steps {
+  margin: 0;
+  list-style: decimal;
+  padding-left: 6mm;
+  font-size: 10.5pt;
+  line-height: 1.4;
+}

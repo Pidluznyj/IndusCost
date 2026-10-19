@@ -152,8 +152,8 @@ describe("média e cultura", () => {
 });
 
 describe("nine-box", () => {
-  const technical = { sum: 14, count: 4, insufficient: false, display: "3,50" };
-  const potential = { sum: 8, count: 4, insufficient: false, display: "2,00" };
+  const technical = { sum: 14, count: 4, notObserved: 0, insufficient: false, display: "3,50" };
+  const potential = { sum: 8, count: 4, notObserved: 0, insufficient: false, display: "2,00" };
 
   it("não classifica sem validação técnica nem com pilar insuficiente", () => {
     const pending = placeNineBox({ technical, potential, technicalValidation: "PENDING_VALIDATION" });

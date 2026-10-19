@@ -382,3 +382,9 @@ src/lib/competencies/competencyImportRoutes.test.ts
 src/lib/competencies/competencyGovernance.test.ts
 src/lib/competencies/competencyGovernanceRoutes.test.ts
 src/lib/competencies/competencyFeatureFlags.test.ts
+src/lib/hrPerformance/performanceDomain.test.ts
+src/lib/hrPerformance/performanceService.test.ts
+src/lib/hrPerformance/performanceRoutes.test.ts
+src/lib/hrPerformance/performanceMigration.test.ts
+src/lib/hrPerformance/performancePublicSurface.test.ts
+src/lib/hrPerformance/performancePrisma.integration.test.ts

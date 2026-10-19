@@ -18,6 +18,20 @@ describe("migration aditiva", () => {
     assert.equal(/Nomus/i.test(sql), false);
   });
 
+  it("a migration de regras só acrescenta colunas com default e uma tabela nova", () => {
+    const rules = readFileSync(join(root, "prisma/migrations/20261021120000_hr_performance_cycle_rules/migration.sql"), "utf8");
+    assert.equal(/DROP /i.test(rules), false);
+    assert.equal(/DELETE FROM|TRUNCATE/i.test(rules), false);
+    assert.equal(/ALTER TABLE "(?!HrPerformance)/.test(rules), false, "só tabelas do módulo");
+    const alters = rules.match(/ADD COLUMN\s+"\w+"\s+[^,;]+/g) ?? [];
+    assert.ok(alters.length >= 30);
+    for (const column of alters) {
+      if (/NOT NULL/.test(column)) assert.match(column, /DEFAULT/, `coluna obrigatória precisa de default: ${column}`);
+    }
+    assert.match(rules, /CREATE TABLE "HrPerformanceReportIssue"/);
+    assert.match(rules, /CREATE UNIQUE INDEX "HrPerformanceReportIssue_code_key"/);
+  });
+
   it("flags nascem desligadas", () => {
     const example = readFileSync(join(root, ".env.example"), "utf8");
     assert.match(example, /^PERFORMANCE_CYCLE_ENABLED=0$/m);

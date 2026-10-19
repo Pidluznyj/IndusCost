@@ -1,0 +1,186 @@
+/**
+ * Ciclos: lista, criação e a mesa de operação do ciclo selecionado.
+ */
+import React, { useCallback, useEffect, useState } from "react";
+import { CalendarPlus } from "lucide-react";
+import { OverlayField, OverlayFieldGrid, OverlayInput, OverlaySelect } from "@/src/components/ui/overlay";
+import {
+  createPerformanceCycle,
+  fetchPerformanceCycles,
+  fetchPerformanceModels,
+  type CycleCounts,
+  type CycleSummary,
+  type ModelSummary,
+  type PerformanceMe,
+} from "@/src/lib/hrPerformance/performanceClient";
+import { BTN_PRIMARY, CycleStatusBadge, ErrorBanner, PANEL, PanelState, PerformanceModal, addDaysIso, dateBr } from "./performanceUi";
+import { CycleDesk } from "./CycleDesk";
+import { cn } from "@/src/lib/utils";
+
+export function PerformanceCyclesTab({
+  me,
+  selectedId,
+  onSelect,
+  onToast,
+}: {
+  me: PerformanceMe;
+  selectedId: string | null;
+  onSelect: (id: string | null) => void;
+  onToast: (message: string) => void;
+}) {
+  const [cycles, setCycles] = useState<CycleSummary[] | null>(null);
+  const [counts, setCounts] = useState<Record<string, CycleCounts>>({});
+  const [models, setModels] = useState<ModelSummary[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
+
+  const reload = useCallback(async () => {
+    try {
+      const [payload, modelPayload] = await Promise.all([fetchPerformanceCycles(), fetchPerformanceModels()]);
+      setCycles(payload.cycles);
+      setCounts(payload.counts);
+      setModels(modelPayload.models);
+      setError(null);
+      if (!selectedId && payload.cycles[0]) onSelect(payload.cycles[0].id);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Não foi possível carregar os ciclos.");
+    }
+  }, [selectedId, onSelect]);
+
+  useEffect(() => {
+    void reload();
+  }, []);
+
+  const canManage = me.capabilities.manage;
+  const published = models.filter((m) => m.status === "PUBLISHED");
+
+  return (
+    <section className="space-y-4" data-testid="perf-cycles-tab">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="max-w-3xl text-sm text-muted-foreground">
+          O ciclo passa por rascunho, preparação, abertura, consolidação, calibração, homologação e encerramento. Cada etapa tem a sua guarda e fica registrada.
+        </p>
+        {canManage ? (
+          <button type="button" className={BTN_PRIMARY} onClick={() => setCreating(true)} disabled={published.length === 0} title={published.length === 0 ? "Publique um modelo antes" : undefined} data-testid="perf-cycle-new">
+            <CalendarPlus className="h-4 w-4" aria-hidden /> Novo ciclo
+          </button>
+        ) : null}
+      </div>
+      <ErrorBanner message={error} />
+      {cycles === null ? (
+        <div className={PANEL}>
+          <PanelState kind="loading" message="Carregando ciclos…" />
+        </div>
+      ) : cycles.length === 0 ? (
+        <div className={PANEL}>
+          <PanelState kind="empty" message={published.length === 0 ? "Nenhum ciclo. Publique um modelo na aba Modelos e depois crie o ciclo." : "Nenhum ciclo ainda. Crie o primeiro."} />
+        </div>
+      ) : (
+        <div className="flex gap-2 overflow-x-auto pb-1" role="tablist" aria-label="Ciclos" data-testid="perf-cycle-list">
+          {cycles.map((cycle) => {
+            const c = counts[cycle.id];
+            const active = cycle.id === selectedId;
+            return (
+              <button
+                key={cycle.id}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                onClick={() => onSelect(cycle.id)}
+                className={cn(
+                  "min-w-[220px] shrink-0 rounded-xl border p-3 text-left transition-colors",
+                  active ? "border-primary bg-primary/5" : "border-border bg-card hover:bg-muted"
+                )}
+                data-testid={`perf-cycle-card-${cycle.name}`}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="truncate text-sm font-semibold">{cycle.name}</span>
+                  <CycleStatusBadge status={cycle.status} />
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {cycle.periodLabel} · {cycle.modelName} v{cycle.modelVersion}
+                </p>
+                {c ? (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {c.eligible} elegíveis · {c.selfSubmitted} autoavaliações · {c.leaderSubmitted} do líder
+                  </p>
+                ) : null}
+              </button>
+            );
+          })}
+        </div>
+      )}
+      {selectedId ? (
+        <React.Fragment key={selectedId}>
+          <CycleDesk cycleId={selectedId} me={me} onToast={onToast} onChanged={() => void reload()} />
+        </React.Fragment>
+      ) : null}
+      <CreateCycleOverlay
+        open={creating}
+        models={published}
+        onClose={() => setCreating(false)}
+        onCreated={(id) => {
+          setCreating(false);
+          onToast("Ciclo criado em rascunho");
+          onSelect(id);
+          void reload();
+        }}
+      />
+    </section>
+  );
+}
+
+function CreateCycleOverlay({ open, models, onClose, onCreated }: { open: boolean; models: ModelSummary[]; onClose: () => void; onCreated: (id: string) => void }) {
+  const [name, setName] = useState("");
+  const [periodLabel, setPeriodLabel] = useState("");
+  const [modelId, setModelId] = useState("");
+  const [selfDueAt, setSelfDueAt] = useState(addDaysIso(30));
+  const [leaderDueAt, setLeaderDueAt] = useState(addDaysIso(45));
+  useEffect(() => {
+    if (open && !modelId && models[0]) setModelId(models[0].id);
+  }, [open, models, modelId]);
+  const valid = name.trim().length >= 3 && periodLabel.trim().length >= 2 && Boolean(modelId) && Boolean(selfDueAt) && leaderDueAt >= selfDueAt;
+  return (
+    <PerformanceModal
+      open={open}
+      title="Novo ciclo"
+      subtitle="O ciclo usa uma versão publicada do modelo. As pessoas são escolhidas depois, no cadastro oficial."
+      saveLabel="Criar rascunho"
+      footerHint={leaderDueAt < selfDueAt ? "O prazo do líder não pode vir antes do prazo da pessoa." : "Prazos podem ser ajustados depois, com registro."}
+      canSave={valid}
+      onClose={onClose}
+      size="md"
+      testId="perf-cycle-create"
+      onSave={async () => {
+        const created = await createPerformanceCycle({ name, periodLabel, modelId, selfDueAt, leaderDueAt });
+        onCreated(created.cycleId);
+      }}
+    >
+      <OverlayFieldGrid columns={2}>
+        <OverlayField label="Nome do ciclo" required>
+          {(p) => <OverlayInput {...p} value={name} placeholder="Ex.: Ciclo 2026 · 2º semestre" onChange={(e) => setName(e.target.value)} data-testid="perf-cycle-create-name" />}
+        </OverlayField>
+        <OverlayField label="Referência" required>
+          {(p) => <OverlayInput {...p} value={periodLabel} placeholder="2º semestre de 2026" onChange={(e) => setPeriodLabel(e.target.value)} data-testid="perf-cycle-create-period" />}
+        </OverlayField>
+        <OverlayField label="Modelo publicado" required colSpan={2}>
+          {(p) => (
+            <OverlaySelect {...p} value={modelId} onChange={(e) => setModelId(e.target.value)} data-testid="perf-cycle-create-model">
+              {models.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.name} · v{m.version} · publicado em {dateBr(m.publishedAt)}
+                </option>
+              ))}
+            </OverlaySelect>
+          )}
+        </OverlayField>
+        <OverlayField label="Prazo da autoavaliação" required>
+          {(p) => <OverlayInput {...p} type="date" value={selfDueAt} onChange={(e) => setSelfDueAt(e.target.value)} />}
+        </OverlayField>
+        <OverlayField label="Prazo da avaliação do líder" required>
+          {(p) => <OverlayInput {...p} type="date" value={leaderDueAt} onChange={(e) => setLeaderDueAt(e.target.value)} />}
+        </OverlayField>
+      </OverlayFieldGrid>
+    </PerformanceModal>
+  );
+}

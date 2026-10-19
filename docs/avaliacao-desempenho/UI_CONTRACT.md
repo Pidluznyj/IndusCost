@@ -33,3 +33,17 @@ Seleção de participantes, impressão de QR, modo assistido, fila de calibraç�
 ## Verificação visual
 
 Não houve passagem no navegador nesta execução. Não há captura de tela.
+
+## Estado em 16/10/2026 (Claude Code)
+
+As seções acima descrevem a entrega anterior e ficam como registro. O estado atual:
+
+- Abas: Ciclos, Minha equipe, Calibração, Nine-Box, Devolutivas e PDI, Painel, Modelos. A aba some quando falta permissão; o backend recusa do mesmo jeito.
+- Modelos: editor das 12 perguntas (texto, competência, descrição, exemplo positivo e negativo, exemplos por cargo), regras do modelo, pré-visualização, publicação com confirmação, histórico de versões. Versão publicada fica somente leitura.
+- Ciclos: busca de pessoas com seleção em lote, prévia de elegibilidade, exceção com motivo, líder escolhido por busca visual (nunca por id), remoção com motivo, convites em lote, ficha impressa sem o código, preenchimento assistido.
+- Calibração: fila com perspectivas da pessoa e do líder, divergências, evidências, pedido de revisão ao líder, confirmação ou ajuste com motivo; o original fica preservado.
+- Portal: bundle próprio (`avaliacao.html`), uma pergunta por tela, nada pré-selecionado, fila offline com aviso, retomada na primeira sem resposta, revisão antes do envio. Testado em 320, 360 e 390 px sem rolagem lateral.
+- Impressos: `/performance-cycle/relatorio` no `PrintDocumentShell` + `PrintHeader`, código `DCP-…`, versão, "Página X de Y"; `/performance-cycle/convites` com QR.
+- Responsividade administrativa verificada em 375, 768, 1280 e 1920 px.
+
+Verificação visual: capturas em `evidencias/`, roteiro em `EVIDENCIAS_TESTES.md`.

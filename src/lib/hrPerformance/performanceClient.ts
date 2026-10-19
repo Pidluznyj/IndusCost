@@ -1,203 +1,452 @@
+/**
+ * Cliente do navegador para Desempenho, Cultura e Potencial. Sem regra de negócio:
+ * só chamadas e tipos das respostas. Toda decisão fica no servidor.
+ */
+import type { PerformanceRules } from "./performanceDomain";
+
 const NO_STORE = { cache: "no-store" as const, credentials: "same-origin" as const };
 
+export class PerformanceApiError extends Error {
+  constructor(message: string, readonly code: string, readonly status: number) {
+    super(message);
+  }
+}
+
 async function json<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(path, { ...NO_STORE, ...init, headers: { "content-type": "application/json", ...(init?.headers ?? {}) } });
+  let response: Response;
+  try {
+    response = await fetch(path, { ...NO_STORE, ...init, headers: { "content-type": "application/json", ...(init?.headers ?? {}) } });
+  } catch {
+    throw new PerformanceApiError("Sem conexão com o servidor. Confira a rede e tente de novo.", "NETWORK", 0);
+  }
   const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(body.message || body.error || "Não foi possível concluir.");
+  if (!response.ok) throw new PerformanceApiError(body.message || body.error || "Não foi possível concluir.", body.error || "ERROR", response.status);
   return body as T;
 }
 
-export function fetchPerformanceFeatureStatus(): Promise<{ enabled: boolean }> {
-  return json("/api/hr/performance/feature-status");
-}
+const post = <T>(path: string, body: unknown = {}) => json<T>(path, { method: "POST", body: JSON.stringify(body) });
+const put = <T>(path: string, body: unknown = {}) => json<T>(path, { method: "PUT", body: JSON.stringify(body) });
+const BASE = "/api/hr/performance";
 
-export function fetchPerformanceModels() {
-  return json<{ models: { id: string; name: string; status: string; version: number; governance: string; homologated: boolean; questionCount: number }[] }>("/api/hr/performance/models");
-}
+// ------------------------------------------------------------------ acesso
+export type PerformanceCapabilities = { view: boolean; evaluate: boolean; manage: boolean; calibrate: boolean; report: boolean; invites: boolean; conduct: boolean };
+export type PerformanceMe = { accessScope: string; actorEmployeeId: string | null; capabilities: PerformanceCapabilities; officialPublication: boolean };
 
-export function createPerformanceModel(name: string) {
-  return json<{ modelId: string }>("/api/hr/performance/models", { method: "POST", body: JSON.stringify({ name }) });
-}
+export const fetchPerformanceFeatureStatus = () => json<{ enabled: boolean }>(`${BASE}/feature-status`);
+export const fetchPerformanceMe = () => json<PerformanceMe>(`${BASE}/me`);
 
-export function publishPerformanceModel(id: string) {
-  return json("/api/hr/performance/models/" + id + "/publish", { method: "POST", body: "{}" });
-}
-
-export function fetchPerformanceCycles() {
-  return json<{ cycles: { id: string; name: string; status: string; periodLabel: string; selfDueAt: string; leaderDueAt: string }[]; counts: Record<string, Record<string, number>> }>("/api/hr/performance/cycles");
-}
-
-export function createPerformanceCycle(input: { name: string; periodLabel: string; modelId: string; selfDueAt: string; leaderDueAt: string }) {
-  return json<{ cycleId: string }>("/api/hr/performance/cycles", { method: "POST", body: JSON.stringify(input) });
-}
-
-export function transitionPerformanceCycle(id: string, to: string, reason?: string, pilotAck?: boolean, acceptPending?: boolean) {
-  return json("/api/hr/performance/cycles/" + id + "/transition", { method: "POST", body: JSON.stringify({ to, reason, pilotAck, acceptPending }) });
-}
-
-export function searchPerformanceDirectory(query: string) {
-  return json<{ employees: { id: string; name: string; status: string | null; roleName: string; departmentName: string; managerId: string | null; managerName: string | null }[] }>(
-    "/api/hr/performance/directory?q=" + encodeURIComponent(query)
-  );
-}
-
-export function savePerformanceParticipants(cycleId: string, employeeIds: string[], exceptions: Record<string, string>) {
-  return json<{ eligible: number; notEligible: number; insufficient: number }>("/api/hr/performance/cycles/" + cycleId + "/participants", {
-    method: "POST",
-    body: JSON.stringify({ employeeIds, exceptions }),
-  });
-}
-
-export type CycleWorkspace = {
-  cycle: { id: string; name: string; status: string; periodLabel: string; selfDueAt: string; leaderDueAt: string };
-  questions: { code: string; pillar: string; selfText: string; leaderText: string; hint: string | null }[];
-  people: {
-    participant: { id: string; employeeId: string; employeeName: string; eligibility: string; eligibilityReason: string | null; roleName: string; departmentName: string; managerId: string | null; managerName: string | null };
-    self: { id: string; status: string } | null;
-    leader: { id: string; status: string; evaluatorEmployeeId: string } | null;
-    result: { quadrant: string; official: boolean; reviewStatus: string; technicalValidation: string; cultureBand: string; technicalSum: number; technicalCount: number; potentialSum: number; potentialCount: number } | null;
-    feedback: { id: string; strength: string; improvement: string; acknowledgedAt: string | null; agreedAt: string | null; contestation: string | null } | null;
-    pdis: { id: string; title: string; status: string; dueAt: string | null; ownerName: string; priority: boolean }[];
-    inviteStatus: string;
-    divergences: { questionCode: string; gap: number }[];
-  }[];
+// ------------------------------------------------------------------ modelos
+export type ModelSummary = {
+  id: string;
+  lineageId: string;
+  name: string;
+  description: string | null;
+  status: "DRAFT" | "PUBLISHED" | "ARCHIVED";
+  version: number;
+  ruleSetId: string;
+  publishedAt: string | null;
+  archivedAt: string | null;
+  createdAt: string;
+  questionCount: number;
+  cycles: number;
+};
+export type RoleExampleDto = { roleName: string; text: string };
+export type ModelQuestion = {
+  id: string;
+  code: string;
+  pillar: string;
+  competency: string;
+  sortOrder: number;
+  selfText: string;
+  leaderText: string;
+  hint: string | null;
+  description: string | null;
+  positiveExample: string | null;
+  negativeExample: string | null;
+  roleExamples: RoleExampleDto[];
+};
+export type ModelDetail = {
+  model: ModelSummary & { instructions: string | null; rules: PerformanceRules };
+  questions: ModelQuestion[];
+  problems: string[];
+  lineage: { id: string; version: number; status: string; publishedAt: string | null; archivedAt: string | null; ruleSetId: string }[];
+  usedBy: { id: string; name: string; status: string }[];
 };
 
-export function fetchCycleWorkspace(id: string) {
-  return json<CycleWorkspace>("/api/hr/performance/cycles/" + id + "/workspace");
-}
+export const fetchPerformanceModels = () => json<{ models: ModelSummary[] }>(`${BASE}/models`);
+export const fetchPerformanceModel = (id: string) => json<ModelDetail>(`${BASE}/models/${id}`);
+export const createPerformanceModel = (input: { name: string; description?: string; instructions?: string }) => post<{ modelId: string }>(`${BASE}/models`, input);
+export const updatePerformanceModel = (id: string, input: { name?: string; description?: string | null; instructions?: string | null; rules?: PerformanceRules }) =>
+  put<{ modelId: string }>(`${BASE}/models/${id}`, input);
+export const savePerformanceQuestion = (
+  modelId: string,
+  code: string,
+  input: { competency: string; selfText: string; leaderText: string; hint: string; description: string; positiveExample: string; negativeExample: string; roleExamples: RoleExampleDto[] }
+) =>
+  put(`${BASE}/models/${modelId}/questions/${code}`, input);
+export const movePerformanceQuestion = (modelId: string, code: string, direction: "up" | "down") => post(`${BASE}/models/${modelId}/questions/${code}/move`, { direction });
+export const publishPerformanceModel = (id: string) => post(`${BASE}/models/${id}/publish`);
+export const duplicatePerformanceModel = (id: string) => post<{ modelId: string }>(`${BASE}/models/${id}/duplicate`);
+export const archivePerformanceModel = (id: string) => post(`${BASE}/models/${id}/archive`);
 
-export function fetchPerformanceModel(id: string) {
-  return json<{ model: { id: string; name: string; status: string; version: number }; questions: { code: string; selfText: string; leaderText: string; hint: string | null; pillar: string }[] }>("/api/hr/performance/models/" + id);
-}
+// ------------------------------------------------------------------ ciclos
+export type RateDto = { numerator: number; denominator: number; ratio: number | null };
+export type CycleCounts = {
+  eligible: number;
+  notEligible: number;
+  insufficient: number;
+  removed: number;
+  withLeader: number;
+  withoutLeader: number;
+  invited: number;
+  selfStarted: number;
+  selfSubmitted: number;
+  leaderStarted: number;
+  leaderSubmitted: number;
+  calibrated: number;
+  official: number;
+  feedback: number;
+  acknowledged: number;
+  pdiOpen: number;
+  pdiLate: number;
+  pdiDone: number;
+  selfPending: number;
+  leaderPending: number;
+  rates: Record<"invited" | "selfSubmitted" | "leaderSubmitted" | "calibrated" | "official" | "feedback" | "acknowledged", RateDto>;
+};
+export type CycleSummary = {
+  id: string;
+  name: string;
+  status: string;
+  periodLabel: string;
+  selfDueAt: string;
+  leaderDueAt: string;
+  modelId: string;
+  modelName: string;
+  modelVersion: number | null;
+  minObservationDays: number;
+  openedAt: string | null;
+  closedAt: string | null;
+  createdAt: string;
+};
 
-export function savePerformanceQuestion(modelId: string, code: string, selfText: string, leaderText: string, hint: string) {
-  return json("/api/hr/performance/models/" + modelId + "/questions/" + code, { method: "PUT", body: JSON.stringify({ selfText, leaderText, hint }) });
-}
+export const fetchPerformanceCycles = () => json<{ cycles: CycleSummary[]; counts: Record<string, CycleCounts> }>(`${BASE}/cycles`);
+export const createPerformanceCycle = (input: { name: string; periodLabel: string; modelId: string; selfDueAt: string; leaderDueAt: string }) => post<{ cycleId: string }>(`${BASE}/cycles`, input);
+export const updatePerformanceCycle = (id: string, input: { name: string; periodLabel: string; selfDueAt: string; leaderDueAt: string; reason?: string }) => put(`${BASE}/cycles/${id}`, input);
+export const transitionPerformanceCycle = (id: string, input: { to: string; reason?: string; pilotAck?: boolean; acceptPending?: boolean }) =>
+  post<{ status: string; pending?: number }>(`${BASE}/cycles/${id}/transition`, input);
+export const homologatePerformanceCycle = (id: string) => post<{ status: string }>(`${BASE}/cycles/${id}/homologate`);
 
-export function duplicatePerformanceModel(id: string) {
-  return json<{ modelId: string }>("/api/hr/performance/models/" + id + "/duplicate", { method: "POST", body: "{}" });
-}
+export type ResultSummary = {
+  id: string;
+  version: number;
+  quadrant: string;
+  nineX: string | null;
+  nineY: string | null;
+  official: boolean;
+  reviewStatus: string;
+  technicalValidation: string;
+  validationNote: string | null;
+  cultureBand: string;
+  cultureBasis: string;
+  technicalSum: number;
+  technicalCount: number;
+  potentialSum: number;
+  potentialCount: number;
+  cultureSum: number;
+  cultureCount: number;
+  nineBoxReason: string;
+  adjusted: boolean;
+  calibrationNote: string | null;
+  calibratedAt: string | null;
+  ruleSetId: string | null;
+};
 
-export function archivePerformanceModel(id: string) {
-  return json("/api/hr/performance/models/" + id + "/archive", { method: "POST", body: "{}" });
-}
+export type WorkspacePerson = {
+  participant: {
+    id: string;
+    employeeId: string;
+    employeeName: string;
+    employeeStatus: string | null;
+    eligibility: string;
+    eligibilityReason: string;
+    eligibilityException: string | null;
+    roleName: string;
+    departmentName: string;
+    managerId: string | null;
+    managerName: string | null;
+    managerSource: string;
+    admissionDate: string | null;
+    removedAt: string | null;
+    removedReason: string | null;
+  };
+  self: { id: string; status: string; version: number; assisted: boolean; submittedAt: string | null } | null;
+  leader: { id: string; status: string; version: number; revision: number; evaluatorEmployeeId: string; returnReason: string | null; submittedAt: string | null } | null;
+  leaderVersions: number;
+  result: ResultSummary | null;
+  feedback: {
+    id: string;
+    strength: string;
+    improvement: string;
+    action: string;
+    ownerName: string;
+    dueAt: string | null;
+    conversationAt: string | null;
+    viewedAt: string | null;
+    acknowledgedAt: string | null;
+    acknowledgedVia: string | null;
+    agreedAt: string | null;
+    contestation: string | null;
+    collaboratorNote: string | null;
+    createdAt: string;
+  } | null;
+  pdis: { id: string; title: string; objective: string | null; competencyCode: string | null; status: string; dueAt: string | null; priority: boolean; justification: string | null; ownerName: string; checkins: number }[];
+  invite: { status: "NONE" | "ACTIVE" | "REVOKED" | "LOCKED" | "EXPIRED"; expiresAt: string | null; issuedAt: string | null; attempts: number; revokedReason: string | null };
+  divergences: { questionCode: string; selfScore: number; leaderScore: number; gap: number }[];
+};
 
-export function issuePerformanceInvite(assignmentId: string) {
-  return json<{ url: string; otp: string; inviteId: string }>("/api/hr/performance/assignments/" + assignmentId + "/invites", { method: "POST", body: "{}" });
-}
+export type CycleWorkspace = {
+  cycle: CycleSummary;
+  model: { id: string; name: string; version: number; status: string; instructions: string | null; rules: PerformanceRules } | null;
+  questions: { code: string; pillar: string; competency: string; selfText: string; leaderText: string; hint: string | null }[];
+  people: WorkspacePerson[];
+  counts: CycleCounts;
+};
 
-export function openAssistedPerformance(assignmentId: string) {
-  return json<{ sessionToken: string }>("/api/hr/performance/assignments/" + assignmentId + "/assist", { method: "POST", body: "{}" });
-}
+export const fetchCycleWorkspace = (id: string) => json<CycleWorkspace>(`${BASE}/cycles/${id}/workspace`);
 
-export function returnPerformanceAssignment(assignmentId: string, reason: string) {
-  return json("/api/hr/performance/assignments/" + assignmentId + "/return", { method: "POST", body: JSON.stringify({ reason }) });
-}
+export type DirectoryPerson = {
+  id: string;
+  name: string;
+  status: string | null;
+  terminated: boolean;
+  roleName: string;
+  departmentName: string;
+  managerId: string | null;
+  managerName: string | null;
+  admissionDate: string | null;
+  registration: string | null;
+};
+export const searchPerformanceDirectory = (query: string) => json<{ employees: DirectoryPerson[] }>(`${BASE}/directory?q=${encodeURIComponent(query)}`);
+export const previewPerformanceParticipants = (cycleId: string, employeeIds: string[]) =>
+  post<{ people: { employeeId: string; name: string; eligibility: string; reason: string; alreadyInCycle: boolean; managerName: string | null }[] }>(`${BASE}/cycles/${cycleId}/participants/preview`, { employeeIds });
+export const savePerformanceParticipants = (cycleId: string, employeeIds: string[], exceptions: Record<string, string> = {}) =>
+  post<{ eligible: number; notEligible: number; insufficient: number; added: number; duplicates: number; reactivated: number; missing: number }>(`${BASE}/cycles/${cycleId}/participants`, { employeeIds, exceptions });
+export const removePerformanceParticipant = (participantId: string, reason: string) => post(`${BASE}/participants/${participantId}/remove`, { reason });
+export const setPerformanceEligibilityException = (participantId: string, reason: string | null) => post(`${BASE}/participants/${participantId}/eligibility`, { reason });
+export const reassignPerformanceLeader = (participantId: string, managerId: string, reason: string) => post(`${BASE}/participants/${participantId}/leader`, { managerId, reason });
 
-export function reassignPerformanceLeader(participantId: string, managerId: string, managerName: string) {
-  return json("/api/hr/performance/participants/" + participantId + "/leader", { method: "POST", body: JSON.stringify({ managerId, managerName }) });
-}
+// ------------------------------------------------------------------ convites
+export type IssuedInvite = { participantId: string; employeeName: string; roleName: string; url: string; otp: string; inviteId: string; expiresAt: string };
+export const issuePerformanceInvite = (assignmentId: string) => post<IssuedInvite>(`${BASE}/assignments/${assignmentId}/invites`);
+export const issuePerformanceInvitesBatch = (cycleId: string, input: { participantIds?: string[]; onlyMissing: boolean }) =>
+  post<{ issued: IssuedInvite[]; skipped: number }>(`${BASE}/cycles/${cycleId}/invites`, input);
+export const revokePerformanceInvite = (assignmentId: string, reason: string) => post<{ revoked: number }>(`${BASE}/assignments/${assignmentId}/invites/revoke`, { reason });
+export const openAssistedPerformance = (assignmentId: string, reason: string) => post<{ sessionToken: string }>(`${BASE}/assignments/${assignmentId}/assist`, { reason });
 
-export function validatePerformanceTechnical(participantId: string, decision: "VALIDATED" | "INSUFFICIENT", note: string) {
-  return json("/api/hr/performance/participants/" + participantId + "/validation", { method: "POST", body: JSON.stringify({ decision, note }) });
-}
+// ------------------------------------------------------------------ liderança
+export type LeaderQueueItem = {
+  assignmentId: string;
+  participantId: string;
+  employeeName: string;
+  roleName: string;
+  departmentName: string;
+  cycleId: string;
+  cycleName: string;
+  cycleStatus: string;
+  dueAt: string;
+  status: string;
+  version: number;
+  revision: number;
+  returnReason: string | null;
+  editable: boolean;
+  selfVisible: boolean;
+  divergences: { questionCode: string; gap: number }[];
+  officialResult: { quadrant: string; cultureBand: string; technicalSum: number; technicalCount: number; potentialSum: number; potentialCount: number } | null;
+  feedback: { id: string; acknowledgedAt: string | null; createdAt: string } | null;
+  pdis: { id: string; title: string; status: string; dueAt: string | null }[];
+};
+export const fetchLeaderQueue = () => json<{ items: LeaderQueueItem[] }>(`${BASE}/team`);
 
-export function calibratePerformance(participantId: string, note: string) {
-  return json("/api/hr/performance/participants/" + participantId + "/calibration", { method: "POST", body: JSON.stringify({ note }) });
-}
+export type LeaderAnswerDraft = { kind: "pending" } | { kind: "notObserved"; evidence?: string | null } | { kind: "score"; score: number; evidence?: string | null };
+export type LeaderForm = {
+  assignment: { id: string; status: string; version: number; revision: number; returnReason: string | null; submittedAt: string | null };
+  employee: { name: string; roleName: string; departmentName: string };
+  cycle: { id: string; name: string; periodLabel: string; status: string; dueAt: string };
+  editable: boolean;
+  instructions: string;
+  rules: { requireExtremeEvidence: boolean; evidenceMinChars: number };
+  questions: {
+    code: string;
+    text: string;
+    pillar: string;
+    competency: string;
+    hint: string | null;
+    description: string | null;
+    positiveExample: string | null;
+    negativeExample: string | null;
+    roleExample: string | null;
+  }[];
+  answers: { questionCode: string; kind: string; score: number | null; evidence: string | null }[];
+  selfAnswers: { questionCode: string; kind: string; score: number | null }[];
+  divergences: { questionCode: string; selfScore: number; leaderScore: number; gap: number }[];
+};
+export const fetchLeaderAssignment = (id: string) => json<LeaderForm>(`${BASE}/assignments/${id}`);
+export const saveLeaderAnswers = (id: string, expectedVersion: number, answers: { code: string; answer: LeaderAnswerDraft }[]) =>
+  put<{ version: number }>(`${BASE}/assignments/${id}/answers`, { expectedVersion, answers });
+export const submitLeaderAssignment = (id: string, expectedVersion: number) => post<{ status: string }>(`${BASE}/assignments/${id}/submit`, { expectedVersion });
+export const returnPerformanceAssignment = (assignmentId: string, reason: string) => post(`${BASE}/assignments/${assignmentId}/return`, { reason });
 
-export function createPerformanceFeedback(input: { participantId: string; strength: string; improvement: string; action: string; ownerName: string; dueAt: string; conversationAt: string; leaderEmployeeId: string }) {
-  return json<{ feedbackId: string }>("/api/hr/performance/participants/" + input.participantId + "/feedback", { method: "POST", body: JSON.stringify(input) });
-}
+// ------------------------------------------------------------------ calibração
+export type PillarMeans = Record<string, { display: string | null; count: number; notObserved: number; insufficient: boolean }>;
+export type CalibrationRow = {
+  participantId: string;
+  employeeName: string;
+  roleName: string;
+  departmentName: string;
+  managerName: string | null;
+  selfStatus: string | null;
+  leaderStatus: string | null;
+  leaderAssignmentId: string | null;
+  leaderRevision: number | null;
+  self: PillarMeans;
+  leader: PillarMeans;
+  divergences: { questionCode: string; competency: string; text: string; selfScore: number; leaderScore: number; gap: number }[];
+  evidences: { questionCode: string; competency: string; score: number | null; notObserved: boolean; evidence: string | null }[];
+  result: ResultSummary | null;
+  versions: number;
+};
+export const fetchCalibrationQueue = (cycleId: string, filters: Record<string, string> = {}) =>
+  json<{ cycle: { id: string; name: string; status: string }; rules: PerformanceRules; rows: CalibrationRow[] }>(`${BASE}/cycles/${cycleId}/calibration?${new URLSearchParams(filters)}`);
+export const validatePerformanceTechnical = (participantId: string, decision: "VALIDATED" | "INSUFFICIENT", note: string) =>
+  post(`${BASE}/participants/${participantId}/validation`, { decision, note });
+export const calibratePerformance = (participantId: string, input: { note: string; decision: "CONFIRM" | "ADJUST"; technicalBand?: string; potentialBand?: string }) =>
+  post<{ reviewStatus: string; quadrant: string }>(`${BASE}/participants/${participantId}/calibration`, input);
+export type ResultHistory = {
+  participant: { id: string; employeeName: string };
+  versions: (ResultSummary & { createdAt: string; supersedesId: string | null; calibratedByUserId: string | null })[];
+  events: { at: string; action: string; actorUserId: string | null; detail: Record<string, unknown> }[];
+};
+export const fetchResultHistory = (participantId: string) => json<ResultHistory>(`${BASE}/participants/${participantId}/results`);
 
-export function acknowledgePerformanceFeedback(feedbackId: string, action: "VIEWED" | "ACKNOWLEDGED" | "AGREED" | "CONTESTED", note?: string) {
-  return json("/api/hr/performance/feedbacks/" + feedbackId + "/ack", { method: "POST", body: JSON.stringify({ action, note }) });
-}
+// ------------------------------------------------------------------ painel e Nine-Box
+export type NineBoxCell = {
+  participantId: string;
+  employeeId: string;
+  name: string;
+  quadrant: string;
+  nineX: string | null;
+  nineY: string | null;
+  official: boolean;
+  reviewStatus: string | null;
+  adjusted: boolean;
+  cultureBand: string | null;
+  technicalValidation: string | null;
+  departmentName: string;
+  roleName: string;
+  managerName: string | null;
+  technical: string | null;
+  potential: string | null;
+  culture: string | null;
+};
+export type CycleDashboard = {
+  cycle: { id: string; name: string; status: string; periodLabel: string };
+  counts: CycleCounts;
+  cells: NineBoxCell[];
+  culture: Record<string, number>;
+  cultureLabels: Record<string, string>;
+  pdiByStatus: Record<string, number>;
+  lowSample: boolean;
+  lowSampleThreshold: number;
+  filters: { departments: string[]; roles: string[]; managers: string[] };
+};
+export const fetchPerformanceDashboard = (id: string, filters: Record<string, string> = {}) => json<CycleDashboard>(`${BASE}/cycles/${id}/dashboard?${new URLSearchParams(filters)}`);
+export type EvolutionRow = {
+  cycleId: string;
+  name: string;
+  periodLabel: string;
+  status: string;
+  modelVersion: number | null;
+  ruleSetId: string | null;
+  eligible: number;
+  selfSubmitted: number;
+  leaderSubmitted: number;
+  calibrated: number;
+  official: number;
+  feedback: number;
+  pdiDone: number;
+  pdiOpen: number;
+};
+export const fetchPerformanceEvolution = () => json<{ cycles: EvolutionRow[] }>(`${BASE}/evolution`);
+export const performanceExportUrl = (cycleId: string) => `${BASE}/cycles/${cycleId}/export`;
 
-export function createPerformancePdi(feedbackId: string, title: string, ownerName: string, dueAt: string) {
-  return json<{ pdiId: string }>("/api/hr/performance/feedbacks/" + feedbackId + "/pdi", { method: "POST", body: JSON.stringify({ title, priority: true, ownerName, dueAt, justification: null }) });
-}
+// ------------------------------------------------------------------ devolutiva e PDI
+export const createPerformanceFeedback = (participantId: string, input: { strength: string; improvement: string; action: string; ownerName: string; dueAt: string; conversationAt: string }) =>
+  post<{ feedbackId: string }>(`${BASE}/participants/${participantId}/feedback`, input);
+export const acknowledgePerformanceFeedback = (feedbackId: string, input: { action: "VIEWED" | "ACKNOWLEDGED" | "AGREED" | "CONTESTED"; note?: string; assisted?: boolean }) =>
+  post(`${BASE}/feedbacks/${feedbackId}/ack`, input);
+export const createPerformancePdi = (feedbackId: string, input: { title: string; objective?: string; competencyCode?: string; priority: boolean; justification?: string; ownerName: string; dueAt: string }) =>
+  post<{ pdiId: string }>(`${BASE}/feedbacks/${feedbackId}/pdi`, input);
+export const updatePerformancePdi = (pdiId: string, input: { status: string; note?: string; evidence?: string }) => post(`${BASE}/pdis/${pdiId}/status`, input);
+export const addPerformanceCheckin = (pdiId: string, input: { note: string; obstacle?: string; nextStep?: string }) => post(`${BASE}/pdis/${pdiId}/checkins`, input);
+export type PdiTrackingRow = {
+  id: string;
+  title: string;
+  objective: string | null;
+  competencyCode: string | null;
+  status: string;
+  priority: boolean;
+  justification: string | null;
+  ownerName: string;
+  dueAt: string | null;
+  late: boolean;
+  open: boolean;
+  evidence: string | null;
+  completedAt: string | null;
+  employeeName: string;
+  departmentName: string;
+  cycleId: string;
+  cycleName: string;
+  checkins: { id: string; note: string; obstacle: string | null; nextStep: string | null; createdAt: string }[];
+  lastCheckinAt: string | null;
+};
+export const fetchPdiTracking = (filters: Record<string, string> = {}) => json<{ items: PdiTrackingRow[] }>(`${BASE}/pdis?${new URLSearchParams(filters)}`);
 
-export function updatePerformancePdi(pdiId: string, status: string) {
-  return json("/api/hr/performance/pdis/" + pdiId + "/status", { method: "POST", body: JSON.stringify({ status }) });
-}
+// ------------------------------------------------------------------ histórico e documentos
+export type EmployeeHistory = {
+  cycles: {
+    cycleId: string;
+    participantId: string;
+    cycleName: string;
+    periodLabel: string;
+    cycleStatus: string;
+    modelName: string;
+    modelVersion: number | null;
+    ruleSetId: string | null;
+    comparableWithPrevious: boolean | null;
+    roleName: string;
+    departmentName: string;
+    managerName: string | null;
+    eligibility: string;
+    quadrant: string | null;
+    cultureBand: string | null;
+    technical: string | null;
+    potential: string | null;
+    culture: string | null;
+    feedback: { strength: string; improvement: string; action: string; acknowledgedAt: string | null; agreedAt: string | null; contestation: string | null } | null;
+    pdis: { title: string; status: string; dueAt: string | null }[];
+  }[];
+};
+export const fetchEmployeePerformanceHistory = (employeeId: string) => json<EmployeeHistory>(`${BASE}/employees/${employeeId}/history`);
 
-export function addPerformanceCheckin(pdiId: string, note: string) {
-  return json("/api/hr/performance/pdis/" + pdiId + "/checkins", { method: "POST", body: JSON.stringify({ note }) });
-}
-
-export function performanceReportUrl(cycleId: string, kind: string, participantId?: string) {
+export type ReportIssue = { code: string; version: number; issuedAt: string; kind: string; issuedByName: string | null };
+export const issuePerformanceReport = (input: { cycleId: string; kind: string; participantId?: string | null }) => post<{ issue: ReportIssue; data: any }>(`${BASE}/reports/issue`, input);
+export function performanceReportPrintUrl(cycleId: string, kind: string, participantId?: string) {
   const params = new URLSearchParams({ cycleId, kind });
   if (participantId) params.set("participantId", participantId);
-  return "/api/hr/performance/reports/document.pdf?" + params.toString();
+  return `/performance-cycle/relatorio?${params.toString()}`;
 }
 
-export function fetchPerformanceDashboard(id: string) {
-  return json<{
-    eligible: number; notEligible: number; insufficient: number; invited: number;
-    selfStarted: number; selfSubmitted: number; leaderSubmitted: number; calibrated: number; feedback: number; pdiOpen: number;
-    cells: { employeeId: string; name: string; quadrant: string; official: boolean; cultureBand: string | null; technicalValidation: string | null }[];
-  }>("/api/hr/performance/cycles/" + id + "/dashboard");
-}
-
-export function fetchLeaderQueue() {
-  return json<{ items: { assignmentId: string; employeeName: string; roleName: string; departmentName: string; status: string; version: number; selfVisible: boolean }[] }>("/api/hr/performance/team");
-}
-
-export type LeaderAnswerDraft = { kind: "pending" } | { kind: "notObserved" } | { kind: "score"; score: number; evidence?: string | null };
-
-export function fetchLeaderAssignment(id: string) {
-  return json<{
-    assignment: { id: string; status: string; version: number };
-    questions: { code: string; text: string; pillar: string; hint: string | null }[];
-    answers: { questionCode: string; kind: string; score: number | null; evidence: string | null }[];
-    selfAnswers: { questionCode: string; kind: string; score: number | null }[];
-    divergences: { questionCode: string; selfScore: number; leaderScore: number; gap: number }[];
-  }>("/api/hr/performance/assignments/" + id);
-}
-
-export function saveLeaderAnswers(id: string, expectedVersion: number, answers: { code: string; answer: LeaderAnswerDraft }[]) {
-  return json<{ version: number }>("/api/hr/performance/assignments/" + id + "/answers", {
-    method: "PUT",
-    body: JSON.stringify({ expectedVersion, answers }),
-  });
-}
-
-export function submitLeaderAssignment(id: string, expectedVersion: number) {
-  return json<{ status: string }>("/api/hr/performance/assignments/" + id + "/submit", {
-    method: "POST",
-    body: JSON.stringify({ expectedVersion }),
-  });
-}
-
-export function fetchEmployeePerformanceHistory(employeeId: string) {
-  return json<{ cycles: { cycleName: string; periodLabel: string; roleName: string; departmentName: string; eligibility: string; quadrant: string | null; cultureBand: string | null; feedback: { strength: string; improvement: string; acknowledgedAt: string | null; agreedAt: string | null; contestation: string | null } | null }[] }>(
-    "/api/hr/performance/employees/" + employeeId + "/history"
-  );
-}
-
-export async function openPerformanceInvite(token: string) {
-  const response = await fetch("/api/public/performance/session", { ...NO_STORE, method: "POST", body: JSON.stringify({ token }) });
-  return response.json() as Promise<{ ok: boolean; message?: string; phase?: string }>;
-}
-
-export async function verifyPerformanceOtp(otp: string) {
-  const response = await fetch("/api/public/performance/verify", { ...NO_STORE, method: "POST", body: JSON.stringify({ otp }) });
-  return response.json() as Promise<{ ok: boolean; message?: string }>;
-}
-
-export async function fetchPerformanceForm() {
-  const response = await fetch("/api/public/performance/form", NO_STORE);
-  return response.json() as Promise<{ ok: boolean; message?: string; employeeName?: string; periodLabel?: string; version?: number; questions?: { code: string; text: string; pillar: string }[]; answers?: { questionCode: string; kind: string; score: number | null }[] }>;
-}
-
-export async function savePerformanceForm(expectedVersion: number, answers: { code: string; answer: { kind: string; score?: number } }[]) {
-  const response = await fetch("/api/public/performance/answers", { ...NO_STORE, method: "PUT", body: JSON.stringify({ expectedVersion, answers }) });
-  return response.json() as Promise<{ ok: boolean; message?: string; version?: number }>;
-}
-
-export async function submitPerformanceForm(expectedVersion: number) {
-  const response = await fetch("/api/public/performance/submit", { ...NO_STORE, method: "POST", body: JSON.stringify({ expectedVersion, confirm: true }) });
-  return response.json() as Promise<{ ok: boolean; message?: string }>;
-}
+// ------------------------------------------------------------------ portal público
+// As chamadas do portal ficam em performancePortalClient.ts (bundle público separado).
+export * from "./performancePortalClient";

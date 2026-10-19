@@ -1,0 +1,72 @@
+módulo limpo em perf_e2e
+== part1-hr-setup
+PASS · 01 login do RH · /home
+PASS · 02 acesso ao módulo · Ciclos | Minha equipe | Calibração | Nine-Box | Devolutivas e PDI | Painel | Modelos
+PASS · 03 criação de modelo (rascunho com 12 perguntas)
+PASS · 04 edição das perguntas, regra e reordenação · DT-02,DT-01,DT-03,DT-04
+PASS · 05 publicação (versão fica somente leitura)
+PASS · 06 criação de ciclo
+PASS · 07 seleção de colaboradores e elegibilidade · Elegível / Elegível / Não elegível / Não elegível / Evidência insuficiente / Elegível / Elegível
+PASS · 08 atribuição de líder sem identificador interno
+PASS · 09 preparação
+PASS · 10 abertura (exige aceite de piloto)
+PASS · 11 emissão de QR Code (lote) · 4 fichas
+PASS · 11b ficha impressa não expõe o código · 4 fichas
+logs RH: []
+== part2-portal
+PASS · 12 acesso pelo celular via QR · token apagado da barra
+PASS · 13 confirmação de identidade · Código incorreto. Confira com o RH.
+PASS · 14 preenchimento parcial (6 de 12, sem pré-seleção, sem rolagem lateral) · pré-selecionadas=0 largura=390
+PASS · 14c conexão instável: aviso honesto e reenvio automático
+PASS · 15 interrupção (página fechada no meio)
+PASS · 16 retomada · Pergunta 8 de 12 · 7 respondida(s)
+PASS · 16b celular 320px sem rolagem lateral · scrollWidth=320
+PASS · 16b celular 360px sem rolagem lateral · scrollWidth=360
+PASS · 17 conclusão (envio único, sessão encerrada)
+PASS · 17c QR já usado não reabre · Não foi possível abrir esta pesquisa.
+PASS · 17d preenchimento assistido (motivo, confirmação da pessoa, aparelho liberado)
+logs celular: [] tablet: []
+== part3-leader
+PASS · 18 login do líder
+PASS · 18b líder vê só a própria equipe e não tem abas de RH · [DEMO] Ana Souza, [DEMO] Bia Lima, [DEMO] Fabi Sem Líder | abas: Ciclos, Minha equipe, Nine-Box, Devolutivas e PDI, Painel, Modelos
+PASS · 18c workspace do líder só traz a equipe · [DEMO] Ana Souza, [DEMO] Bia Lima, [DEMO] Caio Recém, [DEMO] Dora Desligada, [DEMO] Eva Afastada
+PASS · 19 avaliação salva como rascunho
+PASS · 20c líder vê o comportamento observável e o exemplo do cargo da pessoa · O que observarUsa máquinas, ferramentas e instruções da função corretamente.Para [DEMO] Operador de produção: Regula a e
+PASS · 20 retomada com evidência preservada e autoavaliação oculta
+PASS · 20b nota 1 sem exemplo bloqueia o envio
+PASS · 21 finalização: envio, autoavaliação liberada, sem edição
+PASS · 21b três avaliações enviadas
+logs: []
+== part4-hr-calibration
+PASS · 22 login do RH
+PASS · 23 consolidação com tratamento explícito de pendências · Há 2 autoavaliação(ões) e 1 avaliação(ões) de líder pendentes. Seguir mesmo assim; pendência não vira nota baixa.
+PASS · 24 fila de calibração com perspectivas, divergências e evidências · 4 pessoas
+PASS · 24b revisão solicitada ao líder bloqueia a homologação
+logs: []
+== part5-leader-revision
+PASS · 25 líder recebe a revisão, corrige e reenvia
+logs: []
+== part6-hr-close
+PASS · 26 validação técnica e calibração (ajuste justificado preserva a original)
+PASS · 27 homologação
+PASS · 28 Nine-Box oficial, detalhe, cultura à parte, sem evidência fora da grade · Sem classificação (evidência insuficiente ou técnico não validado): 1
+PASS · 29 devolutiva e ciência sem concordância
+PASS · 30 PDI, acompanhamento e conclusão com histórico
+PASS · 31 emissão de PDF (6 tipos) · Avaliação individual de desempenho DCP-20261017-1AA720 | Registro de devolutiva DCP-20261017-9571D3 | Plano de desenvolvimento individual DCP-20261017-97E059 | Histórico de avaliações DCP-20261017-BD0BD9 | Consolidado gerencial do ciclo DCP-20261017-297C7D | Nine-Box do ciclo DCP-20261017-FA3554
+PASS · 32 encerramento (pendência de devolutiva confirmada)
+PASS · 33 painel com numerador/denominador e evolução
+PASS · 34 consulta histórica · {"cycleId":"d8ef55e7-e483-4300-bcba-b25bdbea472c","participantId":"61eaa0c6-2fa1-41c6-9d98-e360aca80322","cycleName":"Ciclo piloto 2026-S2","periodLabel":"2º se
+PASS · 35 administrativo mobile (375px) sem rolagem lateral da página · scrollWidth=375
+PASS · 35 administrativo tablet (768px) sem rolagem lateral da página · scrollWidth=768
+PASS · 35 administrativo notebook (1280px) sem rolagem lateral da página · scrollWidth=1280
+PASS · 35 administrativo desktop (1920px) sem rolagem lateral da página · scrollWidth=1920
+logs: []
+== part7-leader-followup
+PASS · 36 líder consulta resultado liberado, registra devolutiva e PDI
+PASS · 37 acompanhamento do PDI pelo líder (só a equipe)
+PASS · 38 backend nega ao líder: relatório do ciclo, calibração, gestão e cadastro · 403,403,403,403
+logs: []
+== part8-profile-and-access
+PASS · 39 histórico na ficha do colaborador (mesmo registro de Pessoas) · Desempenho, cultura e potencial /  / Somente ciclos homologados mostram resultado. Cargo e setor são os da época.
+PASS · 40 usuário desativado perde o acesso (sessão aberta) · antes=200 depois=401
+logs: []

@@ -7,6 +7,9 @@ import type {
   EligibilityState,
   FrequencyScore,
   ModelStatus,
+  NineBoxBand,
+  PdiStatus,
+  PerformanceRules,
   Pillar,
   TechnicalValidation,
 } from "./performanceDomain.js";
@@ -16,21 +19,34 @@ export type QuestionRecord = {
   modelId: string;
   code: string;
   pillar: Pillar;
+  competency: string;
   sortOrder: number;
   selfText: string;
   leaderText: string;
   hint: string | null;
+  description: string | null;
+  positiveExample: string | null;
+  negativeExample: string | null;
+  roleExamples: RoleExample[];
 };
+
+/** Exemplo observável para um cargo (RFC-008). Não muda o critério, só ilustra. */
+export type RoleExample = { roleName: string; text: string };
 
 export type ModelRecord = {
   id: string;
   lineageId: string;
   name: string;
+  description: string | null;
+  instructions: string | null;
   status: ModelStatus;
   version: number;
   governance: "EM_VALIDACAO";
+  rules: PerformanceRules;
   publishedAt: string | null;
+  archivedAt: string | null;
   createdByUserId: string | null;
+  createdAt: string;
 };
 
 export type CycleRecord = {
@@ -45,6 +61,7 @@ export type CycleRecord = {
   minObservationDays: number;
   openedAt: string | null;
   closedAt: string | null;
+  createdAt: string;
 };
 
 export type ParticipantRecord = {
@@ -52,17 +69,26 @@ export type ParticipantRecord = {
   cycleId: string;
   employeeId: string;
   employeeName: string;
+  employeeStatus: string | null;
   eligibility: EligibilityState;
   eligibilityReason: string;
+  eligibilityException: string | null;
+  absenceInWindow: boolean;
+  roleChangedInWindow: boolean;
   roleId: string;
   roleName: string;
   departmentId: string | null;
   departmentName: string;
   managerId: string | null;
   managerName: string | null;
+  /** CADASTRO = líder veio da ficha; RH = exceção atribuída e justificada. */
+  managerSource: "CADASTRO" | "RH";
   admissionDate: string | null;
   registration: string | null;
   frozen: boolean;
+  addedAt: string;
+  removedAt: string | null;
+  removedReason: string | null;
 };
 
 export type AssignmentRecord = {
@@ -79,6 +105,8 @@ export type AssignmentRecord = {
   active: boolean;
   submittedAt: string | null;
   assistedByUserId: string | null;
+  returnReason: string | null;
+  createdAt: string;
 };
 
 export type AnswerRecord = {
@@ -98,8 +126,10 @@ export type InviteRecord = {
   otpDigest: string;
   expiresAt: string;
   revokedAt: string | null;
+  revokedReason: string | null;
   failedAttempts: number;
   locked: boolean;
+  createdAt: string;
 };
 
 export type SessionRecord = {
@@ -110,8 +140,12 @@ export type SessionRecord = {
   sessionDigest: string;
   expiresAt: string;
   assistantUserId: string | null;
+  assistReason: string | null;
   revoked: boolean;
 };
+
+/** Cópia das regras usadas no cálculo. Reemitir o resultado usa este snapshot. */
+export type RuleSnapshot = PerformanceRules & { modelId: string; modelVersion: number };
 
 export type ResultRecord = {
   id: string;
@@ -130,14 +164,20 @@ export type ResultRecord = {
   cultureBasis: string;
   quadrant: string;
   nineBoxReason: string;
-  nineX: string | null;
-  nineY: string | null;
+  nineX: NineBoxBand | null;
+  nineY: NineBoxBand | null;
   official: boolean;
   reviewStatus: "PRELIMINARY" | "CALIBRATED";
   algorithmId: string;
   nineBoxRuleId: string;
   cultureRuleId: string;
   supersedesId: string | null;
+  ruleSnapshot: RuleSnapshot | null;
+  adjusted: boolean;
+  calibrationNote: string | null;
+  calibratedByUserId: string | null;
+  calibratedAt: string | null;
+  createdAt: string;
 };
 
 export type FeedbackRecord = {
@@ -155,7 +195,12 @@ export type FeedbackRecord = {
   acknowledgedAt: string | null;
   agreedAt: string | null;
   contestation: string | null;
+  collaboratorNote: string | null;
+  acknowledgedVia: "SELF" | "ASSISTED" | null;
+  acknowledgedByUserId: string | null;
   internalNotes: string | null;
+  createdByUserId: string | null;
+  createdAt: string;
 };
 
 export type PdiRecord = {
@@ -163,11 +208,17 @@ export type PdiRecord = {
   participantId: string;
   feedbackId: string;
   title: string;
+  objective: string | null;
+  competencyCode: string | null;
   priority: boolean;
   justification: string | null;
   ownerName: string;
   dueAt: string | null;
-  status: "PLANNED" | "IN_PROGRESS" | "DONE" | "SUSPENDED" | "CANCELLED";
+  status: PdiStatus;
+  evidence: string | null;
+  createdAt: string;
+  updatedAt: string;
+  completedAt: string | null;
 };
 
 export type CheckinRecord = {
@@ -205,6 +256,19 @@ export type ReminderRecord = {
   status: "DRAFT";
 };
 
+/** Emissão de documento. O código é o identificador rastreável impresso no PDF. */
+export type ReportIssueRecord = {
+  id: string;
+  code: string;
+  kind: string;
+  cycleId: string;
+  participantId: string | null;
+  version: number;
+  issuedByUserId: string | null;
+  issuedByName: string | null;
+  issuedAt: string;
+};
+
 export type PerformanceDatabase = {
   /** Revisão do grafo. A gravação só entra se o banco ainda estiver neste número. */
   graphRevision: number;
@@ -223,7 +287,30 @@ export type PerformanceDatabase = {
   conducts: ConductRecord[];
   audits: AuditRecord[];
   reminders: ReminderRecord[];
+  reports: ReportIssueRecord[];
 };
+
+/** Coleções gravadas pela persistência, na ordem que respeita as chaves estrangeiras. */
+export const PERFORMANCE_COLLECTIONS = [
+  "models",
+  "questions",
+  "cycles",
+  "participants",
+  "assignments",
+  "answers",
+  "invites",
+  "sessions",
+  "results",
+  "feedbacks",
+  "pdis",
+  "checkins",
+  "conducts",
+  "audits",
+  "reminders",
+  "reports",
+] as const satisfies readonly (keyof Omit<PerformanceDatabase, "graphRevision">)[];
+
+export type PerformanceCollection = (typeof PERFORMANCE_COLLECTIONS)[number];
 
 export function emptyPerformanceDatabase(): PerformanceDatabase {
   return {
@@ -243,6 +330,7 @@ export function emptyPerformanceDatabase(): PerformanceDatabase {
     conducts: [],
     audits: [],
     reminders: [],
+    reports: [],
   };
 }
 
@@ -252,4 +340,33 @@ export function newId(): string {
 
 export function cloneDb(db: PerformanceDatabase): PerformanceDatabase {
   return structuredClone(db);
+}
+
+export type CollectionChange = {
+  collection: PerformanceCollection;
+  created: { id: string }[];
+  updated: { id: string }[];
+  /** Ids que existiam antes e sumiram. A persistência recusa: histórico não se apaga. */
+  removed: string[];
+};
+
+/** Diferença entre dois estados, coleção a coleção. Comparação por conteúdo serializado. */
+export function diffPerformanceDatabase(before: PerformanceDatabase, after: PerformanceDatabase): CollectionChange[] {
+  const out: CollectionChange[] = [];
+  for (const collection of PERFORMANCE_COLLECTIONS) {
+    const previous = new Map<string, string>();
+    for (const row of before[collection] as { id: string }[]) previous.set(row.id, JSON.stringify(row));
+    const created: { id: string }[] = [];
+    const updated: { id: string }[] = [];
+    const seen = new Set<string>();
+    for (const row of after[collection] as { id: string }[]) {
+      seen.add(row.id);
+      const old = previous.get(row.id);
+      if (old === undefined) created.push(row);
+      else if (old !== JSON.stringify(row)) updated.push(row);
+    }
+    const removed = [...previous.keys()].filter((id) => !seen.has(id));
+    if (created.length || updated.length || removed.length) out.push({ collection, created, updated, removed });
+  }
+  return out;
 }
