@@ -12,6 +12,28 @@ Auditoria pré-commit de 19/10/2026. Nada foi commitado, enviado, mesclado ou im
 | Piloto com colaboradores | **NÃO APTO** | Decisões de RH e jurídico em aberto ([PENDENCIAS_HOMOLOGACAO.md](PENDENCIAS_HOMOLOGACAO.md) §1–3), portal sem exposição externa definida (§4), RFC-025/037/039/040 BLOCKED |
 | Produção | **NÃO APTO** | Tudo acima, mais o piloto aprovado |
 
+## Atualização de 19/10/2026 — integração com a `main` executada
+
+A pedido do responsável, a `main` atual (`e6b7e8af`) foi mesclada no branch e o resultado publicado na `main`. **Sem deploy e sem flags ligadas.** Os gates da seção 14, itens 1–4, rodaram no código mesclado:
+
+| Gate | Resultado |
+| --- | --- |
+| Conflitos | 3 resolvidos mantendo os dois lados: imports de `server.ts`, `test:competencies` + `test:performance` em `package.json`, lista `scripts/unit-test-files.txt` |
+| Regressão encontrada no merge | `competencyScopePolicy.test.ts` (da `main`) proíbe `resolvePeopleAccessScope(` em `server.ts`. Por trás disso havia um defeito real: o Desempenho daria escopo ALL a líderes com `employees.view` (que chega pelo Organograma). Corrigido em commit próprio: o Desempenho passa a usar `resolveCompetencyAccessScope` (ALL só com `employees.edit`). O teste não foi alterado |
+| `npm run test:performance` | 50/50 |
+| `npm run test:competencies` | 159/159 (antes da correção: 158/159) |
+| Navegação, sidebar, rotas, superfície pública | 105/105 |
+| Suíte de unidade completa | mesclado 5173 testes, 4 falhas; `main` 5123 testes, 4 falhas; **as mesmas 4**, nenhuma nova (a diferença de 50 são os testes do módulo) |
+| `tsc` completo | 1370 = 1370; zero erro novo, zero no módulo |
+| Build de produção + `check:browser-bundle` | OK, 66 artefatos sem Prisma; `avaliacao.html` gerado |
+| `check:frontend-server-imports` / `check:server-imports` | OK / OK |
+| Migrations intercaladas (banco local descartável no estado da `main`, 241 migrations registradas) | `migrate deploy` aplicou `20261016180000` **fora de ordem** (depois de `20261017…20261020`) e `20261021120000`; `migrate diff` vazio; integração PostgreSQL 1/1 |
+| Navegador real no código mesclado | 55/55, sem erro de console |
+
+Observação: no log do servidor local apareceu uma vez `Unique constraint failed on the fields: (code)` em `hrEvaluation.server.ts` (`ensureEvaluationTemplates`). É uma corrida no primeiro acesso a um banco vazio, preexistente na `main` e fora do módulo; as chamadas seguintes funcionaram.
+
+Com isso, os bloqueios (1) e (3) de "deploy técnico em homologação" foram atendidos no ambiente local. Ainda faltam o preflight e o backup no servidor de homologação (seções 4.2 e 5) e a aprovação do procedimento de deploy. **Atenção:** com o código na `main`, o próximo deploy de produção pelo wrapper oficial também aplica as duas migrations (aditivas, inertes com a flag desligada).
+
 ## 1. Referência
 
 | Item | Valor |

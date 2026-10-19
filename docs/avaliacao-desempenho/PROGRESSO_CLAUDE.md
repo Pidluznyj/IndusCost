@@ -92,3 +92,9 @@ Ver a seção "Plano" abaixo. Ela é atualizada ao fim de cada etapa.
 - Testes do módulo registrados em `scripts/unit-test-files.txt` e `npm run test:performance` (50/50).
 - `main` remota em `e6b7e8af` (9 migrations novas); merge simulado: 1 conflito de import em `server.ts`; schema mesclado válido.
 - `RELEASE_READINESS.md` criado. Nenhum commit, push, merge ou deploy.
+
+### 9. Integração com a main e push (19/10/2026)
+
+- `origin/main` (`e6b7e8af`) mesclada; 3 conflitos aditivos resolvidos; correção de escopo (`resolveCompetencyAccessScope`) exigida pelo guard da main.
+- Gates no código mesclado: módulo 50/50, competências 159/159, unidade sem falha nova (5173 vs 5123, mesmas 4), tsc 1370 = 1370, build e bundle OK, migrations intercaladas sem drift, navegador 55/55.
+- Publicado na `main` sem deploy e sem flags. Detalhes em `RELEASE_READINESS.md`.
