@@ -1158,6 +1158,8 @@ model HrPerformanceModel {
   instructions    String?
   /// Regras versionadas com o modelo (cortes, mínimos, evidência). NULL = proposta padrão.
   rules           Json?
+  /// INDIVIDUAL (12 perguntas, Nine-Box) | LEADERSHIP (180°, LD-01..LD-08). Nunca se misturam.
+  kind            String    @default("INDIVIDUAL")
   publishedAt     DateTime? @db.Timestamptz(6)
   archivedAt      DateTime? @db.Timestamptz(6)
   createdByUserId String?   @db.Uuid
@@ -1165,6 +1167,8 @@ model HrPerformanceModel {
   updatedAt       DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
   questions       HrPerformanceQuestion[]
   cycles          HrPerformanceCycle[]
+  leadershipCycles HrPerformanceCycle[] @relation("PerformanceLeadershipModel")
+  leadershipAssignments HrPerformanceAssignment[] @relation("PerformanceAssignmentModel")
 
   @@index([lineageId, version])
   @@index([status])
@@ -1179,6 +1183,8 @@ model HrPerformanceQuestion {
   sortOrder  Int
   selfText   String
   leaderText String
+  /// Liderança: texto do liderado sobre o líder (selfText = o líder; leaderText = o superior).
+  upwardText String?
   hint       String?
   /// Comportamento observável descrito para quem avalia (valores e competências).
   description     String?
@@ -1215,7 +1221,10 @@ model HrPerformanceCycle {
   activationChangedAt       DateTime? @db.Timestamptz(6)
   activationChangedByUserId String?   @db.Uuid
   activationReason          String?
+  /// Avaliação 180° de liderança neste ciclo (modelo LEADERSHIP publicado). NULL = desligada.
+  leadershipModelId         String?   @db.Uuid
   model               HrPerformanceModel @relation(fields: [modelId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  leadershipModel     HrPerformanceModel? @relation("PerformanceLeadershipModel", fields: [leadershipModelId], references: [id], onDelete: Restrict, onUpdate: NoAction)
   participants        HrPerformanceParticipant[]
   reports             HrPerformanceReportIssue[]
 
@@ -1250,11 +1259,17 @@ model HrPerformanceParticipant {
   /// Remoção lógica. O registro e o histórico ficam.
   removedAt          DateTime? @db.Timestamptz(6)
   removedReason      String?
+  /// Retrato da hierarquia efetiva na abertura: líder = tem liderado direto ativo.
+  isLeader           Boolean @default(false)
+  directReportCount  Int     @default(0)
+  leadershipSnapshotAt DateTime? @db.Timestamptz(6)
   cycle              HrPerformanceCycle @relation(fields: [cycleId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   employee           Employee @relation("PerformanceSubject", fields: [employeeId], references: [id], onDelete: Restrict, onUpdate: NoAction)
   assignments        HrPerformanceAssignment[]
+  subjectAssignments HrPerformanceAssignment[] @relation("PerformanceAssignmentSubject")
   results            HrPerformanceResult[]
   feedbacks          HrPerformanceFeedback[]
+  leadershipResults  HrPerformanceLeadershipResult[]
 
   @@unique([cycleId, employeeId])
   @@index([employeeId])
@@ -1276,7 +1291,13 @@ model HrPerformanceAssignment {
   assistedByUserId     String?   @db.Uuid
   returnReason         String?
   createdAt            DateTime  @default(now()) @db.Timestamptz(6)
+  /// Liderança ascendente: participante do líder avaliado (quem responde é `participantId`).
+  subjectParticipantId String?   @db.Uuid
+  /// Modelo das perguntas desta tarefa (liderança). NULL = modelo individual do ciclo.
+  modelId              String?   @db.Uuid
   participant          HrPerformanceParticipant @relation(fields: [participantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  subjectParticipant   HrPerformanceParticipant? @relation("PerformanceAssignmentSubject", fields: [subjectParticipantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  model                HrPerformanceModel? @relation("PerformanceAssignmentModel", fields: [modelId], references: [id], onDelete: Restrict, onUpdate: NoAction)
   evaluator            Employee @relation("PerformanceEvaluator", fields: [evaluatorEmployeeId], references: [id], onDelete: Restrict, onUpdate: NoAction)
   answers              HrPerformanceAnswer[]
   invites              HrPerformanceInvite[]
@@ -1285,6 +1306,39 @@ model HrPerformanceAssignment {
   @@index([cycleId, kind, active])
   @@index([evaluatorEmployeeId])
   @@index([employeeId])
+  @@index([subjectParticipantId, kind])
+}
+
+/// Calibração de liderança (180°), separada da Nine-Box. Versionada: cada decisão cria uma linha.
+model HrPerformanceLeadershipResult {
+  id                 String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  participantId      String    @db.Uuid
+  cycleId            String    @db.Uuid
+  version            Int
+  active             Boolean   @default(true)
+  /// CALIBRATED | EXCEPTION (calibrada sem uma fonte obrigatória, com motivo).
+  status             String
+  /// { "LD-01": 3, ... } notas inteiras 1–4.
+  scores             Json
+  /// { "LD-01": "justificativa" } quando a regra exige.
+  justifications     Json
+  generalNote        String
+  exceptionReason    String?
+  /// Fontes usadas: { self, superior, team } e a amostra da equipe (sem conteúdo individual).
+  sources            Json
+  teamRespondents    Int       @default(0)
+  teamDisclosed      Boolean   @default(false)
+  official           Boolean   @default(false)
+  modelId            String    @db.Uuid
+  modelVersion       Int
+  calibratedByUserId String?   @db.Uuid
+  calibratedAt       DateTime  @db.Timestamptz(6)
+  supersedesId       String?   @db.Uuid
+  createdAt          DateTime  @default(now()) @db.Timestamptz(6)
+  participant        HrPerformanceParticipant @relation(fields: [participantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([participantId, active])
+  @@index([cycleId])
 }
 
 model HrPerformanceAnswer {

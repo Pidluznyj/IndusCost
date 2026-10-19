@@ -408,3 +408,5 @@ src/lib/purchasing/purchasePaymentTermsList.test.ts
 src/lib/orgHierarchy.test.ts
 src/lib/orgHierarchy.integration.test.ts
 src/lib/hrPerformance/performanceLifecycle.test.ts
+src/lib/hrPerformance/performanceLeadership.test.ts
+src/lib/hrPerformance/performanceLeadershipService.test.ts

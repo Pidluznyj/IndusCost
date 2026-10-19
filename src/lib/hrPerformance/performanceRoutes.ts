@@ -30,6 +30,17 @@ import {
 import { CycleInactiveError, DeletionIntegrityError, GraphConflictError, HistoryIntegrityError, type PerformanceStore } from "./performancePrisma.js";
 import { checkCycleDeletion, classifyCycle, cycleGovernance, cycleLifecycleHistory, inactivateCycle, planCycleDeletion, reactivateCycle } from "./performanceLifecycle.js";
 import { createRateLimiter } from "./performanceRateLimit.js";
+import {
+  calibrateLeadership,
+  createLeadershipModel,
+  leadershipCalibrationList,
+  leadershipComparison,
+  readSuperiorLeadershipForm,
+  setCycleLeadershipModel,
+  superiorLeadershipQueue,
+  updateLeadershipQuestion,
+  type LeadershipSnapshot,
+} from "./performanceLeadershipService.js";
 import { audit } from "./performanceService.js";
 import type { PerformanceDatabase } from "./performanceState.js";
 import {
@@ -113,6 +124,8 @@ export type PerformanceRouteDeps = {
   can?: (req: express.Request, resourceKey: string, action: string) => Promise<boolean>;
   /** Ciclo de vida (classificar, inativar, reativar, excluir teste): só o SUPER_ADMIN. */
   isSuperAdmin?: (req: express.Request) => Promise<boolean>;
+  /** Avaliação 180°: liderados diretos ativos (hierarquia efetiva) na abertura do ciclo. */
+  loadLeadershipSnapshot?: (employeeIds: string[]) => Promise<LeadershipSnapshot>;
 };
 
 function noStore(res: express.Response) {
@@ -342,6 +355,7 @@ export function registerPerformanceRoutes(expressApp: express.Application, deps:
           description: model.description,
           status: model.status,
           version: model.version,
+          kind: model.kind,
           governance: model.governance,
           ruleSetId: model.rules.ruleSetId,
           publishedAt: model.publishedAt,
@@ -479,6 +493,7 @@ export function registerPerformanceRoutes(expressApp: express.Application, deps:
             selfDueAt: str(req.body?.selfDueAt),
             leaderDueAt: str(req.body?.leaderDueAt),
             classification: str(req.body?.classification, 16),
+            leadershipModelId: strOrNull(req.body?.leadershipModelId, 64),
             actorUserId,
             scope,
           },
@@ -660,12 +675,22 @@ export function registerPerformanceRoutes(expressApp: express.Application, deps:
       noStore(res);
       return res.status(400).json({ error: "INVALID_STATUS", message: "Situação inválida." });
     }
+    let leadershipSnapshot: LeadershipSnapshot | undefined;
+    if (to === "OPEN") {
+      const current = await deps.store.read();
+      const cycle = current.cycles.find((c) => c.id === req.params.id);
+      if (cycle?.leadershipModelId && deps.loadLeadershipSnapshot) {
+        const ids = current.participants.filter((p) => p.cycleId === cycle.id && !p.removedAt).map((p) => p.employeeId);
+        leadershipSnapshot = await deps.loadLeadershipSnapshot(ids);
+      }
+    }
     await mutateAdmin(deps.store, res, (db) =>
       transitionCycle(
         db,
         {
           cycleId: req.params.id,
           to,
+          leadershipSnapshot,
           actorUserId,
           reversalReason: strOrNull(req.body?.reason, 300),
           pilotAck: req.body?.pilotAck === true,
@@ -726,14 +751,19 @@ export function registerPerformanceRoutes(expressApp: express.Application, deps:
     const { scope, actorEmployeeId } = await scopeOf(req);
     const db = await deps.store.read();
     noStore(res);
-    res.json({ items: leaderQueue(db, scope, actorEmployeeId) });
+    res.json({ items: leaderQueue(db, scope, actorEmployeeId), leadership: superiorLeadershipQueue(db, actorEmployeeId) });
   });
 
   app.get("/api/hr/performance/assignments/:id", ...evaluate, async (req, res) => {
     const { scope, actorEmployeeId } = await scopeOf(req);
     const db = await deps.store.read();
-    const result = readLeaderForm(db, req.params.id, scope, actorEmployeeId);
+    const kind = db.assignments.find((a) => a.id === req.params.id)?.kind;
     noStore(res);
+    if (kind === "LEADERSHIP_UPWARD" || kind === "LEADERSHIP_SELF") {
+      // Respostas da equipe e autoavaliação de liderança não abrem por aqui, para ninguém.
+      return res.status(403).json({ error: "FORBIDDEN", message: "Esta avaliação não é consultada individualmente." });
+    }
+    const result = kind === "LEADERSHIP_SUPERIOR" ? readSuperiorLeadershipForm(db, req.params.id, actorEmployeeId, scope) : readLeaderForm(db, req.params.id, scope, actorEmployeeId);
     if (result.ok === false) return res.status(403).json({ error: result.code, message: result.message });
     res.json(result);
   });
@@ -1049,6 +1079,96 @@ export function registerPerformanceRoutes(expressApp: express.Application, deps:
     res.status(409).json({ error: "VERSION_CONFLICT", message: "Muitas gravações ao mesmo tempo. Tente de novo." });
   });
 
+  // ---------------------------------------------------------------- liderança (180°)
+  app.post("/api/hr/performance/models/leadership", ...manage, async (req, res) => {
+    const actorUserId = await deps.actorUserId(req);
+    const { scope } = await scopeOf(req);
+    await mutateAdmin(deps.store, res, (db) => createLeadershipModel(db, { name: str(req.body?.name, 120), actorUserId, scope }, deps.options), 201);
+  });
+
+  app.put("/api/hr/performance/models/:id/leadership-questions/:code", ...manage, async (req, res) => {
+    const actorUserId = await deps.actorUserId(req);
+    const { scope } = await scopeOf(req);
+    await mutateAdmin(deps.store, res, (db) =>
+      updateLeadershipQuestion(
+        db,
+        {
+          modelId: req.params.id,
+          code: req.params.code,
+          competency: str(req.body?.competency, 60),
+          behavior: str(req.body?.behavior, 300),
+          selfText: str(req.body?.selfText, 300),
+          upwardText: str(req.body?.upwardText, 300),
+          superiorText: str(req.body?.superiorText, 300),
+          actorUserId,
+          scope,
+        },
+        deps.options
+      )
+    );
+  });
+
+  app.put("/api/hr/performance/cycles/:id/leadership", ...manage, async (req, res) => {
+    const actorUserId = await deps.actorUserId(req);
+    const { scope } = await scopeOf(req);
+    await mutateAdmin(deps.store, res, (db) => setCycleLeadershipModel(db, { cycleId: req.params.id, leadershipModelId: strOrNull(req.body?.leadershipModelId, 64), actorUserId, scope }, deps.options));
+  });
+
+  /** RH (escopo total) precisa da permissão de calibração; líder vê só quem ele calibra. */
+  const leadershipAccess = async (req: express.Request) => {
+    const { scope, actorEmployeeId } = await scopeOf(req);
+    if (scope.kind === "ALL") {
+      const allowed = deps.can ? await deps.can(req, PERFORMANCE_RESOURCE_KEYS.calibration, "manage") : false;
+      if (!allowed) return null;
+    }
+    return { scope, actorEmployeeId };
+  };
+
+  app.get("/api/hr/performance/cycles/:id/leadership", ...evaluate, async (req, res) => {
+    const access = await leadershipAccess(req);
+    noStore(res);
+    if (!access) return res.status(403).json({ error: "FORBIDDEN", message: "A calibração de liderança exige a permissão de calibração." });
+    const rows = leadershipCalibrationList(await deps.store.read(), req.params.id, access.scope, access.actorEmployeeId);
+    if (!rows) return res.status(404).json({ error: "NOT_FOUND", message: "Ciclo não encontrado." });
+    res.json({ rows });
+  });
+
+  app.get("/api/hr/performance/participants/:id/leadership", ...evaluate, async (req, res) => {
+    const access = await leadershipAccess(req);
+    noStore(res);
+    if (!access) return res.status(403).json({ error: "FORBIDDEN", message: "A calibração de liderança exige a permissão de calibração." });
+    const view = leadershipComparison(await deps.store.read(), req.params.id, access.scope, access.actorEmployeeId);
+    if (view.ok === false) return res.status(statusOf(view.code)).json({ error: view.code, message: view.message });
+    res.json(view);
+  });
+
+  app.post("/api/hr/performance/participants/:id/leadership/calibration", ...evaluate, async (req, res) => {
+    const access = await leadershipAccess(req);
+    if (!access) {
+      noStore(res);
+      return res.status(403).json({ error: "FORBIDDEN", message: "A calibração de liderança exige a permissão de calibração." });
+    }
+    const actorUserId = await deps.actorUserId(req);
+    const scores = req.body?.scores && typeof req.body.scores === "object" ? (req.body.scores as Record<string, unknown>) : {};
+    const justifications = req.body?.justifications && typeof req.body.justifications === "object" ? (req.body.justifications as Record<string, unknown>) : {};
+    await mutateAdmin(deps.store, res, (db) =>
+      calibrateLeadership(
+        db,
+        {
+          participantId: req.params.id,
+          scores,
+          justifications,
+          generalNote: str(req.body?.generalNote, 1200),
+          exceptionReason: strOrNull(req.body?.exceptionReason, 600),
+          actorUserId,
+          actorEmployeeId: access.actorEmployeeId,
+          scope: access.scope,
+        },
+        deps.options
+      )
+    );
+  });
+
   app.post("/api/hr/performance/conducts", ...conduct, async (req, res) => {
     const actorUserId = await deps.actorUserId(req);
     await mutateAdmin(deps.store, res, (db) => recordConduct(db, { employeeId: str(req.body?.employeeId, 64), summary: str(req.body?.summary, 1000), actorUserId }, deps.options), 201);
@@ -1133,7 +1253,8 @@ export function registerPerformanceRoutes(expressApp: express.Application, deps:
       }
       parsed.push({ code: row.code, answer });
     }
-    const outcome = await mutate(deps.store, res, (db) => publicSave(db, { sessionToken: sessionToken(req), expectedVersion: Number(req.body?.expectedVersion), answers: parsed }, deps.options));
+    const step = strOrNull(req.body?.step, 32);
+    const outcome = await mutate(deps.store, res, (db) => publicSave(db, { sessionToken: sessionToken(req), expectedVersion: Number(req.body?.expectedVersion), answers: parsed, step }, deps.options));
     if (res.headersSent) return;
     noStore(res);
     if (outcome.ok === false) return res.json({ ok: false, code: outcome.code === "INVITE_REJECTED" ? "EXPIRED" : outcome.code, message: outcome.message });
@@ -1142,13 +1263,14 @@ export function registerPerformanceRoutes(expressApp: express.Application, deps:
 
   app.post("/api/public/performance/submit", ...pub, async (req, res) => {
     const outcome = await mutate(deps.store, res, (db) =>
-      publicSubmit(db, { sessionToken: sessionToken(req), expectedVersion: Number(req.body?.expectedVersion), confirm: req.body?.confirm === true }, deps.options)
+      publicSubmit(db, { sessionToken: sessionToken(req), expectedVersion: Number(req.body?.expectedVersion), confirm: req.body?.confirm === true, step: strOrNull(req.body?.step, 32) }, deps.options)
     );
     if (res.headersSent) return;
     noStore(res);
     if (outcome.ok === false) return res.json({ ok: false, code: outcome.code === "INVITE_REJECTED" ? "EXPIRED" : outcome.code, message: outcome.message });
-    clearSession(res);
-    res.json({ ok: true, status: outcome.value.status });
+    // A sessão continua para a próxima etapa; só termina com a jornada concluída.
+    if (outcome.value.done) clearSession(res);
+    res.json({ ok: true, status: outcome.value.status, done: outcome.value.done, next: outcome.value.next });
   });
 
   app.post("/api/public/performance/logout", ...pub, async (req, res) => {

@@ -52,6 +52,24 @@ import {
   INVITE_TTL_DAYS,
 } from "./performanceInvite.js";
 import { canEvaluateEmployee, canSeeEmployee, type PerformanceScope } from "./performanceAccess.js";
+import { isLeadershipKind } from "./performanceLeadership.js";
+import {
+  applyLeadershipAnswer,
+  applyLeadershipSnapshot,
+  currentJourneyStep,
+  ensureLeadershipAssignments,
+  journeyDone,
+  journeyOf,
+  leadershipHomologationProblem,
+  leadershipModelProblems,
+  leadershipQuestionsFor,
+  leadershipRulesOf,
+  leadershipSubmitProblem,
+  markLeadershipOfficial,
+  pendingLeadershipTasks,
+  STEP_TEXT,
+  type LeadershipSnapshot,
+} from "./performanceLeadershipService.js";
 import {
   cloneDb,
   newId,
@@ -109,7 +127,7 @@ export function audit(
 
 const FORBIDDEN_MESSAGE = "Você não tem acesso a esta pessoa ou ação.";
 
-function hrOnly(scope: PerformanceScope): ServiceError | null {
+export function hrOnly(scope: PerformanceScope): ServiceError | null {
   return scope.kind === "ALL" ? null : fail("FORBIDDEN", FORBIDDEN_MESSAGE);
 }
 
@@ -141,12 +159,13 @@ export function activeResult(db: PerformanceDatabase, participantId: string): Re
   return db.results.find((r) => r.participantId === participantId && r.active) ?? null;
 }
 
+/** Respostas da avaliação individual. Linhas de liderança (180°) nunca entram aqui nem na Nine-Box. */
 export function toStored(db: PerformanceDatabase, assignmentId: string): StoredAnswer[] {
   return db.answers
-    .filter((a) => a.assignmentId === assignmentId)
+    .filter((a) => a.assignmentId === assignmentId && a.pillar !== "LEADERSHIP")
     .map((a) => ({
       questionCode: a.questionCode,
-      pillar: a.pillar,
+      pillar: a.pillar as StoredAnswer["pillar"],
       kind: a.kind,
       score: a.score,
       evidence: a.evidence,
@@ -209,6 +228,7 @@ export function createDraftModel(
     status: "DRAFT",
     version: 1,
     governance: "EM_VALIDACAO",
+    kind: "INDIVIDUAL",
     rules: proposedRules(),
     publishedAt: null,
     archivedAt: null,
@@ -225,6 +245,7 @@ export function createDraftModel(
       sortOrder: question.sortOrder,
       selfText: question.selfText,
       leaderText: question.leaderText,
+      upwardText: null,
       hint: null,
       description: question.description || null,
       positiveExample: question.positiveExample || null,
@@ -366,6 +387,7 @@ export function moveDraftQuestion(
 }
 
 export function modelProblems(db: PerformanceDatabase, model: ModelRecord): string[] {
+  if (model.kind === "LEADERSHIP") return leadershipModelProblems(db, model);
   const problems: string[] = [];
   const questions = questionsOf(db, model.id);
   if (questions.length !== PILLARS.length * QUESTIONS_PER_PILLAR) problems.push("A versão-base precisa das 12 perguntas.");
@@ -475,6 +497,8 @@ export function createCycle(
     actorUserId: string | null;
     /** Obrigatória: OFFICIAL compõe indicadores oficiais; TEST nunca compõe. */
     classification: string;
+    /** Avaliação 180° de liderança (modelo LEADERSHIP publicado). Opcional. */
+    leadershipModelId?: string | null;
     minObservationDays?: number;
     scope?: PerformanceScope;
   },
@@ -484,7 +508,11 @@ export function createCycle(
   if (denied) return denied;
   const db = cloneDb(source);
   const model = db.models.find((m) => m.id === input.modelId);
-  if (!model || model.status !== "PUBLISHED") return fail("MODEL_REQUIRED", "Escolha um modelo publicado.");
+  if (!model || model.status !== "PUBLISHED" || model.kind === "LEADERSHIP") return fail("MODEL_REQUIRED", "Escolha um modelo publicado.");
+  const leadershipModel = input.leadershipModelId ? db.models.find((m) => m.id === input.leadershipModelId) : null;
+  if (input.leadershipModelId && (!leadershipModel || leadershipModel.kind !== "LEADERSHIP" || leadershipModel.status !== "PUBLISHED")) {
+    return fail("MODEL_REQUIRED", "Escolha um modelo de liderança publicado.");
+  }
   const name = clean(input.name, 120);
   if (name.length < 3) return fail("INVALID_NAME", "Informe o nome do ciclo.");
   const periodLabel = clean(input.periodLabel, 80);
@@ -516,8 +544,9 @@ export function createCycle(
     activationChangedAt: null,
     activationChangedByUserId: null,
     activationReason: null,
+    leadershipModelId: leadershipModel?.id ?? null,
   });
-  audit(db, options.now(), input.actorUserId, "CYCLE_CREATED", cycleId, { status: "DRAFT", modelVersion: model.version, classification });
+  audit(db, options.now(), input.actorUserId, "CYCLE_CREATED", cycleId, { status: "DRAFT", modelVersion: model.version, classification, leadership: Boolean(leadershipModel) });
   return { ok: true, db, value: { cycleId } };
 }
 
@@ -655,6 +684,9 @@ export function applyParticipants(
       addedAt: iso(now),
       removedAt: null,
       removedReason: null,
+      isLeader: false,
+      directReportCount: 0,
+      leadershipSnapshotAt: null,
     };
     const decision = classifyEligibility({
       employee,
@@ -761,6 +793,8 @@ function blankAssignment(
     assistedByUserId: null,
     returnReason: null,
     createdAt: iso(now),
+    subjectParticipantId: null,
+    modelId: null,
   };
 }
 
@@ -874,17 +908,21 @@ export function syncParticipantLeaders(
   return { ok: true, db, value: { changed, withoutLeader, keptByHr } };
 }
 
-/** Elegíveis sem líder válido: a avaliação da liderança não teria quem fizesse. */
+/**
+ * Elegíveis sem líder válido: a avaliação da liderança não teria quem fizesse. O topo da
+ * estrutura (managerSource TOPO, vindo da hierarquia efetiva) não tem superior por definição.
+ */
 function participantsWithoutLeader(db: PerformanceDatabase, cycleId: string) {
-  return eligibleParticipants(db, cycleId).filter((p) => !p.managerId || p.managerId === p.employeeId);
+  return eligibleParticipants(db, cycleId).filter((p) => p.managerSource !== "TOPO" && (!p.managerId || p.managerId === p.employeeId));
 }
 
 function pendingParticipants(db: PerformanceDatabase, cycleId: string) {
   return eligibleParticipants(db, cycleId).filter((participant) => {
     const self = activeAssignment(db, participant.id, "SELF");
     const leader = activeAssignment(db, participant.id, "LEADER");
-    // Sem tarefa do líder também é pendência: antes ela passava em silêncio.
-    return self?.status !== "SUBMITTED" || leader?.status !== "SUBMITTED";
+    // Sem tarefa do líder também é pendência (antes passava em silêncio), exceto o topo da estrutura.
+    const leaderPending = participant.managerSource === "TOPO" && !leader ? false : leader?.status !== "SUBMITTED";
+    return self?.status !== "SUBMITTED" || leaderPending || pendingLeadershipTasks(db, participant.id) > 0;
   });
 }
 
@@ -905,6 +943,8 @@ export function transitionCycle(
     acceptPending?: boolean;
     /** Só a rota de homologação (permissão de calibração) passa `true`. */
     canHomologate?: boolean;
+    /** Liderados diretos ativos (hierarquia efetiva), exigido na abertura de ciclo com 180°. */
+    leadershipSnapshot?: LeadershipSnapshot;
     scope?: PerformanceScope;
   },
   options: ServiceOptions
@@ -948,6 +988,15 @@ export function transitionCycle(
     }
     if (!options.officialPublication) audit(db, now, input.actorUserId, "PILOT_OPEN", cycle.id, { homologated: false });
     ensureAssignments(db, cycle, now);
+    if (cycle.leadershipModelId) {
+      if (!input.leadershipSnapshot) return fail("LEADERSHIP_SNAPSHOT_REQUIRED", "Não foi possível ler a hierarquia para a avaliação de liderança. Tente de novo.");
+      applyLeadershipSnapshot(db, cycle, input.leadershipSnapshot, now);
+      const created = ensureLeadershipAssignments(db, cycle, now);
+      audit(db, now, input.actorUserId, "LEADERSHIP_ASSIGNMENTS_CREATED", cycle.id, {
+        leaders: liveParticipants(db, cycle.id).filter((p) => p.isLeader).length,
+        ...created,
+      });
+    }
     cycle.openedAt = iso(now);
   }
   if (input.to === "CONSOLIDATION" && !isReversal) {
@@ -998,7 +1047,10 @@ export function transitionCycle(
         return fail("VALIDATION_REQUIRED", "Há desempenho técnico sem validação da função.");
       }
     }
+    const leadershipProblem = leadershipHomologationProblem(db, cycle);
+    if (leadershipProblem) return fail("LEADERSHIP_CALIBRATION_REQUIRED", leadershipProblem);
     for (const participant of eligible) activeResult(db, participant.id)!.official = true;
+    markLeadershipOfficial(db, cycle, true);
     audit(db, now, input.actorUserId, "RESULTS_HOMOLOGATED", cycle.id, {
       count: eligible.length,
       classification: cycle.classification,
@@ -1006,6 +1058,7 @@ export function transitionCycle(
     });
   }
   if (isReversal && cycle.status === "HOMOLOGATED") {
+    markLeadershipOfficial(db, cycle, false);
     let reopened = 0;
     for (const participant of eligibleParticipants(db, cycle.id)) {
       const result = activeResult(db, participant.id);
@@ -1062,8 +1115,13 @@ function applyAnswer(row: AnswerRecord, kind: AssignmentRecord["kind"], answer: 
   return null;
 }
 
+/** Etapas respondidas pela própria pessoa no portal (autoavaliação e liderança). */
+function isJourneyKind(kind: AssignmentRecord["kind"]): boolean {
+  return kind === "SELF" || kind === "LEADERSHIP_UPWARD" || kind === "LEADERSHIP_SELF";
+}
+
 function collectionOpenFor(cycle: CycleRecord, assignment: AssignmentRecord): boolean {
-  if (assignment.kind === "SELF") return cycle.status === "OPEN";
+  if (isJourneyKind(assignment.kind)) return cycle.status === "OPEN";
   return cycle.status === "OPEN" || cycle.status === "CONSOLIDATION" || cycle.status === "CALIBRATION";
 }
 
@@ -1085,8 +1143,13 @@ export function saveAnswers(
   const participant = db.participants.find((p) => p.id === assignment.participantId);
   const cycle = participant ? db.cycles.find((c) => c.id === participant.cycleId) : null;
   if (!participant || !cycle || participant.removedAt) return fail("NOT_FOUND", "Tarefa não encontrada.");
-  if (assignment.kind === "LEADER" && !canActOnLeaderAssignment(input.scope, assignment)) {
+  if ((assignment.kind === "LEADER" || assignment.kind === "LEADERSHIP_SUPERIOR") && !canActOnLeaderAssignment(input.scope, assignment)) {
     return fail("FORBIDDEN", "Você não avalia esta pessoa.");
+  }
+  if (assignment.kind === "LEADERSHIP_UPWARD" || assignment.kind === "LEADERSHIP_SELF") {
+    // Só quem responde (ou o preenchimento assistido). Nem o RH preenche ou lê a avaliação da equipe.
+    const own = input.scope.kind === "LIMITED" && input.scope.actorEmployeeId === assignment.evaluatorEmployeeId;
+    if (!own && !input.assistedByUserId) return fail("FORBIDDEN", "Esta etapa é respondida só pela própria pessoa.");
   }
   if (assignment.kind === "SELF" && input.scope.kind !== "ALL") {
     const actor = input.scope.actorEmployeeId;
@@ -1100,6 +1163,11 @@ export function saveAnswers(
   for (const item of input.answers) {
     const row = db.answers.find((a) => a.assignmentId === assignment.id && a.questionCode === item.code);
     if (!row) return fail("NOT_FOUND", "Pergunta não faz parte desta versão.");
+    if (isLeadershipKind(assignment.kind)) {
+      const leadershipProblem = applyLeadershipAnswer(row, item.answer, leadershipRulesOf(db, assignment.modelId));
+      if (leadershipProblem) return fail(leadershipProblem.code, leadershipProblem.message);
+      continue;
+    }
     const problem = applyAnswer(row, assignment.kind, item.answer, rules);
     if (problem) return problem;
   }
@@ -1125,14 +1193,17 @@ export function submitAssignment(
 ): ServiceResult<{ status: string }> {
   const assignment = source.assignments.find((a) => a.id === input.assignmentId && a.active);
   if (!assignment) return fail("NOT_FOUND", "Tarefa não encontrada.");
-  if (assignment.kind === "LEADER" && !canActOnLeaderAssignment(input.scope, assignment)) return fail("FORBIDDEN", "Você não avalia esta pessoa.");
+  if ((assignment.kind === "LEADER" || assignment.kind === "LEADERSHIP_SUPERIOR") && !canActOnLeaderAssignment(input.scope, assignment)) return fail("FORBIDDEN", "Você não avalia esta pessoa.");
   if (assignment.status === "SUBMITTED") return { ok: true, db: source, value: { status: "SUBMITTED" } };
   if (assignment.assistedByUserId && !input.assistedConfirmation) {
     return fail("ASSIST_CONFIRMATION", "A pessoa precisa confirmar as respostas antes do envio.");
   }
   if (pendingCount(source, assignment.id) > 0) return fail("INCOMPLETE", "Ainda há pergunta sem resposta.");
   const cycle = source.cycles.find((c) => c.id === assignment.cycleId);
-  if (cycle) {
+  if (isLeadershipKind(assignment.kind)) {
+    const leadershipProblem = leadershipSubmitProblem(source, assignment);
+    if (leadershipProblem) return fail("COMMENT_REQUIRED", leadershipProblem);
+  } else if (cycle) {
     const rules = rulesOfCycle(source, cycle);
     const missingEvidence = source.answers.some(
       (a) =>
@@ -1149,13 +1220,22 @@ export function submitAssignment(
   const current = db.assignments.find((a) => a.id === assignment.id)!;
   current.status = "SUBMITTED";
   current.submittedAt = iso(options.now());
-  recompute(db, current.participantId, options.now());
+  // Resultado individual (Nine-Box) só depende das tarefas individuais.
+  if (!isLeadershipKind(current.kind)) recompute(db, current.participantId, options.now());
   audit(db, options.now(), input.actorUserId, "ASSIGNMENT_SUBMITTED", current.id, {
     kind: current.kind,
     revision: current.revision,
     assisted: Boolean(current.assistedByUserId),
   });
-  for (const session of db.sessions.filter((s) => s.assignmentId === current.id)) session.revoked = true;
+  if (isJourneyKind(current.kind)) {
+    // A sessão do portal só termina quando todas as etapas da pessoa estiverem enviadas.
+    if (journeyDone(db, current.participantId)) {
+      const root = activeAssignment(db, current.participantId, "SELF");
+      for (const session of db.sessions.filter((s) => s.assignmentId === current.id || s.assignmentId === root?.id)) session.revoked = true;
+    }
+  } else {
+    for (const session of db.sessions.filter((s) => s.assignmentId === current.id)) session.revoked = true;
+  }
   return { ok: true, db, value: { status: "SUBMITTED" } };
 }
 
@@ -1428,7 +1508,8 @@ type IssuedInvite = { participantId: string; employeeName: string; roleName: str
 function issueInto(db: PerformanceDatabase, assignmentId: string, actorUserId: string | null, now: Date, options: ServiceOptions): IssuedInvite | ServiceError {
   const assignment = db.assignments.find((a) => a.id === assignmentId && a.active && a.kind === "SELF");
   if (!assignment) return fail("NOT_FOUND", "Convite só existe para a autoavaliação.");
-  if (assignment.status === "SUBMITTED") return fail("ASSIGNMENT_LOCKED", "A pesquisa já foi enviada.");
+  // O convite abre a jornada inteira: só fica bloqueado quando todas as etapas foram enviadas.
+  if (journeyDone(db, assignment.participantId)) return fail("ASSIGNMENT_LOCKED", "A pesquisa já foi enviada.");
   const participant = db.participants.find((p) => p.id === assignment.participantId);
   const cycle = participant ? db.cycles.find((c) => c.id === participant.cycleId) : null;
   if (!participant || !cycle || participant.removedAt) return fail("NOT_FOUND", "Participante fora do ciclo.");
@@ -1498,7 +1579,7 @@ export function issueInvitesBatch(
   for (const participant of eligibleParticipants(db, cycle.id)) {
     if (wanted && !wanted.has(participant.id)) continue;
     const self = activeAssignment(db, participant.id, "SELF");
-    if (!self || self.status === "SUBMITTED") {
+    if (!self || journeyDone(db, participant.id)) {
       skipped += 1;
       continue;
     }
@@ -1568,7 +1649,7 @@ export function exchangeLink(
     expiresAt: invite ? new Date(invite.expiresAt) : null,
     revokedAt: invite?.revokedAt ? new Date(invite.revokedAt) : null,
     locked: Boolean(invite?.locked),
-    submitted: assignment?.status === "SUBMITTED",
+    submitted: assignment ? journeyDone(db, assignment.participantId) : false,
     now: options.now(),
   });
   if (!gate.ok || !invite || !assignment?.active || !participant || participant.removedAt || cycle?.status !== "OPEN") {
@@ -1639,18 +1720,34 @@ export function liveSession(db: PerformanceDatabase, token: string, now: Date) {
 function formSession(db: PerformanceDatabase, token: string, now: Date) {
   const session = liveSession(db, token, now);
   if (!session || (session.phase !== "VERIFIED" && session.phase !== "ASSISTED")) return null;
-  const { assignment, participant, cycle } = inviteContext(db, session.assignmentId);
-  if (!assignment || !assignment.active || !participant || participant.removedAt || !cycle) return null;
-  return { session, assignment, participant, cycle };
+  const { assignment: root, participant, cycle } = inviteContext(db, session.assignmentId);
+  if (!root || !root.active || !participant || participant.removedAt || !cycle) return null;
+  // A sessão nasce na autoavaliação e acompanha a jornada: a etapa atual é a primeira não enviada.
+  const current = currentJourneyStep(db, participant.id);
+  return { session, root, assignment: current ?? root, participant, cycle, done: current === null };
 }
 
+export type PublicFormStep = {
+  kind: "SELF" | "LEADERSHIP_UPWARD" | "LEADERSHIP_SELF";
+  index: number;
+  total: number;
+  title: string;
+  intro: string;
+  /** Primeiro nome do líder avaliado (só na avaliação do líder). */
+  subjectFirstName: string | null;
+  /** Notas 1 e 4 pedem comentário (liderança). */
+  commentRule: { required: boolean; minLetters: number } | null;
+};
+
 export type PublicFormValue = {
+  step: PublicFormStep;
+  steps: { kind: string; title: string; status: string }[];
   employeeName: string;
   periodLabel: string;
   cycleName: string;
   instructions: string;
-  questions: { code: string; text: string; pillar: string }[];
-  answers: { questionCode: string; kind: string; score: number | null }[];
+  questions: { code: string; text: string; pillar: string; competency?: string; behavior?: string }[];
+  answers: { questionCode: string; kind: string; score: number | null; comment?: string | null }[];
   version: number;
   status: string;
   assisted: boolean;
@@ -1660,16 +1757,34 @@ export type PublicFormValue = {
 
 export function publicForm(source: PerformanceDatabase, input: { sessionToken: string }, options: ServiceOptions): ServiceResult<PublicFormValue> {
   const ctx = formSession(source, input.sessionToken, options.now());
-  if (!ctx || ctx.cycle.status !== "OPEN" || ctx.assignment.status === "SUBMITTED") return fail("INVITE_REJECTED", publicFailureMessage());
+  if (!ctx || ctx.cycle.status !== "OPEN" || ctx.done) return fail("INVITE_REJECTED", publicFailureMessage());
   const model = modelOfCycle(source, ctx.cycle);
-  const questions = questionsOf(source, ctx.cycle.modelId).map((q) => ({ code: q.code, text: q.selfText, pillar: q.pillar }));
+  const leadership = isLeadershipKind(ctx.assignment.kind);
+  const questions = leadership
+    ? leadershipQuestionsFor(source, ctx.assignment).map((q) => ({ code: q.code, text: q.text, pillar: "LEADERSHIP", competency: q.competency, behavior: q.behavior }))
+    : questionsOf(source, ctx.cycle.modelId).map((q) => ({ code: q.code, text: q.selfText, pillar: q.pillar }));
+  // A pessoa vê de volta só o que ela mesma respondeu nesta etapa.
   const answers = source.answers
     .filter((a) => a.assignmentId === ctx.assignment.id)
-    .map((a) => ({ questionCode: a.questionCode, kind: a.kind, score: a.score }));
+    .map((a) => (leadership ? { questionCode: a.questionCode, kind: a.kind, score: a.score, comment: a.evidence } : { questionCode: a.questionCode, kind: a.kind, score: a.score }));
+  const journey = journeyOf(source, ctx.participant.id);
+  const stepKind = ctx.assignment.kind as PublicFormStep["kind"];
+  const subject = ctx.assignment.kind === "LEADERSHIP_UPWARD" ? source.participants.find((p) => p.id === ctx.assignment.subjectParticipantId) : null;
+  const rules = leadership ? leadershipRulesOf(source, ctx.assignment.modelId) : null;
   return {
     ok: true,
     db: source,
     value: {
+      step: {
+        kind: stepKind,
+        index: journey.findIndex((a) => a.id === ctx.assignment.id) + 1,
+        total: journey.length,
+        title: STEP_TEXT[stepKind].title,
+        intro: STEP_TEXT[stepKind].intro,
+        subjectFirstName: subject ? subject.employeeName.split(/\s+/).filter((w) => !/^\[.*\]$/.test(w))[0] ?? null : null,
+        commentRule: rules ? { required: true, minLetters: rules.commentMinLetters } : null,
+      },
+      steps: journey.map((a) => ({ kind: a.kind, title: STEP_TEXT[a.kind as PublicFormStep["kind"]].title, status: a.status })),
       employeeName: ctx.participant.employeeName.split(/\s+/)[0] ?? ctx.participant.employeeName,
       periodLabel: ctx.cycle.periodLabel,
       cycleName: ctx.cycle.name,
@@ -1687,17 +1802,19 @@ export function publicForm(source: PerformanceDatabase, input: { sessionToken: s
 
 export function publicSave(
   source: PerformanceDatabase,
-  input: { sessionToken: string; expectedVersion: number; answers: readonly { code: string; answer: AnswerInput }[] },
+  input: { sessionToken: string; expectedVersion: number; answers: readonly { code: string; answer: AnswerInput }[]; step?: string | null },
   options: ServiceOptions
 ): ServiceResult<{ version: number }> {
   const ctx = formSession(source, input.sessionToken, options.now());
-  if (!ctx) return fail("INVITE_REJECTED", publicFailureMessage());
+  if (!ctx || ctx.done) return fail("INVITE_REJECTED", publicFailureMessage());
+  if (input.step && input.step !== ctx.assignment.kind) return fail("STEP_CHANGED", "Esta etapa já foi concluída. Atualize a tela para continuar.");
+  const keepComment = isLeadershipKind(ctx.assignment.kind);
   return saveAnswers(
     source,
     {
       assignmentId: ctx.assignment.id,
       expectedVersion: input.expectedVersion,
-      answers: input.answers.map((item) => ({ code: item.code, answer: item.answer.kind === "score" ? { kind: "score", score: item.answer.score } : item.answer })),
+      answers: input.answers.map((item) => ({ code: item.code, answer: keepComment || item.answer.kind !== "score" ? item.answer : { kind: "score", score: item.answer.score } })),
       actorUserId: ctx.session.assistantUserId,
       assistedByUserId: ctx.session.phase === "ASSISTED" ? ctx.session.assistantUserId : null,
       scope: {
@@ -1713,13 +1830,14 @@ export function publicSave(
 
 export function publicSubmit(
   source: PerformanceDatabase,
-  input: { sessionToken: string; expectedVersion: number; confirm: boolean },
+  input: { sessionToken: string; expectedVersion: number; confirm: boolean; step?: string | null },
   options: ServiceOptions
-): ServiceResult<{ status: string }> {
+): ServiceResult<{ status: string; done: boolean; next: string | null }> {
   const ctx = formSession(source, input.sessionToken, options.now());
-  if (!ctx) return fail("INVITE_REJECTED", publicFailureMessage());
+  if (!ctx || ctx.done) return fail("INVITE_REJECTED", publicFailureMessage());
   if (ctx.cycle.status !== "OPEN") return fail("COLLECTION_CLOSED", "A coleta deste ciclo está fechada.");
-  return submitAssignment(
+  if (input.step && input.step !== ctx.assignment.kind) return fail("STEP_CHANGED", "Esta etapa já foi concluída. Atualize a tela para continuar.");
+  const submitted = submitAssignment(
     source,
     {
       assignmentId: ctx.assignment.id,
@@ -1735,6 +1853,9 @@ export function publicSubmit(
     },
     options
   );
+  if (submitted.ok === false) return submitted;
+  const next = currentJourneyStep(submitted.db, ctx.participant.id);
+  return { ok: true, db: submitted.db, value: { status: submitted.value.status, done: next === null, next: next?.kind ?? null } };
 }
 
 /** Encerra a sessão do aparelho (botão Sair ou fim do preenchimento assistido). */
@@ -1760,7 +1881,7 @@ export function openAssisted(
   const db = cloneDb(source);
   const assignment = db.assignments.find((a) => a.id === input.assignmentId && a.active && a.kind === "SELF");
   if (!assignment) return fail("NOT_FOUND", "Autoavaliação não encontrada.");
-  if (assignment.status === "SUBMITTED") return fail("ASSIGNMENT_LOCKED", "A pesquisa já foi enviada.");
+  if (journeyDone(db, assignment.participantId)) return fail("ASSIGNMENT_LOCKED", "A pesquisa já foi enviada.");
   if (input.actorEmployeeId && input.actorEmployeeId === assignment.employeeId) return fail("FORBIDDEN", "A própria pessoa não abre o modo assistido para si.");
   const { participant, cycle } = inviteContext(db, assignment.id);
   if (!participant || participant.removedAt || cycle?.status !== "OPEN") return fail("CYCLE_STAGE", "O preenchimento assistido só acontece com o ciclo aberto.");

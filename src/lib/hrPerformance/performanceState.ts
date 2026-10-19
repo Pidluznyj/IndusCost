@@ -18,11 +18,14 @@ export type QuestionRecord = {
   id: string;
   modelId: string;
   code: string;
-  pillar: Pillar;
+  /** LEADERSHIP só em modelo de liderança. */
+  pillar: Pillar | "LEADERSHIP";
   competency: string;
   sortOrder: number;
   selfText: string;
   leaderText: string;
+  /** Liderança: liderado sobre o líder. */
+  upwardText: string | null;
   hint: string | null;
   description: string | null;
   positiveExample: string | null;
@@ -42,6 +45,8 @@ export type ModelRecord = {
   status: ModelStatus;
   version: number;
   governance: "EM_VALIDACAO";
+  /** INDIVIDUAL (12 perguntas, Nine-Box) ou LEADERSHIP (180°). */
+  kind: ModelKind;
   rules: PerformanceRules;
   publishedAt: string | null;
   archivedAt: string | null;
@@ -71,7 +76,11 @@ export type CycleRecord = {
   activationChangedAt: string | null;
   activationChangedByUserId: string | null;
   activationReason: string | null;
+  /** Avaliação 180° de liderança neste ciclo. Null = desligada. */
+  leadershipModelId: string | null;
 };
+
+export type ModelKind = "INDIVIDUAL" | "LEADERSHIP";
 
 export type CycleClassification = "OFFICIAL" | "TEST";
 export type CycleActivation = "ACTIVE" | "INACTIVE";
@@ -103,14 +112,18 @@ export type ParticipantRecord = {
   departmentName: string;
   managerId: string | null;
   managerName: string | null;
-  /** CADASTRO = gestor da ficha; ORGANOGRAMA = líder da unidade pela hierarquia efetiva; RH = exceção justificada. */
-  managerSource: "CADASTRO" | "ORGANOGRAMA" | "RH";
+  /** CADASTRO = gestor da ficha; ORGANOGRAMA = líder da unidade; RH = exceção justificada; TOPO = topo da estrutura (sem superior). */
+  managerSource: "CADASTRO" | "ORGANOGRAMA" | "RH" | "TOPO";
   admissionDate: string | null;
   registration: string | null;
   frozen: boolean;
   addedAt: string;
   removedAt: string | null;
   removedReason: string | null;
+  /** Retrato da hierarquia efetiva na abertura: tem liderado direto ativo. */
+  isLeader: boolean;
+  directReportCount: number;
+  leadershipSnapshotAt: string | null;
 };
 
 export type AssignmentRecord = {
@@ -129,13 +142,17 @@ export type AssignmentRecord = {
   assistedByUserId: string | null;
   returnReason: string | null;
   createdAt: string;
+  /** LEADERSHIP_UPWARD: participante do líder avaliado (quem responde é `participantId`). */
+  subjectParticipantId: string | null;
+  /** Modelo das perguntas (liderança). Null = modelo individual do ciclo. */
+  modelId: string | null;
 };
 
 export type AnswerRecord = {
   id: string;
   assignmentId: string;
   questionCode: string;
-  pillar: Pillar;
+  pillar: Pillar | "LEADERSHIP";
   kind: "pending" | "score" | "notObserved";
   score: FrequencyScore | null;
   evidence: string | null;
@@ -278,6 +295,30 @@ export type ReminderRecord = {
   status: "DRAFT";
 };
 
+/** Calibração de liderança (180°). Separada da Nine-Box; cada decisão é uma versão nova. */
+export type LeadershipResultRecord = {
+  id: string;
+  participantId: string;
+  cycleId: string;
+  version: number;
+  active: boolean;
+  status: "CALIBRATED" | "EXCEPTION";
+  scores: Record<string, number>;
+  justifications: Record<string, string>;
+  generalNote: string;
+  exceptionReason: string | null;
+  sources: { self: boolean; superior: boolean; team: boolean };
+  teamRespondents: number;
+  teamDisclosed: boolean;
+  official: boolean;
+  modelId: string;
+  modelVersion: number;
+  calibratedByUserId: string | null;
+  calibratedAt: string;
+  supersedesId: string | null;
+  createdAt: string;
+};
+
 /** Emissão de documento. O código é o identificador rastreável impresso no PDF. */
 export type ReportIssueRecord = {
   id: string;
@@ -310,6 +351,7 @@ export type PerformanceDatabase = {
   audits: AuditRecord[];
   reminders: ReminderRecord[];
   reports: ReportIssueRecord[];
+  leadershipResults: LeadershipResultRecord[];
 };
 
 /** Coleções gravadas pela persistência, na ordem que respeita as chaves estrangeiras. */
@@ -330,6 +372,7 @@ export const PERFORMANCE_COLLECTIONS = [
   "audits",
   "reminders",
   "reports",
+  "leadershipResults",
 ] as const satisfies readonly (keyof Omit<PerformanceDatabase, "graphRevision">)[];
 
 export type PerformanceCollection = (typeof PERFORMANCE_COLLECTIONS)[number];
@@ -353,6 +396,7 @@ export function emptyPerformanceDatabase(): PerformanceDatabase {
     audits: [],
     reminders: [],
     reports: [],
+    leadershipResults: [],
   };
 }
 

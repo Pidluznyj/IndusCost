@@ -278,7 +278,7 @@ import {
 } from "./src/lib/hrPerformance/performanceFeatureFlags.js";
 import { resolveCompetencyAccessScope } from "./src/lib/competencies/competencyScope.js";
 import { loadDescendantEmployeeIds, loadDirectReportIds } from "./src/lib/peopleProfileHierarchy.server.js";
-import { assignableManager, loadOrgHierarchy } from "./src/lib/orgHierarchy.server.js";
+import { assignableManager, loadDirectReportsSnapshot, loadOrgHierarchy } from "./src/lib/orgHierarchy.server.js";
 import { toEffectiveManagerView, type EffectiveManagerResolution } from "./src/lib/orgHierarchy.js";
 import { buildEmployeeCosts } from "./src/lib/employeeCostEngine.js";
 import {
@@ -15458,7 +15458,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     return {
       managerId: m.managerId,
       managerName: m.managerName,
-      managerSource: m.fromOrgChart ? ("ORGANOGRAMA" as const) : ("CADASTRO" as const),
+      managerSource: r.status === "TOP" ? ("TOPO" as const) : m.fromOrgChart ? ("ORGANOGRAMA" as const) : ("CADASTRO" as const),
       managerNote: m.note,
     };
   };
@@ -15575,6 +15575,8 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
       const authUser = (req as { appAuth?: AppAuthContext }).appAuth ?? (await getCurrentAppUser(req));
       return (authUser as { name?: string | null } | null)?.name ?? null;
     },
+    // Avaliação 180°: liderados diretos ativos pela hierarquia efetiva, no instante da abertura.
+    loadLeadershipSnapshot: (employeeIds) => loadDirectReportsSnapshot(prisma, employeeIds),
     // Ciclo de vida dos ciclos (classificar, inativar, reativar, excluir teste): só SUPER_ADMIN ativo.
     isSuperAdmin: async (req) => {
       const authUser = (req as { appAuth?: AppAuthContext }).appAuth ?? (await getCurrentAppUser(req));

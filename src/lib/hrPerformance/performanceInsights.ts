@@ -24,6 +24,7 @@ import {
 } from "./performanceDomain.js";
 import { canSeeEmployee, type PerformanceScope } from "./performanceAccess.js";
 import { cycleGovernance, isHistoryCycle } from "./performanceLifecycle.js";
+import { journeyOf, leadershipStatusOf } from "./performanceLeadershipService.js";
 import {
   activeAssignment,
   activeResult,
@@ -117,8 +118,16 @@ export function describeCycle(db: PerformanceDatabase, cycleId: string, scope: P
           ? findDivergences(toStored(db, self.id), toStored(db, leader.id), rules.divergenceThreshold)
           : [];
       const leaderVersions = db.assignments.filter((a) => a.participantId === participant.id && a.kind === "LEADER").length;
+      const journey = journeyOf(db, participant.id);
       return {
         participant,
+        leadership: {
+          isLeader: participant.isLeader,
+          directReportCount: participant.directReportCount,
+          status: leadershipStatusOf(db, participant),
+          // Andamento operacional das etapas do portal: só o RH acompanha (sem conteúdo).
+          journey: scope.kind === "ALL" ? journey.map((a) => ({ kind: a.kind, status: a.status })) : null,
+        },
         self: self ? { id: self.id, status: self.status, version: self.version, assisted: Boolean(self.assistedByUserId), submittedAt: self.submittedAt } : null,
         leader: leader
           ? {

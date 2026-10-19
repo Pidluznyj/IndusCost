@@ -50,3 +50,18 @@ export function assignableManager(r: EffectiveManagerResolution): {
   }
   return { managerId: null, managerName: null, fromOrgChart: false, note: r.message };
 }
+
+/**
+ * Liderados diretos ATIVOS de cada pessoa pela hierarquia efetiva (retrato para a abertura de
+ * ciclo). Uma pessoa é líder quando a lista não está vazia — cargo não entra na regra.
+ */
+export async function loadDirectReportsSnapshot(db: OrgHierarchyDb, employeeIds: readonly string[]): Promise<Record<string, { directReportIds: string[] }>> {
+  const [hierarchy, active] = await Promise.all([
+    loadOrgHierarchy(db),
+    db.employee.findMany({ where: { OR: [{ status: null }, { status: { not: "INACTIVE" } }] }, select: { id: true } }),
+  ]);
+  const activeIds = new Set(active.map((row) => row.id));
+  return Object.fromEntries(
+    employeeIds.map((id) => [id, { directReportIds: hierarchy.directReports(id).filter((reportId) => activeIds.has(reportId) && reportId !== id) }])
+  );
+}

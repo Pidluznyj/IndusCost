@@ -73,13 +73,14 @@ const DELEGATE: Record<PerformanceCollection, string> = {
   audits: "hrPerformanceAuditEvent",
   reminders: "hrPerformanceReminder",
   reports: "hrPerformanceReportIssue",
+  leadershipResults: "hrPerformanceLeadershipResult",
 };
 
 const DATE_FIELDS: Record<PerformanceCollection, readonly string[]> = {
   models: ["publishedAt", "archivedAt", "createdAt"],
   questions: [],
   cycles: ["openedAt", "closedAt", "createdAt", "classifiedAt", "activationChangedAt"],
-  participants: ["admissionDate", "addedAt", "removedAt"],
+  participants: ["admissionDate", "addedAt", "removedAt", "leadershipSnapshotAt"],
   assignments: ["submittedAt", "createdAt"],
   answers: [],
   invites: ["expiresAt", "revokedAt", "createdAt"],
@@ -92,6 +93,7 @@ const DATE_FIELDS: Record<PerformanceCollection, readonly string[]> = {
   audits: ["at"],
   reminders: [],
   reports: ["issuedAt"],
+  leadershipResults: ["calibratedAt", "createdAt"],
 };
 
 /** Colunas Json anuláveis: o Prisma exige `Prisma.DbNull` em vez de `null`. */
@@ -145,10 +147,28 @@ export function fromDbRow(collection: PerformanceCollection, row: Record<string,
     out.governance = "EM_VALIDACAO";
     out.rules = out.rules && typeof out.rules === "object" ? { ...proposedRules(), ...(out.rules as object) } : proposedRules();
   }
-  if (collection === "questions") out.roleExamples = Array.isArray(out.roleExamples) ? out.roleExamples : [];
+  if (collection === "questions") {
+    out.roleExamples = Array.isArray(out.roleExamples) ? out.roleExamples : [];
+    out.upwardText = out.upwardText ?? null;
+  }
+  if (collection === "models") out.kind = out.kind === "LEADERSHIP" ? "LEADERSHIP" : "INDIVIDUAL";
+  if (collection === "participants") {
+    out.isLeader = out.isLeader === true;
+    out.directReportCount = typeof out.directReportCount === "number" ? out.directReportCount : 0;
+  }
+  if (collection === "assignments") {
+    out.subjectParticipantId = out.subjectParticipantId ?? null;
+    out.modelId = out.modelId ?? null;
+  }
+  if (collection === "leadershipResults") {
+    out.scores = (out.scores ?? {}) as object;
+    out.justifications = (out.justifications ?? {}) as object;
+    out.sources = (out.sources ?? { self: false, superior: false, team: false }) as object;
+  }
   if (collection === "cycles") {
     out.classification = out.classification === "TEST" ? "TEST" : "OFFICIAL";
     out.activation = out.activation === "INACTIVE" ? "INACTIVE" : "ACTIVE";
+    out.leadershipModelId = out.leadershipModelId ?? null;
   }
   if (collection === "audits") out.detail = (out.detail ?? {}) as object;
   if (collection === "reminders") out.status = "DRAFT";
@@ -174,6 +194,7 @@ const DELETE_DELEGATE: Record<DeletionCollection, string> = {
   assignments: "hrPerformanceAssignment",
   reminders: "hrPerformanceReminder",
   participants: "hrPerformanceParticipant",
+  leadershipResults: "hrPerformanceLeadershipResult",
   cycles: "hrPerformanceCycle",
 };
 

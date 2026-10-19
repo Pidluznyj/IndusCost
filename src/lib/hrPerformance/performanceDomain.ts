@@ -95,7 +95,8 @@ export const ELIGIBILITY_LABELS: Record<EligibilityState, string> = {
   INSUFFICIENT_EVIDENCE: "Evidência insuficiente",
 };
 
-export const ASSIGNMENT_KINDS = ["SELF", "LEADER"] as const;
+/** SELF/LEADER = avaliação individual; LEADERSHIP_* = 180° de liderança (ver performanceLeadership.ts). */
+export const ASSIGNMENT_KINDS = ["SELF", "LEADER", "LEADERSHIP_SELF", "LEADERSHIP_UPWARD", "LEADERSHIP_SUPERIOR"] as const;
 export type AssignmentKind = (typeof ASSIGNMENT_KINDS)[number];
 
 export const ASSIGNMENT_STATUSES = ["NOT_STARTED", "IN_PROGRESS", "SUBMITTED", "RETURNED"] as const;
@@ -137,6 +138,8 @@ export type PerformanceRules = {
   requireExtremeEvidence: boolean;
   evidenceMinChars: number;
   minObservationDays: number;
+  /** Só no modelo de liderança (180°): ver performanceLeadership.ts. */
+  leadership?: { minRespondents: number; commentMinLetters: number; divergenceThreshold: number };
 };
 
 export const PROPOSED_RULE_SET_ID = "proposal-unapproved-v0";
@@ -331,13 +334,14 @@ export type EmployeeSnapshotSource = {
   registration: string | null;
 };
 
-/** CADASTRO = gestor da ficha; ORGANOGRAMA = líder da unidade pela hierarquia; RH = exceção justificada. */
-export type ParticipantManagerSource = "CADASTRO" | "ORGANOGRAMA" | "RH";
+/** CADASTRO = gestor da ficha; ORGANOGRAMA = líder da unidade pela hierarquia; RH = exceção justificada; TOPO = sem superior (topo). */
+export type ParticipantManagerSource = "CADASTRO" | "ORGANOGRAMA" | "RH" | "TOPO";
 
 export const MANAGER_SOURCE_TEXT: Record<ParticipantManagerSource, string> = {
   CADASTRO: "Gestor do cadastro",
   ORGANOGRAMA: "Organograma",
   RH: "Exceção do RH",
+  TOPO: "Topo da estrutura",
 };
 
 export type EligibilityInput = {
