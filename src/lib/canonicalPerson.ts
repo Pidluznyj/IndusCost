@@ -207,6 +207,20 @@ export function applyFieldResolutions(
   return out;
 }
 
+/**
+ * Regra única de exibição de nome (Pessoas 360°): nome social quando informado, senão o civil.
+ * Snapshots históricos (eventos, documentos assinados) não passam por aqui — ficam como foram gravados.
+ */
+export function resolvePersonDisplayName(person: {
+  displayName?: string | null;
+  socialName?: string | null;
+  name?: string | null;
+}): string {
+  const social = (person.socialName ?? "").trim();
+  if (social) return social;
+  return (person.displayName ?? person.name ?? "").trim();
+}
+
 /** Merge por nome semelhante é proibido — só evidências inequívocas. */
 export function isUnequivocalMatchEvidence(input: {
   emailExact?: boolean;
