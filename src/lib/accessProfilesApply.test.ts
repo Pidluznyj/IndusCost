@@ -24,6 +24,7 @@ function makePrismaMock(args: {
   const users = args.users.map((u) => ({ ...u }));
   let shouldFail = false;
   const overridesDeleted: string[] = [];
+  const auditActions: string[] = [];
 
   const prisma = {
     accessProfile: {
@@ -72,6 +73,10 @@ function makePrismaMock(args: {
       async createMany() {
         return { count: 0 };
       },
+      async create(args: { data: { action: string } }) {
+        auditActions.push(args.data.action);
+        return args.data;
+      },
     },
     userPermissionOverride: {
       async deleteMany({ where }: { where: { userId: string } }) {
@@ -98,6 +103,9 @@ function makePrismaMock(args: {
     },
     __overridesDeleted() {
       return overridesDeleted;
+    },
+    __auditActions() {
+      return auditActions;
     },
   };
 
@@ -190,5 +198,58 @@ describe("accessProfiles apply service", () => {
       "updateAccessProfile",
       "applyAccessProfileToUsers"
     );
+  });
+});
+
+describe("accessProfiles apply — guarda de SUPER_ADMIN (E2)", () => {
+  const superAdminProfile = {
+    id: "p-sa",
+    name: "Super",
+    description: null,
+    roleBase: "SUPER_ADMIN" as AppUserRole,
+    systemKey: null,
+    permissions: [] as string[],
+    isSystem: false,
+    isActive: true,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  };
+  const user = {
+    id: "u1",
+    name: "A",
+    email: "a@x.com",
+    role: "ADMIN" as AppUserRole,
+    isActive: true,
+    permissions: [] as string[],
+    accessProfileId: "p-sa",
+  };
+
+  it("ADMIN não aplica perfil com roleBase SUPER_ADMIN (negativa auditada, nada muda)", async () => {
+    const prisma = makePrismaMock({ profile: superAdminProfile, users: [user] });
+    await assert.rejects(
+      () =>
+        applyAccessProfileToUsers(prisma as never, {
+          profileId: "p-sa",
+          confirm: true,
+          actorUserId: "adm",
+          actor: { id: "adm", role: "ADMIN", elevated: false },
+        }),
+      (err: unknown) => err instanceof AccessProfileError && err.code === "SUPER_ADMIN_REQUIRED"
+    );
+    assert.equal(prisma.__users()[0].role, "ADMIN");
+    assert.ok(prisma.__auditActions().includes("SUPER_ADMIN_ROLE_CHANGE_DENIED"));
+  });
+
+  it("SUPER_ADMIN elevado aplica e a concessão é auditada", async () => {
+    const prisma = makePrismaMock({ profile: superAdminProfile, users: [user] });
+    const result = await applyAccessProfileToUsers(prisma as never, {
+      profileId: "p-sa",
+      confirm: true,
+      actorUserId: "sa",
+      actor: { id: "sa", role: "SUPER_ADMIN", elevated: true },
+    });
+    assert.equal(result.applied, 1);
+    assert.equal(prisma.__users()[0].role, "SUPER_ADMIN");
+    assert.ok(prisma.__auditActions().includes("SUPER_ADMIN_ROLE_GRANTED"));
   });
 });

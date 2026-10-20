@@ -12,6 +12,12 @@ import { listPermissionSeedsForAdminUi } from "@/src/lib/permissionAdminUiSeeds.
 import { filterKnownPermissions } from "@/src/lib/appAuth.js";
 import { bumpPermissionsVersionAndSyncSessions } from "@/src/lib/permissionsVersion.js";
 import {
+  evaluateSuperAdminRoleChange,
+  superAdminAuditAction,
+  superAdminGuardDenial,
+  type SuperAdminGuardActor,
+} from "@/src/lib/security/superAdminRoleGuard.js";
+import {
   buildEffectiveFlagsMap,
   buildPermissionAccessSummary,
   diffUserAgainstRolePreset,
@@ -864,12 +870,37 @@ export async function applyRolePresetToUser(
     isEditingSelf: boolean;
     auditKind?: "preset" | "restore" | "role_change";
     reason?: string | null;
+    /** E2: quem está operando (papel + elevação). Sem ator, mudanças que tocam SUPER_ADMIN são recusadas. */
+    actor?: SuperAdminGuardActor;
   }
 ) {
   const user = await prisma.appUser.findUnique({ where: { id: args.userId } });
   if (!user) throw new UserPermissionAdminError("NOT_FOUND", "Usuário não encontrado.");
 
   const nextRole = args.role ?? user.role;
+  const superAdminGuard = evaluateSuperAdminRoleChange({
+    actor: args.actor ?? { id: args.actorUserId, role: null, elevated: false },
+    target: { id: user.id, role: user.role },
+    nextRole,
+  });
+  const superAdminDenied = superAdminGuardDenial(superAdminGuard);
+  if (superAdminDenied) {
+    await writeAuditPlans(prisma, {
+      actorUserId: args.actorUserId,
+      targetUserId: user.id,
+      plans: [
+        {
+          action: "SUPER_ADMIN_ROLE_CHANGE_DENIED",
+          resourceKey: null,
+          targetRole: user.role,
+          beforeJson: { role: user.role },
+          afterJson: { attemptedRole: nextRole, denied: superAdminDenied.code },
+        },
+      ],
+    });
+    throw new UserPermissionAdminError(superAdminDenied.code, superAdminDenied.message);
+  }
+  const touchesSuperAdmin = superAdminGuard.ok && superAdminGuard.touchesSuperAdmin;
   const activeSuperAdminCount = await countActiveSuperAdminsDb(prisma);
   assertCanChangeSuperAdminRole({
     existingRole: user.role,
@@ -942,6 +973,15 @@ export async function applyRolePresetToUser(
     kind: auditKind === "role_change" ? "preset" : auditKind,
     reason: args.reason,
   });
+  if (touchesSuperAdmin) {
+    plans.push({
+      action: superAdminAuditAction(user.role, nextRole),
+      resourceKey: null,
+      targetRole: nextRole,
+      beforeJson: { role: user.role },
+      afterJson: { role: nextRole, reason: args.reason ?? null, elevated: true },
+    });
+  }
   await writeAuditPlans(prisma, {
     actorUserId: args.actorUserId,
     targetUserId: args.userId,
@@ -961,6 +1001,7 @@ export async function updateUserRoleAdmin(
     confirmClearOverrides?: boolean;
     isEditingSelf: boolean;
     reason?: string | null;
+    actor?: SuperAdminGuardActor;
   }
 ) {
   return applyRolePresetToUser(prisma, {
@@ -972,6 +1013,7 @@ export async function updateUserRoleAdmin(
     isEditingSelf: args.isEditingSelf,
     auditKind: "role_change",
     reason: args.reason,
+    actor: args.actor,
   });
 }
 

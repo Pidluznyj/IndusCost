@@ -25,6 +25,12 @@ export const SECURITY_AUDIT_EVENTS = {
   PASSWORD_CHANGE_REQUIRED_CLEARED: "PASSWORD_CHANGE_REQUIRED_CLEARED",
   /** Credencial inicial atribuída na criação do usuário (temporária). */
   USER_INITIAL_PASSWORD_ASSIGNED: "USER_INITIAL_PASSWORD_ASSIGNED",
+  /** Pessoas 360° (E1/E3/E4): ciclo de vida da conta — nunca exclusão física por padrão. */
+  USER_CREATED: "USER_CREATED",
+  USER_DEACTIVATED: "USER_DEACTIVATED",
+  USER_REACTIVATED: "USER_REACTIVATED",
+  USER_DEACTIVATED_BY_TERMINATION: "USER_DEACTIVATED_BY_TERMINATION",
+  USER_DELETE_REQUEST_CONVERTED: "USER_DELETE_REQUEST_CONVERTED",
   /** Emissão de cópia controlada da Política Comercial. O digest fica na tabela da cópia. */
   COMMERCIAL_POLICY_CONTROLLED_COPY: "COMMERCIAL_POLICY_CONTROLLED_COPY",
   /** SUPER_ADMIN zerou aceites da Política Comercial (o metadata guarda o que foi apagado). */

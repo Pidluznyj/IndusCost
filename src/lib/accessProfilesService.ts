@@ -6,6 +6,13 @@ import {
   hasPermission,
 } from "@/src/lib/appAuth.js";
 import { bumpPermissionsVersionAndSyncSessions } from "@/src/lib/permissionsVersion.js";
+import {
+  evaluateSuperAdminRoleChange,
+  roleChangeTouchesSuperAdmin,
+  superAdminAuditAction,
+  superAdminGuardDenial,
+  type SuperAdminGuardActor,
+} from "@/src/lib/security/superAdminRoleGuard.js";
 import { parseAppUserRole } from "@/src/lib/appAuthRoles.js";
 import { SYSTEM_ACCESS_PROFILE_SEEDS } from "@/src/lib/accessProfilesSeedData.js";
 import {
@@ -656,6 +663,8 @@ export async function applyAccessProfileToUsers(
     actorUserId?: string | null;
     /** Se false, pula usuários que já customizaram permissões. Default true com confirm. */
     overwriteCustomized?: boolean;
+    /** E2: ator (papel + elevação) — perfil com roleBase SUPER_ADMIN só por SUPER_ADMIN elevado. */
+    actor?: SuperAdminGuardActor;
   }
 ): Promise<ApplyAccessProfileResult> {
   if (!args.confirm) {
@@ -671,6 +680,34 @@ export async function applyAccessProfileToUsers(
     args.userIds
   );
   const overwriteCustomized = args.overwriteCustomized !== false;
+
+  // E2: aplicar um perfil que concede ou retira SUPER_ADMIN é mudança de privilégio máximo.
+  const touchingSuperAdmin = preview.users.find(
+    (u) =>
+      (u.matchesProfileBefore || overwriteCustomized) &&
+      roleChangeTouchesSuperAdmin(u.beforeRole, u.afterRole)
+  );
+  if (touchingSuperAdmin) {
+    const guard = evaluateSuperAdminRoleChange({
+      actor: args.actor ?? { id: args.actorUserId ?? null, role: null, elevated: false },
+      target: { id: touchingSuperAdmin.id, role: touchingSuperAdmin.beforeRole },
+      nextRole: touchingSuperAdmin.afterRole,
+    });
+    const denied = superAdminGuardDenial(guard);
+    if (denied) {
+      await prisma.permissionAuditLog.create({
+        data: {
+          actorUserId: args.actorUserId ?? null,
+          targetUserId: touchingSuperAdmin.id,
+          targetRole: touchingSuperAdmin.beforeRole,
+          action: "SUPER_ADMIN_ROLE_CHANGE_DENIED",
+          beforeJson: { role: touchingSuperAdmin.beforeRole },
+          afterJson: { attemptedRole: touchingSuperAdmin.afterRole, denied: denied.code, profileId: preview.profileId },
+        },
+      });
+      throw new AccessProfileError(denied.code, denied.message);
+    }
+  }
 
   if (preview.customizedCount > 0 && !overwriteCustomized) {
     // still allow apply for matching users only
@@ -698,6 +735,18 @@ export async function applyAccessProfileToUsers(
         },
       });
       await bumpPermissionsVersionAndSyncSessions(tx, { userId: u.id });
+      if (roleChangeTouchesSuperAdmin(u.beforeRole, u.afterRole)) {
+        await tx.permissionAuditLog.create({
+          data: {
+            actorUserId: args.actorUserId ?? null,
+            targetUserId: u.id,
+            targetRole: u.afterRole,
+            action: superAdminAuditAction(u.beforeRole, u.afterRole),
+            beforeJson: { role: u.beforeRole },
+            afterJson: { role: u.afterRole, elevated: true, profileId: preview.profileId },
+          },
+        });
+      }
       if (!u.willChange) {
         results.push({ userId: u.id, status: "skipped_unchanged" });
         skipped += 1;

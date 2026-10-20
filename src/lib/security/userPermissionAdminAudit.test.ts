@@ -291,3 +291,93 @@ describe("userPermissionAdminService — auditoria", () => {
     );
   });
 });
+
+describe("userPermissionAdminService — guarda de SUPER_ADMIN (E2)", () => {
+  const superAdminElevated = { id: "actor-1", role: "SUPER_ADMIN", elevated: true };
+  const superAdminPlain = { id: "actor-1", role: "SUPER_ADMIN", elevated: false };
+  const admin = { id: "actor-1", role: "ADMIN", elevated: false };
+
+  it("ADMIN não promove terceiro a SUPER_ADMIN e a negativa é auditada", async () => {
+    const { prisma, audits } = makePrismaMock({ role: "SELLER" });
+    await assert.rejects(
+      () =>
+        applyRolePresetToUser(prisma, {
+          userId: "user-1",
+          actorUserId: "actor-1",
+          role: "SUPER_ADMIN",
+          isEditingSelf: false,
+          actor: admin,
+        }),
+      (err: unknown) => err instanceof UserPermissionAdminError && err.code === "SUPER_ADMIN_REQUIRED"
+    );
+    assert.ok(audits.some((a) => a.action === "SUPER_ADMIN_ROLE_CHANGE_DENIED"));
+  });
+
+  it("sem ator informado a mudança que toca SUPER_ADMIN é recusada (fail-closed)", async () => {
+    const { prisma } = makePrismaMock({ role: "SELLER" });
+    await assert.rejects(
+      () =>
+        applyRolePresetToUser(prisma, {
+          userId: "user-1",
+          actorUserId: "actor-1",
+          role: "SUPER_ADMIN",
+          isEditingSelf: false,
+        }),
+      (err: unknown) => err instanceof UserPermissionAdminError && err.code === "SUPER_ADMIN_REQUIRED"
+    );
+  });
+
+  it("SUPER_ADMIN sem step-up é recusado", async () => {
+    const { prisma } = makePrismaMock({ role: "SELLER" });
+    await assert.rejects(
+      () =>
+        applyRolePresetToUser(prisma, {
+          userId: "user-1",
+          actorUserId: "actor-1",
+          role: "SUPER_ADMIN",
+          isEditingSelf: false,
+          actor: superAdminPlain,
+        }),
+      (err: unknown) => err instanceof UserPermissionAdminError && err.code === "ADMIN_ELEVATION_REQUIRED"
+    );
+  });
+
+  it("SUPER_ADMIN elevado concede o papel e a concessão é auditada", async () => {
+    const { prisma, audits } = makePrismaMock({ role: "SELLER" });
+    await applyRolePresetToUser(prisma, {
+      userId: "user-1",
+      actorUserId: "actor-1",
+      role: "SUPER_ADMIN",
+      isEditingSelf: false,
+      actor: superAdminElevated,
+    });
+    assert.ok(audits.some((a) => a.action === "SUPER_ADMIN_ROLE_GRANTED"));
+  });
+
+  it("ADMIN não rebaixa um SUPER_ADMIN", async () => {
+    const { prisma } = makePrismaMock({ role: "SUPER_ADMIN" });
+    await assert.rejects(
+      () =>
+        applyRolePresetToUser(prisma, {
+          userId: "user-1",
+          actorUserId: "actor-1",
+          role: "ADMIN",
+          isEditingSelf: false,
+          actor: admin,
+        }),
+      (err: unknown) => err instanceof UserPermissionAdminError && err.code === "SUPER_ADMIN_REQUIRED"
+    );
+  });
+
+  it("mudança entre papéis comuns continua livre para quem administra usuários", async () => {
+    const { prisma } = makePrismaMock({ role: "VIEWER" });
+    const payload = await applyRolePresetToUser(prisma, {
+      userId: "user-1",
+      actorUserId: "actor-1",
+      role: "SELLER",
+      isEditingSelf: false,
+      actor: admin,
+    });
+    assert.ok(payload);
+  });
+});

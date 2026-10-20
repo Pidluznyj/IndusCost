@@ -290,6 +290,8 @@ import { resolveHrDepartmentLabel, loadEmployeeOrgLeadership, loadOrgLeadershipB
 import {
   registerCanonicalPersonRoutes,
   resolvePersonIdFromEmployeeBody,
+  planPersonLinkFromEmployeeBody,
+  applyPersonLinkPlan,
 } from "./src/lib/canonicalPersonRoutes.js";
 import { CanonicalPersonError } from "./src/lib/canonicalPerson.js";
 import { registerGoalRoutes } from "./src/lib/goals/goalRoutes.js";
@@ -454,6 +456,18 @@ import {
   listAdminUsersWithPermissionMeta,
   registerUserPermissionAdminRoutes,
 } from "./src/lib/security/userPermissionAdminRoutes.js";
+import {
+  evaluateSuperAdminRoleChange,
+  superAdminAuditAction,
+  superAdminGuardDenial,
+  type SuperAdminGuardActor,
+} from "./src/lib/security/superAdminRoleGuard.js";
+import {
+  deactivateUserAccess,
+  reactivateUserAccess,
+  revokeAccessOnEmployeeTermination,
+} from "./src/lib/security/userAccessLifecycle.server.js";
+import { propagateEmployeePersonToLinkedUser } from "./src/lib/canonicalPersonSync.server.js";
 import {
   authorizeRequireResource,
   createResourcePermissionGuards,
@@ -2116,6 +2130,19 @@ async function startServer() {
 
   enforceCriticalGlobalParamMutation = requireAdminElevation;
 
+  /** E2: a elevação administrativa (step-up) está vigente e presa a esta sessão? */
+  function isActorElevated(req: express.Request, auth: AppAuthContext | null | undefined): boolean {
+    if (!auth) return false;
+    const elevation = readAdminElevation(req);
+    return isAdminElevationBoundToSession(elevation, { userId: auth.id, sessionId: auth.sessionId });
+  }
+
+  /** Ator para a guarda de privilégio SUPER_ADMIN (papel + elevação). */
+  function resolveSuperAdminGuardActor(req: express.Request): SuperAdminGuardActor {
+    const auth = (req as { appAuth?: AppAuthContext }).appAuth ?? null;
+    return { id: auth?.id ?? null, role: auth?.role ?? null, elevated: isActorElevated(req, auth) };
+  }
+
   app.get("/api/auth/admin-elevation/status", requireAppAuth, async (req, res) => {
     const auth = (req as { appAuth?: AppAuthContext }).appAuth ?? (await getCurrentAppUser(req));
     if (!auth) {
@@ -2721,6 +2748,7 @@ async function startServer() {
               corporateEmail: true,
               department: true,
               status: true,
+              personId: true,
             },
           })
         : null;
@@ -2771,6 +2799,20 @@ async function startServer() {
 
       // VIEWER sem perfil e bag vazia permanece sem acesso até configuração explícita.
 
+      // E4: a conta nasce com a Pessoa canônica do colaborador (associação inequívoca).
+      // Sem Pessoa no colaborador, a conta fica sem personId — nunca se cria outra Pessoa aqui.
+      const personIdForUser = employee.personId ?? null;
+      if (personIdForUser) {
+        const holder = await prisma.appUser.findUnique({ where: { personId: personIdForUser }, select: { id: true, email: true } });
+        if (holder) {
+          return res.status(409).json({
+            error: "PERSON_ALREADY_HAS_USER",
+            code: "PERSON_ALREADY_HAS_USER",
+            message: `A pessoa deste colaborador já tem uma conta de acesso (${holder.email}). Corrija o vínculo em Pessoas antes de criar outra.`,
+          });
+        }
+      }
+
       const passwordHash = await hashPassword(password);
       const actorUserId = req.appAuth?.id ?? null;
       // Senha inicial escolhida por outra pessoa. O padrão exige troca no
@@ -2788,6 +2830,7 @@ async function startServer() {
             permissions,
             accessProfileId,
             employeeId: employee.id,
+            personId: personIdForUser,
             isActive,
             mustChangePassword: requirePasswordChange,
             passwordChangedAt: new Date(),
@@ -2807,6 +2850,14 @@ async function startServer() {
           ipAddress: resolveAuditIpAddress(req.socket?.remoteAddress),
           userAgent: normalizeUserAgent(req.headers["user-agent"]),
           metadata: { source: "USER_CREATION" },
+        });
+        await writeSecurityAuditLog(tx, {
+          eventType: SECURITY_AUDIT_EVENTS.USER_CREATED,
+          actorUserId,
+          targetUserId: created.id,
+          ipAddress: resolveAuditIpAddress(req.socket?.remoteAddress),
+          userAgent: normalizeUserAgent(req.headers["user-agent"]),
+          metadata: { employeeId: employee.id, personId: personIdForUser, personCopiedFromEmployee: Boolean(personIdForUser) },
         });
         return created;
       });
@@ -2828,6 +2879,13 @@ async function startServer() {
           return res.status(409).json({
             error: "EMPLOYEE_ALREADY_LINKED",
             message: "Esta pessoa já possui usuário de acesso no sistema.",
+          });
+        }
+        if (target.includes("personId")) {
+          return res.status(409).json({
+            error: "PERSON_ALREADY_HAS_USER",
+            code: "PERSON_ALREADY_HAS_USER",
+            message: "A pessoa deste colaborador já tem uma conta de acesso. Corrija o vínculo em Pessoas antes de criar outra.",
           });
         }
         return res.status(409).json({ error: "EMAIL_ALREADY_EXISTS", message: "E-mail já cadastrado." });
@@ -2933,6 +2991,33 @@ async function startServer() {
         return res.status(400).json({ error: "NO_CHANGES", message: "Nenhum campo para atualizar." });
       }
 
+      // E2: conceder/retirar SUPER_ADMIN só por SUPER_ADMIN elevado; ninguém se promove.
+      // Vale também quando o papel vem do perfil de acesso (data.role já resolvido acima).
+      const superAdminGuard = evaluateSuperAdminRoleChange({
+        actor: resolveSuperAdminGuardActor(req),
+        target: { id: existing.id, role: existing.role },
+        nextRole: (data.role as string | undefined) ?? existing.role,
+      });
+      const superAdminDenied = superAdminGuardDenial(superAdminGuard);
+      if (superAdminDenied) {
+        await prisma.permissionAuditLog.create({
+          data: {
+            actorUserId: req.appAuth?.id ?? null,
+            targetUserId: existing.id,
+            targetRole: existing.role,
+            action: "SUPER_ADMIN_ROLE_CHANGE_DENIED",
+            beforeJson: { role: existing.role },
+            afterJson: { attemptedRole: data.role, denied: superAdminDenied.code, route: "PATCH /api/admin/users/:id" },
+          },
+        });
+        return res.status(superAdminDenied.status).json({
+          error: superAdminDenied.code,
+          code: superAdminDenied.code,
+          message: superAdminDenied.message,
+        });
+      }
+      const touchesSuperAdminRole = superAdminGuard.ok && superAdminGuard.touchesSuperAdmin;
+
       // Guardrails anti-auto-bloqueio e proteção do último SUPER_ADMIN.
       // Fase: INDUSCOST-ACCESS-PERMISSIONS-AUDIT-UX-A.
       const isEditingSelf = req.appAuth?.id === existing.id;
@@ -3023,6 +3108,37 @@ async function startServer() {
             actorSessionId: isEditingSelf ? req.appAuth?.sessionId ?? null : null,
           });
         }
+        // E3: inativar/reativar conta é evento de segurança; inativar revoga as sessões na hora.
+        if (data.isActive === false && existing.isActive) {
+          await deactivateUserAccess(tx, {
+            userId: id,
+            actorUserId: req.appAuth?.id ?? null,
+            eventType: SECURITY_AUDIT_EVENTS.USER_DEACTIVATED,
+            metadata: { source: "ADMIN_PATCH" },
+            ipAddress: resolveAuditIpAddress(req.socket?.remoteAddress),
+            userAgent: normalizeUserAgent(req.headers["user-agent"]),
+          });
+        } else if (data.isActive === true && !existing.isActive) {
+          await reactivateUserAccess(tx, {
+            userId: id,
+            actorUserId: req.appAuth?.id ?? null,
+            metadata: { source: "ADMIN_PATCH" },
+            ipAddress: resolveAuditIpAddress(req.socket?.remoteAddress),
+            userAgent: normalizeUserAgent(req.headers["user-agent"]),
+          });
+        }
+        if (touchesSuperAdminRole) {
+          await tx.permissionAuditLog.create({
+            data: {
+              actorUserId: req.appAuth?.id ?? null,
+              targetUserId: id,
+              targetRole: updated.role,
+              action: superAdminAuditAction(existing.role, updated.role),
+              beforeJson: { role: existing.role },
+              afterJson: { role: updated.role, elevated: true, route: "PATCH /api/admin/users/:id" },
+            },
+          });
+        }
         // Vínculo login↔vendedor (Admin > Usuários) também precisa existir como
         // CommissionPerson.nomusPersonId — é isso que Propostas/Pedidos/Comissões/CRM
         // realmente consultam para mostrar o nome do vendedor. Ver
@@ -3096,16 +3212,26 @@ async function startServer() {
         });
       }
 
-      await prisma.$transaction(async (tx) => {
-        await tx.appSession.updateMany({
-          where: { userId: id, revokedAt: null },
-          data: { revokedAt: new Date() },
-        });
-        await tx.appUser.delete({ where: { id } });
-      });
+      // E3: nunca exclusão física. O pedido de exclusão vira inativação com revogação de
+      // sessões e auditoria — o histórico (logs, aprovações, eventos) continua apontando
+      // para a conta. Reativação só por ação explícita de segurança.
+      const revoked = await prisma.$transaction(async (tx) =>
+        deactivateUserAccess(tx, {
+          userId: id,
+          actorUserId: req.appAuth?.id ?? null,
+          eventType: SECURITY_AUDIT_EVENTS.USER_DELETE_REQUEST_CONVERTED,
+          metadata: { source: "ADMIN_DELETE_REQUEST", physicallyDeleted: false },
+          ipAddress: resolveAuditIpAddress(req.socket?.remoteAddress),
+          userAgent: normalizeUserAgent(req.headers["user-agent"]),
+        })
+      );
 
       return res.json({
         success: true,
+        deactivatedUserId: id,
+        physicallyDeleted: false,
+        revokedSessions: revoked.revokedSessions,
+        // compat com clientes antigos que liam deletedUserId
         deletedUserId: id,
         email: existing.email,
         name: existing.name,
@@ -3126,6 +3252,7 @@ async function startServer() {
   registerAccessProfilesRoutes(app, {
     requireAppAuth,
     requirePermission: requireResource,
+    resolveActor: resolveSuperAdminGuardActor,
   });
 
   registerUserPermissionAdminRoutes(app, {
@@ -3134,6 +3261,7 @@ async function startServer() {
     requireUsersOrPermissionsAdmin,
     requirePermissionsAdmin: requirePermissionsAdminOrBootstrap,
     requireUsersView: requireUsersViewOrBootstrap,
+    resolveActor: resolveSuperAdminGuardActor,
   });
 
   // --- API: Test DB Connection (somente autenticado — RC Prompt 16) ---
@@ -3767,9 +3895,11 @@ app.post("/api/employees", requireAppAuth, requireResourceOrHrEditor(EMPLOYEES_R
     }
     await assertRoleExists(prisma, cleanRoleId);
 
-    let personResolve;
+    // CP3: plano somente leitura antes das validações; a escrita na Pessoa acontece dentro da
+    // transação do colaborador (nada de Pessoa órfã quando uma validação posterior falha).
+    let personPlan;
     try {
-      personResolve = await resolvePersonIdFromEmployeeBody(req.body);
+      personPlan = await planPersonLinkFromEmployeeBody(req.body, null, authUser?.id ?? null);
     } catch (linkErr) {
       if (linkErr instanceof CanonicalPersonError) {
         return res.status(linkErr.status).json({
@@ -3780,6 +3910,7 @@ app.post("/api/employees", requireAppAuth, requireResourceOrHrEditor(EMPLOYEES_R
       }
       throw linkErr;
     }
+    const personResolve = { appliedForm: personPlan.appliedForm, personId: personPlan.personId as string | null };
 
     const orgDept = await resolveHrDepartmentLabel(
       prisma,
@@ -3832,7 +3963,12 @@ app.post("/api/employees", requireAppAuth, requireResourceOrHrEditor(EMPLOYEES_R
     const resolvedName =
       (personResolve.appliedForm.displayName || "").trim() || cleanName;
 
-    const employee = await prisma.employee.create({
+    let employee;
+    try {
+      employee = await prisma.$transaction(async (tx) => {
+      const appliedLink = await applyPersonLinkPlan(tx, personPlan);
+      personResolve.personId = appliedLink.personId;
+      return tx.employee.create({
       data: {
         ...mergeEmployeeWriteData(
           {
@@ -3872,6 +4008,13 @@ app.post("/api/employees", requireAppAuth, requireResourceOrHrEditor(EMPLOYEES_R
       },
       include: employeeApiInclude,
     });
+      });
+    } catch (linkErr) {
+      if (linkErr instanceof CanonicalPersonError) {
+        return res.status(linkErr.status).json({ error: linkErr.message, code: linkErr.code, conflicts: linkErr.conflicts });
+      }
+      throw linkErr;
+    }
 
     const actorUserId = authUser?.id ?? null;
 
@@ -4034,9 +4177,9 @@ app.put("/api/employees/:id", requireAppAuth, requireResourceOrHrEditor(EMPLOYEE
     }
     await assertRoleExists(prisma, cleanRoleId);
 
-    let personResolve;
+    let personPlan;
     try {
-      personResolve = await resolvePersonIdFromEmployeeBody(req.body, id);
+      personPlan = await planPersonLinkFromEmployeeBody(req.body, id, authUser?.id ?? null);
     } catch (linkErr) {
       if (linkErr instanceof CanonicalPersonError) {
         return res.status(linkErr.status).json({
@@ -4047,6 +4190,7 @@ app.put("/api/employees/:id", requireAppAuth, requireResourceOrHrEditor(EMPLOYEE
       }
       throw linkErr;
     }
+    const personResolve = { appliedForm: personPlan.appliedForm, personId: personPlan.personId as string | null };
 
     const orgLeadership = await loadEmployeeOrgLeadership(prisma, id);
     const orgDept = orgLeadership.isOrgLeader
@@ -4164,30 +4308,9 @@ app.put("/api/employees/:id", requireAppAuth, requireResourceOrHrEditor(EMPLOYEE
     );
     const hrProfile = hrBuilt.data;
 
-    const nextPersonId =
-      personResolve.personId !== null
-        ? personResolve.personId
-        : existingEmployee.personId;
-
-    // Vínculo já existente sem reenvio de personId: ainda assim sincroniza identidade.
-    if (nextPersonId && personResolve.personId === null) {
-      try {
-        await syncPersonIdentityFromAppliedForm(
-          prisma,
-          nextPersonId,
-          personResolve.appliedForm
-        );
-      } catch (linkErr) {
-        if (linkErr instanceof CanonicalPersonError) {
-          return res.status(linkErr.status).json({
-            error: linkErr.message,
-            code: linkErr.code,
-            conflicts: linkErr.conflicts,
-          });
-        }
-        throw linkErr;
-      }
-    }
+    // CP3: o personId final é decidido dentro da transação (plano aplicado lá); aqui só o valor
+    // preliminar para quem lê antes da escrita.
+    let nextPersonId: string | null = personResolve.personId ?? existingEmployee.personId ?? null;
 
     const resolvedName =
       (personResolve.appliedForm.displayName || "").trim() || cleanName;
@@ -4211,10 +4334,20 @@ app.put("/api/employees/:id", requireAppAuth, requireResourceOrHrEditor(EMPLOYEE
       terminationDate: existingEmployee.terminationDate,
     };
 
-    const employee = await prisma.$transaction(async (tx) => {
+    let accessRevocation: Awaited<ReturnType<typeof revokeAccessOnEmployeeTermination>> | null = null;
+    let personPropagation: Awaited<ReturnType<typeof propagateEmployeePersonToLinkedUser>> | null = null;
+    let employee;
+    try {
+      employee = await prisma.$transaction(async (tx) => {
       await tx.employeePayrollComponent.deleteMany({
         where: { employeeId: id },
       });
+      const appliedLink = await applyPersonLinkPlan(tx, personPlan);
+      nextPersonId = appliedLink.personId ?? existingEmployee.personId ?? null;
+      // Vínculo já existente sem reenvio de personId: ainda assim sincroniza identidade — dentro da transação.
+      if (nextPersonId && appliedLink.personId === null) {
+        await syncPersonIdentityFromAppliedForm(tx as unknown as typeof prisma, nextPersonId, personPlan.appliedForm);
+      }
       const updated = await tx.employee.update({
         where: { id },
         data: {
@@ -4273,8 +4406,36 @@ app.put("/api/employees/:id", requireAppAuth, requireResourceOrHrEditor(EMPLOYEE
         previous: historyPrevious,
         actorUserId,
       });
+      // E1: desligamento efetivo revoga o acesso da conta ligada por employeeId (flag de homologação).
+      accessRevocation = await revokeAccessOnEmployeeTermination(tx, {
+        employeeId: id,
+        previousStatus: existingEmployee.status,
+        nextStatus: persisted.status,
+        terminationDate: persisted.terminationDate,
+        actorUserId,
+        ipAddress: resolveAuditIpAddress(req.socket?.remoteAddress),
+        userAgent: normalizeUserAgent(req.headers["user-agent"]),
+      });
+      // E4: a conta ligada acompanha a Pessoa do colaborador quando a associação é inequívoca.
+      personPropagation = await propagateEmployeePersonToLinkedUser(tx, {
+        employeeId: id,
+        personId: nextPersonId ?? null,
+        previousPersonId: existingEmployee.personId ?? null,
+      });
       return updated;
     });
+    } catch (linkErr) {
+      if (linkErr instanceof CanonicalPersonError) {
+        return res.status(linkErr.status).json({ error: linkErr.message, code: linkErr.code, conflicts: linkErr.conflicts });
+      }
+      throw linkErr;
+    }
+    if (accessRevocation && accessRevocation.action !== "SKIP") {
+      logEmployeeHrAudit({ event: "employee.termination.access_revoked", actorUserId, employeeId: id, details: { userId: accessRevocation.userId } });
+    }
+    if (personPropagation && personPropagation.outcome !== "ALREADY_SAME" && personPropagation.outcome !== "NO_LINKED_USER" && personPropagation.outcome !== "NO_PERSON") {
+      logEmployeeHrAudit({ event: "employee.person.propagation", actorUserId, employeeId: id, details: { ...personPropagation } });
+    }
 
     if (existingEmployee.managerId !== persisted.managerId) {
       logEmployeeHrAudit({

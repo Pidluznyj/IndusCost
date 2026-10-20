@@ -222,8 +222,15 @@ export async function fetchUserPermissionAudit(
   return Array.isArray(res.entries) ? res.entries : [];
 }
 
+/**
+ * E3: o backend nunca apaga a conta — o pedido vira inativação com revogação de sessões
+ * e auditoria. `deletedUserId` permanece por compatibilidade.
+ */
 export async function deleteAdminUser(userId: string): Promise<{
   success: true;
+  deactivatedUserId: string;
+  physicallyDeleted: false;
+  revokedSessions: number;
   deletedUserId: string;
   email: string;
   name: string;

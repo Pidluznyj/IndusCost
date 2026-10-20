@@ -18,6 +18,8 @@ export type EligibleEmployeeRow = {
   corporateEmail?: string | null;
   department: string;
   status: string | null;
+  /** E4: identidade canônica do colaborador — copiada para a conta na criação. */
+  personId?: string | null;
 };
 
 export type EligibleEmployeeForUserDto = EligibleEmployeeRow & {

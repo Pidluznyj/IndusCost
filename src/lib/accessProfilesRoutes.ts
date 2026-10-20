@@ -19,6 +19,7 @@ import {
   updateAccessProfile,
 } from "@/src/lib/accessProfilesService.js";
 import { REQUIRE_RESOURCE_ADMIN_KEYS } from "@/src/lib/security/requireResource.js";
+import type { SuperAdminGuardActor } from "@/src/lib/security/superAdminRoleGuard.js";
 
 type RouteDeps = {
   requireAppAuth: express.RequestHandler;
@@ -26,6 +27,8 @@ type RouteDeps = {
     resourceKey: string,
     action?: string
   ) => RequestHandler;
+  /** E2: ator (papel + elevação) para a guarda de SUPER_ADMIN ao aplicar perfis. */
+  resolveActor?: (req: express.Request) => SuperAdminGuardActor;
 };
 
 function sendAccessProfileError(
@@ -43,6 +46,10 @@ function handleAccessProfileError(res: express.Response, error: unknown) {
     const status =
       error.code === "NOT_FOUND"
         ? 404
+        : error.code === "SUPER_ADMIN_REQUIRED" || error.code === "ADMIN_ELEVATION_REQUIRED"
+          ? 403
+          : error.code === "CANNOT_PROMOTE_SELF"
+            ? 409
         : ACCESS_PROFILE_VALIDATION_CODES.has(error.code)
           ? 400
           : ACCESS_PROFILE_CONFLICT_CODES.has(error.code)
@@ -146,6 +153,7 @@ export function registerAccessProfilesRoutes(app: express.Express, deps: RouteDe
         confirm: req.body?.confirm === true,
         overwriteCustomized: req.body?.overwriteCustomized !== false,
         actorUserId: actorId(req),
+        actor: deps.resolveActor?.(req),
       });
       return res.json({ result });
     } catch (error) {
