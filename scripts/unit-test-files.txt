@@ -90,6 +90,8 @@ src/lib/cnpjWeeklyRefresh/eligibility.test.ts
 src/lib/cnpjWeeklyRefresh/throttle.test.ts
 src/lib/cnpjWeeklyRefresh/refreshRun.test.ts
 src/lib/cnpjWeeklyRefresh/adminRoutes.test.ts
+src/lib/quodDossier/quodDossier.test.ts
+src/components/customers/QuodDossierSection.test.tsx
 src/components/settings/CnpjWeeklyRefreshAdminCard.test.tsx
 src/lib/commercial/customerSalesBlockUi.test.tsx
 src/components/customers/CustomerCnpjRiskTag.test.tsx
