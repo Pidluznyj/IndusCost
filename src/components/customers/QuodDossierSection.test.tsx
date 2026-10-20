@@ -4,7 +4,11 @@ import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { QuodIntelligenceHeader, QuodPaidConsultationDialog } from "./QuodDossierSection.js";
+import {
+  QuodIntelligenceHeader,
+  QuodPaidConsultationDialog,
+  QuodSuperAdminPanel,
+} from "./QuodDossierSection.js";
 
 describe("confirmação do dossiê QUOD", () => {
   it("deixa confirmar desabilitado até o checkbox e não dispara consulta ao abrir", () => {
@@ -42,6 +46,33 @@ describe("confirmação do dossiê QUOD", () => {
     assert.match(html, /Não consultado/);
     assert.match(html, /Bloqueado/);
     assert.match(html, /não remove bloqueio/);
+    // Nomenclatura: o veredito cadastral "VENDA LIBERADA" não é exibido como autorização.
+    assert.equal(html.includes("VENDA LIBERADA"), false);
+    assert.match(html, /Qualidade cadastral/);
+    assert.match(html, /Análise externa — QUOD/);
+  });
+
+  it("formata datas em pt-BR e destaca alertas do QUOD sem inferir negativação", () => {
+    const html = renderToStaticMarkup(
+      <QuodSuperAdminPanel
+        state="VALID"
+        consultedAt="2026-10-20T15:03:00.000Z"
+        validUntil="2026-10-27T15:03:00.000Z"
+        score={376}
+        restrictionCount={0}
+        priceLabel="R$ 6,99"
+        canQuery={false}
+        alerts={["Atrasos vigentes em contratos recentes", "Média elevada de dias em atraso"]}
+        onView={() => undefined}
+        onRequestPaid={() => undefined}
+        report={null}
+      />
+    );
+    assert.match(html, / às \d{2}:\d{2}/);
+    assert.doesNotMatch(html, /2026-10-20T15:03/);
+    assert.match(html, /QUOD identificou sinais de atraso/);
+    assert.match(html, /Atrasos vigentes em contratos recentes/);
+    assert.match(html, /Não equivalem a negativação confirmada/);
   });
 
   it("desabilita confirmar durante o envio e não usa crypto.randomUUID direto", () => {

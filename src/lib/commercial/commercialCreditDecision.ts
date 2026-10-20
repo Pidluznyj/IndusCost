@@ -16,6 +16,7 @@ export const COMMERCIAL_CREDIT_EXCEPTION_SCOPES = [
   "RELATED_PARTY",
   "UNVERIFIED",
   "QUOD_REVIEW",
+  "IEPTB_REVIEW",
 ] as const;
 
 export type CommercialCreditExceptionScope = (typeof COMMERCIAL_CREDIT_EXCEPTION_SCOPES)[number];
@@ -82,6 +83,13 @@ export type CommercialQuodEvidence = {
   insufficient: boolean;
 };
 
+/** Evidência IEPTB. constamProtestos confirmado gera análise, não liberação. Score QUOD não entra. */
+export type CommercialIeptbEvidence = {
+  state: "NOT_CONSULTED" | "VALID" | "STALE" | "FAILED" | "PARTIAL" | "UNAVAILABLE" | "IN_PROGRESS";
+  confirmedProtest: boolean;
+  insufficient: boolean;
+};
+
 export type CommercialCreditDecision = {
   status: CommercialCreditDecisionStatus;
   /** Postura financeira depois da exceção e antes de separar à vista/antecipado. */
@@ -102,6 +110,8 @@ export type CommercialCreditDecision = {
     cadastralVerdict: string | null;
     quodState: CommercialQuodEvidence["state"];
     quodConfirmedRestriction: boolean;
+    ieptbState: CommercialIeptbEvidence["state"];
+    ieptbConfirmedProtest: boolean;
   };
 };
 
@@ -128,6 +138,8 @@ const REASON_PRIORITY = [
   "RELATED_PARTY_UNVERIFIED",
   "QUOD_EXTERNAL_RESTRICTION",
   "QUOD_INSUFFICIENT",
+  "IEPTB_NATIONAL_PROTEST",
+  "IEPTB_INSUFFICIENT",
 ] as const;
 
 const MESSAGES: Record<string, string> = {
@@ -148,6 +160,10 @@ const MESSAGES: Record<string, string> = {
     "Crédito em análise: evidência externa do dossiê exige decisão administrativa. O score externo não libera o cliente e não detalha o relatório.",
   QUOD_INSUFFICIENT:
     "Crédito em análise: a consulta externa não trouxe informação suficiente. Isso não significa cliente regular.",
+  IEPTB_NATIONAL_PROTEST:
+    "Crédito em análise: protesto nacional confirmado na consulta IEPTB. Exige decisão administrativa. Não substitui o protesto interno Nomus.",
+  IEPTB_INSUFFICIENT:
+    "Crédito em análise: a consulta nacional de protestos não trouxe informação suficiente. Isso não significa ausência de protesto.",
   ADVANCE_NOT_CONFIRMED: "Pagamento antecipado só segue quando estiver aprovado e confirmado.",
   CASH_NOT_CREDIT: "À vista não é venda a prazo.",
   ADVANCE_CONFIRMED: "Pagamento antecipado aprovado e confirmado.",
@@ -302,6 +318,7 @@ function customerHolds(input: {
   suppressedProtestTitleIds?: readonly number[];
   externalProtestReview?: ExternalProtestReviewKind;
   quod?: CommercialQuodEvidence | null;
+  ieptb?: CommercialIeptbEvidence | null;
 }): Hold[] {
   const holds: Hold[] = [];
   const delinquency = input.delinquency;
@@ -343,6 +360,14 @@ function customerHolds(input: {
       pushHold(holds, { status: "EM_ANALISE", reason: "QUOD_INSUFFICIENT", scope: "QUOD_REVIEW" });
     }
   }
+  const ieptb = input.ieptb;
+  if (ieptb && (ieptb.state === "VALID" || ieptb.state === "STALE" || ieptb.state === "PARTIAL")) {
+    if (ieptb.confirmedProtest) {
+      pushHold(holds, { status: "EM_ANALISE", reason: "IEPTB_NATIONAL_PROTEST", scope: "IEPTB_REVIEW" });
+    } else if (ieptb.state === "VALID" && ieptb.insufficient) {
+      pushHold(holds, { status: "EM_ANALISE", reason: "IEPTB_INSUFFICIENT", scope: "IEPTB_REVIEW" });
+    }
+  }
   return holds;
 }
 
@@ -377,6 +402,7 @@ export function decideCommercialCredit(input: {
   cadastral?: { score: number | null; verdict: string | null } | null;
   /** Score numérico do provedor é ignorado de propósito. */
   quod?: CommercialQuodEvidence | null;
+  ieptb?: CommercialIeptbEvidence | null;
   now: Date;
 }): CommercialCreditDecision {
   const externalProtest = input.externalProtest ?? "ABSENT";
@@ -391,6 +417,7 @@ export function decideCommercialCredit(input: {
     suppressedProtestTitleIds: input.suppressedProtestTitleIds,
     externalProtestReview: input.externalProtestReview,
     quod: input.quod,
+    ieptb: input.ieptb,
   });
   const live = (input.exceptions ?? []).filter((row) => isLiveException(row, input.now));
   const applied = live.filter((row) => holds.some((hold) => hold.scope === row.scope));
@@ -454,6 +481,8 @@ export function decideCommercialCredit(input: {
       cadastralVerdict: input.cadastral?.verdict ?? null,
       quodState: input.quod?.state ?? "NOT_CONSULTED",
       quodConfirmedRestriction: input.quod?.confirmedRestriction === true,
+      ieptbState: input.ieptb?.state ?? "NOT_CONSULTED",
+      ieptbConfirmedProtest: input.ieptb?.confirmedProtest === true,
     },
   };
 }

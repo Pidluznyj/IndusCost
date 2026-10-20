@@ -1,10 +1,20 @@
 import React from "react";
-import { AlertTriangle, Loader2, RefreshCw, ShieldAlert } from "lucide-react";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  HelpCircle,
+  Loader2,
+  Lock,
+  RefreshCw,
+  ShieldAlert,
+} from "lucide-react";
 import {
   INTELLIGENCE_FACT_LABEL,
   presentCnpjSourceFact,
   type CnpjSourceFactInput,
   type CommercialCreditIntelligenceView,
+  type CreditDecisionReason,
+  type CreditDecisionSeverity,
 } from "@/src/lib/commercial/commercialCreditIntelligenceView";
 import { cn } from "@/src/lib/utils";
 
@@ -22,6 +32,140 @@ function Fact({ label, value }: { label: string; value: string }) {
       <span className="text-slate-500">{label}: </span>
       <span>{value}</span>
     </p>
+  );
+}
+
+const DECISION_TONE_CLASS: Record<
+  CommercialCreditIntelligenceView["decisionTone"],
+  { box: string; badge: string }
+> = {
+  critical: { box: "border-red-500 bg-red-100 text-red-950", badge: "bg-red-700 text-white" },
+  blocked: { box: "border-red-300 bg-red-50 text-red-900", badge: "bg-red-600 text-white" },
+  review: { box: "border-amber-300 bg-amber-50 text-amber-900", badge: "bg-amber-500 text-white" },
+  released: { box: "border-emerald-300 bg-emerald-50 text-emerald-900", badge: "bg-emerald-600 text-white" },
+  undetermined: { box: "border-slate-300 bg-slate-100 text-slate-800", badge: "bg-slate-500 text-white" },
+};
+
+function DecisionIcon({ tone, className }: { tone: CommercialCreditIntelligenceView["decisionTone"]; className?: string }) {
+  if (tone === "released") return <CheckCircle2 className={className} aria-hidden />;
+  if (tone === "review") return <AlertTriangle className={className} aria-hidden />;
+  if (tone === "undetermined") return <HelpCircle className={className} aria-hidden />;
+  if (tone === "critical") return <ShieldAlert className={className} aria-hidden />;
+  return <Lock className={className} aria-hidden />;
+}
+
+const SEVERITY_LABEL: Record<CreditDecisionSeverity, string> = {
+  CRITICAL: "Crítico",
+  HIGH: "Alto",
+  MEDIUM: "Atenção",
+  INFO: "Informativo",
+};
+
+const SEVERITY_CLASS: Record<CreditDecisionSeverity, string> = {
+  CRITICAL: "bg-red-700 text-white",
+  HIGH: "bg-red-600 text-white",
+  MEDIUM: "bg-amber-500 text-white",
+  INFO: "bg-slate-500 text-white",
+};
+
+/**
+ * Cabeçalho executivo de decisão de crédito (estados A–E).
+ * A decisão vem do motor comercial; nunca do score cadastral.
+ */
+export function CreditDecisionHeader({
+  credit,
+  loading,
+  error,
+  sticky = false,
+}: {
+  credit: CommercialCreditIntelligenceView | null;
+  loading: boolean;
+  error: string | null;
+  sticky?: boolean;
+}) {
+  const tone: CommercialCreditIntelligenceView["decisionTone"] =
+    error || !credit ? "undetermined" : credit.decisionTone;
+  const title = error
+    ? "CRÉDITO NÃO DETERMINADO"
+    : credit?.decisionTitle ?? "CRÉDITO NÃO DETERMINADO";
+  const description = error
+    ? "A situação de crédito ficou indisponível. É necessária análise antes da venda a prazo."
+    : credit?.decisionDescription ??
+      "Não foi possível confirmar as condições de crédito. É necessária análise antes da venda a prazo.";
+  const toneClass = DECISION_TONE_CLASS[tone];
+  return (
+    <div
+      className={cn(
+        "rounded-xl border-2 p-4",
+        toneClass.box,
+        sticky && "sticky top-0 z-20 shadow-sm"
+      )}
+      data-testid="cnpj-credit-decision-header"
+      data-decision-state={error || !credit ? "NAO_DETERMINADO" : credit.decisionState}
+      role="status"
+      aria-live="polite"
+    >
+      <div className="flex items-start gap-3">
+        <DecisionIcon tone={tone} className="mt-0.5 h-7 w-7 shrink-0" />
+        <div className="min-w-0 flex-1">
+          <p className="text-lg font-extrabold uppercase leading-tight tracking-tight sm:text-xl">
+            {loading && !credit ? "Avaliando crédito…" : title}
+          </p>
+          <p className="mt-1 text-sm font-medium opacity-90">{description}</p>
+          {tone === "blocked" || tone === "critical" ? (
+            <p className="mt-1 text-sm font-bold uppercase">Não vender a prazo sem liberação autorizada</p>
+          ) : null}
+          <p className="mt-2 text-[11px] uppercase tracking-wide opacity-70">
+            Decisão do motor comercial · Última avaliação:{" "}
+            {credit?.decisionEvaluatedAtLabel ?? INTELLIGENCE_FACT_LABEL.NOT_CONSULTED}
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function renderReasonCard(reason: CreditDecisionReason) {
+  return (
+    <li
+      key={reason.code}
+      className="rounded-lg border border-slate-200 bg-white p-3"
+      data-testid="cnpj-credit-reason"
+      data-reason-code={reason.code}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <p className="font-semibold text-slate-800">{reason.label}</p>
+        <span
+          className={cn(
+            "shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide",
+            SEVERITY_CLASS[reason.severity]
+          )}
+        >
+          {SEVERITY_LABEL[reason.severity]}
+        </span>
+      </div>
+      <p className="mt-1 text-sm text-slate-700">{reason.description}</p>
+      <p className="mt-1 text-[11px] text-slate-500">Origem: {reason.origin}</p>
+    </li>
+  );
+}
+
+/** "POR QUE ESTE CLIENTE ESTÁ BLOQUEADO?" — motivos reais do motor. */
+export function CreditDecisionReasons({ credit }: { credit: CommercialCreditIntelligenceView | null }) {
+  const reasons = credit?.decisionReasons ?? [];
+  if (reasons.length === 0) return null;
+  const heading =
+    credit?.decisionState === "EM_ANALISE"
+      ? "POR QUE ESTE CLIENTE EXIGE ANÁLISE?"
+      : "POR QUE ESTE CLIENTE ESTÁ BLOQUEADO?";
+  return (
+    <section
+      className="rounded-xl border border-slate-200 bg-slate-50 p-4"
+      data-testid="cnpj-credit-reasons"
+    >
+      <h3 className="text-sm font-bold uppercase tracking-wide text-slate-700">{heading}</h3>
+      <ul className="mt-3 space-y-2">{reasons.map(renderReasonCard)}</ul>
+    </section>
   );
 }
 
@@ -66,32 +210,20 @@ export function CustomerCnpjCreditSections({ credit, loading, error, sources = [
         </div>
       ) : null}
 
-      {credit?.headline ? (
-        <div
-          className="rounded-lg border border-red-300 bg-red-50 px-3 py-3 text-red-950"
-          data-testid="cnpj-credit-blocked"
-        >
-          <p className="flex items-center gap-2 text-base font-semibold">
-            <ShieldAlert className="h-5 w-5" />
-            {credit.headline}
-          </p>
-          <p className="mt-1 text-xs">
-            O bloqueio vale mesmo com score cadastral alto. O veredito cadastral não autoriza venda a prazo.
-          </p>
-        </div>
-      ) : null}
+      <CreditDecisionReasons credit={credit} />
 
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="min-w-0 rounded-lg border p-3 text-sm" data-testid="cnpj-credit-cadastral">
-          <h4 className="mb-2 font-semibold">1. Score cadastral</h4>
+          <h4 className="mb-2 font-semibold">Qualidade cadastral</h4>
           <p>
-            Score cadastral: {credit?.cadastralScoreLabel ?? INTELLIGENCE_FACT_LABEL.NOT_CONSULTED}
-            {credit?.cadastralVerdict ? ` · ${credit.cadastralVerdict}` : ""}
+            Qualidade cadastral: {credit?.cadastralScoreLabel ?? INTELLIGENCE_FACT_LABEL.NOT_CONSULTED}
           </p>
-          <p className="mt-1 text-xs text-slate-600">Veredito cadastral. Não autoriza crédito nem venda a prazo.</p>
+          <p className="mt-1 text-xs text-slate-600">
+            Indicador de consistência e características cadastrais. Não representa aprovação de crédito.
+          </p>
         </div>
         <div className="min-w-0 rounded-lg border p-3 text-sm" data-testid="cnpj-credit-internal">
-          <h4 className="mb-2 font-semibold">2. Situação de crédito interno</h4>
+          <h4 className="mb-2 font-semibold">2. Situação de crédito interno — Histórico financeiro (Nomus)</h4>
           <Fact label="Situação da análise" value={credit?.situationLabel ?? (error ? INTELLIGENCE_FACT_LABEL.UNAVAILABLE : INTELLIGENCE_FACT_LABEL.NOT_CONSULTED)} />
           <Fact label="Valor vencido" value={credit?.overdueAmountLabel ?? (error ? INTELLIGENCE_FACT_LABEL.UNAVAILABLE : INTELLIGENCE_FACT_LABEL.NOT_CONSULTED)} />
           <Fact label="Quantidade de títulos" value={credit?.overdueTitleCountLabel ?? (error ? INTELLIGENCE_FACT_LABEL.UNAVAILABLE : INTELLIGENCE_FACT_LABEL.NOT_CONSULTED)} />

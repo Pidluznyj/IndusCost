@@ -5,6 +5,9 @@ import {
   BCB_CNPJ_NO_QUERY_DETAIL,
   INTELLIGENCE_FACT_LABEL,
   buildCommercialCreditIntelligenceView,
+  describeCreditDecisionReasons,
+  formatCreditDateTime,
+  notConsultedCommercialCreditView,
   presentCnpjSourceFact,
 } from "./commercialCreditIntelligenceView.js";
 import type { CommercialDelinquencyAnalysis } from "./customerDelinquencyAnalysis.js";
@@ -112,5 +115,96 @@ describe("apresentação da consulta CNPJ", () => {
     assert.equal(visible.cadastralScoreLabel, "91/100");
     assert.equal(visible.cadastralVerdict, "VENDA LIBERADA");
     assert.equal(visible.cadastralAuthorizesCredit, false);
+    // Redesign: estado executivo e motivos reais, sem mudar o score cadastral.
+    assert.equal(visible.decisionState, "BLOQUEADO");
+    assert.equal(visible.decisionTitle, "CRÉDITO BLOQUEADO");
+    assert.match(visible.decisionDescription, /Venda a prazo não autorizada/);
+    assert.ok(visible.decisionReasons.some((r) => r.code === "OVERDUE_OPEN_BALANCE"));
+    assert.equal(visible.decisionReasons[0]?.origin, "Contas a Receber — Nomus");
+  });
+});
+
+describe("cabeçalho executivo de decisão de crédito", () => {
+  function decisionFor(overrides: Partial<CommercialDelinquencyAnalysis>, extra?: Parameters<typeof decideCommercialCredit>[0]["quod"]) {
+    const delinquency = analysis(overrides);
+    const decision = decideCommercialCredit({
+      customerId: CUSTOMER,
+      enforcement: "CREDIT_GRANT",
+      paymentTerms: "30",
+      delinquency,
+      cadastral: { score: 91, verdict: "VENDA LIBERADA" },
+      quod: extra,
+      now: NOW,
+    });
+    return buildCommercialCreditIntelligenceView({ decision, delinquency, externalProtest: "ABSENT", revealFinancial: true });
+  }
+
+  it("mapeia bloqueio crítico (protesto interno)", () => {
+    const view = decisionFor({ status: "PROTESTED", evidence: { protestedTitleIds: [7] } as never });
+    assert.equal(view.decisionState, "BLOQUEIO_CRITICO");
+    assert.equal(view.decisionTitle, "BLOQUEIO CRÍTICO DE CRÉDITO");
+    assert.equal(view.decisionTone, "critical");
+    assert.ok(view.decisionReasons.some((r) => r.code === "INTERNAL_PROTEST" && r.severity === "CRITICAL"));
+  });
+
+  it("mapeia crédito em análise (dados financeiros não verificados)", () => {
+    const view = decisionFor({ status: "UNKNOWN", unknownReason: "SYNC_FAILED" });
+    assert.equal(view.decisionState, "EM_ANALISE");
+    assert.equal(view.decisionTitle, "CRÉDITO EM ANÁLISE");
+    assert.equal(view.decisionTone, "review");
+  });
+
+  it("mapeia crédito liberado somente quando o motor libera", () => {
+    const view = decisionFor({});
+    assert.equal(view.decisionState, "LIBERADO");
+    assert.equal(view.decisionTitle, "CRÉDITO LIBERADO");
+    assert.equal(view.decisionTone, "released");
+    assert.deepEqual(view.decisionReasons, []);
+  });
+
+  it("não determina crédito quando não consultado (sem verde implícito)", () => {
+    const view = notConsultedCommercialCreditView();
+    assert.equal(view.decisionState, "NAO_DETERMINADO");
+    assert.equal(view.decisionTitle, "CRÉDITO NÃO DETERMINADO");
+    assert.equal(view.decisionTone, "undetermined");
+    assert.equal(view.consulted, false);
+  });
+
+  it("QUOD com restrição confirmada leva a EM_ANÁLISE sem converter o score externo", () => {
+    const view = decisionFor({}, { state: "VALID", confirmedRestriction: true, insufficient: false });
+    assert.equal(view.decisionState, "EM_ANALISE");
+    assert.equal(view.quodState, "VALID");
+    assert.equal(view.quodConfirmedRestriction, true);
+    assert.ok(view.decisionReasons.some((r) => r.code === "QUOD_EXTERNAL_RESTRICTION" && r.origin === "Dossiê QUOD — Direct Data"));
+    // score externo alto nunca aparece como aprovação: a decisão continua em análise
+    assert.notEqual(view.decisionState, "LIBERADO");
+  });
+
+  it("QUOD com atrasos mas pendências zero não é tratado como cliente regular", () => {
+    // pendências zero + score insuficiente marca análise, não liberação
+    const view = decisionFor({}, { state: "VALID", confirmedRestriction: false, insufficient: true });
+    assert.equal(view.decisionState, "EM_ANALISE");
+    assert.ok(view.decisionReasons.some((r) => r.code === "QUOD_INSUFFICIENT"));
+  });
+});
+
+describe("catálogo de motivos e datas", () => {
+  it("descreve apenas motivos conhecidos, com origem e gravidade, sem duplicar", () => {
+    const reasons = describeCreditDecisionReasons([
+      "OVERDUE_OPEN_BALANCE",
+      "OVERDUE_OPEN_BALANCE",
+      "REGULAR",
+      "QUOD_EXTERNAL_RESTRICTION",
+    ]);
+    assert.equal(reasons.length, 2);
+    assert.equal(reasons[0]?.code, "OVERDUE_OPEN_BALANCE");
+    assert.equal(reasons[0]?.severity, "HIGH");
+    assert.ok(reasons.every((r) => r.origin.length > 0));
+  });
+
+  it("formata data/hora em pt-BR com 'às' e trata ausência/erro", () => {
+    assert.match(formatCreditDateTime("2026-10-20T15:03:00.000Z"), /^\d{2}\/\d{2}\/\d{4} às \d{2}:\d{2}$/);
+    assert.equal(formatCreditDateTime(null), INTELLIGENCE_FACT_LABEL.NOT_CONSULTED);
+    assert.equal(formatCreditDateTime("not-a-date"), INTELLIGENCE_FACT_LABEL.UNAVAILABLE);
   });
 });

@@ -779,6 +779,7 @@ import { registerMaterialStockValueRoutes } from "./src/lib/materialStockValueRo
 import { registerMaterialStockSpreadsheetMirrorAdminRoutes } from "./src/lib/materialStockSpreadsheetMirror/adminRoutes.js";
 import { registerCnpjWeeklyRefreshAdminRoutes } from "./src/lib/cnpjWeeklyRefresh/adminRoutes.js";
 import { registerQuodDossierRoutes } from "./src/lib/quodDossier/routes.js";
+import { registerCreditIntelligencePackageRoutes } from "./src/lib/creditIntelligencePackage/routes.js";
 import { enqueueMaterialStockSpreadsheetMirrorBestEffort } from "./src/lib/materialStockSpreadsheetMirror/enqueue.server.js";
 import {
   applyNomusBomBatchFromDashboard,
@@ -8993,6 +8994,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   );
 
   registerQuodDossierRoutes(app, { requireAppAuth, getCurrentAppUser }, { prisma });
+  registerCreditIntelligencePackageRoutes(app, { requireAppAuth, getCurrentAppUser }, { prisma });
 
   app.get(
     "/api/nomus/bom-auto-apply/products/apply-readiness",

@@ -5,7 +5,11 @@ import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { CustomerCnpjCreditSections } from "./CustomerCnpjCreditSections";
+import {
+  CreditDecisionHeader,
+  CreditDecisionReasons,
+  CustomerCnpjCreditSections,
+} from "./CustomerCnpjCreditSections";
 import { buildCommercialCreditIntelligenceView } from "@/src/lib/commercial/commercialCreditIntelligenceView";
 import { decideCommercialCredit } from "@/src/lib/commercial/commercialCreditDecision";
 import type { CommercialDelinquencyAnalysis } from "@/src/lib/commercial/customerDelinquencyAnalysis";
@@ -60,11 +64,7 @@ describe("Consulta CNPJ — score 91 e crédito bloqueado", () => {
     });
     const html = renderToStaticMarkup(
       <div className="w-full max-w-5xl">
-        <section data-testid="cnpj-cadastral-score">
-          <p>1. Score cadastral</p>
-          <p>Score cadastral: 91/100 · VENDA LIBERADA</p>
-          <p>Veredito cadastral. Não autoriza crédito nem venda a prazo.</p>
-        </section>
+        <CreditDecisionHeader credit={credit} loading={false} error={null} />
         <CustomerCnpjCreditSections
           credit={credit}
           loading={false}
@@ -76,9 +76,11 @@ describe("Consulta CNPJ — score 91 e crédito bloqueado", () => {
         />
       </div>
     );
-    assert.match(html, /91\/100 · VENDA LIBERADA/);
+    // A decisão aparece primeiro e o cadastro vira "Qualidade cadastral" (sem "VENDA LIBERADA").
     assert.match(html, /CRÉDITO BLOQUEADO/);
-    assert.match(html, /Não autoriza crédito nem venda a prazo/);
+    assert.match(html, /Qualidade cadastral: 91\/100/);
+    assert.equal(html.includes("VENDA LIBERADA"), false);
+    assert.match(html, /Não representa aprovação de crédito/);
     assert.match(html, /2\. Situação de crédito interno/);
     assert.match(html, /3\. Restrições externas verificadas/);
     assert.match(html, /4\. Decisão comercial final/);
@@ -103,5 +105,62 @@ describe("Consulta CNPJ — score 91 e crédito bloqueado", () => {
     assert.ok(panel.includes("CustomerCnpjCreditSections"));
     assert.ok(panel.includes("Consulta CNPJ / Inteligência Comercial"));
     assert.ok(panel.includes('data-testid="customer-cnpj-intelligence-dialog"'));
+    // Redesign: cabeçalho executivo presente e nenhum bloco verde "VENDA LIBERADA" no painel.
+    assert.ok(panel.includes("CreditDecisionHeader"));
+    assert.equal(panel.includes("VENDA LIBERADA"), false);
+    assert.equal(panel.includes("bg-emerald-100"), false);
+  });
+});
+
+describe("Cabeçalho executivo e motivos de crédito", () => {
+  function blockedCredit() {
+    const delinquency = overdue();
+    const decision = decideCommercialCredit({
+      customerId: "11111111-1111-4111-8111-111111111111",
+      enforcement: "CREDIT_GRANT",
+      paymentTerms: "30",
+      delinquency,
+      cadastral: { score: 91, verdict: "VENDA LIBERADA" },
+      now: new Date(2026, 9, 19, 12, 0, 0),
+    });
+    return buildCommercialCreditIntelligenceView({
+      decision,
+      delinquency,
+      externalProtest: "ABSENT",
+      revealFinancial: true,
+    });
+  }
+
+  it("mostra a decisão bloqueada em destaque, com data e sem depender só de cor", () => {
+    const html = renderToStaticMarkup(
+      <CreditDecisionHeader credit={blockedCredit()} loading={false} error={null} />
+    );
+    assert.match(html, /CRÉDITO BLOQUEADO/);
+    assert.match(html, /Venda a prazo não autorizada/);
+    assert.match(html, /data-decision-state="BLOQUEADO"/);
+    assert.match(html, /Última avaliação/);
+    assert.match(html, /role="status"/);
+  });
+
+  it("sem crédito ou com erro apresenta CRÉDITO NÃO DETERMINADO, nunca verde", () => {
+    const err = renderToStaticMarkup(
+      <CreditDecisionHeader credit={null} loading={false} error="Falha de rede" />
+    );
+    assert.match(err, /CRÉDITO NÃO DETERMINADO/);
+    assert.match(err, /data-decision-state="NAO_DETERMINADO"/);
+    assert.equal(err.includes("bg-emerald-50"), false);
+  });
+
+  it("lista os motivos reais do bloqueio com origem e gravidade", () => {
+    const html = renderToStaticMarkup(<CreditDecisionReasons credit={blockedCredit()} />);
+    assert.match(html, /POR QUE ESTE CLIENTE ESTÁ BLOQUEADO\?/);
+    assert.match(html, /Títulos vencidos em aberto/);
+    assert.match(html, /Origem: Contas a Receber — Nomus/);
+    assert.match(html, /data-reason-code="OVERDUE_OPEN_BALANCE"/);
+  });
+
+  it("não renderiza seção de motivos quando não há bloqueio", () => {
+    const html = renderToStaticMarkup(<CreditDecisionReasons credit={null} />);
+    assert.equal(html, "");
   });
 });

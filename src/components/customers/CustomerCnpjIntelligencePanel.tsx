@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   AlertTriangle,
@@ -13,7 +13,7 @@ import {
 import { CnpjCommercialIntelligencePrintReport } from "@/src/components/customers/CnpjCommercialIntelligencePrintReport";
 import { CustomerQuodDossierPanel } from "@/src/components/customers/CustomerQuodDossierPanel";
 import { useAuthOptional } from "@/src/contexts/AuthContext";
-import { CustomerCnpjCreditSections } from "@/src/components/customers/CustomerCnpjCreditSections";
+import { CreditDecisionHeader, CustomerCnpjCreditSections } from "@/src/components/customers/CustomerCnpjCreditSections";
 import { CustomerCreditOccurrenceHistory } from "@/src/components/customers/CustomerCreditOccurrenceHistory";
 import { fetchJsonOk } from "@/src/lib/http";
 import {
@@ -234,18 +234,6 @@ export function CustomerCnpjIntelligencePanel({
     window.print();
   }, [data, credit, creditError, creditLoading]);
 
-  const verdictClass = useMemo(() => {
-    if (!data) return "bg-slate-100 text-slate-800";
-    if (data.risk.verdict === "VENDA BLOQUEADA") return "bg-red-100 text-red-900 border-red-200";
-    if (data.risk.verdict === "APENAS PAGAMENTO ANTECIPADO") {
-      return "bg-amber-100 text-amber-900 border-amber-200";
-    }
-    if (data.risk.verdict === "VENDA CONDICIONADA") {
-      return "bg-yellow-50 text-yellow-900 border-yellow-200";
-    }
-    return "bg-emerald-100 text-emerald-900 border-emerald-200";
-  }, [data]);
-
   const copyJson = async () => {
     if (!data) return;
     await navigator.clipboard.writeText(JSON.stringify(data.rawJson, null, 2));
@@ -419,6 +407,7 @@ export function CustomerCnpjIntelligencePanel({
 
           {customerId && !data && !loading ? (
             <>
+              <CreditDecisionHeader credit={credit} loading={creditLoading} error={creditError} sticky />
               <CustomerQuodDossierPanel
                 customerId={customerId}
                 companyName="Cliente"
@@ -515,6 +504,8 @@ export function CustomerCnpjIntelligencePanel({
                 </div>
               </div>
 
+              <CreditDecisionHeader credit={credit} loading={creditLoading} error={creditError} sticky />
+
               <CustomerQuodDossierPanel
                 customerId={customerId}
                 companyName={data.summary.companyName}
@@ -525,26 +516,6 @@ export function CustomerCnpjIntelligencePanel({
                 isSuperAdmin={auth?.isSuperAdmin() === true}
                 requestedBy={auth?.authUser?.name || auth?.authUser?.email || "—"}
               />
-
-              <div className={cn("rounded-lg border p-4", verdictClass)} data-testid="cnpj-cadastral-score">
-                <p className="text-xs font-medium uppercase tracking-wide opacity-70">1. Score cadastral</p>
-                <div className="flex items-center gap-2 font-semibold">
-                  <Shield className="h-5 w-5" />
-                  Score cadastral: {data.risk.score}/100 · {data.risk.verdict}
-                </div>
-                <p className="text-xs mt-1" data-testid="cnpj-cadastral-score-disclaimer">
-                  Veredito cadastral. Não autoriza crédito nem venda a prazo.
-                </p>
-                <p className="text-sm mt-1">
-                  Risco: {data.risk.riskLevel} — {data.risk.saleRecommendation}
-                </p>
-                <ul className="mt-2 text-xs space-y-0.5 opacity-90">
-                  {data.risk.explanation.map((line) => (
-                    <li key={line}>• {line}</li>
-                  ))}
-                </ul>
-                <p className="text-xs mt-2 italic opacity-80">{data.commercial.disclaimer}</p>
-              </div>
 
               <CustomerCnpjCreditSections
                 credit={credit}
@@ -558,6 +529,24 @@ export function CustomerCnpjIntelligencePanel({
                   <CustomerCreditOccurrenceHistory customerId={customerId} />
                 </div>
               ) : null}
+
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-4" data-testid="cnpj-cadastral-score">
+                <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Qualidade cadastral</p>
+                <div className="flex items-center gap-2 font-semibold text-slate-800">
+                  <Shield className="h-5 w-5" />
+                  Qualidade cadastral: {data.risk.score}/100
+                </div>
+                <p className="text-xs mt-1 text-slate-600" data-testid="cnpj-cadastral-score-disclaimer">
+                  Indicador de consistência e características cadastrais. Não representa aprovação de crédito nem
+                  autoriza venda a prazo.
+                </p>
+                <ul className="mt-2 text-xs space-y-0.5 text-slate-600">
+                  {data.risk.explanation.map((line) => (
+                    <li key={line}>• {line}</li>
+                  ))}
+                </ul>
+                <p className="text-xs mt-2 italic text-slate-500">{data.commercial.disclaimer}</p>
+              </div>
 
               <section className="grid gap-3 sm:grid-cols-2 text-sm">
                 <div className="rounded-lg border p-3 space-y-1">
