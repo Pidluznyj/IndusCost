@@ -59,33 +59,13 @@ export function CnpjCommercialIntelligencePrintReport({ data }: Props) {
         </table>
       </header>
 
-      <section className="cnpj-intelligence-print-section cnpj-intelligence-print-risk">
-        <h2 className="cnpj-intelligence-print-section-title">1. Score cadastral</h2>
-        <p className="cnpj-intelligence-print-lead">
-          Score cadastral: {formatCnpjPrintScore(data.risk.score)} · {formatCnpjPrintText(data.risk.verdict)}
-        </p>
-        <p className="cnpj-intelligence-print-note">
-          Veredito cadastral. Não autoriza crédito nem venda a prazo.
-        </p>
-        <p>
-          Risco: {formatCnpjPrintText(data.risk.riskLevel)} —{" "}
-          {formatCnpjPrintText(data.risk.saleRecommendation)}
-        </p>
-        {data.risk.explanation.length > 0 ? (
-          <ul className="cnpj-intelligence-print-list">
-            {data.risk.explanation.map((line) => (
-              <li key={line}>{line}</li>
-            ))}
-          </ul>
-        ) : null}
-        <p className="cnpj-intelligence-print-note">{formatCnpjPrintText(data.commercial.disclaimer)}</p>
-      </section>
-
       <section className="cnpj-intelligence-print-section" data-testid="cnpj-print-credit">
         <h2 className="cnpj-intelligence-print-section-title">Decisão de crédito</h2>
-        {data.credit?.headline ? (
-          <p className="cnpj-intelligence-print-blocked">{data.credit.headline}</p>
-        ) : null}
+        <p className="cnpj-intelligence-print-blocked">
+          {data.creditState === "error"
+            ? "CRÉDITO NÃO DETERMINADO"
+            : data.credit?.decisionTitle ?? "CRÉDITO NÃO DETERMINADO"}
+        </p>
         <p>
           {data.creditState === "loading"
             ? "Situação de crédito ainda carregando."
@@ -93,8 +73,28 @@ export function CnpjCommercialIntelligencePrintReport({ data }: Props) {
               ? "Situação de crédito indisponível."
               : data.creditState === "not_consulted" || !data.credit
                 ? "Situação de crédito não consultada."
-                : data.credit.situationLabel}
+                : data.credit.decisionDescription}
         </p>
+        {data.credit && data.credit.decisionReasons.length > 0 ? (
+          <table className="cnpj-intelligence-print-data-table">
+            <thead>
+              <tr>
+                <th>Motivo</th>
+                <th>Gravidade</th>
+                <th>Origem</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.credit.decisionReasons.map((reason) => (
+                <tr key={reason.code}>
+                  <td>{formatCnpjPrintText(`${reason.label}. ${reason.description}`)}</td>
+                  <td>{reason.severity}</td>
+                  <td>{formatCnpjPrintText(reason.origin)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : null}
         {data.credit ? (
           <table className="cnpj-intelligence-print-kv-table">
             <tbody>
@@ -157,6 +157,24 @@ export function CnpjCommercialIntelligencePrintReport({ data }: Props) {
         ) : (
           <p className="cnpj-intelligence-print-note">{data.credit?.bcbDetail ?? "Banco Central: não aplicável. Nenhuma consulta foi realizada."}</p>
         )}
+      </section>
+
+      <section className="cnpj-intelligence-print-section cnpj-intelligence-print-risk">
+        <h2 className="cnpj-intelligence-print-section-title">Qualidade cadastral</h2>
+        <p className="cnpj-intelligence-print-lead">
+          Score cadastral: {formatCnpjPrintScore(data.risk.score)}
+        </p>
+        <p className="cnpj-intelligence-print-note">
+          Indicador de consistência e características cadastrais. Não autoriza crédito nem venda a prazo.
+        </p>
+        {data.risk.explanation.length > 0 ? (
+          <ul className="cnpj-intelligence-print-list">
+            {data.risk.explanation.map((line) => (
+              <li key={line}>{line}</li>
+            ))}
+          </ul>
+        ) : null}
+        <p className="cnpj-intelligence-print-note">{formatCnpjPrintText(data.commercial.disclaimer)}</p>
       </section>
 
       <section className="cnpj-intelligence-print-section">

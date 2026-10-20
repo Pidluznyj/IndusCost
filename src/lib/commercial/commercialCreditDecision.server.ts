@@ -13,6 +13,7 @@ import {
   CommercialCreditExceptionError,
   decideCommercialCredit,
   resolveCommercialCreditExceptionPermission,
+  type CommercialIeptbEvidence,
   type CommercialQuodEvidence,
   validateCommercialCreditExceptionDraft,
   type CommercialCreditAdvanceConfirmation,
@@ -116,6 +117,47 @@ export async function loadQuodCreditEvidence(
   }
 }
 
+const IEPTB_NOT_CONSULTED: CommercialIeptbEvidence = {
+  state: "NOT_CONSULTED",
+  confirmedProtest: false,
+  insufficient: false,
+};
+
+/** Lê só o indicador da última consulta IEPTB válida. Sem payload. */
+export async function loadIeptbCreditEvidence(
+  db: object,
+  customerId: string,
+  now: Date
+): Promise<CommercialIeptbEvidence> {
+  const model = (db as {
+    ieptbOnlineConsultation?: {
+      findFirst(args: unknown): Promise<{
+        confirmedProtest: boolean;
+        insufficient: boolean;
+        validUntil: Date | null;
+      } | null>;
+    };
+  }).ieptbOnlineConsultation;
+  if (!model?.findFirst) return IEPTB_NOT_CONSULTED;
+  try {
+    const row = await model.findFirst({
+      where: { customerId, status: "SUCCEEDED" },
+      orderBy: { consultedAt: "desc" },
+      select: { confirmedProtest: true, insufficient: true, validUntil: true },
+    });
+    if (!row) return IEPTB_NOT_CONSULTED;
+    const fresh = row.validUntil != null && row.validUntil.getTime() > now.getTime();
+    return {
+      state: fresh ? "VALID" : "STALE",
+      confirmedProtest: row.confirmedProtest === true,
+      insufficient: row.insufficient === true,
+    };
+  } catch (error) {
+    console.error("ieptb-credit-evidence", error instanceof Error ? error.name : "error");
+    return IEPTB_NOT_CONSULTED;
+  }
+}
+
 function decisionAuditValue(decision: CommercialCreditDecision): string {
   return JSON.stringify({
     status: decision.status,
@@ -148,6 +190,7 @@ export async function readCommercialCreditDecision(
     advanceConfirmation?: CommercialCreditAdvanceConfirmation | null;
     cadastral?: { score: number | null; verdict: string | null } | null;
     quod?: CommercialQuodEvidence | null;
+    ieptb?: CommercialIeptbEvidence | null;
     now?: Date;
     externalProtestQuery?: {
       config?: ExternalProtestConfig;
@@ -244,6 +287,7 @@ export async function readCommercialCreditDecision(
     review: externalProtestConsultation.review,
   });
   const quod = input.quod === undefined ? await loadQuodCreditEvidence(db, input.customerId, now) : input.quod;
+  const ieptb = input.ieptb === undefined ? await loadIeptbCreditEvidence(db, input.customerId, now) : input.ieptb;
   const formalProtest = resolveConfirmedPendingProtest({
     occurrences,
     openProtestedTitleIds: delinquency.evidence.protestedTitleIds,
@@ -269,6 +313,7 @@ export async function readCommercialCreditDecision(
     advanceConfirmation: input.advanceConfirmation ?? null,
     cadastral: input.cadastral ?? null,
     quod,
+    ieptb,
     now,
   });
   return {

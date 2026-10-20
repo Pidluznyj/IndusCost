@@ -89,6 +89,13 @@ export function createPrismaQuodStore(prisma: PrismaClient): QuodStore {
       const rows = await db.findMany({ where: { customerId }, orderBy: { createdAt: "asc" } });
       return rows.map(toRecord);
     },
+    async monthSpend(monthStart, monthEnd) {
+      const spent = await db.aggregate({
+        where: { createdAt: { gte: monthStart, lt: monthEnd }, billingStatus: { not: "NOT_SENT" } },
+        _sum: { authorizedCostCents: true },
+      });
+      return spent._sum.authorizedCostCents ?? 0;
+    },
     async reserve(input): Promise<QuodReserveResult> {
       try {
         return await prisma.$transaction(async (tx) => {

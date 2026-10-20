@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { QUOD_DOSSIER_PRODUCT, QUOD_DOSSIER_PROVIDER, QUOD_PROTEST_COVERAGE_NOTE, QUOD_SCORE_SCALE_NOTE } from "@/src/lib/quodDossier/config";
+import { formatCreditDateTime } from "@/src/lib/commercial/commercialCreditIntelligenceView";
 import type { QuodSections } from "@/src/lib/quodDossier/parse";
 import { cn } from "@/src/lib/utils";
 
@@ -18,13 +19,13 @@ const STATE_LABEL: Record<QuodHeaderState, string> = {
 
 export function QuodIntelligenceHeader({
   cadastralScore,
-  cadastralVerdict,
   externalScore,
   externalState,
   creditLabel,
 }: {
   cadastralScore: string;
-  cadastralVerdict: string | null;
+  /** @deprecated veredito cadastral não é exibido: não autoriza venda a prazo. */
+  cadastralVerdict?: string | null;
   externalScore: number | null;
   externalState: QuodHeaderState;
   creditLabel: string;
@@ -32,19 +33,19 @@ export function QuodIntelligenceHeader({
   return (
     <div className="grid gap-2 sm:grid-cols-3" data-testid="quod-intelligence-header">
       <article className="rounded-lg border bg-white p-3">
-        <p className="text-[11px] font-medium uppercase tracking-wide text-slate-500">Score cadastral</p>
-        <p className="mt-1 text-sm font-semibold" data-testid="quod-header-cadastral">{cadastralScore}{cadastralVerdict ? ` · ${cadastralVerdict}` : ""}</p>
-        <p className="mt-1 text-[11px] text-slate-500">Estabilidade cadastral. Não autoriza crédito.</p>
+        <p className="text-[11px] font-medium uppercase tracking-wide text-slate-500">Qualidade cadastral</p>
+        <p className="mt-1 text-sm font-semibold" data-testid="quod-header-cadastral">{cadastralScore}</p>
+        <p className="mt-1 text-[11px] text-slate-500">Consistência cadastral. Não representa aprovação de crédito.</p>
       </article>
       <article className="rounded-lg border bg-white p-3">
-        <p className="text-[11px] font-medium uppercase tracking-wide text-slate-500">Score externo QUOD</p>
+        <p className="text-[11px] font-medium uppercase tracking-wide text-slate-500">Análise externa — QUOD</p>
         <p className="mt-1 text-sm font-semibold" data-testid="quod-header-external">
           {externalState === "RESTRICTED" ? "Restrito" : externalScore == null ? STATE_LABEL[externalState] : String(externalScore)}
         </p>
         <p className="mt-1 text-[11px] text-slate-500">{externalScore == null ? "Não consultado não significa sem restrição." : QUOD_SCORE_SCALE_NOTE}</p>
       </article>
       <article className="rounded-lg border bg-white p-3">
-        <p className="text-[11px] font-medium uppercase tracking-wide text-slate-500">Situação de crédito</p>
+        <p className="text-[11px] font-medium uppercase tracking-wide text-slate-500">Histórico financeiro — Nomus</p>
         <p className="mt-1 text-sm font-semibold" data-testid="quod-header-credit">{creditLabel}</p>
         <p className="mt-1 text-[11px] text-slate-500">Decisão interna. Um score externo alto não remove bloqueio.</p>
       </article>
@@ -173,6 +174,7 @@ export function QuodSuperAdminPanel({
   restrictionCount,
   priceLabel,
   canQuery,
+  alerts = [],
   onView,
   onRequestPaid,
   report,
@@ -184,6 +186,7 @@ export function QuodSuperAdminPanel({
   restrictionCount: number | null;
   priceLabel: string;
   canQuery: boolean;
+  alerts?: string[];
   onView: () => void;
   onRequestPaid: () => void;
   report: React.ReactNode;
@@ -193,12 +196,30 @@ export function QuodSuperAdminPanel({
       <h3 className="text-sm font-semibold">Análise externa de crédito — Dossiê QUOD Completo</h3>
       <dl className={cn("mt-2 grid gap-1 text-sm sm:grid-cols-2")}>
         <div>Situação da consulta: {STATE_LABEL[state]}</div>
-        <div>Última consulta: {consultedAt ?? "—"}</div>
-        <div>Validade: {validUntil ?? "—"}</div>
+        <div>Última consulta: {consultedAt ? formatCreditDateTime(consultedAt) : "—"}</div>
+        <div>Validade: {validUntil ? formatCreditDateTime(validUntil) : "—"}</div>
         <div>Score QUOD: {score == null ? "—" : score}</div>
         <div>Restrições informadas: {restrictionCount == null ? "não informado" : restrictionCount}</div>
         <div>Próxima consulta: {priceLabel}</div>
       </dl>
+      {alerts.length > 0 ? (
+        <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3" data-testid="quod-alerts">
+          <p className="text-xs font-bold uppercase tracking-wide text-amber-900">
+            QUOD identificou sinais de atraso e comprometimento financeiro
+          </p>
+          <ul className="mt-2 space-y-1">
+            {alerts.map((alert, index) => (
+              <li key={`${alert}-${index}`} className="flex items-start gap-1.5 text-xs text-amber-900">
+                <span aria-hidden>•</span>
+                <span className="min-w-0">{alert}</span>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-2 text-[11px] text-amber-800">
+            Fatores do score externo. Não equivalem a negativação confirmada, protesto nacional ou restrição formalizada.
+          </p>
+        </div>
+      ) : null}
       <p className="mt-2 text-xs text-slate-500">{QUOD_PROTEST_COVERAGE_NOTE}</p>
       <div className="mt-3 flex flex-wrap gap-2">
         <button type="button" className="rounded border px-3 py-1.5 text-xs" onClick={onView} data-testid="quod-view-last">Ver último dossiê</button>

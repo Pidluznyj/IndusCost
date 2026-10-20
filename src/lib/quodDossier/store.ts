@@ -39,6 +39,7 @@ export type QuodStore = {
   findLatestSucceeded(customerId: string): Promise<QuodConsultationRecord | null>;
   findById(id: string): Promise<QuodConsultationRecord | null>;
   listByCustomer(customerId: string): Promise<QuodConsultationRecord[]>;
+  monthSpend(monthStart: Date, monthEnd: Date): Promise<number>;
   reserve(input: {
     customerId: string;
     companyName: string;

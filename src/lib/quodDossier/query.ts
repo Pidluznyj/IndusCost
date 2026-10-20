@@ -38,6 +38,7 @@ export async function executePaidQuodConsultation(input: {
   idempotencyKey: string;
   userId: string;
   role: string;
+  forceRefresh?: boolean;
   now?: Date;
   fetchImpl?: typeof fetch;
 }): Promise<QuodQueryOutcome> {
@@ -61,12 +62,16 @@ export async function executePaidQuodConsultation(input: {
     monthEnd: month.end,
     maxPerCnpj: input.config.maxPerCnpj,
     intervalStart: new Date(now.getTime() - input.config.cnpjIntervalMs),
-    forceRefresh: false,
+    forceRefresh: input.forceRefresh === true,
     cacheTtlMs: input.config.cacheTtlMs,
   });
   if (reserved.ok === false) {
     if (reserved.code === "IDEMPOTENT") return { code: "OK", charged: false, row: reserved.row };
-    return { code: reserved.code, charged: false, row: null };
+    return {
+      code: reserved.code,
+      charged: false,
+      row: reserved.code === "CACHE_VALID" ? await input.store.findLatestSucceeded(input.customerId) : null,
+    };
   }
   await input.store.markSent(reserved.row.id);
   const provider = await fetchQuodDossier({ cnpj: input.cnpj, config: input.config, fetchImpl: input.fetchImpl });

@@ -8,6 +8,8 @@ import type {
   CommercialCreditDecision,
   CommercialCreditDecisionStatus,
   CommercialExternalProtestStatus,
+  CommercialIeptbEvidence,
+  CommercialQuodEvidence,
 } from "./commercialCreditDecision.js";
 import type { CommercialDelinquencyAnalysis } from "./customerDelinquencyAnalysis.js";
 import {
@@ -33,6 +35,153 @@ export const INTELLIGENCE_FACT_LABEL: Record<IntelligenceFactState, string> = {
   CLEAR: "Sem ocorrência",
   FOUND: "Ocorrência encontrada",
 };
+
+/**
+ * Estado executivo da decisão de crédito para o cabeçalho da Consulta CNPJ.
+ * Deriva do customerStatus do motor; não cria código novo de status.
+ */
+export type CreditDecisionState =
+  | "BLOQUEIO_CRITICO"
+  | "BLOQUEADO"
+  | "EM_ANALISE"
+  | "LIBERADO"
+  | "NAO_DETERMINADO";
+
+export type CreditDecisionSeverity = "CRITICAL" | "HIGH" | "MEDIUM" | "INFO";
+
+export type CreditDecisionReason = {
+  code: string;
+  label: string;
+  description: string;
+  origin: string;
+  severity: CreditDecisionSeverity;
+};
+
+export const CREDIT_DECISION_PRESENTATION: Record<
+  CreditDecisionState,
+  { title: string; description: string; tone: "critical" | "blocked" | "review" | "released" | "undetermined" }
+> = {
+  BLOQUEIO_CRITICO: {
+    title: "BLOQUEIO CRÍTICO DE CRÉDITO",
+    description: "Venda a prazo bloqueada por ocorrência crítica. Respeite o fluxo de exceção vigente.",
+    tone: "critical",
+  },
+  BLOQUEADO: {
+    title: "CRÉDITO BLOQUEADO",
+    description: "Venda a prazo não autorizada. Consulte os motivos e o fluxo de liberação.",
+    tone: "blocked",
+  },
+  EM_ANALISE: {
+    title: "CRÉDITO EM ANÁLISE",
+    description: "A venda a prazo depende de decisão autorizada.",
+    tone: "review",
+  },
+  LIBERADO: {
+    title: "CRÉDITO LIBERADO",
+    description: "Venda a prazo permitida conforme condições e limites vigentes.",
+    tone: "released",
+  },
+  NAO_DETERMINADO: {
+    title: "CRÉDITO NÃO DETERMINADO",
+    description:
+      "Não foi possível confirmar as condições de crédito. É necessária análise antes da venda a prazo.",
+    tone: "undetermined",
+  },
+};
+
+const CREDIT_REASON_CATALOG: Record<string, Omit<CreditDecisionReason, "code">> = {
+  INTERNAL_PROTEST: {
+    label: "Protesto interno confirmado",
+    description: "Protesto interno pendente confirmado. Exige regularização antes da venda a prazo.",
+    origin: "Contas a Receber — Nomus",
+    severity: "CRITICAL",
+  },
+  OVERDUE_OPEN_BALANCE: {
+    label: "Títulos vencidos em aberto",
+    description: "Há título com saldo em aberto e atraso de pelo menos um dia.",
+    origin: "Contas a Receber — Nomus",
+    severity: "HIGH",
+  },
+  EXTERNAL_PROTEST: {
+    label: "Protesto externo confirmado",
+    description: "Protesto externo confirmado e vigente no registro interno.",
+    origin: "Registro interno de protesto externo",
+    severity: "HIGH",
+  },
+  EXTERNAL_PROTEST_REVIEW: {
+    label: "Protesto externo exige revisão",
+    description:
+      "Consulta de protesto externo indisponível, desatualizada, cancelada ou não confirmada. Não significa ausência de protesto.",
+    origin: "Consulta de protesto externo",
+    severity: "MEDIUM",
+  },
+  FINANCIAL_UNVERIFIED: {
+    label: "Dados financeiros não verificados",
+    description: "Dados financeiros indisponíveis ou desatualizados. Exige análise antes da liberação.",
+    origin: "Sincronização Nomus",
+    severity: "MEDIUM",
+  },
+  RELATED_PARTY_DELINQUENT: {
+    label: "Vínculo societário inadimplente",
+    description: "Vínculo societário com empresa inadimplente. A dívida não foi transferida.",
+    origin: "Vínculo societário",
+    severity: "MEDIUM",
+  },
+  RELATED_PARTY_UNVERIFIED: {
+    label: "Vínculo societário sem verificação",
+    description: "Vínculo societário sem verificação financeira.",
+    origin: "Vínculo societário",
+    severity: "MEDIUM",
+  },
+  QUOD_EXTERNAL_RESTRICTION: {
+    label: "Evidência externa do dossiê QUOD",
+    description:
+      "Evidência externa do dossiê exige decisão administrativa. O score externo não libera o cliente.",
+    origin: "Dossiê QUOD — Direct Data",
+    severity: "MEDIUM",
+  },
+  QUOD_INSUFFICIENT: {
+    label: "Consulta externa insuficiente",
+    description: "A consulta externa não trouxe informação suficiente. Não significa cliente regular.",
+    origin: "Dossiê QUOD — Direct Data",
+    severity: "INFO",
+  },
+  IEPTB_NATIONAL_PROTEST: {
+    label: "Protesto nacional IEPTB",
+    description:
+      "Protesto nacional confirmado na consulta IEPTB. Exige decisão administrativa. Não substitui o protesto interno Nomus.",
+    origin: "Protestos Nacional — IEPTB Online",
+    severity: "MEDIUM",
+  },
+  IEPTB_INSUFFICIENT: {
+    label: "Consulta nacional de protestos insuficiente",
+    description: "A consulta IEPTB não trouxe informação suficiente. Não significa ausência de protesto.",
+    origin: "Protestos Nacional — IEPTB Online",
+    severity: "INFO",
+  },
+};
+
+export function describeCreditDecisionReasons(reasons: readonly string[]): CreditDecisionReason[] {
+  const seen = new Set<string>();
+  const out: CreditDecisionReason[] = [];
+  for (const code of reasons) {
+    const entry = CREDIT_REASON_CATALOG[code];
+    if (!entry || seen.has(code)) continue;
+    seen.add(code);
+    out.push({ code, ...entry });
+  }
+  return out;
+}
+
+/** Formata ISO para "20/10/2026 às 12:03" sem alterar o timestamp armazenado. */
+export function formatCreditDateTime(iso: string | null | undefined): string {
+  if (!iso) return INTELLIGENCE_FACT_LABEL.NOT_CONSULTED;
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return INTELLIGENCE_FACT_LABEL.UNAVAILABLE;
+  const day = date.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
+  const time = date.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  return `${day} às ${time}`;
+}
 
 export const BCB_CNPJ_NO_QUERY_DETAIL =
   "Não aplicável. Nenhuma consulta ao Banco Central foi realizada: não há cadastro empresarial por CNPJ neste escopo.";
@@ -94,6 +243,17 @@ export type CommercialCreditIntelligenceView = {
   consulted: boolean;
   customerStatus: CommercialCreditDecisionStatus | null;
   headline: "CRÉDITO BLOQUEADO" | null;
+  /** Estado executivo para o cabeçalho de decisão (A–E). */
+  decisionState: CreditDecisionState;
+  decisionTitle: string;
+  decisionDescription: string;
+  decisionTone: "critical" | "blocked" | "review" | "released" | "undetermined";
+  decisionReasons: CreditDecisionReason[];
+  decisionEvaluatedAtLabel: string;
+  quodState: CommercialQuodEvidence["state"];
+  quodConfirmedRestriction: boolean;
+  ieptbState: CommercialIeptbEvidence["state"];
+  ieptbConfirmedProtest: boolean;
   situationLabel: string;
   reason: string | null;
   cadastralAuthorizesCredit: false;
@@ -123,6 +283,19 @@ export type CommercialCreditIntelligenceView = {
 
 const EVIDENCE_ORIGIN =
   "Contas a Receber sincronizadas do Nomus (NomusAccountsReceivable). Protesto externo: registro interno, sem bureau inventado. O score cadastral não entra na decisão.";
+
+function creditDecisionState(status: CommercialCreditDecisionStatus): CreditDecisionState {
+  switch (status) {
+    case "BLOQUEIO_CRITICO":
+      return "BLOQUEIO_CRITICO";
+    case "BLOQUEADO":
+      return "BLOQUEADO";
+    case "EM_ANALISE":
+      return "EM_ANALISE";
+    case "LIBERADO":
+      return "LIBERADO";
+  }
+}
 
 function situationLabel(status: CommercialCreditDecisionStatus): string {
   switch (status) {
@@ -225,6 +398,16 @@ export function notConsultedCommercialCreditView(): CommercialCreditIntelligence
     consulted: false,
     customerStatus: null,
     headline: null,
+    decisionState: "NAO_DETERMINADO",
+    decisionTitle: CREDIT_DECISION_PRESENTATION.NAO_DETERMINADO.title,
+    decisionDescription: CREDIT_DECISION_PRESENTATION.NAO_DETERMINADO.description,
+    decisionTone: CREDIT_DECISION_PRESENTATION.NAO_DETERMINADO.tone,
+    decisionReasons: [],
+    decisionEvaluatedAtLabel: INTELLIGENCE_FACT_LABEL.NOT_CONSULTED,
+    quodState: "NOT_CONSULTED",
+    quodConfirmedRestriction: false,
+    ieptbState: "NOT_CONSULTED",
+    ieptbConfirmedProtest: false,
     situationLabel: INTELLIGENCE_FACT_LABEL.NOT_CONSULTED,
     reason: null,
     cadastralAuthorizesCredit: false,
@@ -271,10 +454,22 @@ export function buildCommercialCreditIntelligenceView(input: {
   const external = externalProtestState(input.externalProtest, input.externalProtestConsultation);
   const sync = syncLabel(input.delinquency.lastSyncedAt, true, unavailable && input.delinquency.lastSyncedAt == null);
   const reason = commercialCreditReasonMessage(input.decision.reason);
+  const decisionState = creditDecisionState(status);
+  const presentation = CREDIT_DECISION_PRESENTATION[decisionState];
   return {
     consulted: true,
     customerStatus: status,
     headline: blocked ? "CRÉDITO BLOQUEADO" : null,
+    decisionState,
+    decisionTitle: presentation.title,
+    decisionDescription: presentation.description,
+    decisionTone: presentation.tone,
+    decisionReasons: describeCreditDecisionReasons(input.decision.reasons),
+    decisionEvaluatedAtLabel: formatCreditDateTime(input.delinquency.lastSyncedAt),
+    quodState: input.decision.evidence.quodState,
+    quodConfirmedRestriction: input.decision.evidence.quodConfirmedRestriction === true,
+    ieptbState: input.decision.evidence.ieptbState,
+    ieptbConfirmedProtest: input.decision.evidence.ieptbConfirmedProtest === true,
     situationLabel: unavailable && status === "EM_ANALISE" ? "Não verificado" : situationLabel(status),
     reason,
     cadastralAuthorizesCredit: false,
