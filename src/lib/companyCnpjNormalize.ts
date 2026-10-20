@@ -26,8 +26,22 @@ export type NormalizedCnpjSummary = {
   partners: { name: string; role: string | null }[];
   isMei: boolean;
   hasPartners: boolean;
+  /** MATRIZ, FILIAL ou ausente. Não é situação cadastral. */
+  establishmentType: "MATRIZ" | "FILIAL" | null;
   sourceUpdatedAt: string | null;
 };
+
+export function normalizeEstablishmentType(value: unknown): "MATRIZ" | "FILIAL" | null {
+  if (typeof value === "number") {
+    if (value === 1) return "MATRIZ";
+    if (value === 2) return "FILIAL";
+  }
+  const text = String(value ?? "").trim().toUpperCase();
+  if (!text) return null;
+  if (text.includes("FILIAL")) return "FILIAL";
+  if (text.includes("MATRIZ")) return "MATRIZ";
+  return null;
+}
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value != null && typeof value === "object" && !Array.isArray(value)
@@ -153,6 +167,7 @@ export function normalizePublicCnpjPayload(raw: unknown): NormalizedCnpjSummary 
     partners,
     isMei,
     hasPartners: partners.length > 0,
+    establishmentType: normalizeEstablishmentType(est.tipo),
     sourceUpdatedAt: readString(root.atualizado_em) ?? readString(est.atualizado_em),
   };
 }
@@ -174,6 +189,7 @@ export function buildStructuredNormalizedSummary(summary: NormalizedCnpjSummary)
       secondaryCnaes: summary.secondaryCnaes,
       isMei: summary.isMei,
       hasPartners: summary.hasPartners,
+      establishmentType: summary.establishmentType,
       sourceUpdatedAt: summary.sourceUpdatedAt,
     },
     publicContactData: {

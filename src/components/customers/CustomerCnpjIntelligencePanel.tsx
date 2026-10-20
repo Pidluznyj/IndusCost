@@ -541,6 +541,7 @@ export function CustomerCnpjIntelligencePanel({
                   <p>Abertura: {data.summary.openedAt ?? "—"}</p>
                   <p>Situação: {data.summary.registrationStatus ?? "—"}</p>
                   <p>Porte: {data.summary.companySize ?? "—"}</p>
+                  <p>Matriz/filial: {data.summary.establishmentType ?? "—"}</p>
                   <p>Natureza: {data.summary.legalNature ?? "—"}</p>
                   <p>
                     Capital:{" "}
