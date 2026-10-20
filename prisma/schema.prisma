@@ -2493,6 +2493,7 @@ model Customer {
   commercialCreditOccurrences      CommercialCreditOccurrence[]
   commercialCreditEvaluations      CommercialCreditEvaluation[]
   cnpjRefreshRunItems              CnpjRefreshRunItem[]
+  quodDossierConsultations         QuodDossierConsultation[]
 
   @@index([personId])
   @@index([contactPersonId])
@@ -3522,6 +3523,39 @@ model CommercialCreditOccurrenceEvidence {
   Occurrence       CommercialCreditOccurrence @relation(fields: [occurrenceId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([occurrenceId])
+}
+
+/// Dossiê QUOD Completo. Não altera título, cadastro operacional nem a fórmula do score cadastral.
+model QuodDossierConsultation {
+  id                    String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  customerId            String    @db.Uuid
+  companyName           String
+  cnpj                  String
+  idempotencyKey        String    @unique
+  requestedByUserId     String
+  requestedByRole       String
+  status                String
+  billingStatus         String
+  authorizedCostCents   Int
+  chargedCostCents      Int?
+  providerQueryId       String?
+  providerHttpStatus    Int?
+  failureCode           String?
+  score                 Int?
+  restrictionCount      Int?
+  confirmedRestriction  Boolean   @default(false)
+  insufficient          Boolean   @default(false)
+  sections              Json?
+  partners              Json?
+  validUntil            DateTime? @db.Timestamptz(6)
+  consultedAt           DateTime? @db.Timestamptz(6)
+  createdAt             DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt             DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+  Customer              Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([customerId, createdAt])
+  @@index([cnpj, createdAt])
+  @@index([status])
 }
 
 model CustomerCnpjLookup {

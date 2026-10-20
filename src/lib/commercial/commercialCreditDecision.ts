@@ -15,6 +15,7 @@ export const COMMERCIAL_CREDIT_EXCEPTION_SCOPES = [
   "EXTERNAL_PROTEST",
   "RELATED_PARTY",
   "UNVERIFIED",
+  "QUOD_REVIEW",
 ] as const;
 
 export type CommercialCreditExceptionScope = (typeof COMMERCIAL_CREDIT_EXCEPTION_SCOPES)[number];
@@ -74,6 +75,13 @@ export type CommercialCreditExceptionFact = {
   revokedAt: Date | null;
 };
 
+/** Evidência do dossiê QUOD. O número do score não entra aqui e não altera a decisão. */
+export type CommercialQuodEvidence = {
+  state: "NOT_CONSULTED" | "VALID" | "STALE" | "FAILED" | "PARTIAL" | "UNAVAILABLE" | "IN_PROGRESS";
+  confirmedRestriction: boolean;
+  insufficient: boolean;
+};
+
 export type CommercialCreditDecision = {
   status: CommercialCreditDecisionStatus;
   /** Postura financeira depois da exceção e antes de separar à vista/antecipado. */
@@ -92,6 +100,8 @@ export type CommercialCreditDecision = {
     relatedParties: Array<{ customerId: string; status: CommercialDelinquencyStatus }>;
     cadastralScore: number | null;
     cadastralVerdict: string | null;
+    quodState: CommercialQuodEvidence["state"];
+    quodConfirmedRestriction: boolean;
   };
 };
 
@@ -116,6 +126,8 @@ const REASON_PRIORITY = [
   "EXTERNAL_PROTEST_REVIEW",
   "RELATED_PARTY_DELINQUENT",
   "RELATED_PARTY_UNVERIFIED",
+  "QUOD_EXTERNAL_RESTRICTION",
+  "QUOD_INSUFFICIENT",
 ] as const;
 
 const MESSAGES: Record<string, string> = {
@@ -132,6 +144,10 @@ const MESSAGES: Record<string, string> = {
   RELATED_PARTY_UNVERIFIED: "Crédito em análise: vínculo societário sem verificação financeira.",
   FINANCIAL_UNVERIFIED:
     "Crédito não verificado: dados financeiros indisponíveis ou desatualizados. Exige análise antes da liberação.",
+  QUOD_EXTERNAL_RESTRICTION:
+    "Crédito em análise: evidência externa do dossiê exige decisão administrativa. O score externo não libera o cliente e não detalha o relatório.",
+  QUOD_INSUFFICIENT:
+    "Crédito em análise: a consulta externa não trouxe informação suficiente. Isso não significa cliente regular.",
   ADVANCE_NOT_CONFIRMED: "Pagamento antecipado só segue quando estiver aprovado e confirmado.",
   CASH_NOT_CREDIT: "À vista não é venda a prazo.",
   ADVANCE_CONFIRMED: "Pagamento antecipado aprovado e confirmado.",
@@ -285,6 +301,7 @@ function customerHolds(input: {
   confirmedPendingProtest?: boolean;
   suppressedProtestTitleIds?: readonly number[];
   externalProtestReview?: ExternalProtestReviewKind;
+  quod?: CommercialQuodEvidence | null;
 }): Hold[] {
   const holds: Hold[] = [];
   const delinquency = input.delinquency;
@@ -318,6 +335,14 @@ function customerHolds(input: {
   if (input.relatedPartyOverflow) {
     pushHold(holds, { status: "EM_ANALISE", reason: "RELATED_PARTY_UNVERIFIED", scope: "RELATED_PARTY" });
   }
+  const quod = input.quod;
+  if (quod && (quod.state === "VALID" || quod.state === "STALE" || quod.state === "PARTIAL")) {
+    if (quod.confirmedRestriction) {
+      pushHold(holds, { status: "EM_ANALISE", reason: "QUOD_EXTERNAL_RESTRICTION", scope: "QUOD_REVIEW" });
+    } else if (quod.state === "VALID" && quod.insufficient) {
+      pushHold(holds, { status: "EM_ANALISE", reason: "QUOD_INSUFFICIENT", scope: "QUOD_REVIEW" });
+    }
+  }
   return holds;
 }
 
@@ -350,6 +375,8 @@ export function decideCommercialCredit(input: {
   externalProtestReview?: ExternalProtestReviewKind;
   advanceConfirmation?: CommercialCreditAdvanceConfirmation | null;
   cadastral?: { score: number | null; verdict: string | null } | null;
+  /** Score numérico do provedor é ignorado de propósito. */
+  quod?: CommercialQuodEvidence | null;
   now: Date;
 }): CommercialCreditDecision {
   const externalProtest = input.externalProtest ?? "ABSENT";
@@ -363,6 +390,7 @@ export function decideCommercialCredit(input: {
     confirmedPendingProtest: input.confirmedPendingProtest,
     suppressedProtestTitleIds: input.suppressedProtestTitleIds,
     externalProtestReview: input.externalProtestReview,
+    quod: input.quod,
   });
   const live = (input.exceptions ?? []).filter((row) => isLiveException(row, input.now));
   const applied = live.filter((row) => holds.some((hold) => hold.scope === row.scope));
@@ -424,6 +452,8 @@ export function decideCommercialCredit(input: {
         .map((related) => ({ customerId: related.customerId, status: related.delinquency.status })),
       cadastralScore: input.cadastral?.score ?? null,
       cadastralVerdict: input.cadastral?.verdict ?? null,
+      quodState: input.quod?.state ?? "NOT_CONSULTED",
+      quodConfirmedRestriction: input.quod?.confirmedRestriction === true,
     },
   };
 }

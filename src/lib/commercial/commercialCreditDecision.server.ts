@@ -13,6 +13,7 @@ import {
   CommercialCreditExceptionError,
   decideCommercialCredit,
   resolveCommercialCreditExceptionPermission,
+  type CommercialQuodEvidence,
   validateCommercialCreditExceptionDraft,
   type CommercialCreditAdvanceConfirmation,
   type CommercialCreditDecision,
@@ -74,6 +75,47 @@ async function writeAudit(writer: ((entry: AuditEntry) => Promise<void>) | undef
   await writeCommercialAuditLog(entry);
 }
 
+const QUOD_NOT_CONSULTED: CommercialQuodEvidence = {
+  state: "NOT_CONSULTED",
+  confirmedRestriction: false,
+  insufficient: false,
+};
+
+/** Lê só os indicadores da última consulta válida. Sem payload e sem score. */
+export async function loadQuodCreditEvidence(
+  db: object,
+  customerId: string,
+  now: Date
+): Promise<CommercialQuodEvidence> {
+  const model = (db as {
+    quodDossierConsultation?: {
+      findFirst(args: unknown): Promise<{
+        confirmedRestriction: boolean;
+        insufficient: boolean;
+        validUntil: Date | null;
+      } | null>;
+    };
+  }).quodDossierConsultation;
+  if (!model?.findFirst) return QUOD_NOT_CONSULTED;
+  try {
+    const row = await model.findFirst({
+      where: { customerId, status: "SUCCEEDED" },
+      orderBy: { consultedAt: "desc" },
+      select: { confirmedRestriction: true, insufficient: true, validUntil: true },
+    });
+    if (!row) return QUOD_NOT_CONSULTED;
+    const fresh = row.validUntil != null && row.validUntil.getTime() > now.getTime();
+    return {
+      state: fresh ? "VALID" : "STALE",
+      confirmedRestriction: row.confirmedRestriction === true,
+      insufficient: row.insufficient === true,
+    };
+  } catch (error) {
+    console.error("quod-credit-evidence", error instanceof Error ? error.name : "error");
+    return QUOD_NOT_CONSULTED;
+  }
+}
+
 function decisionAuditValue(decision: CommercialCreditDecision): string {
   return JSON.stringify({
     status: decision.status,
@@ -105,6 +147,7 @@ export async function readCommercialCreditDecision(
     paymentTerms: unknown;
     advanceConfirmation?: CommercialCreditAdvanceConfirmation | null;
     cadastral?: { score: number | null; verdict: string | null } | null;
+    quod?: CommercialQuodEvidence | null;
     now?: Date;
     externalProtestQuery?: {
       config?: ExternalProtestConfig;
@@ -200,6 +243,7 @@ export async function readCommercialCreditDecision(
     confirmedCurrent: externalProtestConsultation.confirmedCurrent,
     review: externalProtestConsultation.review,
   });
+  const quod = input.quod === undefined ? await loadQuodCreditEvidence(db, input.customerId, now) : input.quod;
   const formalProtest = resolveConfirmedPendingProtest({
     occurrences,
     openProtestedTitleIds: delinquency.evidence.protestedTitleIds,
@@ -224,6 +268,7 @@ export async function readCommercialCreditDecision(
     suppressedProtestTitleIds: formalProtest.suppressedTitleIds,
     advanceConfirmation: input.advanceConfirmation ?? null,
     cadastral: input.cadastral ?? null,
+    quod,
     now,
   });
   return {
