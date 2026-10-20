@@ -152,7 +152,8 @@ describe("canonicalPersonSearch — resolvePeopleSearch (mock)", () => {
         appUsers: [],
         commissionPeople: [],
         fleetDrivers: [],
-        customers: [],
+        customersAsIdentity: [],
+        customersAsContact: [],
       },
     ];
     const prisma = {
@@ -216,7 +217,8 @@ describe("canonicalPersonSearch — resolvePeopleSearch (mock)", () => {
               appUsers: [],
               commissionPeople: [],
               fleetDrivers: [],
-              customers: [],
+              customersAsIdentity: [],
+              customersAsContact: [],
             },
           ];
         },
@@ -251,7 +253,8 @@ describe("canonicalPersonSearch — resolvePeopleSearch (mock)", () => {
       appUsers: [],
       commissionPeople: [],
       fleetDrivers: [],
-      customers: [],
+      customersAsIdentity: [],
+      customersAsContact: [],
     }));
     const prisma = {
       person: { findMany: async () => many },

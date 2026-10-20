@@ -241,7 +241,9 @@ export async function resolvePeopleSearch(
       appUsers: { select: { id: true, isActive: true }, take: 5 },
       commissionPeople: { select: { id: true, active: true }, take: 5 },
       fleetDrivers: { select: { id: true, status: true }, take: 5 },
-      customers: { select: { id: true, companyName: true }, take: 5 },
+      // A relação `customers` virou duas (identidade PF e contato cadastral) no cadastro de clientes.
+      customersAsIdentity: { select: { id: true }, take: 5 },
+      customersAsContact: { select: { id: true }, take: 5 },
     },
     orderBy: { displayName: "asc" },
   });
@@ -255,7 +257,8 @@ export async function resolvePeopleSearch(
     if (p.appUsers.length) roles.push("Usuário");
     if (p.commissionPeople.length) roles.push("Pessoa comissionada");
     if (p.fleetDrivers.length) roles.push("Motorista");
-    if (p.customers.length) roles.push("Cliente PF");
+    if (p.customersAsIdentity.length) roles.push("Cliente PF");
+    if (p.customersAsContact.length) roles.push("Contato de cliente");
     const email = emailOf(p);
     const hasOtherEmployee = p.employees.some((e) => e.id !== input.excludeEmployeeId);
     const flags = resolveLinkFlags({
