@@ -120,12 +120,16 @@ function makeMemoryPrisma() {
         where?: {
           cpfNormalized?: string;
           corporateEmail?: { equals: string; mode?: string };
-          id?: { not: string };
+          id?: { not?: string; in?: string[] };
         };
-        select?: { id: true };
+        select?: { id: true; displayName?: true; status?: true };
         take?: number;
       }) {
         let rows = [...people.values()];
+        if (args.where?.id?.in) {
+          const wanted = new Set(args.where.id.in);
+          rows = rows.filter((p) => wanted.has(p.id));
+        }
         if (args.where?.cpfNormalized) {
           rows = rows.filter((p) => p.cpfNormalized === args.where!.cpfNormalized);
         }
@@ -136,7 +140,9 @@ function makeMemoryPrisma() {
         if (args.where?.id?.not) {
           rows = rows.filter((p) => p.id !== args.where!.id!.not);
         }
-        return rows.slice(0, args.take ?? 100).map((p) => ({ id: p.id }));
+        return rows
+          .slice(0, args.take ?? 100)
+          .map((p) => (args.select?.displayName ? { id: p.id, displayName: p.displayName, status: p.status ?? "ACTIVE" } : { id: p.id }));
       },
       async findUnique(args: {
         where: { id: string };
@@ -289,7 +295,22 @@ describe("canonicalPersonCore — persistência (memória)", () => {
     await createPersonCore(prisma, { displayName: "A", cpf: "12345678909" });
     await assert.rejects(
       () => createPersonCore(prisma, { displayName: "B", cpf: "123.456.789-09" }),
-      (e: unknown) => e instanceof CanonicalPersonError && e.code === "DUPLICATE_CPF"
+      (e: unknown) => e instanceof CanonicalPersonError && e.code === "DUPLICATE_CPF" && /"A" \(ID /.test(e.message)
+    );
+  });
+
+  it("CPF duplicado na atualização diz quem já tem o CPF (sem expor o CPF)", async () => {
+    const prisma = makeMemoryPrisma();
+    await createPersonCore(prisma, { displayName: "Paulo Pidluznyj", cpf: "12345678909" });
+    const other = await createPersonCore(prisma, { displayName: "Paulo" });
+    await assert.rejects(
+      () => updatePersonCore(prisma, other.id, { cpf: "123.456.789-09" }),
+      (e: unknown) =>
+        e instanceof CanonicalPersonError &&
+        e.code === "DUPLICATE_CPF" &&
+        e.message.includes('"Paulo Pidluznyj" (ID ') &&
+        !e.message.includes("12345678909") &&
+        e.message.includes("Vincular pessoa existente")
     );
   });
 

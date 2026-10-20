@@ -164,6 +164,18 @@ export async function findPersonIdentityHints(
   return { byCpf, byEmail };
 }
 
+/**
+ * Diz QUEM já tem o CPF/e-mail: sem isso o RH vê "outra pessoa canônica" e não consegue escolher nem corrigir.
+ * Só nome e prefixo do ID (o CPF em si não volta na mensagem).
+ */
+async function describeDuplicates(prisma: PrismaClient, ids: string[]): Promise<string> {
+  const rows = await prisma.person.findMany({ where: { id: { in: ids.slice(0, 3) } }, select: { id: true, displayName: true, status: true } });
+  const parts = rows.map((r) => `"${r.displayName}" (ID ${r.id.slice(0, 8)}…${r.status !== "ACTIVE" ? ", inativa" : ""})`);
+  return parts.length > 0 ? parts.join(", ") : "pessoa não identificada";
+}
+
+const DUPLICATE_HINT = "Para usar esse cadastro, escolha-o em \"Vincular pessoa existente\" (busque pelo nome ou pelo CPF); para unificar, corrija o CPF/e-mail da pessoa repetida em Pessoas.";
+
 export async function createPersonCore(
   prisma: PrismaClient,
   input: PersonWriteInput,
@@ -178,14 +190,14 @@ export async function createPersonCore(
   if (reject && hints.byCpf.length > 0) {
     throw new CanonicalPersonError(
       "DUPLICATE_CPF",
-      "Já existe pessoa canônica com este CPF. Vincule em vez de criar outra.",
+      `Já existe pessoa canônica com este CPF: ${await describeDuplicates(prisma, hints.byCpf)}. ${DUPLICATE_HINT}`,
       409
     );
   }
   if (reject && hints.byEmail.length > 0) {
     throw new CanonicalPersonError(
       "DUPLICATE_PRIMARY_EMAIL",
-      "Já existe pessoa canônica com este e-mail principal. Vincule em vez de criar outra.",
+      `Já existe pessoa canônica com este e-mail principal: ${await describeDuplicates(prisma, hints.byEmail)}. ${DUPLICATE_HINT}`,
       409
     );
   }
@@ -239,14 +251,14 @@ export async function updatePersonCore(
   if (hints.byCpf.length > 0) {
     throw new CanonicalPersonError(
       "DUPLICATE_CPF",
-      "CPF já utilizado por outra pessoa canônica.",
+      `O CPF informado já pertence a outra pessoa canônica: ${await describeDuplicates(prisma, hints.byCpf)}. ${DUPLICATE_HINT}`,
       409
     );
   }
   if (hints.byEmail.length > 0) {
     throw new CanonicalPersonError(
       "DUPLICATE_PRIMARY_EMAIL",
-      "E-mail principal já utilizado por outra pessoa canônica.",
+      `O e-mail principal já pertence a outra pessoa canônica: ${await describeDuplicates(prisma, hints.byEmail)}. ${DUPLICATE_HINT}`,
       409
     );
   }
