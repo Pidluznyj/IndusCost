@@ -14,3 +14,6 @@ prisma/dev.db
 # Relatórios reais do auditor de Documentos de Saída (DS-02.8)
 docs/output-documents/audits/output-documents-db-audit.json
 docs/output-documents/audits/output-documents-db-audit.md
+
+# Relatórios locais de regularização de dados (JSON)
+reports/

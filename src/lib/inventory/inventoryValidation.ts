@@ -47,6 +47,14 @@ function parseNonNegative(value: unknown, field: string): number | null {
   return n;
 }
 
+/** Id opcional: vazio/null → null; preenchido precisa ser UUID (UUID_RE adiante; lido só na chamada). */
+function parseOptionalUuid(value: unknown, field: string): string | null {
+  const t = safeTrim(value);
+  if (!t) return null;
+  if (!UUID_RE.test(t)) throw new InventoryValidationError(`${field} inválido.`, "INVALID_ID");
+  return t;
+}
+
 function parseItemType(value: unknown): InventoryItemType {
   const raw = requireNonEmpty(value, "itemType");
   if (!(INVENTORY_ITEM_TYPES as readonly string[]).includes(raw)) {
@@ -93,6 +101,9 @@ export type CreateInventoryItemInput = {
   nomusProductCode: string | null;
   nomusProductId: string | null;
   notes: string | null;
+  /** Escopo padrão: validado no server por resolveInventoryItemDefaultScope. */
+  defaultWarehouseId: string | null;
+  defaultLocationId: string | null;
 };
 
 export function parseCreateInventoryItemBody(body: unknown): CreateInventoryItemInput {
@@ -137,6 +148,8 @@ export function parseCreateInventoryItemBody(body: unknown): CreateInventoryItem
     nomusProductCode: safeTrim(data.nomusProductCode) || null,
     nomusProductId: safeTrim(data.nomusProductId) || null,
     notes: safeTrim(data.notes) || null,
+    defaultWarehouseId: parseOptionalUuid(data.defaultWarehouseId, "defaultWarehouseId"),
+    defaultLocationId: parseOptionalUuid(data.defaultLocationId, "defaultLocationId"),
   };
 }
 
@@ -167,6 +180,12 @@ export function parseUpdateInventoryItemBody(body: unknown): Partial<CreateInven
   if (data.productId !== undefined) out.productId = safeTrim(data.productId) || null;
   if (data.nomusProductCode !== undefined) out.nomusProductCode = safeTrim(data.nomusProductCode) || null;
   if (data.nomusProductId !== undefined) out.nomusProductId = safeTrim(data.nomusProductId) || null;
+  if (data.defaultWarehouseId !== undefined) {
+    out.defaultWarehouseId = parseOptionalUuid(data.defaultWarehouseId, "defaultWarehouseId");
+  }
+  if (data.defaultLocationId !== undefined) {
+    out.defaultLocationId = parseOptionalUuid(data.defaultLocationId, "defaultLocationId");
+  }
 
   return out;
 }

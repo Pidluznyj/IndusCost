@@ -225,6 +225,8 @@
     "inventory:administrative-initial-load:preview": "tsx scripts/administrativeStockInitialLoad.ts preview",
     "inventory:administrative-initial-load:apply": "tsx scripts/administrativeStockInitialLoad.ts apply",
     "inventory:administrative-initial-load:verify": "tsx scripts/administrativeStockInitialLoad.ts verify",
+    "inventory:default-warehouse-regularization:dry": "tsx scripts/regularizeInventoryItemDefaultWarehouse.ts",
+    "inventory:default-warehouse-regularization:apply": "tsx scripts/regularizeInventoryItemDefaultWarehouse.ts --apply",
     "inventory:legacy-material-balance:preview": "tsx scripts/legacyMaterialInventoryBalance.ts",
     "inventory:legacy-material-balance:apply": "tsx scripts/legacyMaterialInventoryBalance.ts --apply --confirm=LEGACY_MATERIAL_INITIAL_BALANCE",
     "diagnose:raw-material-inventory-link": "tsx scripts/diagnoseRawMaterialInventoryLink.ts",

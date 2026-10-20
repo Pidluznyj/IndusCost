@@ -23,6 +23,9 @@ export type InventoryItemFormState = {
   lastKnownCost: string;
   nomusProductCode: string;
   notes: string;
+  /** Escopo padrão — a política do tipo (server) pode preencher e travar o almoxarifado. */
+  defaultWarehouseId: string;
+  defaultLocationId: string;
 };
 
 export type InventoryItemFormErrors = Partial<Record<keyof InventoryItemFormState, string>>;
@@ -50,6 +53,8 @@ export function createEmptyInventoryItemForm(
     lastKnownCost: "",
     nomusProductCode: "",
     notes: "",
+    defaultWarehouseId: "",
+    defaultLocationId: "",
     ...defaults,
   };
 }
@@ -75,6 +80,8 @@ export function inventoryItemFormFromRow(row: InventoryItemRow): InventoryItemFo
     lastKnownCost: row.lastKnownCost != null ? String(row.lastKnownCost) : "",
     nomusProductCode: row.nomusProductCode ?? "",
     notes: row.notes ?? "",
+    defaultWarehouseId: row.defaultWarehouseId ?? "",
+    defaultLocationId: row.defaultLocationId ?? "",
   };
 }
 
@@ -93,6 +100,9 @@ export function validateInventoryItemForm(form: InventoryItemFormState): Invento
   if (!form.description.trim()) errors.description = "Descrição é obrigatória.";
   if (!form.itemType) errors.itemType = "Tipo do item é obrigatório.";
   if (!form.unit.trim()) errors.unit = "Unidade é obrigatória.";
+  if (form.defaultLocationId.trim() && !form.defaultWarehouseId.trim()) {
+    errors.defaultLocationId = "Informe o almoxarifado padrão ao definir o endereço padrão.";
+  }
 
   try {
     parseOptionalNonNegative(form.minimumStock, "Estoque mínimo");
@@ -143,7 +153,70 @@ export function inventoryItemFormToPayload(form: InventoryItemFormState) {
     lastKnownCost,
     nomusProductCode: form.nomusProductCode.trim() || null,
     notes: form.notes.trim() || null,
+    defaultWarehouseId: form.defaultWarehouseId.trim() || null,
+    defaultLocationId: form.defaultLocationId.trim() || null,
   };
+}
+
+/** Espelho do contrato GET /api/inventory/items/default-warehouse-policy. */
+export type InventoryItemDefaultWarehousePolicyDto = {
+  itemType: string;
+  mode: "OFFICIAL_LINK" | "PRESENCE" | "SECTOR_FIXED" | "SECTOR_CHOICE" | "FREE";
+  options: {
+    sectorId: string;
+    sectorCode: string;
+    sectorName: string;
+    warehouseId: string;
+    warehouseCode: string;
+    warehouseName: string;
+  }[];
+  defaultWarehouseId: string | null;
+  locked: boolean;
+  editable: boolean;
+};
+
+/**
+ * Aplica a política ao formulário: SECTOR_FIXED preenche (e o campo fica travado);
+ * SECTOR_CHOICE limpa um almoxarifado fora das opções; OFFICIAL_LINK limpa tudo.
+ * Endereço só sobrevive se o almoxarifado não mudou.
+ */
+export function applyDefaultWarehousePolicyToForm(
+  form: InventoryItemFormState,
+  policy: InventoryItemDefaultWarehousePolicyDto
+): InventoryItemFormState {
+  let warehouseId = form.defaultWarehouseId;
+  if (policy.mode === "SECTOR_FIXED") {
+    warehouseId = policy.defaultWarehouseId ?? "";
+  } else if (policy.mode === "SECTOR_CHOICE") {
+    if (warehouseId && !policy.options.some((o) => o.warehouseId === warehouseId)) warehouseId = "";
+  } else if (policy.mode === "OFFICIAL_LINK") {
+    warehouseId = "";
+  }
+  if (warehouseId === form.defaultWarehouseId) return form;
+  return { ...form, defaultWarehouseId: warehouseId, defaultLocationId: "" };
+}
+
+/** Texto de apoio do campo "Almoxarifado padrão" conforme a política. */
+export function describeDefaultWarehousePolicy(
+  policy: InventoryItemDefaultWarehousePolicyDto | null
+): string | null {
+  if (!policy) return null;
+  switch (policy.mode) {
+    case "SECTOR_FIXED": {
+      const o = policy.options[0];
+      return `Definido pelo setor de conferência ${o.sectorCode}: itens deste tipo são contados no almoxarifado ${o.warehouseCode}.`;
+    }
+    case "SECTOR_CHOICE":
+      return `Este tipo tem mais de um setor de conferência: escolha o almoxarifado (${policy.options
+        .map((o) => o.warehouseCode)
+        .join(", ")}).`;
+    case "OFFICIAL_LINK":
+      return "Matéria-prima: o almoxarifado padrão é definido no vínculo com a MP oficial.";
+    case "PRESENCE":
+      return "Opcional. Componentes e produtos acabados são conferidos pelos almoxarifados onde têm saldo.";
+    case "FREE":
+      return "Opcional. Sem setor de conferência configurado para este tipo: o item só entra na conferência do tablet quando tiver almoxarifado padrão ou saldo.";
+  }
 }
 
 /** Garante que payload de item nunca inclui campos de saldo. */

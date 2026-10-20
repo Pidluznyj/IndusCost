@@ -8,6 +8,14 @@ import { Prisma, type InventoryMovement, type InventoryMovementType } from "@pri
 import type { AppAuthContext } from "@/src/lib/appAuth.js";
 import { prisma } from "@/src/lib/prisma.js";
 import { loadInventoryPositionReport } from "@/src/lib/inventory/inventoryPositionReport.server.js";
+import {
+  asItemDefaultWarehouseReadDb,
+  loadItemDefaultWarehousePolicy,
+  resolveInventoryItemDefaultScope,
+} from "@/src/lib/inventory/inventoryItemDefaultWarehouse.server.js";
+import {
+  DEFAULT_WAREHOUSE_MANAGED_BY_OFFICIAL_LINK,
+} from "@/src/lib/inventory/inventoryItemDefaultWarehousePolicy.js";
 import { inventoryBalanceReportFilename } from "@/src/lib/inventory/inventoryBalanceReport.js";
 import {
   buildInventoryBalancesWhere,
@@ -598,14 +606,41 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
     }
   });
 
+  // Política de almoxarifado padrão do tipo (setores STANDARD ativos) — o formulário
+  // pré-preenche e trava o campo a partir daqui; o POST/PUT reaplicam a regra no server.
+  app.get("/api/inventory/items/default-warehouse-policy", ...itemManage, async (req, res) => {
+    try {
+      const { itemType } = parseInventoryItemsListQuery(req.query as Record<string, unknown>);
+      if (!itemType) return res.status(400).json(inventoryApiError("Tipo de item inválido."));
+      const policy = await loadItemDefaultWarehousePolicy(
+        asItemDefaultWarehouseReadDb(prisma),
+        itemType
+      );
+      res.json({ policy });
+    } catch (e: unknown) {
+      if (e instanceof InventoryValidationError) return handleInventoryValidation(res, e);
+      console.error("GET /api/inventory/items/default-warehouse-policy", e);
+      res.status(500).json(inventoryApiError("Erro ao resolver a política de almoxarifado padrão."));
+    }
+  });
+
   app.post("/api/inventory/items", ...itemManage, async (req, res) => {
     try {
       const user = await auth.getCurrentAppUser(req);
       if (!user) return res.status(401).json(inventoryApiError("Autenticação necessária."));
 
       const input = parseCreateInventoryItemBody(req.body);
+      // Almoxarifado/endereço padrão: política do tipo + existência/status/compatibilidade.
+      const scope = await resolveInventoryItemDefaultScope(asItemDefaultWarehouseReadDb(prisma), {
+        itemType: input.itemType,
+        controlsStock: true,
+        defaultWarehouseId: input.defaultWarehouseId,
+        defaultLocationId: input.defaultLocationId,
+      });
       const created = await prisma.inventoryItem.create({
         data: {
+          defaultWarehouseId: scope.defaultWarehouseId,
+          defaultLocationId: scope.defaultLocationId,
           code: input.code,
           description: input.description,
           itemType: input.itemType,
@@ -639,6 +674,9 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
         afterJson: serializeInventoryItem(created),
         userId: user.id,
         userName: user.name,
+        reason: scope.autoAssigned
+          ? `Almoxarifado padrão preenchido pela política do tipo (${scope.policy.mode}).`
+          : null,
       });
 
       res.status(201).json({ item: serializeInventoryItem(created) });
@@ -811,9 +849,48 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
           );
         }
       }
+      // Escopo padrão de item vinculado à MP oficial é do endpoint de vínculo logístico.
+      const scopeTouched =
+        patch.defaultWarehouseId !== undefined ||
+        patch.defaultLocationId !== undefined ||
+        patch.itemType !== undefined;
+      let scope: { defaultWarehouseId: string | null; defaultLocationId: string | null } | null = null;
+      if (existing.materialId) {
+        const warehouseChanged =
+          patch.defaultWarehouseId !== undefined &&
+          patch.defaultWarehouseId !== existing.defaultWarehouseId;
+        const locationChanged =
+          patch.defaultLocationId !== undefined &&
+          patch.defaultLocationId !== existing.defaultLocationId;
+        if (warehouseChanged || locationChanged) {
+          throw new InventoryValidationError(
+            "Item vinculado à MP oficial: almoxarifado e endereço padrão são alterados pelo vínculo logístico.",
+            DEFAULT_WAREHOUSE_MANAGED_BY_OFFICIAL_LINK
+          );
+        }
+      } else if (scopeTouched) {
+        scope = await resolveInventoryItemDefaultScope(asItemDefaultWarehouseReadDb(prisma), {
+          itemType: patch.itemType ?? existing.itemType,
+          controlsStock: existing.controlsStock,
+          defaultWarehouseId:
+            patch.defaultWarehouseId !== undefined
+              ? patch.defaultWarehouseId
+              : existing.defaultWarehouseId,
+          defaultLocationId:
+            patch.defaultLocationId !== undefined
+              ? patch.defaultLocationId
+              : existing.defaultLocationId,
+        });
+      }
       const updated = await prisma.inventoryItem.update({
         where: { id },
         data: {
+          ...(scope
+            ? {
+                defaultWarehouseId: scope.defaultWarehouseId,
+                defaultLocationId: scope.defaultLocationId,
+              }
+            : {}),
           ...(patch.code !== undefined ? { code: patch.code } : {}),
           ...(patch.description !== undefined ? { description: patch.description } : {}),
           ...(patch.itemType !== undefined ? { itemType: patch.itemType } : {}),
