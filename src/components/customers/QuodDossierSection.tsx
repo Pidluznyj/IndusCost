@@ -59,6 +59,7 @@ export function QuodPaidConsultationDialog({
   requestedBy,
   requestedAt,
   previousLabel,
+  submitting = false,
   onCancel,
   onConfirm,
 }: {
@@ -68,6 +69,7 @@ export function QuodPaidConsultationDialog({
   requestedBy: string;
   requestedAt: string;
   previousLabel: string | null;
+  submitting?: boolean;
   onCancel: () => void;
   onConfirm: () => void;
 }) {
@@ -92,9 +94,9 @@ export function QuodPaidConsultationDialog({
           <span>Estou ciente do custo informado e autorizo a realização desta consulta.</span>
         </label>
         <div className="mt-4 flex justify-end gap-2">
-          <button type="button" className="rounded border px-3 py-2 text-sm" onClick={onCancel}>Cancelar</button>
-          <button type="button" className="rounded bg-slate-900 px-3 py-2 text-sm text-white disabled:opacity-40" disabled={!accepted} onClick={onConfirm} data-testid="quod-paid-confirm">
-            Confirmar consulta paga
+          <button type="button" className="rounded border px-3 py-2 text-sm disabled:opacity-40" disabled={submitting} onClick={onCancel}>Cancelar</button>
+          <button type="button" className="rounded bg-slate-900 px-3 py-2 text-sm text-white disabled:opacity-40" disabled={!accepted || submitting} onClick={onConfirm} data-testid="quod-paid-confirm">
+            {submitting ? "Consultando…" : "Confirmar consulta paga"}
           </button>
         </div>
       </div>

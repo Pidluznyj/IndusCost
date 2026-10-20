@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { QuodIntelligenceHeader, QuodPaidConsultationDialog } from "./QuodDossierSection.js";
 
 describe("confirmação do dossiê QUOD", () => {
@@ -40,5 +42,29 @@ describe("confirmação do dossiê QUOD", () => {
     assert.match(html, /Não consultado/);
     assert.match(html, /Bloqueado/);
     assert.match(html, /não remove bloqueio/);
+  });
+
+  it("desabilita confirmar durante o envio e não usa crypto.randomUUID direto", () => {
+    const html = renderToStaticMarkup(
+      <QuodPaidConsultationDialog
+        companyName="Empresa Teste"
+        cnpj="11.444.777/0001-61"
+        priceLabel="R$ 6,99"
+        requestedBy="Super Admin"
+        requestedAt="20/10/2026 09:00"
+        previousLabel={null}
+        submitting
+        onCancel={() => undefined}
+        onConfirm={() => undefined}
+      />
+    );
+    assert.match(html, /Consultando…/);
+    const matches = html.match(/disabled=""/g) ?? [];
+    assert.ok(matches.length >= 2, "cancelar e confirmar ficam desabilitados no envio");
+
+    const panel = readFileSync(join(process.cwd(), "src/components/customers/CustomerQuodDossierPanel.tsx"), "utf8");
+    assert.equal(panel.includes("crypto.randomUUID()"), false);
+    assert.match(panel, /generateIdempotencyKey\(\)/);
+    assert.match(panel, /submitting/);
   });
 });
