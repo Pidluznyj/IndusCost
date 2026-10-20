@@ -45,7 +45,7 @@ function title(partial: Record<string, unknown>) {
     personId: 100,
     personCnpj: CNPJ,
     description: "Boleto",
-    dueDate: new Date(2026, 9, 18),
+    dueDate: new Date(2026, 9, 15),
     settlementDate: null,
     amountReceivable: 1000,
     amountReceived: 0,
@@ -82,11 +82,11 @@ function book(
   });
 }
 
-describe("auditoria — cliente 91 com boleto D+1 e protesto pendente", () => {
+describe("auditoria — cliente 91 com boleto D+4 e protesto pendente", () => {
   it("bloqueia prazo no backend, mostra o status crítico e audita a ocorrência", async () => {
     const delinquency = book([title({})]);
     assert.equal(delinquency.status, "OVERDUE");
-    assert.equal(delinquency.maxDaysOverdue, 1);
+    assert.equal(delinquency.maxDaysOverdue, 4);
     assert.equal(delinquency.overdueAmount, 1000);
 
     const occurrences: Array<Record<string, unknown>> = [];

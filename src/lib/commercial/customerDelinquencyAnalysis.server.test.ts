@@ -121,7 +121,7 @@ function openTitle(overrides: Partial<TitleSeed> = {}): TitleSeed {
     externalId: 1,
     personId: 100,
     personCnpj: CNPJ,
-    dueDate: new Date(2026, 9, 18),
+    dueDate: new Date(2026, 9, 15),
     amountReceivable: 1000,
     amountReceived: 0,
     balanceReceivable: 1000,
@@ -131,7 +131,7 @@ function openTitle(overrides: Partial<TitleSeed> = {}): TitleSeed {
 }
 
 describe("analyzeCustomerDelinquency — stage Nomus", () => {
-  it("D+1 lê o stage uma vez e devolve o saldo vencido", async () => {
+  it("D+4 lê o stage uma vez e devolve o saldo vencido", async () => {
     const { db, queries } = createDb({
       customers: [customer()],
       orders: [{ customerId: CUSTOMER_ID, externalCustomerId: 100 }],
@@ -141,7 +141,7 @@ describe("analyzeCustomerDelinquency — stage Nomus", () => {
     assert.equal(result.status, "OVERDUE");
     assert.equal(result.overdueTitleCount, 1);
     assert.equal(result.overdueAmount, 1000);
-    assert.equal(result.maxDaysOverdue, 1);
+    assert.equal(result.maxDaysOverdue, 4);
     assert.equal(queries.titles, 1);
     assert.equal(queries.aggregate, 1);
   });
