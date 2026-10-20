@@ -91,7 +91,7 @@ function RoleSection({ roleKey, state, cards, pending, canView, canManage, linke
               ) : null}
               <p className="mt-0.5 text-[11px] opacity-80">Evidência: {p.evidence === "CPF_EXACT" ? "CPF igual" : p.evidence === "EMAIL_EXACT" ? "e-mail igual (não decide sozinho)" : "vínculo colaborador ↔ conta"}.</p>
               {canManage && p.kind !== "person" ? (
-                <button type="button" onClick={() => onRelink(p.kind as LinkEntityKind, p.entityId)} className="mt-1 rounded-lg border border-current px-2 py-1 text-[11px] font-semibold hover:bg-white/50" data-testid={`person-relink-open-${p.kind}`}>
+                <button type="button" onClick={() => onRelink(p.kind as LinkEntityKind, p.entityId)} className="mt-1 rounded-lg border border-current px-2 py-1 text-[11px] font-semibold hover:bg-white/50" data-testid={`person-relink-open-${p.kind}-${p.entityId}`}>
                   {p.currentPersonId ? "Corrigir vínculo para esta pessoa" : "Vincular a esta pessoa"}
                 </button>
               ) : null}

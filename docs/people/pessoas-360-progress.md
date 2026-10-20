@@ -13,9 +13,9 @@ Ambiente local: PostgreSQL descartável `127.0.0.1:54329` (`perf_e2e` para naveg
 | CP2 Segurança E1 (desligamento revoga) | código + testes (flag) | `userAccessLifecycle(.server).ts`; flag `HR_TERMINATION_REVOKES_ACCESS` (default off) |
 | CP3 Governança Person | feito (adf90ea) | prévia sem escrita; `ensurePersonFromSource` reutiliza por CPF/recusa e-mail; plano+aplicação na transação do colaborador; migration `20261027120000_person_link_event`; `canonicalPersonGovernance.integration.test.ts` 6/6 |
 | CP4 Pessoas 360° v1 | feito (8ec96e9) | `/people`, `/people/:id`; `GET /api/people`, `/api/people/:id`; verificado no navegador (lista, ficha, conflito do caso real) |
-| CP5 v1.1 escrita | feito (2c34782) | prévia/vincular/corrigir/desvincular/unificar/reverter; `personLinkOps.integration.test.ts` 7/7; correção do caso real verificada no navegador |
-| CP6 Frota/Comissões | pendente | |
-| CP7 Qualidade/E2E/docs | pendente | |
+| CP5 v1.1 escrita | feito (2c34782, c55a0f6) | prévia/vincular/corrigir/desvincular/unificar/reverter; `personLinkOps.integration.test.ts` 7/7; correção do caso real verificada no navegador |
+| CP6 Frota/Comissões | feito (bdcba11) | `personIdentityResolve.server.ts`; motorista/CSV/QR com checksum e `personId`; comissionável com `personId` + sugestões; dedupe só por `nomusPersonId`; testes 21/21 |
+| CP7 Qualidade/E2E/docs | feito | tsc 0 novos vs base; integração 19/19; build OK; E2E `part15-people-360.mjs` 21/21; [pessoas-360-implementation.md](pessoas-360-implementation.md), [pessoas-360-validation.md](pessoas-360-validation.md), [pessoas-360-deployment-runbook.md](pessoas-360-deployment-runbook.md) |
 
 ## Como retomar
 1. `git status` na branch; ler esta tabela.

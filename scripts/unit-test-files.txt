@@ -441,3 +441,11 @@ src/lib/hrPerformance/performanceLeadershipService.test.ts
 src/lib/hrPerformance/performancePermissions.test.ts
 src/lib/hrPerformance/performanceReadiness.test.ts
 src/lib/hrPerformance/performanceHierarchyInclusion.test.ts
+src/lib/security/superAdminRoleGuard.test.ts
+src/lib/security/userAccessLifecycle.test.ts
+src/lib/accessProfilesApply.test.ts
+src/lib/people/personProfile.test.ts
+src/lib/people/personLinkOps.test.ts
+src/lib/people/personIdentityResolve.test.ts
+src/lib/fleetDriverPersonLink.test.ts
+src/lib/commissions/commissionPersonLinkInvariance.test.ts
