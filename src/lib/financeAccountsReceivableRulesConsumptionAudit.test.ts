@@ -63,9 +63,27 @@ describe("financeAccountsReceivableRulesConsumptionAudit", () => {
     assert.match(dataset, /officialTotals\?\.ar\?\.totalReceivableOpen/);
   });
 
+  it("inadimplência comercial consome o motor oficial de atrasados", () => {
+    const commercial = read("src/lib/commercial/customerDelinquencyAnalysis.ts");
+    assert.match(commercial, /filterOfficialArOverdueTitles/);
+    assert.match(commercial, /selectOfficialArOverdueForCommercial/);
+    assert.match(commercial, /applyCommercialDelinquencyCalendarTolerance/);
+    const salesBlock = read("src/lib/commercial/customerSalesBlock.ts");
+    assert.match(salesBlock, /filterOfficialArOverdueTitles/);
+  });
+
   it("script de auditoria AR existe", () => {
     const script = read("scripts/audit-accounts-receivable-rules-consumption.ts");
     assert.match(script, /OFFICIAL_AR_RULES_SOURCE/);
     assert.match(script, /buildOfficialAccountsReceivableRulesResult/);
+  });
+
+  it("script comercial × AR oficial é somente leitura", () => {
+    const script = read("scripts/auditCommercialDelinquencyVsOfficialAr.ts");
+    assert.match(script, /somente leitura/i);
+    assert.match(script, /selectOfficialArOverdueForCommercial/);
+    assert.match(script, /analyzeCommercialDelinquency/);
+    assert.doesNotMatch(script, /\.(update|delete|create|upsert)\(/);
+    assert.doesNotMatch(script, /migrate|sync:nomus/i);
   });
 });
