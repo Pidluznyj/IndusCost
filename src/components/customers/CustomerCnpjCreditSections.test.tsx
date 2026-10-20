@@ -25,6 +25,17 @@ function overdue(): CommercialDelinquencyAnalysis {
     openAmount: 3200,
     maxDaysOverdue: 6,
     lastSyncedAt: "2026-10-19T12:00:00.000Z",
+    overdueTitles: [
+      {
+        externalId: 4,
+        description: "Parcela em aberto",
+        sourceInvoiceNumber: "NF-441",
+        dueDate: "2026-10-13",
+        daysOverdue: 6,
+        balanceReceivable: 3200,
+        protested: false,
+      },
+    ],
     evidence: {
       source: "NomusAccountsReceivable",
       toleranceDays: 0,
@@ -82,6 +93,10 @@ describe("Consulta CNPJ — score 91 e crédito bloqueado", () => {
     assert.equal(html.includes("VENDA LIBERADA"), false);
     assert.match(html, /Não representa aprovação de crédito/);
     assert.match(html, /2\. Situação de crédito interno/);
+    assert.match(html, /Títulos vencidos — Nomus/);
+    assert.match(html, /NF-441/);
+    assert.match(html, /13\/10\/2026/);
+    assert.match(html, /6 dias/);
     assert.match(html, /3\. Restrições externas verificadas/);
     assert.match(html, /4\. Decisão comercial final/);
     assert.match(html, /Não aplicável/);
@@ -107,6 +122,8 @@ describe("Consulta CNPJ — score 91 e crédito bloqueado", () => {
     assert.ok(panel.includes('data-testid="customer-cnpj-intelligence-dialog"'));
     // Redesign: cabeçalho executivo presente e nenhum bloco verde "VENDA LIBERADA" no painel.
     assert.ok(panel.includes("CreditDecisionHeader"));
+    assert.ok(panel.includes("Ficha de inteligência comercial"));
+    assert.ok(panel.includes("max-w-[1600px]"));
     assert.equal(panel.includes("VENDA LIBERADA"), false);
     assert.equal(panel.includes("bg-emerald-100"), false);
   });

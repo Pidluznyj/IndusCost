@@ -94,6 +94,16 @@ export type CommercialDelinquencyExclusionReason =
   | "SUPERSEDED_REISSUE"
   | "SUPERSEDED_RENEGOTIATION";
 
+export type CommercialDelinquencyOverdueTitle = {
+  externalId: number;
+  description: string | null;
+  sourceInvoiceNumber: string | null;
+  dueDate: string | null;
+  daysOverdue: number;
+  balanceReceivable: number;
+  protested: boolean;
+};
+
 export type CommercialDelinquencyAnalysis = {
   status: CommercialDelinquencyStatus;
   unknownReason: CommercialDelinquencyUnknownReason | null;
@@ -104,6 +114,8 @@ export type CommercialDelinquencyAnalysis = {
   maxDaysOverdue: number | null;
   lastSyncedAt: string | null;
   evidence: CommercialDelinquencyEvidence;
+  /** Retrato dos títulos já classificados como vencidos. Não altera a decisão. */
+  overdueTitles?: CommercialDelinquencyOverdueTitle[];
 };
 
 export type CommercialDelinquencyEvidence = {
@@ -290,6 +302,7 @@ function unknownResult(
     openAmount: null,
     maxDaysOverdue: null,
     lastSyncedAt,
+    overdueTitles: [],
     evidence: { ...emptyEvidence(input, identity, nomusPersonId), ...evidencePatch },
   };
 }
@@ -562,7 +575,27 @@ function metricsResult(
     maxDaysOverdue: overdue.length === 0 ? 0 : maxDays,
     lastSyncedAt,
     evidence,
+    overdueTitles: presentOverdueTitles(overdue, referenceDate, evidence.protestedTitleIds),
   };
+}
+
+function presentOverdueTitles(
+  overdue: FinanceArDashboardRow[],
+  referenceDate: Date,
+  protestedTitleIds: readonly number[]
+): CommercialDelinquencyOverdueTitle[] {
+  const protested = new Set(protestedTitleIds);
+  return overdue
+    .map((row) => ({
+      externalId: row.externalId,
+      description: row.description,
+      sourceInvoiceNumber: row.sourceInvoiceNumber,
+      dueDate: row.dueDate ? civilDateKey(row.dueDate) : null,
+      daysOverdue: computeDaysOverdue(row.dueDate, referenceDate),
+      balanceReceivable: roundMoney(row.balanceReceivable),
+      protested: protested.has(row.externalId),
+    }))
+    .sort((a, b) => b.daysOverdue - a.daysOverdue || b.balanceReceivable - a.balanceReceivable || a.externalId - b.externalId);
 }
 
 /** Converte Decimal do Prisma sem alterar o mapper oficial. */

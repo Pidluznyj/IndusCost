@@ -325,7 +325,7 @@ export function CustomerCnpjIntelligencePanel({
   const screenOverlay = (
     <div
       className={cn(
-        "cnpj-intelligence-screen-only fixed inset-0 flex items-end sm:items-center justify-center bg-black/40 p-2 sm:p-4",
+        "cnpj-intelligence-screen-only fixed inset-0 flex items-end sm:items-center justify-center bg-slate-950/45 p-0 sm:p-4",
         overlayZIndex
       )}
       onClick={(event) => {
@@ -337,16 +337,23 @@ export function CustomerCnpjIntelligencePanel({
         role="dialog"
         aria-modal="true"
         aria-labelledby="customer-cnpj-intelligence-title"
-        className="flex max-h-[95vh] w-full max-w-5xl flex-col rounded-xl bg-white shadow-xl"
+        className="flex max-h-[96vh] w-full max-w-[1600px] flex-col overflow-hidden rounded-none bg-slate-50 shadow-2xl sm:rounded-2xl"
         data-testid="customer-cnpj-intelligence-dialog"
         data-modal-stacked={stacked ? "true" : "false"}
       >
-        <div className="cnpj-intelligence-no-print flex items-start justify-between gap-3 border-b px-4 py-3">
-          <div>
-            <h2 id="customer-cnpj-intelligence-title" className="text-lg font-semibold flex items-center gap-2">
-              <Building2 className="h-5 w-5" />
+        <div className="cnpj-intelligence-no-print flex items-start justify-between gap-3 border-b border-slate-200 bg-white px-5 py-4">
+          <div className="min-w-0">
+            <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-500">Ficha de inteligência comercial</p>
+            <h2 id="customer-cnpj-intelligence-title" className="mt-1 flex items-center gap-2 text-xl font-black tracking-tight text-slate-900">
+              <Building2 className="h-5 w-5 text-slate-500" />
               Consulta CNPJ / Inteligência Comercial
             </h2>
+            {data?.summary ? (
+              <p className="mt-1 truncate text-sm font-semibold text-slate-800">
+                {data.summary.companyName}
+                <span className="ml-2 font-mono text-xs font-medium text-slate-500">{data.summary.cnpjFormatted}</span>
+              </p>
+            ) : null}
             <p className="text-xs text-slate-500 mt-1">
               Inteligência multi-source (BrasilAPI + publica.cnpj.ws). Contatos e
               endereço comerciais internos do IndusCost não são sobrescritos
@@ -357,14 +364,14 @@ export function CustomerCnpjIntelligencePanel({
             ref={closeButtonRef}
             type="button"
             onClick={onClose}
-            className="rounded p-1 hover:bg-slate-100"
+            className="rounded-lg p-1.5 hover:bg-slate-100"
             aria-label="Fechar consulta CNPJ"
           >
             <X className="h-5 w-5" />
           </button>
         </div>
 
-          <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
+          <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
             {!customerId && (
               <div className="cnpj-intelligence-no-print flex flex-wrap gap-2 items-end">
               <label className="flex-1 min-w-[200px]">
@@ -407,7 +414,7 @@ export function CustomerCnpjIntelligencePanel({
 
           {customerId && !data && !loading ? (
             <>
-              <CreditDecisionHeader credit={credit} loading={creditLoading} error={creditError} sticky />
+              <CreditDecisionHeader credit={credit} loading={creditLoading} error={creditError} />
               <CustomerQuodDossierPanel
                 customerId={customerId}
                 companyName="Cliente"
@@ -432,14 +439,30 @@ export function CustomerCnpjIntelligencePanel({
 
           {data && (
             <>
-              <div className="rounded-lg border bg-slate-50 p-3 flex flex-wrap gap-3 justify-between">
-                <div>
-                  <p className="font-semibold">{data.summary.companyName}</p>
+              <div className="flex flex-wrap items-start justify-between gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                <div className="min-w-0">
+                  <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Identificação</p>
+                  <p className="text-lg font-black tracking-tight text-slate-900">{data.summary.companyName}</p>
                   <p className="text-sm text-slate-600">
                     {data.summary.tradeName ?? "—"} · {data.summary.cnpjFormatted}
                   </p>
-                  <p className="text-xs text-slate-500 mt-1">
-                    Situação: {data.summary.registrationStatus ?? "—"} · Consulta:{" "}
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-[11px] font-semibold text-slate-700">
+                      Situação: {data.summary.registrationStatus ?? "—"}
+                    </span>
+                    {data.summary.companySize ? (
+                      <span className="rounded-full bg-sky-50 px-2.5 py-0.5 text-[11px] font-semibold text-sky-800">
+                        {data.summary.companySize}
+                      </span>
+                    ) : null}
+                    {data.summary.city && data.summary.state ? (
+                      <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-[11px] font-semibold text-slate-700">
+                        {data.summary.city}/{data.summary.state}
+                      </span>
+                    ) : null}
+                  </div>
+                  <p className="text-xs text-slate-500 mt-2">
+                    Consulta:{" "}
                     {new Date(data.fetchedAt).toLocaleString("pt-BR")} · Fonte: {data.source}
                     {data.fromCache ? " (cache)" : ""}
                     {data.partialSuccess ? " · parcial" : ""}
@@ -504,7 +527,7 @@ export function CustomerCnpjIntelligencePanel({
                 </div>
               </div>
 
-              <CreditDecisionHeader credit={credit} loading={creditLoading} error={creditError} sticky />
+              <CreditDecisionHeader credit={credit} loading={creditLoading} error={creditError} />
 
               <CustomerQuodDossierPanel
                 customerId={customerId}
@@ -530,27 +553,29 @@ export function CustomerCnpjIntelligencePanel({
                 </div>
               ) : null}
 
-              <div className="rounded-lg border border-slate-200 bg-slate-50 p-4" data-testid="cnpj-cadastral-score">
-                <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Qualidade cadastral</p>
-                <div className="flex items-center gap-2 font-semibold text-slate-800">
-                  <Shield className="h-5 w-5" />
-                  Qualidade cadastral: {data.risk.score}/100
-                </div>
-                <p className="text-xs mt-1 text-slate-600" data-testid="cnpj-cadastral-score-disclaimer">
-                  Indicador de consistência e características cadastrais. Não representa aprovação de crédito nem
-                  autoriza venda a prazo.
-                </p>
-                <ul className="mt-2 text-xs space-y-0.5 text-slate-600">
+              <details className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm" data-testid="cnpj-cadastral-score">
+                <summary className="cursor-pointer list-none">
+                  <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Qualidade cadastral</p>
+                  <div className="mt-1 flex items-center gap-2 font-extrabold text-slate-900">
+                    <Shield className="h-5 w-5 text-slate-500" />
+                    Qualidade cadastral: {data.risk.score}/100
+                  </div>
+                  <p className="text-xs mt-1 text-slate-600" data-testid="cnpj-cadastral-score-disclaimer">
+                    Indicador de consistência e características cadastrais. Não representa aprovação de crédito nem
+                    autoriza venda a prazo. Clique para ver a composição do indicador.
+                  </p>
+                </summary>
+                <ul className="mt-3 grid gap-1 text-xs text-slate-600 sm:grid-cols-2">
                   {data.risk.explanation.map((line) => (
-                    <li key={line}>• {line}</li>
+                    <li key={line} className="rounded-md bg-slate-50 px-2 py-1">• {line}</li>
                   ))}
                 </ul>
                 <p className="text-xs mt-2 italic text-slate-500">{data.commercial.disclaimer}</p>
-              </div>
+              </details>
 
-              <section className="grid gap-3 sm:grid-cols-2 text-sm">
-                <div className="rounded-lg border p-3 space-y-1">
-                  <h3 className="font-semibold mb-2">Dados oficiais da empresa</h3>
+              <section className="grid gap-3 lg:grid-cols-2 text-sm">
+                <div className="space-y-2 rounded-xl border border-l-4 border-slate-200 border-l-slate-700 bg-white p-4 shadow-sm">
+                  <h3 className="mb-2 text-xs font-bold uppercase tracking-wider text-slate-600">Dados oficiais da empresa</h3>
                   <p>Abertura: {data.summary.openedAt ?? "—"}</p>
                   <p>Situação: {data.summary.registrationStatus ?? "—"}</p>
                   <p>Porte: {data.summary.companySize ?? "—"}</p>
@@ -587,16 +612,16 @@ export function CustomerCnpjIntelligencePanel({
                     </p>
                   )}
                 </div>
-                <div className="rounded-lg border p-3 space-y-2">
-                  <h3 className="font-semibold">Inteligência comercial</h3>
+                <div className="space-y-2 rounded-xl border border-l-4 border-slate-200 border-l-indigo-600 bg-white p-4 shadow-sm">
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-indigo-800">Inteligência comercial</h3>
                   {data.commercial.insights.map((i) => (
-                    <div key={i.code} className="text-xs">
-                      <p className="font-medium">{i.title}</p>
+                    <div key={i.code} className="rounded-lg bg-indigo-50/50 px-3 py-2 text-xs">
+                      <p className="font-semibold text-indigo-950">{i.title}</p>
                       <p className="text-slate-600">{i.description}</p>
                     </div>
                   ))}
                   {data.commercial.crossSell.map((c) => (
-                    <div key={c.category} className="text-xs border-t pt-2">
+                    <div key={c.category} className="border-t border-slate-100 pt-2 text-xs">
                       <p className="font-medium">{c.category}</p>
                       <p className="text-slate-600">{c.suggestions.join(" · ")}</p>
                     </div>
@@ -618,7 +643,7 @@ export function CustomerCnpjIntelligencePanel({
               </section>
 
               {(data.publicContactSuggestion?.phone || data.publicContactSuggestion?.email) && (
-                <section className="rounded-lg border border-amber-200 bg-amber-50/40 p-3 space-y-2">
+                <section className="rounded-xl border border-l-4 border-amber-200 border-l-amber-500 bg-amber-50/50 p-4 space-y-2 shadow-sm">
                   <h3 className="font-semibold text-sm">Contatos públicos do CNPJ</h3>
                   <p className="text-xs text-amber-900">
                     {data.publicContactSuggestion.disclaimer}

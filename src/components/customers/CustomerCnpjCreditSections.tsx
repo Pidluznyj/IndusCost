@@ -93,12 +93,13 @@ export function CreditDecisionHeader({
     : credit?.decisionDescription ??
       "Não foi possível confirmar as condições de crédito. É necessária análise antes da venda a prazo.";
   const toneClass = DECISION_TONE_CLASS[tone];
+  const reasons = credit?.decisionReasons ?? [];
   return (
     <div
       className={cn(
-        "rounded-xl border-2 p-4",
+        "rounded-2xl border-l-[6px] border p-4 shadow-sm",
         toneClass.box,
-        sticky && "sticky top-0 z-20 shadow-sm"
+        sticky && "top-0 z-20"
       )}
       data-testid="cnpj-credit-decision-header"
       data-decision-state={error || !credit ? "NAO_DETERMINADO" : credit.decisionState}
@@ -106,19 +107,39 @@ export function CreditDecisionHeader({
       aria-live="polite"
     >
       <div className="flex items-start gap-3">
-        <DecisionIcon tone={tone} className="mt-0.5 h-7 w-7 shrink-0" />
+        <DecisionIcon tone={tone} className="mt-0.5 h-8 w-8 shrink-0" />
         <div className="min-w-0 flex-1">
-          <p className="text-lg font-extrabold uppercase leading-tight tracking-tight sm:text-xl">
+          <p className="text-2xl font-black uppercase leading-none tracking-tight sm:text-[28px]">
             {loading && !credit ? "Avaliando crédito…" : title}
           </p>
-          <p className="mt-1 text-sm font-medium opacity-90">{description}</p>
+          <p className="mt-2 text-sm font-medium opacity-90">{description}</p>
           {tone === "blocked" || tone === "critical" ? (
-            <p className="mt-1 text-sm font-bold uppercase">Não vender a prazo sem liberação autorizada</p>
+            <p className="mt-1 text-sm font-black uppercase tracking-wide">Não vender a prazo sem liberação autorizada</p>
           ) : null}
           <p className="mt-2 text-[11px] uppercase tracking-wide opacity-70">
             Decisão do motor comercial · Última avaliação:{" "}
             {credit?.decisionEvaluatedAtLabel ?? INTELLIGENCE_FACT_LABEL.NOT_CONSULTED}
           </p>
+          {reasons.length > 0 ? (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {reasons.map((reason) => (
+                <span
+                  key={reason.code}
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold",
+                    reason.severity === "CRITICAL" || reason.severity === "HIGH"
+                      ? "bg-white/80 text-red-900"
+                      : reason.severity === "MEDIUM"
+                        ? "bg-white/80 text-amber-950"
+                        : "bg-white/70 text-slate-800"
+                  )}
+                >
+                  <span className={cn("h-1.5 w-1.5 rounded-full", SEVERITY_CLASS[reason.severity])} />
+                  {reason.label}
+                </span>
+              ))}
+            </div>
+          ) : null}
         </div>
       </div>
     </div>
@@ -126,10 +147,16 @@ export function CreditDecisionHeader({
 }
 
 function renderReasonCard(reason: CreditDecisionReason) {
+  const rail =
+    reason.severity === "CRITICAL" || reason.severity === "HIGH"
+      ? "border-l-red-600 bg-red-50/60"
+      : reason.severity === "MEDIUM"
+        ? "border-l-amber-500 bg-amber-50/70"
+        : "border-l-slate-400 bg-slate-50";
   return (
     <li
       key={reason.code}
-      className="rounded-lg border border-slate-200 bg-white p-3"
+      className={cn("rounded-lg border border-l-4 border-slate-200 p-3", rail)}
       data-testid="cnpj-credit-reason"
       data-reason-code={reason.code}
     >
@@ -160,11 +187,11 @@ export function CreditDecisionReasons({ credit }: { credit: CommercialCreditInte
       : "POR QUE ESTE CLIENTE ESTÁ BLOQUEADO?";
   return (
     <section
-      className="rounded-xl border border-slate-200 bg-slate-50 p-4"
+      className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
       data-testid="cnpj-credit-reasons"
     >
-      <h3 className="text-sm font-bold uppercase tracking-wide text-slate-700">{heading}</h3>
-      <ul className="mt-3 space-y-2">{reasons.map(renderReasonCard)}</ul>
+      <h3 className="text-xs font-bold uppercase tracking-wider text-slate-600">{heading}</h3>
+      <ul className="mt-3 grid gap-2 md:grid-cols-2">{reasons.map(renderReasonCard)}</ul>
     </section>
   );
 }
@@ -212,25 +239,41 @@ export function CustomerCnpjCreditSections({ credit, loading, error, sources = [
 
       <CreditDecisionReasons credit={credit} />
 
-      <div className="grid gap-3 sm:grid-cols-2">
-        <div className="min-w-0 rounded-lg border p-3 text-sm" data-testid="cnpj-credit-cadastral">
-          <h4 className="mb-2 font-semibold">Qualidade cadastral</h4>
-          <p>
+      <div className="grid gap-3 lg:grid-cols-2">
+        <div className="min-w-0 rounded-xl border border-l-4 border-slate-200 border-l-slate-400 bg-white p-4 text-sm shadow-sm" data-testid="cnpj-credit-cadastral">
+          <h4 className="mb-2 text-xs font-bold uppercase tracking-wider text-slate-500">Qualidade cadastral</h4>
+          <p className="text-2xl font-extrabold text-slate-900">
             Qualidade cadastral: {credit?.cadastralScoreLabel ?? INTELLIGENCE_FACT_LABEL.NOT_CONSULTED}
           </p>
           <p className="mt-1 text-xs text-slate-600">
             Indicador de consistência e características cadastrais. Não representa aprovação de crédito.
           </p>
         </div>
-        <div className="min-w-0 rounded-lg border p-3 text-sm" data-testid="cnpj-credit-internal">
-          <h4 className="mb-2 font-semibold">2. Situação de crédito interno — Histórico financeiro (Nomus)</h4>
-          <Fact label="Situação da análise" value={credit?.situationLabel ?? (error ? INTELLIGENCE_FACT_LABEL.UNAVAILABLE : INTELLIGENCE_FACT_LABEL.NOT_CONSULTED)} />
-          <Fact label="Valor vencido" value={credit?.overdueAmountLabel ?? (error ? INTELLIGENCE_FACT_LABEL.UNAVAILABLE : INTELLIGENCE_FACT_LABEL.NOT_CONSULTED)} />
-          <Fact label="Quantidade de títulos" value={credit?.overdueTitleCountLabel ?? (error ? INTELLIGENCE_FACT_LABEL.UNAVAILABLE : INTELLIGENCE_FACT_LABEL.NOT_CONSULTED)} />
-          <Fact label="Maior atraso" value={credit?.maxDaysOverdueLabel ?? (error ? INTELLIGENCE_FACT_LABEL.UNAVAILABLE : INTELLIGENCE_FACT_LABEL.NOT_CONSULTED)} />
-          <Fact label="Protesto interno" value={credit?.internalProtestLabel ?? (error ? INTELLIGENCE_FACT_LABEL.UNAVAILABLE : INTELLIGENCE_FACT_LABEL.NOT_CONSULTED)} />
-          <Fact label="Última sincronização Nomus" value={credit?.lastSyncedAtLabel ?? (error ? INTELLIGENCE_FACT_LABEL.UNAVAILABLE : INTELLIGENCE_FACT_LABEL.NOT_CONSULTED)} />
-          <Fact label="Motivo do bloqueio" value={credit?.blockReason ?? (credit ? INTELLIGENCE_FACT_LABEL.CLEAR : error ? INTELLIGENCE_FACT_LABEL.UNAVAILABLE : INTELLIGENCE_FACT_LABEL.NOT_CONSULTED)} />
+        <div className="min-w-0 rounded-xl border border-l-4 border-slate-200 border-l-blue-700 bg-white p-4 text-sm shadow-sm" data-testid="cnpj-credit-internal">
+          <h4 className="mb-3 text-xs font-bold uppercase tracking-wider text-blue-800">2. Situação de crédito interno — Histórico financeiro (Nomus)</h4>
+          <div className="grid grid-cols-2 gap-2">
+            <div className="rounded-lg bg-red-50 px-3 py-2">
+              <p className="text-[10px] font-bold uppercase tracking-wide text-red-700">Valor vencido</p>
+              <p className="text-base font-extrabold text-red-950">{credit?.overdueAmountLabel ?? (error ? INTELLIGENCE_FACT_LABEL.UNAVAILABLE : INTELLIGENCE_FACT_LABEL.NOT_CONSULTED)}</p>
+            </div>
+            <div className="rounded-lg bg-slate-50 px-3 py-2">
+              <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Títulos</p>
+              <p className="text-base font-extrabold">{credit?.overdueTitleCountLabel ?? (error ? INTELLIGENCE_FACT_LABEL.UNAVAILABLE : INTELLIGENCE_FACT_LABEL.NOT_CONSULTED)}</p>
+            </div>
+            <div className="rounded-lg bg-slate-50 px-3 py-2">
+              <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Maior atraso</p>
+              <p className="text-base font-extrabold">{credit?.maxDaysOverdueLabel ?? (error ? INTELLIGENCE_FACT_LABEL.UNAVAILABLE : INTELLIGENCE_FACT_LABEL.NOT_CONSULTED)}</p>
+            </div>
+            <div className="rounded-lg bg-slate-50 px-3 py-2">
+              <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Protesto interno</p>
+              <p className="text-base font-extrabold">{credit?.internalProtestLabel ?? (error ? INTELLIGENCE_FACT_LABEL.UNAVAILABLE : INTELLIGENCE_FACT_LABEL.NOT_CONSULTED)}</p>
+            </div>
+          </div>
+          <div className="mt-3 space-y-1 text-xs text-slate-600">
+            <Fact label="Situação da análise" value={credit?.situationLabel ?? (error ? INTELLIGENCE_FACT_LABEL.UNAVAILABLE : INTELLIGENCE_FACT_LABEL.NOT_CONSULTED)} />
+            <Fact label="Última sincronização Nomus" value={credit?.lastSyncedAtLabel ?? (error ? INTELLIGENCE_FACT_LABEL.UNAVAILABLE : INTELLIGENCE_FACT_LABEL.NOT_CONSULTED)} />
+            <Fact label="Motivo do bloqueio" value={credit?.blockReason ?? (credit ? INTELLIGENCE_FACT_LABEL.CLEAR : error ? INTELLIGENCE_FACT_LABEL.UNAVAILABLE : INTELLIGENCE_FACT_LABEL.NOT_CONSULTED)} />
+          </div>
           {credit?.financialDetailsRestricted ? (
             <p className="mt-2 text-xs text-slate-500" data-testid="cnpj-credit-restricted">
               Valores financeiros restritos à permissão de Contas a Receber.
@@ -238,18 +281,64 @@ export function CustomerCnpjCreditSections({ credit, loading, error, sources = [
           ) : null}
         </div>
 
-        <div className="min-w-0 rounded-lg border p-3 text-sm" data-testid="cnpj-credit-external">
-          <h4 className="mb-2 font-semibold">3. Restrições externas verificadas</h4>
-          <Fact label="Banco Central do Brasil" value={credit?.bcbLabel ?? INTELLIGENCE_FACT_LABEL.NOT_APPLICABLE} />
-          <p className="mt-1 text-xs text-slate-600" data-testid="cnpj-bcb-detail">
-            {credit?.bcbDetail ?? "Não aplicável. Nenhuma consulta ao Banco Central foi realizada."}
-          </p>
-          <Fact label="Protesto externo" value={credit?.externalProtestLabel ?? (error ? INTELLIGENCE_FACT_LABEL.UNAVAILABLE : INTELLIGENCE_FACT_LABEL.NOT_CONSULTED)} />
-          {credit?.externalProtestDetail ? <p className="text-xs text-slate-600">{credit.externalProtestDetail}</p> : null}
+        {(credit?.overdueTitles.length ?? 0) > 0 ? (
+          <div
+            className="min-w-0 rounded-xl border border-l-4 border-slate-200 border-l-red-600 bg-white p-4 text-sm shadow-sm lg:col-span-2"
+            data-testid="cnpj-credit-overdue-titles"
+          >
+            <h4 className="mb-3 text-xs font-bold uppercase tracking-wider text-red-800">Títulos vencidos — Nomus</h4>
+            <div className="max-h-64 overflow-auto rounded-lg border border-red-100">
+              <table className="min-w-full text-xs">
+                <thead className="sticky top-0 bg-red-50 text-left text-[10px] uppercase tracking-wide text-red-800">
+                  <tr>
+                    <th className="px-3 py-2">Documento</th>
+                    <th className="px-3 py-2">Descrição</th>
+                    <th className="px-3 py-2">Vencimento</th>
+                    <th className="px-3 py-2">Atraso</th>
+                    <th className="px-3 py-2 text-right">Saldo</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {credit!.overdueTitles.map((title) => (
+                    <tr key={title.id} className="border-t border-red-50 odd:bg-white even:bg-red-50/40">
+                      <td className="px-3 py-1.5 font-semibold">
+                        {title.documentLabel}
+                        {title.protested ? (
+                          <span className="ml-1 rounded-full bg-red-700 px-1.5 py-0.5 text-[9px] font-bold uppercase text-white">
+                            Protesto
+                          </span>
+                        ) : null}
+                      </td>
+                      <td className="px-3 py-1.5 text-slate-700">{title.descriptionLabel}</td>
+                      <td className="px-3 py-1.5 whitespace-nowrap">{title.dueDateLabel}</td>
+                      <td className="px-3 py-1.5 font-semibold text-red-800">{title.daysOverdueLabel}</td>
+                      <td className="px-3 py-1.5 text-right font-extrabold tabular-nums text-red-950">{title.amountLabel}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ) : null}
+
+        <div className="min-w-0 rounded-xl border border-l-4 border-slate-200 border-l-amber-500 bg-white p-4 text-sm shadow-sm lg:col-span-2" data-testid="cnpj-credit-external">
+          <h4 className="mb-2 text-xs font-bold uppercase tracking-wider text-amber-800">3. Restrições externas verificadas</h4>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div>
+              <Fact label="Banco Central do Brasil" value={credit?.bcbLabel ?? INTELLIGENCE_FACT_LABEL.NOT_APPLICABLE} />
+              <p className="mt-1 text-xs text-slate-600" data-testid="cnpj-bcb-detail">
+                {credit?.bcbDetail ?? "Não aplicável. Nenhuma consulta ao Banco Central foi realizada."}
+              </p>
+            </div>
+            <div>
+              <Fact label="Protesto externo" value={credit?.externalProtestLabel ?? (error ? INTELLIGENCE_FACT_LABEL.UNAVAILABLE : INTELLIGENCE_FACT_LABEL.NOT_CONSULTED)} />
+              {credit?.externalProtestDetail ? <p className="text-xs text-slate-600">{credit.externalProtestDetail}</p> : null}
+            </div>
+          </div>
           {sourceFacts.length > 0 ? (
-            <ul className="mt-2 space-y-1 text-xs text-slate-600">
+            <ul className="mt-3 grid gap-1 text-xs text-slate-600 sm:grid-cols-2">
               {sourceFacts.map((fact) => (
-                <li key={fact.label} className="break-words">
+                <li key={fact.label} className="break-words rounded-md bg-slate-50 px-2 py-1">
                   {fact.label}: {fact.stateLabel}. {fact.detail}
                 </li>
               ))}
@@ -282,7 +371,7 @@ export function CustomerCnpjCreditSections({ credit, loading, error, sources = [
         </div>
       ) : null}
 
-      <div className="min-w-0 rounded-lg border bg-slate-50 p-3 text-sm" data-testid="cnpj-credit-decision">
+      <div className="min-w-0 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm" data-testid="cnpj-credit-decision">
         <h4 className="mb-2 font-semibold">4. Decisão comercial final</h4>
         {credit?.customerStatus ? (
           <p className="text-xs font-semibold" data-testid="cnpj-credit-status-code">

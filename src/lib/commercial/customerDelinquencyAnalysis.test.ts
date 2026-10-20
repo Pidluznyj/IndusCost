@@ -85,6 +85,12 @@ describe("inadimplência comercial — tolerância zero", () => {
     assert.equal(overdue.overdueAmount, 1000);
     assert.equal(overdue.maxDaysOverdue, 1);
     assert.deepEqual(overdue.evidence.overdueTitleIds, [1]);
+    assert.equal(overdue.overdueTitles?.length, 1);
+    assert.equal(overdue.overdueTitles?.[0]?.externalId, 1);
+    assert.equal(overdue.overdueTitles?.[0]?.sourceInvoiceNumber, "100");
+    assert.equal(overdue.overdueTitles?.[0]?.dueDate, "2026-10-18");
+    assert.equal(overdue.overdueTitles?.[0]?.daysOverdue, 1);
+    assert.equal(overdue.overdueTitles?.[0]?.balanceReceivable, 1000);
 
     const dueToday = analyzeCommercialDelinquency(
       input({ titles: [title({ dueDate: new Date(2026, 9, 19, 23, 59, 0) })] })

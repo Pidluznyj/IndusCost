@@ -239,6 +239,16 @@ export function presentCnpjSourceFact(source: CnpjSourceFactInput): {
   };
 }
 
+export type CreditOverdueTitleView = {
+  id: string;
+  documentLabel: string;
+  descriptionLabel: string;
+  dueDateLabel: string;
+  daysOverdueLabel: string;
+  amountLabel: string;
+  protested: boolean;
+};
+
 export type CommercialCreditIntelligenceView = {
   consulted: boolean;
   customerStatus: CommercialCreditDecisionStatus | null;
@@ -262,6 +272,7 @@ export type CommercialCreditIntelligenceView = {
   overdueAmountLabel: string;
   overdueTitleCountLabel: string;
   maxDaysOverdueLabel: string;
+  overdueTitles: CreditOverdueTitleView[];
   internalProtest: IntelligenceFactState;
   internalProtestLabel: string;
   externalProtest: IntelligenceFactState;
@@ -324,6 +335,30 @@ function countLabel(value: number | null, reveal: boolean, consulted: boolean, u
   if (unavailable || value == null) return INTELLIGENCE_FACT_LABEL.UNAVAILABLE;
   if (clear && value === 0) return INTELLIGENCE_FACT_LABEL.CLEAR;
   return String(value);
+}
+
+function formatOverdueDueDate(value: string | null): string {
+  if (!value) return "—";
+  const [year, month, day] = value.split("-").map((part) => Number(part));
+  if (!year || !month || !day) return value;
+  return new Date(year, month - 1, day).toLocaleDateString("pt-BR");
+}
+
+function presentOverdueTitles(
+  delinquency: CommercialDelinquencyAnalysis,
+  reveal: boolean,
+  unavailable: boolean
+): CreditOverdueTitleView[] {
+  if (!reveal || unavailable) return [];
+  return (delinquency.overdueTitles ?? []).map((title) => ({
+    id: String(title.externalId),
+    documentLabel: title.sourceInvoiceNumber?.trim() || `#${title.externalId}`,
+    descriptionLabel: title.description?.trim() || "—",
+    dueDateLabel: formatOverdueDueDate(title.dueDate),
+    daysOverdueLabel: daysLabel(title.daysOverdue, true, true, false, false),
+    amountLabel: moneyLabel(title.balanceReceivable, true, true, false, false),
+    protested: title.protested,
+  }));
 }
 
 function daysLabel(value: number | null, reveal: boolean, consulted: boolean, unavailable: boolean, clear: boolean): string {
@@ -416,6 +451,7 @@ export function notConsultedCommercialCreditView(): CommercialCreditIntelligence
     overdueAmountLabel: INTELLIGENCE_FACT_LABEL.NOT_CONSULTED,
     overdueTitleCountLabel: INTELLIGENCE_FACT_LABEL.NOT_CONSULTED,
     maxDaysOverdueLabel: INTELLIGENCE_FACT_LABEL.NOT_CONSULTED,
+    overdueTitles: [],
     internalProtest: "NOT_CONSULTED",
     internalProtestLabel: INTELLIGENCE_FACT_LABEL.NOT_CONSULTED,
     externalProtest: "NOT_CONSULTED",
@@ -478,6 +514,7 @@ export function buildCommercialCreditIntelligenceView(input: {
     overdueAmountLabel: moneyLabel(input.delinquency.overdueAmount, input.revealFinancial, true, unavailable, clearBook),
     overdueTitleCountLabel: countLabel(input.delinquency.overdueTitleCount, input.revealFinancial, true, unavailable, clearBook),
     maxDaysOverdueLabel: daysLabel(input.delinquency.maxDaysOverdue, input.revealFinancial, true, unavailable, clearBook),
+    overdueTitles: presentOverdueTitles(input.delinquency, input.revealFinancial, unavailable),
     internalProtest: protest,
     internalProtestLabel: INTELLIGENCE_FACT_LABEL[protest],
     externalProtest: external.state,
