@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { fetchJsonOk } from "@/src/lib/http";
+import { formatCreditDateTime } from "@/src/lib/commercial/commercialCreditIntelligenceView";
 import { generateIdempotencyKey, SecureRandomUnavailableError } from "@/src/lib/quodDossier/idempotencyKey";
 import type { QuodSections } from "@/src/lib/quodDossier/parse";
 import {
@@ -115,6 +116,7 @@ export function CustomerQuodDossierPanel({
           score={status?.consultation?.score ?? null}
           restrictionCount={status?.consultation?.restrictionCount ?? null}
           priceLabel={status?.priceLabel ?? "—"}
+          alerts={status?.state === "VALID" ? status.consultation?.sections?.score.reasons ?? [] : []}
           canQuery={status?.state !== "VALID" && status?.state !== "IN_PROGRESS"}
           onView={() => setShowReport(true)}
           onRequestPaid={() => setConfirming(true)}
@@ -145,10 +147,10 @@ export function CustomerQuodDossierPanel({
           cnpj={cnpj}
           priceLabel={status?.priceLabel ?? "—"}
           requestedBy={requestedBy}
-          requestedAt={new Date().toLocaleString("pt-BR")}
+          requestedAt={formatCreditDateTime(new Date().toISOString())}
           previousLabel={
             status?.consultation?.consultedAt
-              ? `Consulta anterior em ${new Date(status.consultation.consultedAt).toLocaleString("pt-BR")}, válida até ${status.consultation.validUntil ? new Date(status.consultation.validUntil).toLocaleString("pt-BR") : "—"}. Atualizar gera nova consulta paga.`
+              ? `Consulta anterior em ${formatCreditDateTime(status.consultation.consultedAt)}, válida até ${status.consultation.validUntil ? formatCreditDateTime(status.consultation.validUntil) : "—"}. Atualizar gera nova consulta paga.`
               : null
           }
           submitting={submitting}
