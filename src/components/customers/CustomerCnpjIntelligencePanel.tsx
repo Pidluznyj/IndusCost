@@ -11,6 +11,8 @@ import {
   X,
 } from "lucide-react";
 import { CnpjCommercialIntelligencePrintReport } from "@/src/components/customers/CnpjCommercialIntelligencePrintReport";
+import { CustomerQuodDossierPanel } from "@/src/components/customers/CustomerQuodDossierPanel";
+import { useAuthOptional } from "@/src/contexts/AuthContext";
 import { CustomerCnpjCreditSections } from "@/src/components/customers/CustomerCnpjCreditSections";
 import { CustomerCreditOccurrenceHistory } from "@/src/components/customers/CustomerCreditOccurrenceHistory";
 import { fetchJsonOk } from "@/src/lib/http";
@@ -93,6 +95,7 @@ export function CustomerCnpjIntelligencePanel({
   onOpenExistingCustomer,
   stacked = false,
 }: Props) {
+  const auth = useAuthOptional();
   const dialogRef = useRef<HTMLDivElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const returnFocusRef = useRef<HTMLElement | null>(null);
@@ -416,6 +419,16 @@ export function CustomerCnpjIntelligencePanel({
 
           {customerId && !data && !loading ? (
             <>
+              <CustomerQuodDossierPanel
+                customerId={customerId}
+                companyName="Cliente"
+                cnpj={initialCnpj}
+                cadastralScore="Não consultado"
+                cadastralVerdict={null}
+                creditLabel={credit?.situationLabel ?? "Não consultado"}
+                isSuperAdmin={auth?.isSuperAdmin() === true}
+                requestedBy={auth?.authUser?.name || auth?.authUser?.email || "—"}
+              />
               <CustomerCnpjCreditSections
                 credit={credit}
                 loading={creditLoading}
@@ -502,6 +515,17 @@ export function CustomerCnpjIntelligencePanel({
                 </div>
               </div>
 
+              <CustomerQuodDossierPanel
+                customerId={customerId}
+                companyName={data.summary.companyName}
+                cnpj={data.summary.cnpjFormatted}
+                cadastralScore={`${data.risk.score}/100`}
+                cadastralVerdict={data.risk.verdict}
+                creditLabel={credit?.situationLabel ?? "Não consultado"}
+                isSuperAdmin={auth?.isSuperAdmin() === true}
+                requestedBy={auth?.authUser?.name || auth?.authUser?.email || "—"}
+              />
+
               <div className={cn("rounded-lg border p-4", verdictClass)} data-testid="cnpj-cadastral-score">
                 <p className="text-xs font-medium uppercase tracking-wide opacity-70">1. Score cadastral</p>
                 <div className="flex items-center gap-2 font-semibold">
@@ -541,6 +565,7 @@ export function CustomerCnpjIntelligencePanel({
                   <p>Abertura: {data.summary.openedAt ?? "—"}</p>
                   <p>Situação: {data.summary.registrationStatus ?? "—"}</p>
                   <p>Porte: {data.summary.companySize ?? "—"}</p>
+                  <p>Matriz/filial: {data.summary.establishmentType ?? "—"}</p>
                   <p>Natureza: {data.summary.legalNature ?? "—"}</p>
                   <p>
                     Capital:{" "}

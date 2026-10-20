@@ -32,6 +32,7 @@ import { ExecutiveSummarySection } from "@/src/components/ui/ExecutiveSummarySec
 import { MetricCard } from "@/src/components/ui/MetricCard";
 import { NomusDailySyncCard } from "@/src/components/NomusDailySyncCard";
 import { MaterialStockSpreadsheetMirrorAdminCard } from "@/src/components/settings/MaterialStockSpreadsheetMirrorAdminCard";
+import { CnpjWeeklyRefreshAdminPanel } from "@/src/components/settings/CnpjWeeklyRefreshAdminCard";
 import { NomusSourceReconciliationObservabilityCard } from "@/src/components/NomusSourceReconciliationObservabilityCard";
 import { NomusAccountsReceivableSyncCard } from "@/src/components/NomusAccountsReceivableSyncCard";
 import { NomusAccountsPayableSyncCard } from "@/src/components/NomusAccountsPayableSyncCard";
@@ -390,6 +391,12 @@ export const SettingsModule = () => {
   const canManageMaterialStockMirror =
     auth.hasPermission("settings.material_stock_mirror.manage") ||
     permissions.canPerformAction("admin.settings.material_stock_mirror", "execute");
+  const canViewCnpjWeeklyRefresh =
+    auth.hasPermission("settings.cnpj_weekly_refresh.view") ||
+    permissions.canPerformAction("admin.settings.cnpj_weekly_refresh", "view");
+  const canManageCnpjWeeklyRefresh =
+    auth.hasPermission("settings.cnpj_weekly_refresh.manage") ||
+    permissions.canPerformAction("admin.settings.cnpj_weekly_refresh", "execute");
   const [securitySubTab, setSecuritySubTab] = useState<"users" | "accessProfiles" | "policies">("users");
   const [tourOpen, setTourOpen] = useState(false);
   const [roles, setRoles] = useState<Role[]>([]);
@@ -2661,6 +2668,10 @@ export const SettingsModule = () => {
               <MaterialStockSpreadsheetMirrorAdminCard
                 canView={canViewMaterialStockMirror}
                 canManage={canManageMaterialStockMirror}
+              />
+              <CnpjWeeklyRefreshAdminPanel
+                canView={canViewCnpjWeeklyRefresh}
+                canManage={canManageCnpjWeeklyRefresh}
               />
             </div>
           )}

@@ -5,6 +5,7 @@
 import { CompanyIntelligenceError } from "./companyCnpjErrors.js";
 import { formatCep, formatCnpj, isValidCnpj, normalizeCnpj } from "./companyCnpjFormat.js";
 import {
+  normalizeEstablishmentType,
   normalizeRegistrationStatusExport,
   parseShareCapital,
   type NormalizedCnpjSummary,
@@ -123,6 +124,9 @@ export function normalizeBrasilApiCnpjPayload(raw: unknown): NormalizedCnpjSumma
     partners,
     isMei,
     hasPartners: partners.length > 0,
+    establishmentType: normalizeEstablishmentType(
+      root.descricao_identificador_matriz_filial ?? root.identificador_matriz_filial
+    ),
     sourceUpdatedAt: readString(root.data_situacao_cadastral),
   };
 }

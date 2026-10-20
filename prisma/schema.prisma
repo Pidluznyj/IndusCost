@@ -2492,6 +2492,8 @@ model Customer {
   commercialCorporateMemberships   CommercialCorporateMembership[]
   commercialCreditOccurrences      CommercialCreditOccurrence[]
   commercialCreditEvaluations      CommercialCreditEvaluation[]
+  cnpjRefreshRunItems              CnpjRefreshRunItem[]
+  quodDossierConsultations         QuodDossierConsultation[]
 
   @@index([personId])
   @@index([contactPersonId])
@@ -3523,6 +3525,39 @@ model CommercialCreditOccurrenceEvidence {
   @@index([occurrenceId])
 }
 
+/// Dossiê QUOD Completo. Não altera título, cadastro operacional nem a fórmula do score cadastral.
+model QuodDossierConsultation {
+  id                    String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  customerId            String    @db.Uuid
+  companyName           String
+  cnpj                  String
+  idempotencyKey        String    @unique
+  requestedByUserId     String
+  requestedByRole       String
+  status                String
+  billingStatus         String
+  authorizedCostCents   Int
+  chargedCostCents      Int?
+  providerQueryId       String?
+  providerHttpStatus    Int?
+  failureCode           String?
+  score                 Int?
+  restrictionCount      Int?
+  confirmedRestriction  Boolean   @default(false)
+  insufficient          Boolean   @default(false)
+  sections              Json?
+  partners              Json?
+  validUntil            DateTime? @db.Timestamptz(6)
+  consultedAt           DateTime? @db.Timestamptz(6)
+  createdAt             DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt             DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+  Customer              Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([customerId, createdAt])
+  @@index([cnpj, createdAt])
+  @@index([status])
+}
+
 model CustomerCnpjLookup {
   id                 String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   cnpj               String
@@ -3546,6 +3581,100 @@ model CustomerCnpjLookup {
   @@index([customerId])
   @@index([fetchedAt])
   @@index([expiresAt])
+}
+
+/// Execução semanal da consulta cadastral. Não copia título nem saldo do Nomus.
+model CnpjRefreshRun {
+  id                     String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  scheduleSlot           String?
+  trigger                String
+  status                 String
+  startedAt              DateTime? @db.Timestamptz(6)
+  finishedAt             DateTime? @db.Timestamptz(6)
+  heartbeatAt            DateTime? @db.Timestamptz(6)
+  eligibleCount          Int       @default(0)
+  consultedCount         Int       @default(0)
+  updatedCount           Int       @default(0)
+  unchangedCount         Int       @default(0)
+  failedCount            Int       @default(0)
+  partialCount           Int       @default(0)
+  invalidCount           Int       @default(0)
+  missingDocumentCount   Int       @default(0)
+  customerCount          Int       @default(0)
+  supplierCount          Int       @default(0)
+  lastCnpj               String?
+  sourceLabel            String?
+  statusDetail           String?
+  errorMessage           String?
+  requestedByUserId      String?
+  createdAt              DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt              DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+  items                  CnpjRefreshRunItem[]
+  changes                CnpjCadastreChange[]
+  divergences            CnpjCadastreDivergence[]
+
+  @@unique([scheduleSlot])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model CnpjRefreshRunItem {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  runId         String    @db.Uuid
+  subjectKey    String
+  cnpj          String?
+  status        String
+  partyKind     String
+  customerId    String?   @db.Uuid
+  supplierIds   String[]  @default([])
+  digitLength   Int?
+  documentClass String
+  attempts      Int       @default(0)
+  lookupId      String?
+  errorCode     String?
+  errorMessage  String?
+  consultedAt   DateTime? @db.Timestamptz(6)
+  createdAt     DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt     DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+  run           CnpjRefreshRun @relation(fields: [runId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  customer      Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@unique([runId, subjectKey])
+  @@index([runId, status])
+  @@index([customerId])
+}
+
+model CnpjCadastreChange {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  runId          String   @db.Uuid
+  cnpj           String
+  field          String
+  previousValue  String?
+  nextValue      String?
+  source         String?
+  consultedAt    DateTime @db.Timestamptz(6)
+  detectedAt     DateTime @db.Timestamptz(6)
+  lookupId       String?
+  run            CnpjRefreshRun @relation(fields: [runId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([runId])
+  @@index([cnpj, detectedAt])
+}
+
+model CnpjCadastreDivergence {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  runId           String   @db.Uuid
+  cnpj            String
+  partyKind       String
+  partyId         String
+  field           String
+  officialValue   String?
+  consultedValue  String?
+  detectedAt      DateTime @db.Timestamptz(6)
+  run             CnpjRefreshRun @relation(fields: [runId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([runId])
+  @@index([partyId])
 }
 
 model IntegrationRun {

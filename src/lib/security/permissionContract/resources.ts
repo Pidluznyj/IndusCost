@@ -3305,6 +3305,28 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
     relationalResourceKeys: [],
   },
   {
+    resourceKey: "admin.settings.cnpj_weekly_refresh",
+    label: "Configurações — Consulta semanal de CNPJ",
+    parentKey: "admin.settings",
+    groupId: "admin",
+    route: "/settings",
+    sortOrder: 728,
+    actions: [
+      V(["settings.cnpj_weekly_refresh.view"]),
+      E(
+        ["settings.cnpj_weekly_refresh.manage"],
+        "execução em massa de CNPJ — não expor ao comercial comum"
+      ),
+    ],
+    relatedEndpoints: ["/api/admin/cnpj-weekly-refresh"],
+    sensitivity: "critical",
+    appearsInSidebar: false,
+    isTab: true,
+    isInternalAction: false,
+    isDetailScreen: false,
+    relationalResourceKeys: [],
+  },
+  {
     resourceKey: "admin.settings.material_stock_mirror",
     label: "Configurações — Espelho planilha estoque",
     parentKey: "admin.settings",

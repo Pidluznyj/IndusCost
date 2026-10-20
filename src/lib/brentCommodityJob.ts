@@ -1,4 +1,5 @@
 import type { CommodityCollectionSlot } from "@prisma/client";
+import { CNPJ_WEEKLY_REFRESH_REGISTERED_JOB } from "@/src/lib/cnpjWeeklyRefresh/schedule.js";
 
 export const BRENT_COMMODITY_LOG_PREFIX = "[brent-commodity-collection]" as const;
 export const BRENT_COLLECTION_TIMEZONE = "America/Sao_Paulo" as const;
@@ -165,6 +166,7 @@ export function listRegisteredScheduledJobs() {
     BRENT_COMMODITY_REGISTERED_JOB,
     PTAX_SNAPSHOT_LEGACY_REGISTERED_JOB,
     PORTFOLIO_INACTIVITY_REGISTERED_JOB,
+    CNPJ_WEEKLY_REFRESH_REGISTERED_JOB,
   ];
 }
 
@@ -175,6 +177,9 @@ export function getRegisteredScheduledJob(jobId: string) {
   }
   if (jobId === PORTFOLIO_INACTIVITY_REGISTERED_JOB.id) {
     return PORTFOLIO_INACTIVITY_REGISTERED_JOB;
+  }
+  if (jobId === CNPJ_WEEKLY_REFRESH_REGISTERED_JOB.id) {
+    return CNPJ_WEEKLY_REFRESH_REGISTERED_JOB;
   }
   return null;
 }

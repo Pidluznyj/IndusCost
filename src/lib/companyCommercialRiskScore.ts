@@ -187,6 +187,7 @@ export function simulateCommercialRisk(input: {
     ),
     isMei: input.isMei,
     hasPartners: input.hasPartners,
+    establishmentType: null,
     sourceUpdatedAt: null,
   });
 }

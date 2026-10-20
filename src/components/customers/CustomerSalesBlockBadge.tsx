@@ -55,15 +55,15 @@ export function CustomerSalesBlockBadge({
   return (
     <div
       className={cn(
-        "inline-flex items-center gap-1 rounded-full border border-red-300 bg-red-50 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-red-700",
+        "inline-flex max-w-full flex-wrap items-center gap-1 rounded-full border border-red-300 bg-red-50 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-red-700",
         className
       )}
       title={title}
       data-testid="customer-sales-block-badge"
       data-reason={reason}
     >
-      <Lock className="h-3 w-3" aria-hidden />
-      Venda bloqueada
+      <Lock className="h-3 w-3 shrink-0" aria-hidden />
+      <span className="min-w-0 leading-tight">Venda bloqueada</span>
       {isCustomerSalesBlockIdentityUnresolved(salesBlock) ? (
         <span className="sr-only">situação financeira não validada</span>
       ) : null}
