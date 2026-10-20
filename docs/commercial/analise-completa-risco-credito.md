@@ -27,6 +27,8 @@ O token **não** vai na URL. CPF não é enviado na consulta de CNPJ. Uma chamad
 
 TTL padrão 7 dias. Pacote reutiliza consulta válida. Reconsulta antecipada exige checkbox + `forceRefresh` e respeita intervalo mínimo.
 
+GET autenticado lê o resultado armazenado. Só `SUPER_ADMIN` dispara POST/consulta paga; o botão fica oculto para os demais.
+
 ## Ativação (produção)
 
 1. Confirmar autorização contratual do produto IEPTB na conta Direct Data.

@@ -473,7 +473,7 @@ describe("rotas do pacote", () => {
     });
   }
 
-  it("ADMIN recebe 403; SUPER_ADMIN consulta GET sem cobrança; POST sem checkbox não cobra", async () => {
+  it("ADMIN lê GET sem cobrança; POST continua só SUPER_ADMIN; POST sem checkbox não cobra", async () => {
     resetCreditIntelligencePackageRateLimit();
     const quodStore = createMemoryQuodStore();
     const ieptbStore = createMemoryIeptbStore();
@@ -493,8 +493,13 @@ describe("rotas do pacote", () => {
     );
     const http = await listen(app);
     try {
-      const forbidden = await requestJson(http.base, `/api/customers/${CUSTOMER}/credit-intelligence-package`);
-      assert.equal(forbidden.status, 403);
+      const readable = await requestJson(http.base, `/api/customers/${CUSTOMER}/credit-intelligence-package`);
+      assert.equal(readable.status, 200);
+      const paidAsAdmin = await requestJson(http.base, `/api/customers/${CUSTOMER}/credit-intelligence-package`, {
+        method: "POST",
+        body: { consent: true, idempotencyKey: "abc12345" },
+      });
+      assert.equal(paidAsAdmin.status, 403);
       role = "SUPER_ADMIN";
       const opened = await requestJson(http.base, `/api/customers/${CUSTOMER}/credit-intelligence-package`);
       assert.equal(opened.status, 200);

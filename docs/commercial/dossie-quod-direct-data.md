@@ -18,7 +18,7 @@ O JSON do catálogo é o contrato implementado. O preço efetivo e a cobrança r
 ## O que o IndusCost faz
 
 - O gatilho interno é `POST /api/customers/:id/quod-dossier`, só com `consent: true` e chave de idempotência.
-- Só `SUPER_ADMIN` consulta, lê o dossiê e emite o PDF. ADMIN, gestor comercial, vendedor, viewer e a permissão de exceção de crédito não autorizam.
+- Só `SUPER_ADMIN` dispara a consulta paga. Quem já acessa a tela de clientes lê o dossiê armazenado; o botão de consultar fica oculto.
 - Cache válido é só leitura. Nova cobrança só depois do vencimento, com nova confirmação.
 - Teto mensal, uma consulta em andamento por CNPJ e cobrança desconhecida (timeout, 429, 5xx) bloqueiam outra chamada. Não há retry automático.
 - O resultado vira evidência do motor de crédito já existente. Restrição confirmada pede `EM_ANALISE`. Score alto não remove inadimplência nem protesto interno. Score baixo, sozinho, não bloqueia.

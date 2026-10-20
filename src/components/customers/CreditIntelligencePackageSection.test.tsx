@@ -4,6 +4,7 @@ import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import {
   CreditExternalDimensions,
+  CreditIntelligenceSourceCards,
   IeptbOnlineReport,
   PackagePaidConsultationDialog,
 } from "./CreditIntelligencePackageSection.js";
@@ -95,5 +96,39 @@ describe("pacote visual QUOD + IEPTB", () => {
     assert.match(html, /03\/09\/2026/);
     assert.match(html, /09\/10\/2026/);
     assert.doesNotMatch(html, /03\/09\/2026 · R\$ 20\.000,00<\/p>/);
+  });
+
+  it("mostra QUOD/IEPTB para leitura e oculta o botão de consulta paga", () => {
+    const html = renderToStaticMarkup(
+      <CreditIntelligenceSourceCards
+        quodState="VALID"
+        quodScore={376}
+        quodAlerts={["Possui atrasos de parcelas/faturas em contratos recentes"]}
+        quodConsultedAt="2026-10-20T12:03:00.000Z"
+        quodValidUntil="2026-10-27T12:03:00.000Z"
+        ieptbState="VALID"
+        ieptbConfirmed
+        ieptbClear={false}
+        ieptbCount={37}
+        ieptbTotal={331021.22}
+        ieptbStates={["PB"]}
+        ieptbConsultedAt="2026-10-20T13:58:00.000Z"
+        ieptbValidUntil="2026-10-27T13:58:00.000Z"
+        complete
+        ieptbEnabled
+        canConsult={false}
+        canQuery={false}
+        onViewQuod={() => undefined}
+        onViewIeptb={() => undefined}
+        onRequestPackage={() => undefined}
+        onForceRefresh={() => undefined}
+      />
+    );
+    assert.match(html, /376/);
+    assert.match(html, /Ocorrência encontrada/);
+    assert.match(html, /Ver relatório QUOD/);
+    assert.equal(html.includes("package-request-paid"), false);
+    assert.equal(html.includes("Consultar risco completo"), false);
+    assert.equal(html.includes("Atualizar análise"), false);
   });
 });
