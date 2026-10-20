@@ -3,8 +3,10 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import {
+  applyDefaultWarehousePolicyToForm,
   assertNoBalanceFieldsInPayload,
   createEmptyInventoryItemForm,
+  describeDefaultWarehousePolicy,
   inventoryItemFormToPayload,
   validateInventoryItemForm,
 } from "../components/inventory/inventoryItemForm.js";
@@ -214,5 +216,79 @@ describe("inventory routes items", () => {
     const mod = read("src/components/InventoryModule.tsx");
     assert.match(mod, /InventoryItemsTab/);
     assert.match(mod, /tab === "items"/);
+  });
+});
+
+describe("inventoryItemForm · almoxarifado padrão (política do tipo)", () => {
+  const WH_ADM = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const WH_EPI = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+  const option = (warehouseId: string, code: string) => ({
+    sectorId: "5ec70000-0000-4000-8000-000000000001",
+    sectorCode: code,
+    sectorName: code,
+    warehouseId,
+    warehouseCode: code,
+    warehouseName: code,
+  });
+  const fixed = {
+    itemType: "ADMINISTRATIVE_SUPPLY",
+    mode: "SECTOR_FIXED" as const,
+    options: [option(WH_ADM, "ADMINISTRATIVO")],
+    defaultWarehouseId: WH_ADM,
+    locked: true,
+    editable: true,
+  };
+
+  it("1. payload do cadastro leva almoxarifado e endereço padrão (null quando vazios)", () => {
+    const empty = inventoryItemFormToPayload(
+      createEmptyInventoryItemForm({ code: "ADM-INF-037", description: "Pilha A23 12V", itemType: "ADMINISTRATIVE_SUPPLY", unit: "UN" })
+    );
+    assert.equal(empty.defaultWarehouseId, null);
+    assert.equal(empty.defaultLocationId, null);
+    const filled = inventoryItemFormToPayload(
+      createEmptyInventoryItemForm({ code: "X", description: "Y", itemType: "ADMINISTRATIVE_SUPPLY", unit: "UN", defaultWarehouseId: WH_ADM })
+    );
+    assert.equal(filled.defaultWarehouseId, WH_ADM);
+    assertNoBalanceFieldsInPayload(filled as Record<string, unknown>);
+  });
+
+  it("5. endereço sem almoxarifado é erro de formulário", () => {
+    const errors = validateInventoryItemForm(
+      createEmptyInventoryItemForm({ code: "X", description: "Y", itemType: "PPE", unit: "UN", defaultLocationId: "10000000-0000-4000-8000-000000000001" })
+    );
+    assert.ok(errors.defaultLocationId);
+  });
+
+  it("2. tipo com setor único: o formulário preenche e trava o almoxarifado; trocar de tipo limpa o endereço", () => {
+    const form = createEmptyInventoryItemForm({ itemType: "ADMINISTRATIVE_SUPPLY" });
+    const applied = applyDefaultWarehousePolicyToForm(form, fixed);
+    assert.equal(applied.defaultWarehouseId, WH_ADM);
+    assert.equal(applyDefaultWarehousePolicyToForm(applied, fixed), applied, "sem mudança → mesma referência");
+    const withLocation = { ...applied, defaultLocationId: "10000000-0000-4000-8000-000000000001" };
+    const switched = applyDefaultWarehousePolicyToForm(withLocation, { ...fixed, itemType: "PPE", options: [option(WH_EPI, "EPI")], defaultWarehouseId: WH_EPI });
+    assert.equal(switched.defaultWarehouseId, WH_EPI);
+    assert.equal(switched.defaultLocationId, "");
+  });
+
+  it("vários setores: mantém escolha válida, limpa escolha fora das opções; MP limpa; livre não mexe", () => {
+    const choice = { ...fixed, mode: "SECTOR_CHOICE" as const, options: [option(WH_ADM, "A"), option(WH_EPI, "B")], defaultWarehouseId: null, locked: false };
+    assert.equal(applyDefaultWarehousePolicyToForm(createEmptyInventoryItemForm({ defaultWarehouseId: WH_EPI }), choice).defaultWarehouseId, WH_EPI);
+    assert.equal(applyDefaultWarehousePolicyToForm(createEmptyInventoryItemForm({ defaultWarehouseId: "outro" }), choice).defaultWarehouseId, "");
+    const official = { ...fixed, mode: "OFFICIAL_LINK" as const, options: [], defaultWarehouseId: null, editable: false };
+    assert.equal(applyDefaultWarehousePolicyToForm(createEmptyInventoryItemForm({ defaultWarehouseId: WH_ADM }), official).defaultWarehouseId, "");
+    const free = { ...fixed, mode: "FREE" as const, options: [], defaultWarehouseId: null, locked: false };
+    assert.equal(applyDefaultWarehousePolicyToForm(createEmptyInventoryItemForm({ defaultWarehouseId: WH_EPI }), free).defaultWarehouseId, WH_EPI);
+    assert.match(describeDefaultWarehousePolicy(fixed) ?? "", /ADMINISTRATIVO/);
+    assert.match(describeDefaultWarehousePolicy(choice) ?? "", /mais de um setor/);
+  });
+
+  it("ficha: campos de almoxarifado/endereço padrão e consulta da política por tipo", () => {
+    const sheet = read("src/components/inventory/InventoryItemDetailSheet.tsx");
+    assert.match(sheet, /inventory-item-form-default-warehouse/);
+    assert.match(sheet, /inventory-item-form-default-location/);
+    assert.match(sheet, /\/api\/inventory\/items\/default-warehouse-policy\?/);
+    assert.match(sheet, /applyDefaultWarehousePolicyToForm/);
+    assert.match(sheet, /disabled=\{readOnly \|\| locked/);
+    assert.match(sheet, /warehouses\?pageSize=200&status=ACTIVE/);
   });
 });

@@ -10,13 +10,17 @@ import {
   INVENTORY_UNIT_SUGGESTIONS,
 } from "@/src/components/inventory/inventoryItemLabels";
 import {
+  applyDefaultWarehousePolicyToForm,
   createEmptyInventoryItemForm,
+  describeDefaultWarehousePolicy,
   inventoryItemFormFromRow,
   inventoryItemFormToPayload,
   isInventoryItemFormValid,
   validateInventoryItemForm,
+  type InventoryItemDefaultWarehousePolicyDto,
   type InventoryItemFormState,
 } from "@/src/components/inventory/inventoryItemForm";
+import { normalizeInventoryLocationListResponse } from "@/src/components/inventory/inventoryLocationForm";
 import {
   normalizeInventoryBalancesResponse,
   normalizeInventoryItemRow,
@@ -29,7 +33,11 @@ import {
   formatInventoryOperationalStatus,
   formatInventoryQuantity,
 } from "@/src/components/inventory/inventoryUi";
-import type { InventoryItemRow } from "@/src/types/inventory";
+import type {
+  InventoryItemRow,
+  InventoryLocationRow,
+  InventoryWarehouseRow,
+} from "@/src/types/inventory";
 
 type Props = {
   itemId: string | null;
@@ -204,6 +212,108 @@ function BalanceSummaryPanel({ summary }: { summary: InventoryItemBalanceSummary
   );
 }
 
+/**
+ * Almoxarifado × endereço padrão. O almoxarifado é o que liga o item à conferência
+ * do tablet (setor STANDARD): a política do tipo vem do servidor, que também a
+ * reaplica no POST/PUT — o formulário só antecipa o preenchimento e a trava.
+ */
+function DefaultScopeFields({
+  form,
+  setForm,
+  errors,
+  readOnly,
+  policy,
+  warehouses,
+  locations,
+  inputClass,
+}: {
+  form: InventoryItemFormState;
+  setForm: React.Dispatch<React.SetStateAction<InventoryItemFormState>>;
+  errors: ReturnType<typeof validateInventoryItemForm>;
+  readOnly?: boolean;
+  policy: InventoryItemDefaultWarehousePolicyDto | null;
+  warehouses: readonly InventoryWarehouseRow[];
+  locations: readonly InventoryLocationRow[];
+  inputClass: string;
+}) {
+  const locked = Boolean(policy?.locked);
+  const restrictToSectors = policy?.mode === "SECTOR_CHOICE" || policy?.mode === "SECTOR_FIXED";
+  const allowedIds = new Set(policy?.options.map((o) => o.warehouseId) ?? []);
+  const warehouseOptions = restrictToSectors
+    ? warehouses.filter((w) => allowedIds.has(w.id))
+    : warehouses;
+  // Almoxarifado do setor ainda não carregado na lista (ou inativo): ainda aparece.
+  const missingOptions = (policy?.options ?? []).filter(
+    (o) => restrictToSectors && !warehouseOptions.some((w) => w.id === o.warehouseId)
+  );
+  const currentUnknown =
+    form.defaultWarehouseId &&
+    !warehouseOptions.some((w) => w.id === form.defaultWarehouseId) &&
+    !missingOptions.some((o) => o.warehouseId === form.defaultWarehouseId);
+  const hint = describeDefaultWarehousePolicy(policy);
+
+  return (
+    <>
+      <FieldLabel
+        label="Almoxarifado padrão"
+        required={policy?.mode === "SECTOR_FIXED" || policy?.mode === "SECTOR_CHOICE"}
+        error={errors.defaultWarehouseId}
+        hint={hint}
+      >
+        <select
+          className={inputClass}
+          value={form.defaultWarehouseId}
+          disabled={readOnly || locked || policy?.editable === false}
+          data-testid="inventory-item-form-default-warehouse"
+          onChange={(e) => {
+            const defaultWarehouseId = e.target.value;
+            setForm((f) => ({ ...f, defaultWarehouseId, defaultLocationId: "" }));
+          }}
+        >
+          <option value="">{restrictToSectors ? "Selecione…" : "— Opcional —"}</option>
+          {currentUnknown ? <option value={form.defaultWarehouseId}>{form.defaultWarehouseId}</option> : null}
+          {warehouseOptions.map((w) => (
+            <option key={w.id} value={w.id}>
+              {w.code} — {w.name}
+            </option>
+          ))}
+          {missingOptions.map((o) => (
+            <option key={o.warehouseId} value={o.warehouseId}>
+              {o.warehouseCode} — {o.warehouseName}
+            </option>
+          ))}
+        </select>
+      </FieldLabel>
+      <FieldLabel
+        label="Endereço padrão"
+        error={errors.defaultLocationId}
+        hint={form.defaultWarehouseId ? "Opcional. Endereço ativo do almoxarifado padrão." : "Informe o almoxarifado padrão primeiro."}
+      >
+        <select
+          className={inputClass}
+          value={form.defaultLocationId}
+          disabled={readOnly || !form.defaultWarehouseId || policy?.editable === false}
+          data-testid="inventory-item-form-default-location"
+          onChange={(e) => {
+            const defaultLocationId = e.target.value;
+            setForm((f) => ({ ...f, defaultLocationId }));
+          }}
+        >
+          <option value="">— Opcional —</option>
+          {form.defaultLocationId && !locations.some((l) => l.id === form.defaultLocationId) ? (
+            <option value={form.defaultLocationId}>{form.defaultLocationId}</option>
+          ) : null}
+          {locations.map((l) => (
+            <option key={l.id} value={l.id}>
+              {l.code} — {l.name}
+            </option>
+          ))}
+        </select>
+      </FieldLabel>
+    </>
+  );
+}
+
 function InventoryItemFormFields({
   form,
   setForm,
@@ -213,6 +323,7 @@ function InventoryItemFormFields({
   codeHint,
   familyHint,
   families,
+  defaultScope,
 }: {
   form: InventoryItemFormState;
   setForm: React.Dispatch<React.SetStateAction<InventoryItemFormState>>;
@@ -222,6 +333,11 @@ function InventoryItemFormFields({
   codeHint?: React.ReactNode;
   familyHint?: React.ReactNode;
   families?: readonly string[];
+  defaultScope: {
+    policy: InventoryItemDefaultWarehousePolicyDto | null;
+    warehouses: readonly InventoryWarehouseRow[];
+    locations: readonly InventoryLocationRow[];
+  };
 }) {
   const inputClass = cn(
     "w-full rounded-lg border border-slate-200 px-2.5 py-2 text-sm outline-none focus:ring-2 focus:ring-slate-300/60",
@@ -306,6 +422,16 @@ function InventoryItemFormFields({
           <option value="INACTIVE">Inativo</option>
         </select>
       </FieldLabel>
+      <DefaultScopeFields
+        form={form}
+        setForm={setForm}
+        errors={errors}
+        readOnly={readOnly}
+        policy={defaultScope.policy}
+        warehouses={defaultScope.warehouses}
+        locations={defaultScope.locations}
+        inputClass={inputClass}
+      />
       <FieldLabel label="Grupo">
         <input
           className={inputClass}
@@ -438,6 +564,10 @@ export function InventoryItemDetailSheet({
   const [nextCode, setNextCode] = useState<NextCodeSuggestion | null>(null);
   const [nextCodeRefresh, setNextCodeRefresh] = useState(0);
   const [families, setFamilies] = useState<string[]>([]);
+  const [warehouses, setWarehouses] = useState<InventoryWarehouseRow[]>([]);
+  const [locations, setLocations] = useState<InventoryLocationRow[]>([]);
+  const [defaultWarehousePolicy, setDefaultWarehousePolicy] =
+    useState<InventoryItemDefaultWarehousePolicyDto | null>(null);
   /** Último código preenchido automaticamente; digitação manual nunca é sobrescrita. */
   const autoFilledCodeRef = useRef("");
 
@@ -488,6 +618,69 @@ export function InventoryItemDetailSheet({
       cancelled = true;
     };
   }, []);
+
+  // Almoxarifados ativos: lista do campo "Almoxarifado padrão" (edição ou criação).
+  useEffect(() => {
+    if (!canManage || !editing) return;
+    let cancelled = false;
+    fetchJsonOk<{ rows?: InventoryWarehouseRow[] }>(
+      "/api/inventory/warehouses?pageSize=200&status=ACTIVE"
+    )
+      .then((res) => {
+        if (!cancelled) setWarehouses(Array.isArray(res.rows) ? res.rows : []);
+      })
+      .catch(() => {
+        if (!cancelled) setWarehouses([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [canManage, editing]);
+
+  // Política do tipo: pré-preenche/trava o almoxarifado padrão (o servidor reaplica no salvar).
+  const policyItemType = canManage && editing ? form.itemType : "";
+  useEffect(() => {
+    if (!policyItemType) {
+      setDefaultWarehousePolicy(null);
+      return;
+    }
+    let cancelled = false;
+    const query = new URLSearchParams({ itemType: policyItemType });
+    fetchJsonOk<{ policy: InventoryItemDefaultWarehousePolicyDto }>(
+      `/api/inventory/items/default-warehouse-policy?${query.toString()}`
+    )
+      .then((res) => {
+        if (cancelled) return;
+        setDefaultWarehousePolicy(res.policy);
+        setForm((f) => applyDefaultWarehousePolicyToForm(f, res.policy));
+      })
+      .catch(() => {
+        if (!cancelled) setDefaultWarehousePolicy(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [policyItemType]);
+
+  // Endereços ativos do almoxarifado padrão escolhido.
+  const scopeWarehouseId = canManage && editing ? form.defaultWarehouseId : "";
+  useEffect(() => {
+    if (!scopeWarehouseId) {
+      setLocations([]);
+      return;
+    }
+    let cancelled = false;
+    fetchJsonOk<unknown>(`/api/inventory/warehouses/${scopeWarehouseId}/locations?status=ACTIVE`)
+      .then((raw) => {
+        if (!cancelled) setLocations(normalizeInventoryLocationListResponse(raw).rows);
+      })
+      .catch(() => {
+        if (!cancelled) setLocations([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [scopeWarehouseId]);
 
   const createItemType = isCreate && canManage ? form.itemType : "";
   const createFamily = form.family.trim();
@@ -669,6 +862,7 @@ export function InventoryItemDetailSheet({
                 codeHint={codeHint}
                 familyHint={familyHint}
                 families={families}
+                defaultScope={{ policy: defaultWarehousePolicy, warehouses, locations }}
               />
             </div>
           )}

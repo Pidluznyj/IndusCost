@@ -2,7 +2,12 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { CreditExternalDimensions, PackagePaidConsultationDialog } from "./CreditIntelligencePackageSection.js";
+import {
+  CreditExternalDimensions,
+  CreditIntelligenceSourceCards,
+  IeptbOnlineReport,
+  PackagePaidConsultationDialog,
+} from "./CreditIntelligencePackageSection.js";
 
 describe("pacote visual QUOD + IEPTB", () => {
   it("popup detalha 6,99 + 3,50 = 10,49 e exige checkbox", () => {
@@ -43,5 +48,87 @@ describe("pacote visual QUOD + IEPTB", () => {
     assert.match(html, /Qualidade cadastral/);
     assert.match(html, /91\/100/);
     assert.equal(html.includes("VENDA LIBERADA"), false);
+  });
+
+  it("IEPTB lista um título por linha, sem despejar valores em um único parágrafo", () => {
+    const html = renderToStaticMarkup(
+      <IeptbOnlineReport
+        sections={{
+          coverageNote: "Cobertura nacional.",
+          document: "28199918000120",
+          hasProtests: true,
+          protestCount: 2,
+          totalAmountLabel: "R$ 25.000,00",
+          totalAmount: 25000,
+          notes: null,
+          async: false,
+          consultedAtLabel: null,
+          providerQueryId: null,
+          providerMessage: null,
+          states: [
+            {
+              state: "PB",
+              protestCount: 2,
+              totalAmountLabel: "R$ 25.000,00",
+              totalAmount: 25000,
+              offices: [
+                {
+                  cityCode: "1",
+                  city: "ESPERANÇA",
+                  protestCount: 2,
+                  totalAmountLabel: "R$ 25.000,00",
+                  totalAmount: 25000,
+                  titles: [
+                    { protestedAt: "03/09/2026", amountLabel: "R$ 20.000,00", amount: 20000, document: "NF-1" },
+                    { protestedAt: "09/10/2026", amountLabel: "R$ 5.000,00", amount: 5000, document: "NF-2" },
+                  ],
+                },
+              ],
+            },
+          ],
+        }}
+      />
+    );
+    assert.match(html, />UF</);
+    assert.match(html, />Cidade</);
+    assert.match(html, />Data</);
+    assert.match(html, /ESPERANÇA/);
+    assert.match(html, /03\/09\/2026/);
+    assert.match(html, /09\/10\/2026/);
+    assert.doesNotMatch(html, /03\/09\/2026 · R\$ 20\.000,00<\/p>/);
+  });
+
+  it("mostra QUOD/IEPTB para leitura e oculta o botão de consulta paga", () => {
+    const html = renderToStaticMarkup(
+      <CreditIntelligenceSourceCards
+        quodState="VALID"
+        quodScore={376}
+        quodAlerts={["Possui atrasos de parcelas/faturas em contratos recentes"]}
+        quodConsultedAt="2026-10-20T12:03:00.000Z"
+        quodValidUntil="2026-10-27T12:03:00.000Z"
+        ieptbState="VALID"
+        ieptbConfirmed
+        ieptbClear={false}
+        ieptbCount={37}
+        ieptbTotal={331021.22}
+        ieptbStates={["PB"]}
+        ieptbConsultedAt="2026-10-20T13:58:00.000Z"
+        ieptbValidUntil="2026-10-27T13:58:00.000Z"
+        complete
+        ieptbEnabled
+        canConsult={false}
+        canQuery={false}
+        onViewQuod={() => undefined}
+        onViewIeptb={() => undefined}
+        onRequestPackage={() => undefined}
+        onForceRefresh={() => undefined}
+      />
+    );
+    assert.match(html, /376/);
+    assert.match(html, /Ocorrência encontrada/);
+    assert.match(html, /Ver relatório QUOD/);
+    assert.equal(html.includes("package-request-paid"), false);
+    assert.equal(html.includes("Consultar risco completo"), false);
+    assert.equal(html.includes("Atualizar análise"), false);
   });
 });

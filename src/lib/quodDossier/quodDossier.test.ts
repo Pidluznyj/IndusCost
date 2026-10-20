@@ -126,7 +126,7 @@ async function post(base: string, body: unknown, origin: string) {
 }
 
 describe("dossiê QUOD", () => {
-  it("só SUPER_ADMIN acessa; ADMIN, gestor, vendedor, viewer e exceção comercial não", () => {
+  it("só SUPER_ADMIN dispara consulta paga; demais papéis autenticados leem o resultado", () => {
     resetQuodDossierRateLimit();
     assert.equal(canAccessQuodDossier({ role: "SUPER_ADMIN" }), true);
     for (const role of ["ADMIN", "COMMERCIAL_MANAGER", "SELLER", "VIEWER"]) {
@@ -147,7 +147,8 @@ describe("dossiê QUOD", () => {
     const denied = await post(server.base, { consent: true, idempotencyKey: "chave-12345678" }, server.base);
     assert.equal(denied.status, 403);
     const peek = await fetch(`${server.base}/api/customers/${CUSTOMER}/quod-dossier`);
-    assert.equal(peek.status, 403);
+    assert.equal(peek.status, 200);
+    assert.equal(calls, 0);
     await server.close();
 
     const allowed = appFor("SUPER_ADMIN", { fetchImpl, env: enabledEnv });
@@ -333,8 +334,10 @@ describe("dossiê QUOD", () => {
 
     const outsider = appFor("VIEWER", { env: enabledEnv, store });
     const outsiderServer = await listen(outsider.app);
-    const hidden = await fetch(`${outsiderServer.base}/api/customers/${CUSTOMER}/quod-dossier/${store.rows[0]?.id}`);
-    assert.equal(hidden.status, 403);
+    const visible = await fetch(`${outsiderServer.base}/api/customers/${CUSTOMER}/quod-dossier/${store.rows[0]?.id}`);
+    assert.equal(visible.status, 200);
+    const paid = await post(outsiderServer.base, { consent: true, idempotencyKey: "viewer-nao-consulta" }, outsiderServer.base);
+    assert.equal(paid.status, 403);
     await outsiderServer.close();
   });
 

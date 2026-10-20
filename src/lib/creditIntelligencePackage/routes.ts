@@ -80,17 +80,27 @@ export function registerCreditIntelligencePackageRoutes(
   const config = () => readCreditIntelligencePackageConfig(deps.env ?? process.env);
   const now = () => deps.now?.() ?? new Date();
 
-  async function superAdmin(req: express.Request, res: express.Response): Promise<User | null> {
+  async function currentUser(req: express.Request, res: express.Response): Promise<User | null> {
     const user = await guards.getCurrentAppUser(req);
+    if (!user) {
+      res.status(401).json({ error: "Não autenticado." });
+      return null;
+    }
+    return user;
+  }
+
+  async function superAdmin(req: express.Request, res: express.Response): Promise<User | null> {
+    const user = await currentUser(req, res);
+    if (!user) return null;
     if (!canAccessQuodDossier(user)) {
-      res.status(403).json({ error: "Acesso restrito." });
+      res.status(403).json({ error: "A consulta paga é restrita ao Super Admin." });
       return null;
     }
     return user;
   }
 
   app.get("/api/customers/:customerId/credit-intelligence-package", guards.requireAppAuth, async (req, res) => {
-    const user = await superAdmin(req, res);
+    const user = await currentUser(req, res);
     if (!user) return;
     const customerId = String(req.params.customerId);
     const current = config();

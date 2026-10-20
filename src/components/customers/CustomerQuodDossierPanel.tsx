@@ -92,22 +92,22 @@ export function CustomerQuodDossierPanel({
   const [submitting, setSubmitting] = useState(false);
 
   const load = useCallback(async () => {
-    if (!isSuperAdmin || !customerId) return;
+    if (!customerId) return;
     const payload = await fetchJsonOk<PackagePayload>(`/api/customers/${customerId}/credit-intelligence-package`);
     setStatus(payload);
-  }, [customerId, isSuperAdmin]);
+  }, [customerId]);
 
   useEffect(() => {
     void load().catch(() => setStatus(null));
   }, [load]);
 
-  const quodState = isSuperAdmin ? status?.quod.state ?? "NOT_CONSULTED" : "RESTRICTED";
-  const ieptbState = isSuperAdmin ? status?.ieptb.state ?? "NOT_CONSULTED" : "RESTRICTED";
-  const quodScore = isSuperAdmin && status?.quod.state === "VALID" ? status.quod.consultation?.score ?? null : null;
+  const quodState = status?.quod.state ?? "NOT_CONSULTED";
+  const ieptbState = status?.ieptb.state ?? "NOT_CONSULTED";
+  const quodScore = status?.quod.state === "VALID" ? status.quod.consultation?.score ?? null : null;
   const ieptb = status?.ieptb.consultation ?? null;
 
   async function confirmPaid() {
-    if (!customerId || submitting) return;
+    if (!customerId || submitting || !isSuperAdmin) return;
     setMessage(null);
     let idempotencyKey: string;
     try {
@@ -140,29 +140,28 @@ export function CustomerQuodDossierPanel({
   }
 
   const ieptbLabel =
-    !isSuperAdmin
-      ? "Restrito"
-      : ieptbState === "VALID"
-        ? ieptb?.confirmedProtest
-          ? "Ocorrência encontrada"
-          : ieptb?.confirmedClear
-            ? "Sem ocorrência"
-            : "Informação indisponível ou incompleta"
-        : ieptbState === "NOT_CONSULTED"
-          ? "Não consultado"
-          : ieptbState;
+    ieptbState === "VALID"
+      ? ieptb?.confirmedProtest
+        ? "Ocorrência encontrada"
+        : ieptb?.confirmedClear
+          ? "Sem ocorrência"
+          : "Informação indisponível ou incompleta"
+      : ieptbState === "NOT_CONSULTED"
+        ? "Não consultado"
+        : ieptbState;
 
   return (
     <div className="space-y-3">
       <CreditExternalDimensions
         creditLabel={creditLabel}
         cadastralScore={cadastralScore}
-        quodScore={quodState === "RESTRICTED" ? "Restrito" : quodScore == null ? "Não consultado" : String(quodScore)}
+        quodScore={quodScore == null ? "Não consultado" : String(quodScore)}
         quodState={quodState}
         ieptbLabel={ieptbLabel}
         ieptbState={ieptbState}
+        ieptbCount={ieptb?.protestCount ?? null}
       />
-      {isSuperAdmin && customerId ? (
+      {customerId ? (
         <CreditIntelligenceSourceCards
           quodState={status?.quod.state ?? "NOT_CONSULTED"}
           quodScore={status?.quod.consultation?.score ?? null}
@@ -179,14 +178,17 @@ export function CustomerQuodDossierPanel({
           ieptbValidUntil={ieptb?.validUntil ?? null}
           complete={status?.complete === true}
           ieptbEnabled={status?.ieptbEnabled === true}
-          canQuery={status?.quote.totalCents !== 0 || status?.complete !== true}
+          canConsult={isSuperAdmin}
+          canQuery={isSuperAdmin && (status?.quote.totalCents !== 0 || status?.complete !== true)}
           onViewQuod={() => setShowQuod(true)}
           onViewIeptb={() => setShowIeptb(true)}
           onRequestPackage={() => {
+            if (!isSuperAdmin) return;
             setForceRefresh(false);
             setConfirming(true);
           }}
           onForceRefresh={() => {
+            if (!isSuperAdmin) return;
             setForceRefresh(true);
             setConfirming(true);
           }}
@@ -214,7 +216,7 @@ export function CustomerQuodDossierPanel({
         </button>
       ) : null}
       {message ? <p className="text-sm text-red-700">{message}</p> : null}
-      {confirming && status ? (
+      {confirming && status && isSuperAdmin ? (
         <PackagePaidConsultationDialog
           companyName={companyName}
           cnpj={cnpj}

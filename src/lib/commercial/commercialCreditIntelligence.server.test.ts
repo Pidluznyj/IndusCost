@@ -34,7 +34,7 @@ function createDb(balance = 1000) {
           companyName: "Lazarios",
           description: "Parcela",
           comments: null,
-          dueDate: new Date(2026, 9, 18),
+          dueDate: new Date(2026, 9, 15),
           settlementDate: null,
           amountReceivable: balance,
           amountReceived: 0,
@@ -83,7 +83,7 @@ describe("loadCustomerCommercialCreditIntelligence", () => {
     assert.equal(visible.bcbState, "NOT_APPLICABLE");
     assert.match(visible.overdueAmountLabel, /1\.?000/);
     assert.equal(visible.overdueTitleCountLabel, "1");
-    assert.equal(visible.maxDaysOverdueLabel, "1 dia");
+    assert.equal(visible.maxDaysOverdueLabel, "4 dias");
     assert.equal(hidden.headline, "CRÉDITO BLOQUEADO");
     assert.equal(hidden.overdueAmountLabel, "Restrito");
     assert.equal(JSON.stringify(hidden).includes("1000"), false);

@@ -26,7 +26,7 @@ function title(overrides: Partial<CommercialDelinquencyTitleInput> = {}): Commer
     personName: "Cliente",
     personCnpj: CNPJ,
     description: "Parcela NF",
-    dueDate: new Date(2026, 9, 18),
+    dueDate: new Date(2026, 9, 15),
     settlementDate: null,
     amountReceivable: 1000,
     amountReceived: 0,
@@ -60,9 +60,9 @@ function input(
   };
 }
 
-describe("inadimplência comercial — tolerância zero", () => {
-  it("não herda a folga de 3 dias da conciliação nem a janela visual da tesouraria", () => {
-    assert.equal(COMMERCIAL_DELINQUENCY_TOLERANCE_DAYS, 0);
+describe("inadimplência comercial — tolerância de 3 dias corridos", () => {
+  it("não herda a folga de 3 dias úteis da conciliação nem a janela visual da tesouraria", () => {
+    assert.equal(COMMERCIAL_DELINQUENCY_TOLERANCE_DAYS, 3);
     assert.equal(FINANCE_SETTLEMENT_RECONCILIATION_DEFAULTS.toleranceDays, 3);
     assert.equal(TREASURY_CAIXA_RECENT_OVERDUE_VISIBILITY_DAYS, 3);
     const source = readFileSync(
@@ -74,17 +74,34 @@ describe("inadimplência comercial — tolerância zero", () => {
       .filter((line) => line.startsWith("import"))
       .join("\n");
     assert.doesNotMatch(imports, /financeSettlementReconciliation|treasuryCaixaRules/);
+    assert.match(source, /filterOfficialArOverdueTitles/);
   });
 
-  it("D+1 corrido é vencido; vence hoje ou amanhã não é", () => {
+  it("D+1 a D+3 com NF vencem no Financeiro, mas não bloqueiam; D+4 bloqueia", () => {
     assert.ok(isValidCnpj(CNPJ));
     assert.ok(isValidCnpj(OTHER_CNPJ));
+    for (const days of [1, 2, 3]) {
+      const withinGrace = analyzeCommercialDelinquency(
+        input({ titles: [title({ dueDate: new Date(2026, 9, 19 - days) })] })
+      );
+      assert.equal(withinGrace.status, "REGULAR");
+      assert.equal(withinGrace.overdueTitleCount, 0);
+      assert.deepEqual(withinGrace.evidence.officialOverdueTitleIds, [1]);
+      assert.equal(withinGrace.openAmount, 1000);
+    }
+
     const overdue = analyzeCommercialDelinquency(input());
     assert.equal(overdue.status, "OVERDUE");
     assert.equal(overdue.overdueTitleCount, 1);
     assert.equal(overdue.overdueAmount, 1000);
-    assert.equal(overdue.maxDaysOverdue, 1);
+    assert.equal(overdue.maxDaysOverdue, 4);
     assert.deepEqual(overdue.evidence.overdueTitleIds, [1]);
+    assert.equal(overdue.overdueTitles?.length, 1);
+    assert.equal(overdue.overdueTitles?.[0]?.externalId, 1);
+    assert.equal(overdue.overdueTitles?.[0]?.sourceInvoiceNumber, "100");
+    assert.equal(overdue.overdueTitles?.[0]?.dueDate, "2026-10-15");
+    assert.equal(overdue.overdueTitles?.[0]?.daysOverdue, 4);
+    assert.equal(overdue.overdueTitles?.[0]?.balanceReceivable, 1000);
 
     const dueToday = analyzeCommercialDelinquency(
       input({ titles: [title({ dueDate: new Date(2026, 9, 19, 23, 59, 0) })] })
@@ -93,6 +110,7 @@ describe("inadimplência comercial — tolerância zero", () => {
     assert.equal(dueToday.overdueTitleCount, 0);
     assert.equal(dueToday.openAmount, 1000);
     assert.equal(dueToday.maxDaysOverdue, 0);
+    assert.deepEqual(dueToday.evidence.officialOverdueTitleIds, []);
 
     const upcoming = analyzeCommercialDelinquency(
       input({ titles: [title({ dueDate: new Date(2026, 9, 20) })] })
@@ -101,17 +119,18 @@ describe("inadimplência comercial — tolerância zero", () => {
     assert.equal(upcoming.overdueAmount, 0);
   });
 
-  it("D+3 corrido, inclusive fim de semana, continua vencido", () => {
+  it("D+3 corrido, inclusive fim de semana, permanece na tolerância comercial", () => {
     const friday = new Date(2026, 9, 16);
     const result = analyzeCommercialDelinquency(
       input({ titles: [title({ dueDate: friday, externalId: 7 })] })
     );
-    assert.equal(result.status, "OVERDUE");
-    assert.equal(result.maxDaysOverdue, 3);
-    assert.equal(result.overdueAmount, 1000);
+    assert.equal(result.status, "REGULAR");
+    assert.equal(result.maxDaysOverdue, 0);
+    assert.equal(result.overdueAmount, 0);
+    assert.deepEqual(result.evidence.officialOverdueTitleIds, [7]);
   });
 
-  it("vira o dia civil: 23h30 do vencimento ainda não venceu; 00h30 do dia seguinte venceu", () => {
+  it("vira o dia civil: no vencimento ainda não venceu; no quarto dia corrido seguinte bloqueia", () => {
     const stillDue = analyzeCommercialDelinquency(
       input({
         referenceDate: new Date(2026, 9, 18, 23, 30, 0),
@@ -126,8 +145,18 @@ describe("inadimplência comercial — tolerância zero", () => {
         titles: [title({ dueDate: new Date(2026, 9, 18, 23, 30, 0) })],
       })
     );
-    assert.equal(nextMorning.status, "OVERDUE");
-    assert.equal(nextMorning.maxDaysOverdue, 1);
+    assert.equal(nextMorning.status, "REGULAR");
+    assert.equal(nextMorning.maxDaysOverdue, 0);
+    assert.deepEqual(nextMorning.evidence.officialOverdueTitleIds, [1]);
+
+    const fourthDay = analyzeCommercialDelinquency(
+      input({
+        referenceDate: new Date(2026, 9, 19, 0, 30, 0),
+        titles: [title({ dueDate: new Date(2026, 9, 15, 23, 30, 0) })],
+      })
+    );
+    assert.equal(fourthDay.status, "OVERDUE");
+    assert.equal(fourthDay.maxDaysOverdue, 4);
   });
 });
 
@@ -155,7 +184,7 @@ describe("inadimplência comercial — saldo, baixa, cancelamento e substituiç�
     assert.equal(result.overdueTitleCount, 1);
     assert.equal(result.overdueAmount, 600);
     assert.equal(result.openAmount, 1000);
-    assert.equal(result.maxDaysOverdue, 1);
+    assert.equal(result.maxDaysOverdue, 4);
   });
 
   it("quitação por baixa ou saldo zerado não permanece vencida", () => {
@@ -240,8 +269,10 @@ describe("inadimplência comercial — saldo, baixa, cancelamento e substituiç�
         ],
       })
     );
-    assert.deepEqual(result.evidence.overdueTitleIds, [20]);
-    assert.equal(result.overdueAmount, 1000);
+    assert.deepEqual(result.evidence.includedTitleIds, [20]);
+    assert.deepEqual(result.evidence.overdueTitleIds, []);
+    assert.equal(result.status, "REGULAR");
+    assert.equal(result.openAmount, 1000);
     assert.ok(
       result.evidence.exclusions.some((row) => row.externalId === 10 && row.reason === "SUPERSEDED_REISSUE")
     );
@@ -399,7 +430,7 @@ describe("inadimplência comercial — identidade e sincronização", () => {
     assert.equal(result.overdueTitleCount, 0);
     assert.equal(result.openAmount, 0);
     assert.equal(result.evidence.source, "NomusAccountsReceivable");
-    assert.equal(result.evidence.toleranceDays, 0);
+    assert.equal(result.evidence.toleranceDays, 3);
     assert.ok(result.lastSyncedAt);
   });
 
@@ -407,7 +438,7 @@ describe("inadimplência comercial — identidade e sincronização", () => {
     const result = analyzeCommercialDelinquency(
       input({
         titles: [
-          title({ externalId: 1, dueDate: new Date(2026, 9, 18), balanceReceivable: 100 }),
+          title({ externalId: 1, dueDate: new Date(2026, 9, 15), balanceReceivable: 100 }),
           title({ externalId: 2, dueDate: new Date(2026, 9, 1), balanceReceivable: 50 }),
         ],
       })

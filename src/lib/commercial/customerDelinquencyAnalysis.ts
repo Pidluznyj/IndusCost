@@ -2,10 +2,14 @@
  * Análise de inadimplência comercial — regras PURAS.
  *
  * Fonte única: títulos já sincronizados em `NomusAccountsReceivable`.
+ * A população de CRs efetivamente vencidos é a do motor oficial de Contas a
+ * Receber (`filterOfficialArOverdueTitles`). Esta camada aplica a política
+ * comercial sobre essa população: 3 dias corridos de tolerância bloqueante,
+ * protesto, identidade e sincronização.
+ *
  * Não grava título, não cria ledger e não aplica a tolerância de 3 dias
  * úteis da conciliação de baixa (`financeSettlementReconciliation`) nem a
- * janela visual D+1..D+3 da Tesouraria. Tolerância de crédito: zero.
- * Vencido = primeiro dia corrido após o vencimento, com saldo em aberto.
+ * janela visual D+1..D+3 da Tesouraria.
  *
  * Protesto só entra quando o payload Nomus traz um campo explícito.
  * Texto livre de descrição/comentário não vira protesto.
@@ -18,9 +22,11 @@ import {
   isFinanceArReceivedOrSettled,
   roundMoney,
   startOfLocalDay,
+  type FinanceArDashboardFilters,
   type FinanceArDashboardRow,
 } from "@/src/lib/financeAccountsReceivableDashboard.js";
 import { deduplicateFinanceArRows } from "@/src/lib/financeAccountsReceivableDeduplication.js";
+import { filterOfficialArOverdueTitles } from "@/src/lib/financeAccountsReceivableRulesEngine.js";
 import { isFinanceArGhostTitle } from "@/src/lib/financeInternalGroupExclusions.js";
 import { suppressInferiorPreNfNomusArRows } from "@/src/lib/finance/financeArOperationalPortfolio.js";
 import {
@@ -33,8 +39,18 @@ import {
   type CustomerFinancialIdentityResolution,
 } from "./customerSalesBlock.js";
 
-/** Dias de folga. Crédito comercial não herda a tolerância financeira de 3 dias. */
-export const COMMERCIAL_DELINQUENCY_TOLERANCE_DAYS = 0;
+/**
+ * Folga comercial bloqueante, em dias corridos, após o CR efetivo do motor
+ * oficial. D+1..D+3 podem aparecer como vencidos no Financeiro; a partir de
+ * D+4 integram a inadimplência comercial. Distinta da conciliação de baixa
+ * (3 dias úteis) e da janela visual da Tesouraria.
+ */
+export const COMMERCIAL_DELINQUENCY_TOLERANCE_DAYS = 3;
+
+/** Filtro neutro: a decisão comercial não recorta mês/status da carteira oficial. */
+export const COMMERCIAL_OFFICIAL_AR_OVERDUE_FILTERS: FinanceArDashboardFilters = {
+  status: "all",
+};
 
 export const COMMERCIAL_DELINQUENCY_SOURCE = "NomusAccountsReceivable" as const;
 
@@ -94,6 +110,16 @@ export type CommercialDelinquencyExclusionReason =
   | "SUPERSEDED_REISSUE"
   | "SUPERSEDED_RENEGOTIATION";
 
+export type CommercialDelinquencyOverdueTitle = {
+  externalId: number;
+  description: string | null;
+  sourceInvoiceNumber: string | null;
+  dueDate: string | null;
+  daysOverdue: number;
+  balanceReceivable: number;
+  protested: boolean;
+};
+
 export type CommercialDelinquencyAnalysis = {
   status: CommercialDelinquencyStatus;
   unknownReason: CommercialDelinquencyUnknownReason | null;
@@ -104,11 +130,13 @@ export type CommercialDelinquencyAnalysis = {
   maxDaysOverdue: number | null;
   lastSyncedAt: string | null;
   evidence: CommercialDelinquencyEvidence;
+  /** Retrato dos títulos já classificados como vencidos. Não altera a decisão. */
+  overdueTitles?: CommercialDelinquencyOverdueTitle[];
 };
 
 export type CommercialDelinquencyEvidence = {
   source: typeof COMMERCIAL_DELINQUENCY_SOURCE;
-  toleranceDays: typeof COMMERCIAL_DELINQUENCY_TOLERANCE_DAYS;
+  toleranceDays: number;
   toleranceUnit: "CALENDAR_DAYS";
   referenceDate: string;
   cnpj: string | null;
@@ -118,6 +146,8 @@ export type CommercialDelinquencyEvidence = {
   payloadComplete: boolean | null;
   sourceMaxSyncedAt: string | null;
   includedTitleIds: number[];
+  /** CRs efetivamente vencidos segundo o motor oficial, antes da tolerância comercial. */
+  officialOverdueTitleIds?: number[];
   overdueTitleIds: number[];
   protestedTitleIds: number[];
   /** Protesto explícito em título já baixado. Não volta a contar como saldo. */
@@ -266,6 +296,7 @@ function emptyEvidence(
     payloadComplete: input.payloadComplete,
     sourceMaxSyncedAt: iso(input.syncCutoff?.maxSyncedAt),
     includedTitleIds: [],
+    officialOverdueTitleIds: [],
     overdueTitleIds: [],
     protestedTitleIds: [],
     settledProtestedTitleIds: [],
@@ -290,11 +321,14 @@ function unknownResult(
     openAmount: null,
     maxDaysOverdue: null,
     lastSyncedAt,
+    overdueTitles: [],
     evidence: { ...emptyEvidence(input, identity, nomusPersonId), ...evidencePatch },
   };
 }
 
-function toDashboardRow(title: CommercialDelinquencyTitleInput): FinanceArDashboardRow {
+export function commercialDelinquencyTitleToDashboardRow(
+  title: CommercialDelinquencyTitleInput
+): FinanceArDashboardRow {
   return {
     externalId: title.externalId,
     companyName: title.companyName ?? null,
@@ -318,6 +352,36 @@ function toDashboardRow(title: CommercialDelinquencyTitleInput): FinanceArDashbo
     syncedAt: title.syncedAt,
     sourcePresenceStatus: title.sourcePresenceStatus,
   };
+}
+
+function toDashboardRow(title: CommercialDelinquencyTitleInput): FinanceArDashboardRow {
+  return commercialDelinquencyTitleToDashboardRow(title);
+}
+
+/** População oficial de CRs vencidos — mesma autoridade do Financeiro e da trava de boleto. */
+export function selectOfficialArOverdueForCommercial(
+  rows: FinanceArDashboardRow[],
+  referenceDate: Date,
+  syncCutoff?: NomusArReportSyncCutoff | null
+): FinanceArDashboardRow[] {
+  return filterOfficialArOverdueTitles(
+    rows,
+    COMMERCIAL_OFFICIAL_AR_OVERDUE_FILTERS,
+    referenceDate,
+    syncCutoff
+  );
+}
+
+/** Aplica a tolerância comercial de 3 dias corridos sobre CRs já classificados pelo motor oficial. */
+export function applyCommercialDelinquencyCalendarTolerance(
+  officialOverdue: readonly FinanceArDashboardRow[],
+  referenceDate: Date
+): FinanceArDashboardRow[] {
+  return officialOverdue.filter(
+    (row) =>
+      row.dueDate != null &&
+      computeDaysOverdue(row.dueDate, referenceDate) > COMMERCIAL_DELINQUENCY_TOLERANCE_DAYS
+  );
 }
 
 function collapseDuplicateExternalIds(
@@ -430,6 +494,7 @@ export function analyzeCommercialDelinquency(
   const collapsed = collapseDuplicateExternalIds(personTitles);
   const exclusions = [...collapsed.exclusions];
   const active: CommercialDelinquencyTitleInput[] = [];
+  const settledRows: FinanceArDashboardRow[] = [];
   const settledProtestedTitleIds: number[] = [];
 
   for (const title of collapsed.rows) {
@@ -456,6 +521,7 @@ export function analyzeCommercialDelinquency(
         settledProtestedTitleIds.push(title.externalId);
       }
       exclusions.push({ externalId: title.externalId, reason: "SETTLED" });
+      settledRows.push(toDashboardRow(title));
       continue;
     }
     if (isNomusArStaleForReports(title, input.syncCutoff)) {
@@ -497,11 +563,13 @@ export function analyzeCommercialDelinquency(
 
   const effective = afterReissue.filter((row) => !renegotiatedOrigins.has(row.externalId));
   const open = effective.filter((row) => row.balanceReceivable > 0);
-  const overdue = open.filter(
-    (row) =>
-      row.dueDate != null &&
-      computeDaysOverdue(row.dueDate, input.referenceDate) > COMMERCIAL_DELINQUENCY_TOLERANCE_DAYS
+  const officialUniverse = [...effective, ...settledRows];
+  const officialOverdue = selectOfficialArOverdueForCommercial(
+    officialUniverse,
+    input.referenceDate,
+    input.syncCutoff
   );
+  const overdue = applyCommercialDelinquencyCalendarTolerance(officialOverdue, input.referenceDate);
 
   let protestReading: CommercialDelinquencyEvidence["protestReading"] = "NOT_IN_SOURCE";
   const protestedTitleIds: number[] = [];
@@ -522,6 +590,7 @@ export function analyzeCommercialDelinquency(
   const evidence: CommercialDelinquencyEvidence = {
     ...emptyEvidence(input, "RESOLVED", personId),
     includedTitleIds: open.map((row) => row.externalId).sort((a, b) => a - b),
+    officialOverdueTitleIds: officialOverdue.map((row) => row.externalId).sort((a, b) => a - b),
     overdueTitleIds: overdue.map((row) => row.externalId).sort((a, b) => a - b),
     protestedTitleIds: [...protestedTitleIds].sort((a, b) => a - b),
     settledProtestedTitleIds: [...settledProtestedTitleIds].sort((a, b) => a - b),
@@ -562,7 +631,27 @@ function metricsResult(
     maxDaysOverdue: overdue.length === 0 ? 0 : maxDays,
     lastSyncedAt,
     evidence,
+    overdueTitles: presentOverdueTitles(overdue, referenceDate, evidence.protestedTitleIds),
   };
+}
+
+function presentOverdueTitles(
+  overdue: FinanceArDashboardRow[],
+  referenceDate: Date,
+  protestedTitleIds: readonly number[]
+): CommercialDelinquencyOverdueTitle[] {
+  const protested = new Set(protestedTitleIds);
+  return overdue
+    .map((row) => ({
+      externalId: row.externalId,
+      description: row.description,
+      sourceInvoiceNumber: row.sourceInvoiceNumber,
+      dueDate: row.dueDate ? civilDateKey(row.dueDate) : null,
+      daysOverdue: computeDaysOverdue(row.dueDate, referenceDate),
+      balanceReceivable: roundMoney(row.balanceReceivable),
+      protested: protested.has(row.externalId),
+    }))
+    .sort((a, b) => b.daysOverdue - a.daysOverdue || b.balanceReceivable - a.balanceReceivable || a.externalId - b.externalId);
 }
 
 /** Converte Decimal do Prisma sem alterar o mapper oficial. */

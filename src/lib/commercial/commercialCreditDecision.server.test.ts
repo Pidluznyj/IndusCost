@@ -19,7 +19,7 @@ const CUSTOMER_ID = "11111111-1111-4111-8111-111111111111";
 const RELATED_ID = "22222222-2222-4222-8222-222222222222";
 const ACTOR_ID = "55555555-5555-4555-8555-555555555555";
 const CNPJ = "11444777000161";
-const RELATED_CNPJ = "14055501000180";
+const RELATED_CNPJ = "50798391000100";
 const TODAY = new Date(2026, 9, 19, 10, 0, 0);
 const SYNCED = new Date(2026, 9, 19, 9, 0, 0);
 
@@ -177,7 +177,7 @@ function openTitle(overrides: Partial<TitleSeed> = {}): TitleSeed {
     externalId: 1,
     personId: 100,
     personCnpj: CNPJ,
-    dueDate: new Date(2026, 9, 18),
+    dueDate: new Date(2026, 9, 15),
     amountReceivable: 1000,
     amountReceived: 0,
     balanceReceivable: 1000,
@@ -193,7 +193,7 @@ const financeActor = {
 };
 
 describe("assertCommercialCreditAllows — stage Nomus", () => {
-  it("bloqueia prazo no D+1 e libera depois da quitação confirmada", async () => {
+  it("bloqueia prazo no D+4 e libera depois da quitação confirmada", async () => {
     const title = openTitle();
     const stage = createDb({
       customers: [customer()],
@@ -281,7 +281,15 @@ describe("assertCommercialCreditAllows — stage Nomus", () => {
         { customerId: CUSTOMER_ID, externalCustomerId: 100 },
         { customerId: RELATED_ID, externalCustomerId: 200 },
       ],
-      titles: [openTitle({ personId: 200, personCnpj: RELATED_CNPJ, balanceReceivable: 987654.32, amountReceivable: 987654.32 })],
+      titles: [
+        openTitle({
+          personId: 200,
+          personCnpj: RELATED_CNPJ,
+          dueDate: new Date(2026, 8, 1),
+          balanceReceivable: 987654.32,
+          amountReceivable: 987654.32,
+        }),
+      ],
       links: [{ customerId: CUSTOMER_ID, relatedCustomerId: RELATED_ID }],
     });
     await assert.rejects(

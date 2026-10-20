@@ -1338,3 +1338,138 @@ describe("STANDARD · legado intacto e fronteiras", () => {
     assert.doesNotMatch(routes, /body\.costCenterId|body\.actorType|body\.deviceId/);
   });
 });
+
+// ===========================================================================
+// 6) Itens cadastrados depois de uma conferência (caso real: 15 suprimentos
+//    administrativos de 13/10 fora da EST-20261020-004). O cadastro agora grava
+//    defaultWarehouseId pela política do tipo; aqui prova-se que, com isso, a
+//    PRÓXIMA sessão os inclui e as sessões já abertas não são tocadas.
+// ===========================================================================
+
+describe("STANDARD · itens novos × sessões", () => {
+  const S_OLD = uuid(300, "2222");
+  const NEW_ITEM = uuid(301);
+  const NEW_WITH_BALANCE = uuid(302);
+  const NEW_MULTI = uuid(303);
+  const LOC_A = uuid(304, "3333");
+  const LOC_B = uuid(305, "3333");
+
+  /** Sessão antiga com só os 3 itens originais (já em contagem, 1 linha contada). */
+  const oldSession: FakeSessionSeed = {
+    id: S_OLD,
+    code: "ADM-20261001-001",
+    warehouseId: WH_ADM,
+    status: "COUNTING",
+  };
+  const oldLines: FakeLineSeed[] = [
+    { sessionId: S_OLD, itemId: ADM_1, warehouseId: WH_ADM, systemQuantity: 0, countedQuantity: 2 },
+    { sessionId: S_OLD, itemId: ADM_2, warehouseId: WH_ADM, systemQuantity: 10 },
+    { sessionId: S_OLD, itemId: ADM_HIST, warehouseId: WH_ADM, systemQuantity: 3 },
+  ];
+  /** Cadastrados DEPOIS da sessão antiga, já com o almoxarifado padrão da política. */
+  const newItems: FakeItemSeed[] = [
+    { id: NEW_ITEM, code: "ADM-INF-037", description: "Pilha A23 12V", itemType: "ADMINISTRATIVE_SUPPLY", defaultWarehouseId: WH_ADM },
+    { id: NEW_WITH_BALANCE, code: "ADM-INF-038", itemType: "ADMINISTRATIVE_SUPPLY", defaultWarehouseId: WH_ADM },
+    { id: NEW_MULTI, code: "ADM-INF-039", itemType: "ADMINISTRATIVE_SUPPLY", defaultWarehouseId: WH_ADM },
+  ];
+  const newBalances: FakeBalanceSeed[] = [
+    { itemId: NEW_WITH_BALANCE, warehouseId: WH_ADM, physicalQuantity: 7 },
+    { itemId: NEW_MULTI, warehouseId: WH_ADM, locationId: LOC_A, physicalQuantity: 2 },
+    { itemId: NEW_MULTI, warehouseId: WH_ADM, locationId: LOC_B, physicalQuantity: 5 },
+  ];
+
+  function dbAfterRegistration(sessionStatus: string) {
+    return fakeDb({
+      items: [...ITEMS, ...newItems],
+      balances: [...BALANCES, ...newBalances],
+      sessions: [{ ...oldSession, status: sessionStatus }],
+      lines: oldLines,
+    });
+  }
+
+  it("9/11. sessão antiga em COUNTING é continuada como está: o item novo NÃO entra nela", async () => {
+    const db = dbAfterRegistration("COUNTING");
+    const opened = await openSession(db);
+    assert.equal(opened.status, 200, JSON.stringify(opened.body));
+    assert.equal(opened.body.reused, true);
+    assert.equal(opened.body.session.id, S_OLD);
+    assert.equal(opened.body.diagnostics.skippedExistingLines, true);
+    const lines = linesOf(db, S_OLD);
+    assert.equal(lines.length, 3, "nenhuma linha acrescentada à sessão já iniciada");
+    assert.ok(!lines.some((l) => l.itemId === NEW_ITEM));
+    assert.equal(Number(lines.find((l) => l.itemId === ADM_1)!.countedQuantity), 2, "contagem já feita preservada");
+    assert.equal(db.state.sessions.length, 1);
+  });
+
+  it("6/7/8/10. sessão antiga encerrada: a nova sessão inclui o item novo com saldo 0, o com saldo e um por endereço", async () => {
+    for (const closed of ["APPROVED", "ADJUSTED", "CANCELED"]) {
+      const db = dbAfterRegistration(closed);
+      const opened = await openSession(db);
+      assert.equal(opened.status, 201, `${closed}: ${JSON.stringify(opened.body)}`);
+      assert.equal(opened.body.reused, false);
+      assert.notEqual(opened.body.session.id, S_OLD);
+      const lines = linesOf(db, opened.body.session.id);
+      // 3 originais + pilha (0) + item com saldo (7) + 2 endereços do multi.
+      assert.equal(lines.length, 7, closed);
+      const pilha = lines.find((l) => l.itemId === NEW_ITEM)!;
+      assert.equal(Number(pilha.systemQuantity), 0, "quantidade sistêmica zero: primeira contagem física");
+      assert.equal(pilha.locationId, null);
+      assert.equal(Number(lines.find((l) => l.itemId === NEW_WITH_BALANCE)!.systemQuantity), 7);
+      const multi = lines.filter((l) => l.itemId === NEW_MULTI);
+      assert.deepEqual(
+        multi.map((l) => [l.locationId, Number(l.systemQuantity)]).sort(),
+        [[LOC_A, 2], [LOC_B, 5]].sort()
+      );
+      assert.equal(opened.body.diagnostics.itemsWithMultipleLocations, 1);
+      // Sessão histórica intocada.
+      const old = db.state.sessions.find((s) => s.id === S_OLD)!;
+      assert.equal(old.status, closed);
+      assert.equal(linesOf(db, S_OLD).length, 3);
+      // Nada de saldo/movimento: só linhas de conferência.
+      assert.ok(db.state.writes.every((w) => w.startsWith("inventoryCountSession.") || w.startsWith("inventoryCountLine.")), JSON.stringify(db.state.writes));
+    }
+  });
+
+  it("sem almoxarifado padrão e sem saldo (o defeito): continua invisível — por isso o cadastro precisa gravar o padrão", async () => {
+    const db = fakeDb({
+      items: [...ITEMS, { id: NEW_ITEM, code: "ADM-INF-037", itemType: "ADMINISTRATIVE_SUPPLY", defaultWarehouseId: null }],
+    });
+    const opened = await openSession(db);
+    assert.equal(opened.status, 201);
+    assert.ok(!linesOf(db, opened.body.session.id).some((l) => l.itemId === NEW_ITEM));
+  });
+
+  it("12. repopular uma sessão com linhas é no-op (idempotente), mesmo com itens novos no cadastro", async () => {
+    const db = dbAfterRegistration("COUNTING");
+    const sector = await admRef(db);
+    const diagnostics = await populateStandardSectorCountLines(db.client, { sessionId: S_OLD, sector });
+    assert.equal(diagnostics.skippedExistingLines, true);
+    assert.equal(diagnostics.linesCreated, 0);
+    assert.equal(linesOf(db, S_OLD).length, 3);
+  });
+
+  it("21. contrato do tablet: a lista de itens vem só das linhas da sessão, sem cache local", async () => {
+    const db = dbAfterRegistration("APPROVED");
+    const opened = await openSession(db);
+    const items = await callCollectorRoute(db.client, "get", `${SESSIONS_ROUTE}/:id/items`, {
+      params: { id: opened.body.session.id },
+      query: { filter: "all" },
+    });
+    assert.equal(items.status, 200, JSON.stringify(items.body));
+    const codes = (items.body.items ?? items.body.rows ?? []).map((row: { code?: string; itemCode?: string }) => row.code ?? row.itemCode);
+    assert.ok(codes.includes("ADM-INF-037"), JSON.stringify(items.body).slice(0, 300));
+    assert.doesNotMatch(JSON.stringify(items.body), /systemQuantity/, "contagem cega");
+    const page = read("src/components/inventory/collector/CollectorSectorPage.tsx");
+    const client = read("src/components/inventory/collector/collectorClient.ts");
+    assert.doesNotMatch(page + client, /localStorage|sessionStorage|indexedDB|caches\./);
+    assert.match(client, /count-sessions\/\$\{[^}]+\}\/items/);
+  });
+
+  it("eligibilidade do cadastro e da conferência são a mesma regra (defaultWarehouseId OU saldo)", () => {
+    const eligibility = read("src/lib/inventory/collector/collectorStandardEligibility.ts");
+    assert.match(eligibility, /defaultWarehouseId: sector\.warehouseId/);
+    assert.match(eligibility, /balances: \{ some: \{ warehouseId: sector\.warehouseId \} \}/);
+    const policy = read("src/lib/inventory/inventoryItemDefaultWarehousePolicy.ts");
+    assert.match(policy, /SECTOR_FIXED/);
+  });
+});
