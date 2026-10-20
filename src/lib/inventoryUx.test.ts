@@ -162,6 +162,8 @@ describe("inventoryUx", () => {
     assert.match(balances, /Segurança/);
     assert.match(balances, /inventory-balances-alerts/);
     assert.match(balances, /safetyStock/);
+    assert.match(balances, /inventory-balances-report-panel/);
+    assert.match(balances, /Situação do saldo/);
   });
 
   it("11. estorno autorizado no detalhe da movimentação", () => {

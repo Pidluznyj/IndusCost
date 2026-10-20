@@ -245,6 +245,37 @@ export function InventoryBalancesTab() {
     return q.toString();
   }, [filterQuery, zeroBalanceMode]);
 
+  const reportModeHint = useMemo(() => {
+    if (zeroBalanceMode !== "including_zero") {
+      return "O relatório omite itens com saldo físico consolidado igual a zero. A tabela abaixo não muda.";
+    }
+    const catalogBlocked =
+      Boolean(locationId) ||
+      hasReservation ||
+      hasBlocked ||
+      hasQuarantine ||
+      negativeStock ||
+      belowMinimum ||
+      belowReorderPoint;
+    if (catalogBlocked) {
+      return "Com filtro de local, reserva, bloqueio, quarentena, negativo ou abaixo do mínimo, só entram itens com saldo registrado.";
+    }
+    if (warehouseId) {
+      return "Inclui itens cadastrados neste almoxarifado, mesmo sem movimento. A tabela abaixo continua mostrando só saldos registrados.";
+    }
+    return "Inclui itens cadastrados sem saldo em qualquer almoxarifado. A tabela abaixo não muda.";
+  }, [
+    zeroBalanceMode,
+    locationId,
+    warehouseId,
+    hasReservation,
+    hasBlocked,
+    hasQuarantine,
+    negativeStock,
+    belowMinimum,
+    belowReorderPoint,
+  ]);
+
   const downloadReportXlsx = async () => {
     setError(null);
     try {
@@ -367,66 +398,15 @@ export function InventoryBalancesTab() {
 
       <SummaryCards summary={summary} />
 
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="relative min-w-[220px] flex-1">
-          <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" />
-          <input
-            className={cn(inventoryFilterInputClass, "pl-8")}
-            placeholder="Buscar código ou descrição…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            data-testid="inventory-balances-search"
-          />
-        </div>
-        <a
-          href={`/api/inventory/balances/export?${new URLSearchParams({
-            ...(warehouseId ? { warehouseId } : {}),
-            ...(itemId ? { itemId } : {}),
-            ...(locationId ? { locationId } : {}),
-          }).toString()}`}
-          className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-          title="CSV operacional por almoxarifado e local. Não usa o seletor de zerados do XLS/PDF e não inclui itens sem registro de saldo."
-          data-testid="inventory-balances-export-link"
-        >
-          Exportar CSV
-        </a>
-        <label className="inline-flex min-w-[220px] flex-col gap-0.5">
-          <span className="text-[11px] font-medium text-slate-600">Itens do relatório</span>
-          <select
-            className={inventoryFilterInputClass}
-            value={zeroBalanceMode}
-            onChange={(e) =>
-              setZeroBalanceMode(e.target.value === "including_zero" ? "including_zero" : "nonzero")
-            }
-            title="Aplica-se à extração Excel e PDF, não à consulta paginada"
-            data-testid="inventory-balances-report-zero-mode"
-          >
-            <option value="nonzero">Somente itens com saldo</option>
-            <option value="including_zero">Todos os itens, incluindo zerados</option>
-          </select>
-        </label>
-        <button
-          type="button"
-          onClick={() => void downloadReportXlsx()}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-          title="Relatório de saldos por item, do maior para o menor, com os filtros desta tela"
-          data-testid="inventory-balances-report-xlsx"
-        >
-          <FileSpreadsheet className="h-4 w-4" />
-          Extrair XLS
-        </button>
-        <button
-          type="button"
-          onClick={() =>
-            navigate(`/inventory/balances/report/print${reportQuery ? `?${reportQuery}` : ""}`)
-          }
-          className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-          title="Relatório de saldos por item, do maior para o menor, com os filtros desta tela"
-          data-testid="inventory-balances-report-pdf"
-        >
-          <Printer className="h-4 w-4" />
-          Extrair PDF
-        </button>
+      <div className="relative min-w-[220px]">
+        <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" />
+        <input
+          className={cn(inventoryFilterInputClass, "w-full pl-8")}
+          placeholder="Buscar código ou descrição na consulta…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          data-testid="inventory-balances-search"
+        />
       </div>
 
       <InventoryCollapsibleFilters
@@ -434,51 +414,7 @@ export function InventoryBalancesTab() {
         onClear={clearFilters}
         testId="inventory-balances-filters"
       >
-        <InventoryFilterField label="Item">
-          <select
-            className={inventoryFilterInputClass}
-            value={itemId}
-            onChange={(e) => setItemId(e.target.value)}
-            data-testid="inventory-balances-filter-item"
-          >
-            <option value="">Todos</option>
-            {items.map((it) => (
-              <option key={it.id} value={it.id}>
-                {it.code} — {it.description}
-              </option>
-            ))}
-          </select>
-        </InventoryFilterField>
-        <InventoryFilterField label="Tipo">
-          <select
-            className={inventoryFilterInputClass}
-            value={itemType}
-            onChange={(e) => setItemType(e.target.value)}
-            data-testid="inventory-balances-filter-type"
-          >
-            <option value="">Todos</option>
-            {INVENTORY_ITEM_TYPE_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </select>
-        </InventoryFilterField>
-        <InventoryFilterField label="Família">
-          <input
-            className={inventoryFilterInputClass}
-            value={family}
-            onChange={(e) => setFamily(e.target.value)}
-          />
-        </InventoryFilterField>
-        <InventoryFilterField label="Grupo">
-          <input
-            className={inventoryFilterInputClass}
-            value={group}
-            onChange={(e) => setGroup(e.target.value)}
-          />
-        </InventoryFilterField>
-        <InventoryFilterField label="Almoxarifado">
+        <InventoryFilterField label="Almoxarifado" className="min-w-[240px] flex-1">
           <select
             className={inventoryFilterInputClass}
             value={warehouseId}
@@ -496,7 +432,7 @@ export function InventoryBalancesTab() {
             ))}
           </select>
         </InventoryFilterField>
-        <InventoryFilterField label="Local">
+        <InventoryFilterField label="Local" className="min-w-[180px]">
           <select
             className={inventoryFilterInputClass}
             value={locationId}
@@ -512,72 +448,213 @@ export function InventoryBalancesTab() {
             ))}
           </select>
         </InventoryFilterField>
-        <InventoryFilterField label="Status item">
+        <InventoryFilterField label="Status do item" className="min-w-[140px]">
           <select
             className={inventoryFilterInputClass}
             value={status}
             onChange={(e) => setStatus(e.target.value)}
+            data-testid="inventory-balances-filter-status"
           >
             <option value="">Todos</option>
             <option value="ACTIVE">Ativo</option>
             <option value="INACTIVE">Inativo</option>
           </select>
         </InventoryFilterField>
-        <label className="inline-flex items-center gap-1.5 self-end pb-2 text-sm">
+        <InventoryFilterField label="Item" className="min-w-[220px] flex-1">
+          <select
+            className={inventoryFilterInputClass}
+            value={itemId}
+            onChange={(e) => setItemId(e.target.value)}
+            data-testid="inventory-balances-filter-item"
+          >
+            <option value="">Todos</option>
+            {items.map((it) => (
+              <option key={it.id} value={it.id}>
+                {it.code} — {it.description}
+              </option>
+            ))}
+          </select>
+        </InventoryFilterField>
+        <InventoryFilterField label="Tipo" className="min-w-[180px]">
+          <select
+            className={inventoryFilterInputClass}
+            value={itemType}
+            onChange={(e) => setItemType(e.target.value)}
+            data-testid="inventory-balances-filter-type"
+          >
+            <option value="">Todos</option>
+            {INVENTORY_ITEM_TYPE_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </InventoryFilterField>
+        <InventoryFilterField label="Família" className="min-w-[140px]">
           <input
-            type="checkbox"
-            checked={belowMinimum}
-            onChange={(e) => setBelowMinimum(e.target.checked)}
-            data-testid="inventory-balances-filter-below-minimum"
+            className={inventoryFilterInputClass}
+            placeholder="Família"
+            value={family}
+            onChange={(e) => setFamily(e.target.value)}
           />
-          Abaixo do mínimo
-        </label>
-        <label className="inline-flex items-center gap-1.5 self-end pb-2 text-sm">
+        </InventoryFilterField>
+        <InventoryFilterField label="Grupo" className="min-w-[140px]">
           <input
-            type="checkbox"
-            checked={belowReorderPoint}
-            onChange={(e) => setBelowReorderPoint(e.target.checked)}
-            data-testid="inventory-balances-filter-below-reorder"
+            className={inventoryFilterInputClass}
+            placeholder="Grupo"
+            value={group}
+            onChange={(e) => setGroup(e.target.value)}
           />
-          Abaixo reposição
-        </label>
-        <label className="inline-flex items-center gap-1.5 self-end pb-2 text-sm">
-          <input
-            type="checkbox"
-            checked={hasReservation}
-            onChange={(e) => setHasReservation(e.target.checked)}
-            data-testid="inventory-balances-filter-reservation"
-          />
-          Com reserva
-        </label>
-        <label className="inline-flex items-center gap-1.5 self-end pb-2 text-sm">
-          <input
-            type="checkbox"
-            checked={hasBlocked}
-            onChange={(e) => setHasBlocked(e.target.checked)}
-            data-testid="inventory-balances-filter-blocked"
-          />
-          Bloqueado
-        </label>
-        <label className="inline-flex items-center gap-1.5 self-end pb-2 text-sm">
-          <input
-            type="checkbox"
-            checked={hasQuarantine}
-            onChange={(e) => setHasQuarantine(e.target.checked)}
-            data-testid="inventory-balances-filter-quarantine"
-          />
-          Quarentena
-        </label>
-        <label className="inline-flex items-center gap-1.5 self-end pb-2 text-sm">
-          <input
-            type="checkbox"
-            checked={negativeStock}
-            onChange={(e) => setNegativeStock(e.target.checked)}
-            data-testid="inventory-balances-filter-negative"
-          />
-          Negativo
-        </label>
+        </InventoryFilterField>
+        <div className="flex w-full min-w-full flex-col gap-1">
+          <span className="text-xs font-medium text-slate-600">Situação do saldo</span>
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+            <label className="inline-flex items-center gap-1.5 text-sm text-slate-700">
+              <input
+                type="checkbox"
+                checked={belowMinimum}
+                onChange={(e) => setBelowMinimum(e.target.checked)}
+                data-testid="inventory-balances-filter-below-minimum"
+              />
+              Abaixo do mínimo
+            </label>
+            <label className="inline-flex items-center gap-1.5 text-sm text-slate-700">
+              <input
+                type="checkbox"
+                checked={belowReorderPoint}
+                onChange={(e) => setBelowReorderPoint(e.target.checked)}
+                data-testid="inventory-balances-filter-below-reorder"
+              />
+              Abaixo reposição
+            </label>
+            <label className="inline-flex items-center gap-1.5 text-sm text-slate-700">
+              <input
+                type="checkbox"
+                checked={hasReservation}
+                onChange={(e) => setHasReservation(e.target.checked)}
+                data-testid="inventory-balances-filter-reservation"
+              />
+              Com reserva
+            </label>
+            <label className="inline-flex items-center gap-1.5 text-sm text-slate-700">
+              <input
+                type="checkbox"
+                checked={hasBlocked}
+                onChange={(e) => setHasBlocked(e.target.checked)}
+                data-testid="inventory-balances-filter-blocked"
+              />
+              Bloqueado
+            </label>
+            <label className="inline-flex items-center gap-1.5 text-sm text-slate-700">
+              <input
+                type="checkbox"
+                checked={hasQuarantine}
+                onChange={(e) => setHasQuarantine(e.target.checked)}
+                data-testid="inventory-balances-filter-quarantine"
+              />
+              Quarentena
+            </label>
+            <label className="inline-flex items-center gap-1.5 text-sm text-slate-700">
+              <input
+                type="checkbox"
+                checked={negativeStock}
+                onChange={(e) => setNegativeStock(e.target.checked)}
+                data-testid="inventory-balances-filter-negative"
+              />
+              Negativo
+            </label>
+          </div>
+        </div>
       </InventoryCollapsibleFilters>
+
+      <section
+        className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm"
+        data-testid="inventory-balances-report-panel"
+      >
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+          <div className="space-y-2">
+            <p className="text-sm font-semibold text-slate-900">Relatório de saldos</p>
+            <p className="max-w-2xl text-xs text-slate-500">
+              Excel e PDF consolidam uma linha por item, com os filtros acima. A consulta desta tela
+              continua mostrando só saldos registrados.
+            </p>
+            <div
+              className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-0.5"
+              role="radiogroup"
+              aria-label="Itens do relatório"
+              data-testid="inventory-balances-report-zero-mode"
+            >
+              <button
+                type="button"
+                role="radio"
+                aria-checked={zeroBalanceMode === "nonzero"}
+                onClick={() => setZeroBalanceMode("nonzero")}
+                className={cn(
+                  "rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+                  zeroBalanceMode === "nonzero"
+                    ? "bg-slate-900 text-white"
+                    : "text-slate-600 hover:bg-white"
+                )}
+              >
+                Somente itens com saldo
+              </button>
+              <button
+                type="button"
+                role="radio"
+                aria-checked={zeroBalanceMode === "including_zero"}
+                onClick={() => setZeroBalanceMode("including_zero")}
+                className={cn(
+                  "rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+                  zeroBalanceMode === "including_zero"
+                    ? "bg-slate-900 text-white"
+                    : "text-slate-600 hover:bg-white"
+                )}
+              >
+                Todos os itens, incluindo zerados
+              </button>
+            </div>
+            <p className="max-w-2xl text-xs text-slate-500" data-testid="inventory-balances-report-hint">
+              {reportModeHint}
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => void downloadReportXlsx()}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800"
+              title="Relatório de saldos por item, do maior para o menor, com os filtros desta tela"
+              data-testid="inventory-balances-report-xlsx"
+            >
+              <FileSpreadsheet className="h-4 w-4" />
+              Extrair Excel
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                navigate(`/inventory/balances/report/print${reportQuery ? `?${reportQuery}` : ""}`)
+              }
+              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              title="Relatório de saldos por item, do maior para o menor, com os filtros desta tela"
+              data-testid="inventory-balances-report-pdf"
+            >
+              <Printer className="h-4 w-4" />
+              Extrair PDF
+            </button>
+            <a
+              href={`/api/inventory/balances/export?${new URLSearchParams({
+                ...(warehouseId ? { warehouseId } : {}),
+                ...(itemId ? { itemId } : {}),
+                ...(locationId ? { locationId } : {}),
+              }).toString()}`}
+              className="rounded-lg px-3 py-2 text-sm font-medium text-slate-600 underline-offset-2 hover:text-slate-900 hover:underline"
+              title="CSV operacional por almoxarifado e local. Não usa o seletor de zerados do XLS/PDF e não inclui itens sem registro de saldo."
+              data-testid="inventory-balances-export-link"
+            >
+              CSV por local
+            </a>
+          </div>
+        </div>
+      </section>
 
       {loading ? (
         <InventoryLoading label="Carregando saldos…" />

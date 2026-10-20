@@ -226,9 +226,12 @@ describe("inventory balance report — carga", () => {
     const tab = read("src/components/inventory/InventoryBalancesTab.tsx");
     assert.match(tab, /\/api\/inventory\/balances\/report\.xlsx\?\$\{reportQuery\}/);
     assert.match(tab, /\/inventory\/balances\/report\/print/);
+    assert.match(tab, /inventory-balances-report-panel/);
     assert.match(tab, /inventory-balances-report-zero-mode/);
     assert.match(tab, /Somente itens com saldo/);
     assert.match(tab, /Todos os itens, incluindo zerados/);
+    assert.match(tab, /Extrair Excel/);
+    assert.match(tab, /A consulta desta tela/);
     assert.match(read("src/App.tsx"), /path="\/inventory\/balances\/report\/print"/);
   });
 
