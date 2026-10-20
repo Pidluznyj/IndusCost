@@ -45,7 +45,7 @@ function AlertBanner({ card }: { card: SystemLinkCard }) {
   );
 }
 
-function LinkCard({ card }: { card: SystemLinkCard }) {
+export function LinkCard({ card }: { card: SystemLinkCard }) {
   return (
     <article className="rounded-lg border border-border bg-background px-3 py-3 text-sm">
       <div className="flex items-start justify-between gap-3">

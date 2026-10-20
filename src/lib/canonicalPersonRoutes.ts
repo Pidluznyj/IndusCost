@@ -37,7 +37,7 @@ import {
 } from "@/src/lib/employeesAccess.js";
 import { logEmployeeHrAudit } from "@/src/lib/employeeHrAudit.js";
 
-type AuthGuards = {
+export type AuthGuards = {
   requireAppAuth: RequestHandler;
   requireResource: (resourceKey: string, action?: string) => RequestHandler;
   requirePermission: (permission: string) => RequestHandler;
@@ -105,6 +105,14 @@ async function resolveSystemLinksCaps(
   return buildSystemLinksViewerCaps(
     viewerCapsInput(await resolveAppUserBrief(req, getCurrentAppUser))
   );
+}
+
+/** Capacidades do visualizador para as rotas de Pessoas (mesma régua dos vínculos do colaborador). */
+export async function resolvePeopleViewerCaps(
+  req: express.Request,
+  getCurrentAppUser?: (req: express.Request) => Promise<AppUserBrief | null> | AppUserBrief | null
+) {
+  return buildSystemLinksViewerCaps(viewerCapsInput(await resolveAppUserBrief(req, getCurrentAppUser)));
 }
 
 export function registerCanonicalPersonRoutes(

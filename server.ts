@@ -293,6 +293,7 @@ import {
   planPersonLinkFromEmployeeBody,
   applyPersonLinkPlan,
 } from "./src/lib/canonicalPersonRoutes.js";
+import { registerPeopleRoutes } from "./src/lib/people/peopleRoutes.js";
 import { CanonicalPersonError } from "./src/lib/canonicalPerson.js";
 import { registerGoalRoutes } from "./src/lib/goals/goalRoutes.js";
 import { registerLegalExposureRoutes } from "./src/lib/legalExposure/legalExposureRoutes.js";
@@ -15890,6 +15891,14 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   );
 
   registerCanonicalPersonRoutes(app, {
+    requireAppAuth,
+    requireResource: requireResourceOrHrEditor,
+    requirePermission,
+    requireAnyPermission,
+    getCurrentAppUser,
+  });
+  // Pessoas 360° (consulta) — depois das rotas canônicas para /:id não capturar /resolve, /search.
+  registerPeopleRoutes(app, {
     requireAppAuth,
     requireResource: requireResourceOrHrEditor,
     requirePermission,

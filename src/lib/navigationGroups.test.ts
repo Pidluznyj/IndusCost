@@ -70,6 +70,7 @@ const EXPECTED_GROUP_BY_MODULE: Record<AppModuleId, string> = {
   fleet: "operacoes",
   employees: "gestao_pessoas",
   "employees-dashboard": "gestao_pessoas",
+  people: "gestao_pessoas",
   "org-chart": "gestao_pessoas",
   competencies: "gestao_pessoas",
   "performance-cycle": "gestao_pessoas",

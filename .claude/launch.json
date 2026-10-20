@@ -5,6 +5,14 @@
       "name": "induscost-existing",
       "url": "http://localhost:3000",
       "port": 3000
+    },
+    {
+      "name": "induscost-e2e-local",
+      "runtimeExecutable": "C:\\Program Files\\Git\\bin\\bash.exe",
+      "runtimeArgs": [
+        "C:/Users/PAULOP~1/AppData/Local/Temp/claude/C--Dev-IndusCost/1e62f864-f3c9-40e3-aeb4-2da2f1620782/scratchpad/start-e2e-server.sh"
+      ],
+      "port": 3100
     }
   ]
 }

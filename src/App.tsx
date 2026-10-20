@@ -4,6 +4,7 @@ import { Layout } from "./components/layout/Layout";
 import { DashboardModule } from "./components/DashboardModule";
 import { EmployeeModule } from "./components/EmployeeModule";
 import { HrOrgChartPage } from "./components/employee/HrOrgChartPage";
+import { PeopleModule } from "./components/people/PeopleModule";
 import { CompetenciesPage } from "./components/competencies/CompetenciesPage";
 import { PerformanceCyclePage } from "./components/hrPerformance/PerformanceCyclePage";
 import { PerformanceInvitePrintPage } from "./components/hrPerformance/PerformanceInvitePrintPage";
@@ -316,6 +317,25 @@ export default function App() {
               description="Cadastro administrativo de colaboradores, cargos e benefícios. Não altera CIU, custo de produtos, HH global ou roteiros de produção."
             >
               <EmployeeModule />
+            </ModulePageShell>
+          }
+        />
+        <Route
+          path="people"
+          element={
+            <ModulePageShell
+              title="Pessoas 360°"
+              description="Uma identidade por pessoa física e todos os seus vínculos: colaborador, usuário, motorista, comissionável, documentos e histórico. Cada cartão respeita a permissão do módulo de origem."
+            >
+              <PeopleModule />
+            </ModulePageShell>
+          }
+        />
+        <Route
+          path="people/:personId"
+          element={
+            <ModulePageShell title="Pessoas 360°" description="Ficha da identidade e seus vínculos.">
+              <PeopleModule />
             </ModulePageShell>
           }
         />

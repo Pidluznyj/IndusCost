@@ -42,6 +42,7 @@ export const SIDEBAR_MODULE_CONTRACT_KEYS: Record<AppModuleId, readonly string[]
   dashboard: ["dashboard"],
   employees: ["admin.employees"],
   "employees-dashboard": ["admin.employees.dashboard"],
+  people: ["admin.employees"],
   "org-chart": ["admin.employees"],
   competencies: ["admin.employees.competencies"],
   "performance-cycle": ["admin.employees.performance"],
