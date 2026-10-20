@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Filter, GitCompare, Link2, Search, ShoppingCart, UserX, Users, X } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import type {
@@ -12,6 +12,13 @@ import {
   buildSellerOptionKey,
   formatSellerOptionLabel,
 } from "@/src/components/crmSellerDashboardUi";
+import { fetchJsonOk } from "@/src/lib/http";
+import { CustomerCreditOperationCard } from "@/src/components/customers/CustomerCreditOperationCard";
+import {
+  COMMERCIAL_CREDIT_PORTFOLIO_FILTER_LABEL,
+  COMMERCIAL_CREDIT_PORTFOLIO_LIMIT,
+  type CommercialCreditPortfolioFilter,
+} from "@/src/lib/commercial/commercialCreditOperation";
 import {
   CRM_PORTFOLIO_FILTER_CHIPS,
   buildActivePortfolioFilterChips,
@@ -151,6 +158,59 @@ export const CrmCustomerPortfolioSection: React.FC<CrmCustomerPortfolioSectionPr
   formatters,
   children,
 }) => {
+  const [creditFilter, setCreditFilter] = useState<CommercialCreditPortfolioFilter | null>(null);
+  const [creditMatchIds, setCreditMatchIds] = useState<string[] | null>(null);
+  const [creditNote, setCreditNote] = useState<string | null>(null);
+  const creditRequest = useRef(0);
+  const customerKey = customers.map((customer) => customer.id).join(",");
+  const visibleCustomers =
+    creditMatchIds == null ? customers : customers.filter((customer) => creditMatchIds.includes(customer.id));
+
+  useEffect(() => {
+    creditRequest.current += 1;
+    setCreditFilter(null);
+    setCreditMatchIds(null);
+    setCreditNote(null);
+  }, [customerKey]);
+
+  const applyCreditFilter = (filter: CommercialCreditPortfolioFilter) => {
+    if (creditFilter === filter) {
+      creditRequest.current += 1;
+      setCreditFilter(null);
+      setCreditMatchIds(null);
+      setCreditNote(null);
+      return;
+    }
+    const request = ++creditRequest.current;
+    setCreditFilter(filter);
+    setCreditNote("Avaliando o crédito desta página...");
+    const ids = customers.map((customer) => customer.id).slice(0, COMMERCIAL_CREDIT_PORTFOLIO_LIMIT);
+    fetchJsonOk<{ matches: Array<{ customerId: string }>; omitted: number; failed: number }>(
+      "/api/commercial/credit-portfolio-filter",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ filter, customerIds: ids }),
+      }
+    )
+      .then((result) => {
+        if (creditRequest.current !== request) return;
+        setCreditMatchIds(result.matches.map((match) => match.customerId));
+        const extra = [
+          result.omitted > 0 ? `${result.omitted} cliente(s) fora do limite desta página.` : "",
+          result.failed > 0 ? `${result.failed} cliente(s) não avaliados.` : "",
+          "O bloqueio de venda continua no servidor.",
+        ]
+          .filter(Boolean)
+          .join(" ");
+        setCreditNote(extra);
+      })
+      .catch(() => {
+        if (creditRequest.current !== request) return;
+        setCreditMatchIds([]);
+        setCreditNote("Filtro de crédito indisponível. Nenhum cliente foi marcado como liberado.");
+      });
+  };
   const fmt = formatNumberPt ?? ((v: number | null | undefined) => String(v ?? 0));
 
   const selectedSellerLabel =
@@ -170,9 +230,9 @@ export const CrmCustomerPortfolioSection: React.FC<CrmCustomerPortfolioSectionPr
   const listEmptyKind = resolveCrmPortfolioListEmptyKind({
     loading: customersLoading,
     error: customersError,
-    customerCount: customers.length,
+    customerCount: creditMatchIds == null ? customers.length : visibleCustomers.length,
     sellerFilterActive: portfolioSellerKey !== SELLER_KEY_ALL,
-    hasOtherFilters: Boolean(appliedSearch.trim()) || crmCustomerFilter !== "all",
+    hasOtherFilters: Boolean(appliedSearch.trim()) || crmCustomerFilter !== "all" || creditFilter != null,
     hasSourceInfo: Boolean(sourceInfo),
   });
   const listEmptyCopy = listEmptyKind ? crmPortfolioListEmptyCopy(listEmptyKind) : null;
@@ -381,6 +441,24 @@ export const CrmCustomerPortfolioSection: React.FC<CrmCustomerPortfolioSectionPr
               </button>
             ))}
           </div>
+          <div className="flex flex-wrap gap-2" data-testid="crm-credit-filters">
+            {(Object.keys(COMMERCIAL_CREDIT_PORTFOLIO_FILTER_LABEL) as CommercialCreditPortfolioFilter[]).map((filter) => (
+              <button
+                key={filter}
+                type="button"
+                onClick={() => applyCreditFilter(filter)}
+                className={cn(
+                  "rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors",
+                  creditFilter === filter
+                    ? "border-red-700 bg-red-50 text-red-900"
+                    : "border-border bg-background text-muted-foreground hover:bg-accent"
+                )}
+              >
+                {COMMERCIAL_CREDIT_PORTFOLIO_FILTER_LABEL[filter]}
+              </button>
+            ))}
+          </div>
+          {creditNote ? <p className="text-xs text-muted-foreground">{creditNote}</p> : null}
         </div>
 
         {activeChips.length > 0 ? (
@@ -429,7 +507,7 @@ export const CrmCustomerPortfolioSection: React.FC<CrmCustomerPortfolioSectionPr
       </div>
 
       <CrmCustomerPortfolioTable
-        customers={customers}
+        customers={visibleCustomers}
         loading={customersLoading}
         error={listEmptyKind === "error" ? customersError : null}
         emptyTitle={listEmptyCopy?.title ?? "Nenhum cliente encontrado"}
@@ -466,6 +544,7 @@ export const CrmCustomerPortfolioSection: React.FC<CrmCustomerPortfolioSectionPr
             onEditProfile={onEditProfile}
             formatters={formatters}
           />
+          <CustomerCreditOperationCard customerId={selectedCustomer.id} />
           <CrmCustomerAccountCockpit
             customer={selectedCustomer}
             intel={intel}

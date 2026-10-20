@@ -11,7 +11,14 @@ import {
   X,
 } from "lucide-react";
 import { CnpjCommercialIntelligencePrintReport } from "@/src/components/customers/CnpjCommercialIntelligencePrintReport";
+import { CustomerCnpjCreditSections } from "@/src/components/customers/CustomerCnpjCreditSections";
+import { CustomerCreditOccurrenceHistory } from "@/src/components/customers/CustomerCreditOccurrenceHistory";
 import { fetchJsonOk } from "@/src/lib/http";
+import {
+  notConsultedCommercialCreditView,
+  presentCnpjSourceFact,
+  type CommercialCreditIntelligenceView,
+} from "@/src/lib/commercial/commercialCreditIntelligenceView";
 import {
   CNPJ_INTELLIGENCE_PRINT_BODY_CLASS,
   CNPJ_INTELLIGENCE_PRINT_BUTTON_LABEL,
@@ -93,6 +100,9 @@ export function CustomerCnpjIntelligencePanel({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<CnpjIntelligencePayload | null>(null);
+  const [credit, setCredit] = useState<CommercialCreditIntelligenceView | null>(null);
+  const [creditLoading, setCreditLoading] = useState(false);
+  const [creditError, setCreditError] = useState<string | null>(null);
   const [printPayload, setPrintPayload] = useState<ReturnType<typeof toCnpjIntelligencePrintPayload> | null>(
     null
   );
@@ -101,6 +111,28 @@ export function CustomerCnpjIntelligencePanel({
   const [usePublicContactAsPrimary, setUsePublicContactAsPrimary] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [simOpen, setSimOpen] = useState(false);
+
+  const loadCredit = useCallback(async () => {
+    if (!customerId) {
+      setCredit(notConsultedCommercialCreditView());
+      setCreditError(null);
+      setCreditLoading(false);
+      return;
+    }
+    setCreditLoading(true);
+    setCreditError(null);
+    try {
+      const view = await fetchJsonOk<CommercialCreditIntelligenceView>(
+        `/api/customers/${customerId}/commercial-credit`
+      );
+      setCredit(view);
+    } catch (e: unknown) {
+      setCredit(null);
+      setCreditError(e instanceof Error ? e.message : "Situação de crédito indisponível.");
+    } finally {
+      setCreditLoading(false);
+    }
+  }, [customerId]);
 
   const load = useCallback(
     async (refresh = false) => {
@@ -143,11 +175,14 @@ export function CustomerCnpjIntelligencePanel({
     if (!open) return;
     setCnpjInput(initialCnpj);
     setData(null);
+    setCredit(null);
+    setCreditError(null);
     setError(null);
     if (customerId || initialCnpj.replace(/\D/g, "").length === 14) {
       void load(false);
     }
-  }, [open, customerId, initialCnpj]);
+    void loadCredit();
+  }, [open, customerId, initialCnpj, loadCredit]);
 
   useEffect(() => {
     if (!open) return;
@@ -178,7 +213,12 @@ export function CustomerCnpjIntelligencePanel({
 
   const handlePrint = useCallback(async () => {
     if (!data) return;
-    setPrintPayload(toCnpjIntelligencePrintPayload(data));
+    setPrintPayload(
+      toCnpjIntelligencePrintPayload(data, {
+        credit,
+        creditState: creditError ? "error" : creditLoading ? "loading" : credit?.consulted ? "loaded" : "not_consulted",
+      })
+    );
     await new Promise<void>((resolve) => {
       requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
     });
@@ -189,7 +229,7 @@ export function CustomerCnpjIntelligencePanel({
     };
     window.addEventListener("afterprint", cleanup);
     window.print();
-  }, [data]);
+  }, [data, credit, creditError, creditLoading]);
 
   const verdictClass = useMemo(() => {
     if (!data) return "bg-slate-100 text-slate-800";
@@ -374,6 +414,20 @@ export function CustomerCnpjIntelligencePanel({
             </div>
           )}
 
+          {customerId && !data && !loading ? (
+            <>
+              <CustomerCnpjCreditSections
+                credit={credit}
+                loading={creditLoading}
+                error={creditError}
+                onRefresh={() => void loadCredit()}
+              />
+              <div className="cnpj-intelligence-no-print">
+                <CustomerCreditOccurrenceHistory customerId={customerId} />
+              </div>
+            </>
+          ) : null}
+
           {data && (
             <>
               <div className="rounded-lg border bg-slate-50 p-3 flex flex-wrap gap-3 justify-between">
@@ -402,7 +456,10 @@ export function CustomerCnpjIntelligencePanel({
                     <p className="mt-1 text-[11px] text-slate-500" data-testid="cnpj-intelligence-sources">
                       Fontes:{" "}
                       {data.sources
-                        .map((s) => `${s.label} (${s.status})`)
+                        .map((source) => {
+                          const fact = presentCnpjSourceFact(source);
+                          return `${fact.label} (${fact.stateLabel})`;
+                        })
                         .join(" · ")}
                     </p>
                   ) : null}
@@ -420,7 +477,10 @@ export function CustomerCnpjIntelligencePanel({
                   <button
                     type="button"
                     className="rounded border px-2 py-1 text-xs inline-flex items-center gap-1"
-                    onClick={() => void load(true)}
+                    onClick={() => {
+                      void load(true);
+                      void loadCredit();
+                    }}
                     disabled={loading}
                   >
                     <RefreshCw className="h-3.5 w-3.5" /> Atualizar
@@ -442,11 +502,15 @@ export function CustomerCnpjIntelligencePanel({
                 </div>
               </div>
 
-              <div className={cn("rounded-lg border p-4", verdictClass)}>
+              <div className={cn("rounded-lg border p-4", verdictClass)} data-testid="cnpj-cadastral-score">
+                <p className="text-xs font-medium uppercase tracking-wide opacity-70">1. Score cadastral</p>
                 <div className="flex items-center gap-2 font-semibold">
                   <Shield className="h-5 w-5" />
-                  Score: {data.risk.score}/100 · {data.risk.verdict}
+                  Score cadastral: {data.risk.score}/100 · {data.risk.verdict}
                 </div>
+                <p className="text-xs mt-1" data-testid="cnpj-cadastral-score-disclaimer">
+                  Veredito cadastral. Não autoriza crédito nem venda a prazo.
+                </p>
                 <p className="text-sm mt-1">
                   Risco: {data.risk.riskLevel} — {data.risk.saleRecommendation}
                 </p>
@@ -457,6 +521,19 @@ export function CustomerCnpjIntelligencePanel({
                 </ul>
                 <p className="text-xs mt-2 italic opacity-80">{data.commercial.disclaimer}</p>
               </div>
+
+              <CustomerCnpjCreditSections
+                credit={credit}
+                loading={creditLoading}
+                error={creditError}
+                sources={data.sources}
+                onRefresh={customerId ? () => void loadCredit() : undefined}
+              />
+              {customerId ? (
+                <div className="cnpj-intelligence-no-print">
+                  <CustomerCreditOccurrenceHistory customerId={customerId} />
+                </div>
+              ) : null}
 
               <section className="grid gap-3 sm:grid-cols-2 text-sm">
                 <div className="rounded-lg border p-3 space-y-1">

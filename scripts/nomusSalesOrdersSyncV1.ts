@@ -22,6 +22,7 @@ import { parseNomusSalesOrderItemStatus } from "../src/lib/sales/nomusSalesOrder
 import { buildNomusSyncMaterializationTrigger } from "../src/lib/commissions/commissionMaterializationAfterNomusSync.ts";
 import { runCommissionMaterializationAfterNomusSync } from "../src/lib/commissions/commissionMaterializationAfterNomusSync.server.ts";
 import { autoAssignCommercialOwnersAfterNomusSync } from "../src/lib/commercial/crmCommercialOwnerAutoAssign.ts";
+import { assertExistingNomusObligationMirror } from "../src/lib/commercial/commercialCreditDecision.ts";
 import {
   formatProductionOrdersAfterSalesOrdersLogLine,
   runNomusProductionOrdersAfterSalesOrdersSync,
@@ -1406,6 +1407,11 @@ async function runApply(
 
       let salesOrderId: string;
       let existingForHeader: NomusSyncExistingSalesOrder | null = existingMatch;
+
+      assertExistingNomusObligationMirror({
+        sourceSystem: nomusHeader.sourceSystem,
+        externalDocumentId: nomusHeader.externalSalesOrderId,
+      });
 
       if (existingMatch) {
         const existingFull = await tx.salesOrder.findUnique({

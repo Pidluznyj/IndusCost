@@ -621,6 +621,16 @@ import {
 import { attachCustomerLastPurchase } from "./src/lib/commercial/customerLastPurchase.server.js";
 import { CustomerSalesBlockedError } from "./src/lib/commercial/customerSalesBlock.js";
 import {
+  assertCommercialCreditAllows,
+  commercialCreditDenialBody,
+  grantCommercialCreditException,
+} from "./src/lib/commercial/commercialCreditDecision.server.js";
+import {
+  CommercialCreditDeniedError,
+  CommercialCreditExceptionError,
+  commercialPaymentTermsText,
+} from "./src/lib/commercial/commercialCreditDecision.js";
+import {
   ALL_PERMISSION_KEYS,
   APP_SESSION_COOKIE_NAME,
   APP_SESSION_TTL_MS,
@@ -15703,6 +15713,36 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   });
 
   // --- API: Proposals (Propostas Comerciais) ---
+  app.post("/api/commercial/credit-exceptions", requireAppAuth, async (req, res) => {
+    const auth = await getCurrentAppUser(req);
+    if (!auth) {
+      return res.status(401).json({ error: "UNAUTHORIZED", message: "Autenticação necessária." });
+    }
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    try {
+      const created = await grantCommercialCreditException(prisma, {
+        customerId: typeof body.customerId === "string" ? body.customerId : "",
+        scope: typeof body.scope === "string" ? body.scope : "",
+        justification: typeof body.justification === "string" ? body.justification : "",
+        expiresAt: new Date(typeof body.expiresAt === "string" ? body.expiresAt : ""),
+        actor: { id: auth.id, role: auth.role, assignedPermissions: auth.permissions },
+      });
+      return res.status(201).json({
+        id: created.id,
+        customerId: created.customerId,
+        scope: created.scope,
+        expiresAt: created.expiresAt,
+        grantedByPermission: created.grantedByPermission,
+      });
+    } catch (error) {
+      if (error instanceof CommercialCreditExceptionError) {
+        return res.status(error.httpStatus).json({ error: error.message, code: error.code });
+      }
+      console.error("POST /api/commercial/credit-exceptions", error instanceof Error ? error.name : "error");
+      return res.status(500).json({ error: "Erro ao registrar exceção de crédito." });
+    }
+  });
+
   const PROPOSAL_STATUS_VALUES = [
     "DRAFT",
     "ANALYSIS",
@@ -16242,6 +16282,17 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
 
     try {
       await assertCustomerSalesAllowed(prisma, proposal.customerId);
+      const creditActor = await getCurrentAppUser(req);
+      await assertCommercialCreditAllows(prisma, {
+        customerId: proposal.customerId,
+        enforcement: "CREDIT_GRANT",
+        paymentTerms: proposal.paymentTerms,
+        audit: {
+          entityId: proposal.customerId,
+          action: "GENERATE_SALES_ORDER",
+          performedBy: creditActor?.id ?? null,
+        },
+      });
     } catch (error) {
       if (error instanceof CustomerSalesBlockedError) {
         return res.status(error.httpStatus).json({
@@ -16249,6 +16300,9 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
           code: error.code,
           reason: error.reason,
         });
+      }
+      if (error instanceof CommercialCreditDeniedError) {
+        return res.status(error.httpStatus).json(commercialCreditDenialBody(error));
       }
       throw error;
     }
@@ -16416,6 +16470,32 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
         error: `Status inválido. Use um dos valores: ${PROPOSAL_STATUS_VALUES.join(", ")}.`,
       });
     }
+    const requestedStatus = Object.prototype.hasOwnProperty.call(proposalData, "status")
+      ? proposalData.status
+      : "DRAFT";
+    if (requestedStatus === "APPROVED") {
+      const customerId = typeof proposalData.customerId === "string" ? proposalData.customerId : "";
+      if (!customerId) {
+        return res.status(400).json({ error: "Proposta aprovada exige cliente." });
+      }
+      try {
+        await assertCommercialCreditAllows(prisma, {
+          customerId,
+          enforcement: "CREDIT_GRANT",
+          paymentTerms: commercialPaymentTermsText(proposalData.paymentTerms),
+          audit: {
+            entityId: customerId,
+            action: "PROPOSAL_CREATE_APPROVED",
+            performedBy: auth.id,
+          },
+        });
+      } catch (error) {
+        if (error instanceof CommercialCreditDeniedError) {
+          return res.status(error.httpStatus).json(commercialCreditDenialBody(error));
+        }
+        throw error;
+      }
+    }
     try {
       const now = new Date();
       const stampedItems = await stampProposalItemsWithProductionCostsForWrite(
@@ -16478,10 +16558,45 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     try {
       const existing = await prisma.proposal.findUnique({
         where: { id },
-        select: { externalOpenedAt: true, createdAt: true },
+        select: {
+          externalOpenedAt: true,
+          createdAt: true,
+          status: true,
+          paymentTerms: true,
+          customerId: true,
+        },
       });
       if (!existing) {
         return res.status(404).json({ error: "NOT_FOUND", message: "Proposta não encontrada." });
+      }
+      const nextStatus = Object.prototype.hasOwnProperty.call(proposalData, "status")
+        ? proposalData.status
+        : existing.status;
+      const nextTerms = Object.prototype.hasOwnProperty.call(proposalData, "paymentTerms")
+        ? commercialPaymentTermsText(proposalData.paymentTerms)
+        : existing.paymentTerms;
+      const nextCustomerId = Object.prototype.hasOwnProperty.call(proposalData, "customerId")
+        ? proposalData.customerId
+        : existing.customerId;
+      const approving = nextStatus === "APPROVED" && existing.status !== "APPROVED";
+      const grantingTerms =
+        nextStatus === "APPROVED" && String(nextTerms ?? "") !== String(existing.paymentTerms ?? "");
+      const movingCustomer = nextStatus === "APPROVED" && nextCustomerId !== existing.customerId;
+      if (approving || grantingTerms || movingCustomer) {
+        if (typeof nextCustomerId !== "string" || nextCustomerId.length === 0) {
+          return res.status(400).json({ error: "Proposta aprovada exige cliente." });
+        }
+        const creditActor = await getCurrentAppUser(req);
+        await assertCommercialCreditAllows(prisma, {
+          customerId: nextCustomerId,
+          enforcement: "CREDIT_GRANT",
+          paymentTerms: nextTerms,
+          audit: {
+            entityId: nextCustomerId,
+            action: approving ? "PROPOSAL_APPROVE" : "PROPOSAL_GRANT_TERM",
+            performedBy: creditActor?.id ?? null,
+          },
+        });
       }
       const stampedItems = await stampProposalItemsWithProductionCostsForWrite(
         prisma,
@@ -16519,6 +16634,9 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
       });
       res.json(proposal);
     } catch (e: any) {
+      if (e instanceof CommercialCreditDeniedError) {
+        return res.status(e.httpStatus).json(commercialCreditDenialBody(e));
+      }
       console.error("PUT /api/proposals/:id", e);
       if (isNumericOverflowError(e)) {
         return res.status(422).json({
@@ -16537,6 +16655,36 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
       return res.status(400).json({
         error: `Status inválido. Use um dos valores: ${PROPOSAL_STATUS_VALUES.join(", ")}.`,
       });
+    }
+    if (status === "APPROVED") {
+      const current = await prisma.proposal.findUnique({
+        where: { id },
+        select: { customerId: true, paymentTerms: true, status: true },
+      });
+      if (!current) return res.status(404).json({ error: "Proposta não encontrada." });
+      if (current.status !== "APPROVED") {
+        if (!current.customerId) {
+          return res.status(400).json({ error: "Proposta aprovada exige cliente." });
+        }
+        try {
+          const creditActor = await getCurrentAppUser(req);
+          await assertCommercialCreditAllows(prisma, {
+            customerId: current.customerId,
+            enforcement: "CREDIT_GRANT",
+            paymentTerms: current.paymentTerms,
+            audit: {
+              entityId: current.customerId,
+              action: "PROPOSAL_APPROVE",
+              performedBy: creditActor?.id ?? null,
+            },
+          });
+        } catch (error) {
+          if (error instanceof CommercialCreditDeniedError) {
+            return res.status(error.httpStatus).json(commercialCreditDenialBody(error));
+          }
+          throw error;
+        }
+      }
     }
     const proposal = await prisma.proposal.update({
       where: { id },
