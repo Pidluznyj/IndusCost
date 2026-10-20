@@ -15904,6 +15904,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     requirePermission,
     requireAnyPermission,
     getCurrentAppUser,
+    resolveActor: resolveSuperAdminGuardActor,
   });
 
   // Metas (OKR) — docs/goal-engine-plan.md (recurso admin.goals).

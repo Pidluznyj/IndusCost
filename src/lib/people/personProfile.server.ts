@@ -312,11 +312,17 @@ export async function findPendingLinksForPerson(prisma: PrismaClient, personId: 
   return out;
 }
 
-export async function getPersonProfile(prisma: PrismaClient, personId: string, caps: SystemLinksViewerCaps) {
+export async function getPersonProfile(prisma: PrismaClient, personId: string, caps: SystemLinksViewerCaps, viewer?: { role?: string | null }) {
   if (!isPersonUuid(personId)) throw new CanonicalPersonError("INVALID_PERSON_ID", "ID de pessoa inválido.");
   const row = await prisma.person.findUnique({ where: { id: personId }, select: PERSON_LINK_SELECT });
   if (!row) throw new CanonicalPersonError("PERSON_NOT_FOUND", "Pessoa não encontrada.", 404);
   const summary = summarizePersonRow(row);
+  const linkedEntities = [
+    ...row.employees.map((e) => ({ kind: "employee" as const, id: e.id })),
+    ...row.appUsers.map((u) => ({ kind: "app_user" as const, id: u.id })),
+    ...row.fleetDrivers.map((d) => ({ kind: "fleet_driver" as const, id: d.id })),
+    ...row.commissionPeople.map((c) => ({ kind: "commission_person" as const, id: c.id })),
+  ];
   const [links, pending, events, mergedInto] = await Promise.all([
     getPersonSystemLinks(prisma, personId, caps),
     findPendingLinksForPerson(prisma, personId),
@@ -359,6 +365,7 @@ export async function getPersonProfile(prisma: PrismaClient, personId: string, c
     documentsCount: summary.documentsCount,
     flags: summary.flags,
     cards: links.executive,
+    linkedEntities,
     pending,
     events: events.map((e) => ({
       id: e.id,
@@ -382,6 +389,8 @@ export async function getPersonProfile(prisma: PrismaClient, personId: string, c
       canViewFleet: caps.canViewFleet,
       canViewCommissions: caps.canViewCommissions,
       canViewEmployees: caps.canViewEmployees,
+      /** Unificar/reverter exige SUPER_ADMIN (com step-up no servidor). */
+      canMerge: viewer?.role === "SUPER_ADMIN",
     },
   };
 }

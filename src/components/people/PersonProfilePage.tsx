@@ -3,6 +3,8 @@ import { Link } from "react-router-dom";
 import { AlertTriangle, ArrowLeft, Copy, FileText, History, KeyRound, Loader2, ShieldCheck, Truck, UserRound, Wallet } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { LinkCard } from "@/src/components/employee/EmployeeSystemLinksPanel";
+import { useAdminStepUp } from "@/src/components/settings/useAdminStepUp";
+import { MergeDialog, RelinkDialog, RevertMergeDialog, UnlinkDialog } from "@/src/components/people/PersonLinkDialogs";
 import type { SystemLinkCard } from "@/src/lib/employeeSystemLinks";
 import {
   EVENT_KIND_LABEL,
@@ -10,6 +12,7 @@ import {
   LINK_STATE_LABEL,
   PERSON_FLAG_LABEL,
   PERSON_STATUS_LABEL,
+  type LinkEntityKind,
   type PendingLink,
   type PersonLinkState,
   type PersonProfile,
@@ -45,7 +48,7 @@ const ROLE_META: Record<RoleKey, { label: string; icon: React.ComponentType<{ cl
   commissionPerson: { label: "Comissionável", icon: Wallet, kinds: ["commission_person", "seller_alias"], pendingKind: "commission_person", help: "Identidade comercial do Nomus. Regras e valores de comissão não mudam por vínculo." },
 };
 
-function RoleSection({ roleKey, state, cards, pending, canView }: { roleKey: RoleKey; state: PersonLinkState; cards: SystemLinkCard[]; pending: PendingLink[]; canView: boolean }) {
+function RoleSection({ roleKey, state, cards, pending, canView, canManage, linked, onRelink, onUnlink }: { roleKey: RoleKey; state: PersonLinkState; cards: SystemLinkCard[]; pending: PendingLink[]; canView: boolean; canManage: boolean; linked: Array<{ kind: LinkEntityKind; id: string }>; onRelink: (kind: LinkEntityKind, id: string) => void; onUnlink: (kind: LinkEntityKind, id: string, label: string) => void }) {
   const meta = ROLE_META[roleKey];
   const Icon = meta.icon;
   return (
@@ -86,10 +89,24 @@ function RoleSection({ roleKey, state, cards, pending, canView }: { roleKey: Rol
                   ({p.currentPersonId.slice(0, 8)}…).
                 </p>
               ) : null}
-              <p className="mt-0.5 text-[11px] opacity-80">Evidência: {p.evidence === "CPF_EXACT" ? "CPF igual" : p.evidence === "EMAIL_EXACT" ? "e-mail igual (não decide sozinho)" : "vínculo colaborador ↔ conta"}. Correção na próxima versão (operação controlada com prévia e auditoria).</p>
+              <p className="mt-0.5 text-[11px] opacity-80">Evidência: {p.evidence === "CPF_EXACT" ? "CPF igual" : p.evidence === "EMAIL_EXACT" ? "e-mail igual (não decide sozinho)" : "vínculo colaborador ↔ conta"}.</p>
+              {canManage && p.kind !== "person" ? (
+                <button type="button" onClick={() => onRelink(p.kind as LinkEntityKind, p.entityId)} className="mt-1 rounded-lg border border-current px-2 py-1 text-[11px] font-semibold hover:bg-white/50" data-testid={`person-relink-open-${p.kind}`}>
+                  {p.currentPersonId ? "Corrigir vínculo para esta pessoa" : "Vincular a esta pessoa"}
+                </button>
+              ) : null}
             </li>
           ))}
         </ul>
+      ) : null}
+      {canManage && linked.length > 0 ? (
+        <div className="flex flex-wrap gap-2">
+          {linked.map((l) => (
+            <button key={l.id} type="button" onClick={() => onUnlink(l.kind, l.id, cards[0]?.entityLabel ?? meta.label)} className="rounded-lg border border-border px-2 py-1 text-[11px] font-medium text-muted-foreground hover:bg-muted" data-testid={`person-unlink-open-${l.kind}`}>
+              Desvincular
+            </button>
+          ))}
+        </div>
       ) : null}
       <p className="text-[11px] text-muted-foreground">{meta.help}</p>
     </section>
@@ -101,6 +118,14 @@ export function PersonProfilePage({ personId }: { personId: string }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [dialog, setDialog] = useState<
+    | { type: "relink"; kind: LinkEntityKind; id: string }
+    | { type: "unlink"; kind: LinkEntityKind; id: string; label: string }
+    | { type: "merge"; otherPersonId: string }
+    | { type: "revert"; eventId: string }
+    | null
+  >(null);
+  const stepUp = useAdminStepUp();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -242,15 +267,25 @@ export function PersonProfilePage({ personId }: { personId: string }) {
               </li>
             ))}
           </ul>
-          <p className="mt-1 text-xs">A unificação é uma operação controlada (prévia, confirmação e auditoria) e chega na próxima versão. Nada é unificado automaticamente.</p>
+          {caps.canMerge && caps.canManagePersonLink ? (
+            <div className="mt-2 flex flex-wrap gap-2">
+              {personPending.map((p) => (
+                <button key={p.entityId} type="button" onClick={() => setDialog({ type: "merge", otherPersonId: p.entityId })} className="rounded-lg border border-red-300 bg-white px-2.5 py-1 text-xs font-semibold text-red-900 hover:bg-red-100" data-testid="person-merge-open">
+                  Unificar com {p.label}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <p className="mt-1 text-xs">A unificação é uma operação controlada (prévia, confirmação com senha e auditoria) feita por um Super Administrador. Nada é unificado automaticamente.</p>
+          )}
         </div>
       ) : null}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        <RoleSection roleKey="employee" state={linkStates.employee} cards={cardsFor(ROLE_META.employee.kinds)} pending={pendingFor("employee")} canView={caps.canViewEmployees} />
-        <RoleSection roleKey="appUser" state={linkStates.appUser} cards={cardsFor(ROLE_META.appUser.kinds)} pending={pendingFor("app_user")} canView={caps.canViewUsers} />
-        <RoleSection roleKey="fleetDriver" state={linkStates.fleetDriver} cards={cardsFor(ROLE_META.fleetDriver.kinds)} pending={pendingFor("fleet_driver")} canView={caps.canViewFleet} />
-        <RoleSection roleKey="commissionPerson" state={linkStates.commissionPerson} cards={cardsFor(ROLE_META.commissionPerson.kinds)} pending={pendingFor("commission_person")} canView={caps.canViewCommissions} />
+        <RoleSection roleKey="employee" state={linkStates.employee} cards={cardsFor(ROLE_META.employee.kinds)} pending={pendingFor("employee")} canView={caps.canViewEmployees} canManage={caps.canManagePersonLink} linked={data.linkedEntities.filter((l) => l.kind === "employee")} onRelink={(kind, id) => setDialog({ type: "relink", kind, id })} onUnlink={(kind, id, label) => setDialog({ type: "unlink", kind, id, label })} />
+        <RoleSection roleKey="appUser" state={linkStates.appUser} cards={cardsFor(ROLE_META.appUser.kinds)} pending={pendingFor("app_user")} canView={caps.canViewUsers} canManage={caps.canManagePersonLink} linked={data.linkedEntities.filter((l) => l.kind === "app_user")} onRelink={(kind, id) => setDialog({ type: "relink", kind, id })} onUnlink={(kind, id, label) => setDialog({ type: "unlink", kind, id, label })} />
+        <RoleSection roleKey="fleetDriver" state={linkStates.fleetDriver} cards={cardsFor(ROLE_META.fleetDriver.kinds)} pending={pendingFor("fleet_driver")} canView={caps.canViewFleet} canManage={caps.canManagePersonLink} linked={data.linkedEntities.filter((l) => l.kind === "fleet_driver")} onRelink={(kind, id) => setDialog({ type: "relink", kind, id })} onUnlink={(kind, id, label) => setDialog({ type: "unlink", kind, id, label })} />
+        <RoleSection roleKey="commissionPerson" state={linkStates.commissionPerson} cards={cardsFor(ROLE_META.commissionPerson.kinds)} pending={pendingFor("commission_person")} canView={caps.canViewCommissions} canManage={caps.canManagePersonLink} linked={data.linkedEntities.filter((l) => l.kind === "commission_person")} onRelink={(kind, id) => setDialog({ type: "relink", kind, id })} onUnlink={(kind, id, label) => setDialog({ type: "unlink", kind, id, label })} />
       </div>
 
       {otherCards.length > 0 ? (
@@ -290,6 +325,11 @@ export function PersonProfilePage({ personId }: { personId: string }) {
                 {ev.reason ? <p className="text-muted-foreground">Motivo: {ev.reason}</p> : null}
                 {ev.evidence ? <p className="text-muted-foreground">Evidência: {ev.evidence}</p> : null}
                 {ev.revertedAt ? <p className="text-amber-800">Revertido em {new Date(ev.revertedAt).toLocaleString("pt-BR")}</p> : null}
+                {ev.eventKind === "MERGED" && ev.reversible && !ev.revertedAt && ev.toPersonId === person.id && caps.canMerge && caps.canManagePersonLink ? (
+                  <button type="button" onClick={() => setDialog({ type: "revert", eventId: ev.id })} className="mt-1 rounded-lg border border-border px-2 py-1 text-[11px] font-semibold hover:bg-muted" data-testid="person-revert-open">
+                    Reverter unificação
+                  </button>
+                ) : null}
               </li>
             ))}
           </ul>
@@ -299,6 +339,12 @@ export function PersonProfilePage({ personId }: { personId: string }) {
       <p className="text-[11px] text-muted-foreground inline-flex items-center gap-1">
         <ShieldCheck className="h-3.5 w-3.5" /> Cada cartão aplica a permissão do módulo de origem no servidor; a ficha não concede acesso a salário, documentos privados ou permissões.
       </p>
+
+      {stepUp.dialog}
+      {dialog?.type === "relink" ? <RelinkDialog personId={person.id} entityKind={dialog.kind} entityId={dialog.id} onClose={() => setDialog(null)} onDone={() => { setDialog(null); void load(); }} /> : null}
+      {dialog?.type === "unlink" ? <UnlinkDialog personId={person.id} entityKind={dialog.kind} entityId={dialog.id} label={dialog.label} onClose={() => setDialog(null)} onDone={() => { setDialog(null); void load(); }} /> : null}
+      {dialog?.type === "merge" ? <MergeDialog personId={person.id} otherPersonId={dialog.otherPersonId} onClose={() => setDialog(null)} onDone={() => { setDialog(null); void load(); }} runWithStepUp={stepUp.run} /> : null}
+      {dialog?.type === "revert" ? <RevertMergeDialog personId={person.id} eventId={dialog.eventId} onClose={() => setDialog(null)} onDone={() => { setDialog(null); void load(); }} runWithStepUp={stepUp.run} /> : null}
     </div>
   );
 }

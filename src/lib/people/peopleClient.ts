@@ -84,6 +84,7 @@ export type PersonProfile = {
   documentsCount: number;
   flags: string[];
   cards: EmployeeSystemLinksDto;
+  linkedEntities: Array<{ kind: LinkEntityKind; id: string }>;
   pending: PendingLink[];
   events: PersonLinkEventDto[];
   caps: {
@@ -93,8 +94,65 @@ export type PersonProfile = {
     canViewFleet: boolean;
     canViewCommissions: boolean;
     canViewEmployees: boolean;
+    canMerge: boolean;
   };
 };
+
+export type LinkEntityKind = "employee" | "app_user" | "fleet_driver" | "commission_person";
+
+export type RelinkPreview = {
+  entity: { kind: LinkEntityKind; id: string; label: string; detail: string | null; cpfMasked: string | null; emailMasked: string | null };
+  currentPerson: { id: string; displayName: string; status: string } | null;
+  targetPerson: { id: string; displayName: string; status: string };
+  evidence: "CPF_EXACT" | "EMAIL_EXACT" | "MANUAL";
+  decision: { ok: true; kind: "LINK" | "RELINK"; fromPersonId: string | null } | { ok: false; code: string; message: string; status: number };
+  changes: string[];
+  unchanged: string[];
+  expectedCurrentPersonId: string | null;
+};
+
+export type MergePreview = {
+  winner: MergeSide;
+  loser: MergeSide;
+  plan: {
+    winnerId: string;
+    loserId: string;
+    evidence: "CPF_EXACT" | "EMAIL_EXACT" | "MANUAL";
+    blockers: Array<{ code: string; message: string }>;
+    moves: Array<{ entityKind: string; entityId: string }>;
+    fillFromLoser: string[];
+    unchanged: string[];
+  };
+};
+export type MergeSide = {
+  id: string;
+  displayName: string;
+  status: string;
+  cpfMasked: string | null;
+  emailMasked: string | null;
+  counts: { employees: number; users: number; fleetDrivers: number; commissionPeople: number; customers: number };
+};
+
+const json = { "Content-Type": "application/json" };
+
+export function previewRelink(personId: string, body: { entityKind: LinkEntityKind; entityId: string }) {
+  return fetchJsonOk<RelinkPreview>(`/api/people/${encodeURIComponent(personId)}/links/preview`, { method: "POST", headers: json, body: JSON.stringify(body) });
+}
+export function relinkEntity(personId: string, body: { entityKind: LinkEntityKind; entityId: string; expectedCurrentPersonId: string | null; reason: string }) {
+  return fetchJsonOk<{ eventId: string; kind: string }>(`/api/people/${encodeURIComponent(personId)}/links`, { method: "POST", headers: json, body: JSON.stringify(body) });
+}
+export function unlinkEntity(personId: string, entityKind: LinkEntityKind, entityId: string, reason: string) {
+  return fetchJsonOk<{ eventId: string }>(`/api/people/${encodeURIComponent(personId)}/links/${entityKind}/${encodeURIComponent(entityId)}`, { method: "DELETE", headers: json, body: JSON.stringify({ reason }) });
+}
+export function previewMerge(winnerId: string, loserPersonId: string) {
+  return fetchJsonOk<MergePreview>(`/api/people/${encodeURIComponent(winnerId)}/merge/preview`, { method: "POST", headers: json, body: JSON.stringify({ loserPersonId }) });
+}
+export function executeMerge(winnerId: string, body: { loserPersonId: string; reason: string; expectedMoveCount: number }) {
+  return fetchJsonOk<{ eventId: string; moved: number }>(`/api/people/${encodeURIComponent(winnerId)}/merge`, { method: "POST", headers: json, body: JSON.stringify(body) });
+}
+export function revertMerge(winnerId: string, body: { eventId: string; reason: string }) {
+  return fetchJsonOk<{ eventId: string; restored: number }>(`/api/people/${encodeURIComponent(winnerId)}/merge/revert`, { method: "POST", headers: json, body: JSON.stringify(body) });
+}
 
 export async function fetchPeople(query: PeopleListQuery): Promise<PeopleListResponse> {
   const qs = new URLSearchParams();
