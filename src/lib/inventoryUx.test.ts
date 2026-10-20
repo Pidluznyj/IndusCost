@@ -175,8 +175,11 @@ describe("inventoryUx", () => {
 
   it("12. dashboard KPIs fazem drill-down", () => {
     const dash = read("src/components/inventory/InventoryDashboardTab.tsx");
-    assert.match(dash, /\/inventory\/balances\?belowMinimum=1/);
-    assert.match(dash, /\/inventory\/reservations/);
-    assert.match(dash, /inventory-kpi-below-minimum/);
+    assert.match(dash, /to="\/inventory\/balances"/);
+    assert.match(dash, /to="\/inventory\/items"/);
+    assert.match(dash, /to="\/inventory\/movements"/);
+    assert.match(dash, /inventory-kpi-sales-potential/);
+    assert.match(dash, /inventory-kpi-industrial-cost/);
+    assert.match(dash, /inventory-kpi-items/);
   });
 });
