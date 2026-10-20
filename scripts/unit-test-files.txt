@@ -427,3 +427,4 @@ src/lib/hrPerformance/performanceLeadership.test.ts
 src/lib/hrPerformance/performanceLeadershipService.test.ts
 src/lib/hrPerformance/performancePermissions.test.ts
 src/lib/hrPerformance/performanceReadiness.test.ts
+src/lib/hrPerformance/performanceHierarchyInclusion.test.ts

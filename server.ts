@@ -15590,6 +15590,14 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     },
     // Avaliação 180°: liderados diretos ativos pela hierarquia efetiva, no instante da abertura.
     loadLeadershipSnapshot: (employeeIds) => loadDirectReportsSnapshot(prisma, employeeIds),
+    // Inclusão por hierarquia: liderados diretos e descendentes pela hierarquia efetiva (fonte única).
+    loadHierarchyReader: async () => {
+      const [hierarchy, active] = await Promise.all([
+        loadOrgHierarchy(prisma),
+        prisma.employee.findMany({ where: { OR: [{ status: null }, { status: { not: "INACTIVE" } }], terminationDate: null }, select: { id: true } }),
+      ]);
+      return { hierarchy, activeIds: new Set(active.map((row) => row.id)) };
+    },
     // Prontidão do ciclo: quem tem usuário ativo para avaliar e desde quando cada pessoa está com o líder atual.
     loadLinkedEmployeeIds: async (employeeIds) => {
       if (employeeIds.length === 0) return new Set<string>();

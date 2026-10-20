@@ -14,6 +14,7 @@ import { buildPerformanceScope, type PerformanceAccessScope, type PerformanceSco
 import { canSeeResultOf, NO_CAPS, resolvePerformanceCaps, type PerformanceCapabilityKey, type PerformanceCaps } from "./performancePermissions.js";
 import { redactCalibrationQueue, redactDashboard, redactLeadershipRows, redactWorkspace } from "./performanceDisclosure.js";
 import { evaluatorStats, personDossier } from "./performanceDossier.js";
+import { buildHierarchyPreview, isInclusionMode, resolveInclusionScope, type HierarchyReader, type InclusionMode } from "./performanceHierarchyInclusion.js";
 import { cycleReadiness, readinessBlocked, type ReadinessContext } from "./performanceReadiness.js";
 import { OBLIGATION_STATUSES, trackingBoard, trackingCsv, type ObligationStatus, type OrgUnits, type TrackingModality } from "./performanceTracking.js";
 import { classifyEligibility, isCycleStatus, isNineBoxBand, parseAnswer, parseRules, type EmployeeSnapshotSource } from "./performanceDomain.js";
@@ -45,7 +46,7 @@ import {
   updateLeadershipQuestion,
   type LeadershipSnapshot,
 } from "./performanceLeadershipService.js";
-import { audit } from "./performanceService.js";
+import { audit, fail } from "./performanceService.js";
 import type { PerformanceDatabase } from "./performanceState.js";
 import {
   acknowledgeFeedback,
@@ -138,6 +139,8 @@ export type PerformanceRouteDeps = {
   isSuperAdmin?: (req: express.Request) => Promise<boolean>;
   /** Avaliação 180°: liderados diretos ativos (hierarquia efetiva) na abertura do ciclo. */
   loadLeadershipSnapshot?: (employeeIds: string[]) => Promise<LeadershipSnapshot>;
+  /** Inclusão por hierarquia: leitor da hierarquia efetiva (liderados diretos e descendentes) e pessoas ativas. */
+  loadHierarchyReader?: () => Promise<{ hierarchy: HierarchyReader; activeIds: Set<string> }>;
   /** Prontidão: colaboradores com usuário ativo vinculado (quem consegue avaliar a equipe). */
   loadLinkedEmployeeIds?: (employeeIds: string[]) => Promise<Set<string>>;
   /** Prontidão: desde quando cada pessoa está com o líder atual (histórico do cadastro). */
@@ -701,20 +704,114 @@ export function registerPerformanceRoutes(expressApp: express.Application, deps:
     );
   });
 
+  // ---------------------------------------------------------------- inclusão por hierarquia
+  /**
+   * Monta a prévia de um recorte (líder + equipe, árvore, só liderados, individual, toda a organização)
+   * a partir da hierarquia efetiva e do cadastro. Nunca grava. `null` = sem leitor de hierarquia.
+   */
+  const hierarchyPreviewOf = async (db: PerformanceDatabase, cycleId: string, input: { mode: InclusionMode; leaderEmployeeId: string | null; employeeIds: string[] }) => {
+    const cycle = db.cycles.find((c) => c.id === cycleId);
+    if (!cycle || !deps.loadHierarchyReader) return null;
+    const { hierarchy, activeIds } = await deps.loadHierarchyReader();
+    const ids = resolveInclusionScope({ mode: input.mode, leaderEmployeeId: input.leaderEmployeeId, employeeIds: input.employeeIds, hierarchy, activeIds }).slice(0, 5000);
+    const [employees, signals, directReports, units, leaderRows] = await Promise.all([
+      deps.loadEmployees(ids),
+      signalsFor(ids, cycle.minObservationDays ?? 90),
+      deps.loadLeadershipSnapshot ? deps.loadLeadershipSnapshot(ids) : Promise.resolve({}),
+      orgUnits(),
+      input.leaderEmployeeId && !ids.includes(input.leaderEmployeeId) ? deps.loadEmployees([input.leaderEmployeeId]) : Promise.resolve([]),
+    ]);
+    const leaderEmployee = input.leaderEmployeeId ? employees.find((e) => e.id === input.leaderEmployeeId) ?? leaderRows[0] ?? null : null;
+    const preview = buildHierarchyPreview({
+      db,
+      cycle,
+      mode: input.mode,
+      leader: leaderEmployee ? { employeeId: leaderEmployee.id, name: leaderEmployee.name } : null,
+      employees,
+      directorateOf: (departmentId, departmentName) => (departmentId ? units?.byDepartmentId.get(departmentId) : undefined) ?? units?.byDepartmentName.get(departmentName) ?? null,
+      directReports,
+      signals,
+      now: now(),
+    });
+    return { cycle, preview, employees, signals, directReports };
+  };
+  const hierarchyInput = (body: unknown) => {
+    const b = (body ?? {}) as Record<string, unknown>;
+    const employeeIds = Array.isArray(b.employeeIds) ? (b.employeeIds as unknown[]).map(String).slice(0, 500) : [];
+    return { mode: isInclusionMode(b.mode) ? b.mode : null, leaderEmployeeId: strOrNull(b.leaderEmployeeId, 64), employeeIds, token: str(b.token, 64), confirmAll: b.confirmAll === true };
+  };
+
+  app.post("/api/hr/performance/cycles/:id/participants/hierarchy/preview", ...manage, async (req, res) => {
+    const input = hierarchyInput(req.body);
+    noStore(res);
+    if (!input.mode) return res.status(400).json({ error: "INVALID_MODE", message: "Escolha a abrangência da inclusão." });
+    if (input.mode !== "ALL" && input.mode !== "INDIVIDUAL" && !input.leaderEmployeeId) return res.status(400).json({ error: "LEADER_REQUIRED", message: "Escolha o líder de referência." });
+    if (input.mode === "ALL" && !(await accessOf(req)).caps.homologate && !(await accessOf(req)).caps.lifecycle) {
+      return res.status(403).json({ error: "FORBIDDEN", message: "Incluir toda a organização exige o perfil RH Gestor (homologação) ou SUPER_ADMIN." });
+    }
+    const db = await deps.store.read();
+    const cycle = db.cycles.find((c) => c.id === req.params.id);
+    if (!cycle) return res.status(404).json({ error: "NOT_FOUND", message: "Ciclo não encontrado." });
+    if (cycle.status !== "DRAFT" && cycle.status !== "PREPARED") return res.status(409).json({ error: "CYCLE_FROZEN", message: "Participantes já foram congelados na abertura." });
+    const out = await hierarchyPreviewOf(db, cycle.id, { mode: input.mode, leaderEmployeeId: input.leaderEmployeeId, employeeIds: input.employeeIds });
+    if (!out) return res.status(503).json({ error: "HIERARCHY_UNAVAILABLE", message: "A hierarquia efetiva não está disponível neste ambiente." });
+    res.json(out.preview);
+  });
+
   app.post("/api/hr/performance/cycles/:id/participants", ...manage, async (req, res) => {
-    const ids: string[] = Array.isArray(req.body?.employeeIds) ? req.body.employeeIds.map(String).slice(0, 500) : [];
     const actorUserId = await deps.actorUserId(req);
     const { scope } = await scopeOf(req);
+    const rawExceptions = req.body?.exceptions && typeof req.body.exceptions === "object" ? (req.body.exceptions as Record<string, unknown>) : {};
+    const exceptions = Object.fromEntries(Object.entries(rawExceptions).map(([key, value]) => [key, str(value, 300)]));
+
+    // Confirmação de uma prévia por hierarquia: tudo é refeito no servidor e comparado com a assinatura.
+    if (req.body?.hierarchy && typeof req.body.hierarchy === "object") {
+      const input = hierarchyInput(req.body.hierarchy);
+      noStore(res);
+      if (!input.mode) return res.status(400).json({ error: "INVALID_MODE", message: "Escolha a abrangência da inclusão." });
+      if (!input.token) return res.status(400).json({ error: "PREVIEW_REQUIRED", message: "Confira a prévia antes de confirmar." });
+      const access = await accessOf(req);
+      if (input.mode === "ALL" && !access.caps.homologate && !access.caps.lifecycle) {
+        return res.status(403).json({ error: "FORBIDDEN", message: "Incluir toda a organização exige o perfil RH Gestor (homologação) ou SUPER_ADMIN." });
+      }
+      if (input.mode === "ALL" && !input.confirmAll) return res.status(400).json({ error: "CONFIRMATION_REQUIRED", message: "Incluir toda a organização exige a confirmação reforçada." });
+      await mutateAdmin(deps.store, res, async (db) => {
+        const out = await hierarchyPreviewOf(db, req.params.id, { mode: input.mode!, leaderEmployeeId: input.leaderEmployeeId, employeeIds: input.employeeIds });
+        if (!out) return fail("HIERARCHY_UNAVAILABLE", "A hierarquia efetiva não está disponível neste ambiente.");
+        if (out.preview.token !== input.token) {
+          return fail("PREVIEW_STALE", "A estrutura ou a elegibilidade mudou depois da prévia. Confira a prévia de novo antes de confirmar.");
+        }
+        const ids = out.preview.rows.filter((r) => r.inclusion !== "ALREADY").map((r) => r.employeeId);
+        return applyParticipants(
+          db,
+          {
+            cycleId: req.params.id,
+            employees: out.employees,
+            selectedIds: ids,
+            exceptions,
+            absenceIds: out.signals.absenceIds,
+            roleChangeIds: out.signals.roleChangeIds,
+            actorUserId,
+            scope,
+            leadershipSnapshot: out.directReports,
+            source: { mode: input.mode!, leaderEmployeeId: input.leaderEmployeeId, leaderName: out.preview.leader?.name ?? null, requested: out.preview.rows.length },
+          },
+          deps.options
+        );
+      });
+      return;
+    }
+
+    const ids: string[] = Array.isArray(req.body?.employeeIds) ? req.body.employeeIds.map(String).slice(0, 500) : [];
     const employees = await deps.loadEmployees(ids);
     const first = await deps.store.read();
     const cycle = first.cycles.find((c) => c.id === req.params.id);
     const signals = await signalsFor(ids, cycle?.minObservationDays ?? 90);
-    const rawExceptions = req.body?.exceptions && typeof req.body.exceptions === "object" ? (req.body.exceptions as Record<string, unknown>) : {};
-    const exceptions = Object.fromEntries(Object.entries(rawExceptions).map(([key, value]) => [key, str(value, 300)]));
+    const leadershipSnapshot = deps.loadLeadershipSnapshot ? await deps.loadLeadershipSnapshot(ids) : undefined;
     await mutateAdmin(deps.store, res, (db) =>
       applyParticipants(
         db,
-        { cycleId: req.params.id, employees, selectedIds: ids, exceptions, absenceIds: signals.absenceIds, roleChangeIds: signals.roleChangeIds, actorUserId, scope },
+        { cycleId: req.params.id, employees, selectedIds: ids, exceptions, absenceIds: signals.absenceIds, roleChangeIds: signals.roleChangeIds, actorUserId, scope, leadershipSnapshot },
         deps.options
       )
     );

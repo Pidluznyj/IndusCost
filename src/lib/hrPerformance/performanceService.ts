@@ -637,6 +637,10 @@ export function applyParticipants(
     roleChangeIds: readonly string[];
     actorUserId: string | null;
     scope?: PerformanceScope;
+    /** Retrato de liderança na inclusão (liderados diretos ativos na organização). A abertura refaz o retrato. */
+    leadershipSnapshot?: Readonly<Record<string, { directReportIds: readonly string[] }>>;
+    /** Como a inclusão foi feita (hierarquia): vai para a auditoria. */
+    source?: { mode: string; leaderEmployeeId: string | null; leaderName: string | null; requested: number } | null;
   },
   options: ServiceOptions
 ): ServiceResult<{ eligible: number; notEligible: number; insufficient: number; added: number; duplicates: number; reactivated: number; missing: number }> {
@@ -688,9 +692,10 @@ export function applyParticipants(
       addedAt: iso(now),
       removedAt: null,
       removedReason: null,
-      isLeader: false,
-      directReportCount: 0,
-      leadershipSnapshotAt: null,
+      // Liderança pela organização inteira (não pela população do ciclo), quando o retrato veio junto.
+      isLeader: (input.leadershipSnapshot?.[employee.id]?.directReportIds.length ?? 0) > 0,
+      directReportCount: input.leadershipSnapshot?.[employee.id]?.directReportIds.length ?? 0,
+      leadershipSnapshotAt: input.leadershipSnapshot ? iso(now) : null,
     };
     const decision = classifyEligibility({
       employee,
@@ -709,7 +714,14 @@ export function applyParticipants(
     }
   }
   const counts = countEligibility(db, cycle.id);
-  audit(db, now, input.actorUserId, "PARTICIPANTS_ADDED", cycle.id, { added, reactivated, duplicates, missing, ...counts });
+  audit(db, now, input.actorUserId, input.source ? "PARTICIPANTS_INCLUDED_BY_HIERARCHY" : "PARTICIPANTS_ADDED", cycle.id, {
+    added,
+    reactivated,
+    duplicates,
+    missing,
+    ...counts,
+    ...(input.source ? { mode: input.source.mode, leaderEmployeeId: input.source.leaderEmployeeId, leaderName: input.source.leaderName, requested: input.source.requested, exceptions: Object.keys(input.exceptions).length } : {}),
+  });
   return { ok: true, db, value: { ...counts, added, duplicates, reactivated, missing } };
 }
 

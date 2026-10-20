@@ -60,6 +60,7 @@ import {
 } from "./performanceUi";
 import { cn } from "@/src/lib/utils";
 import { CycleReadinessPanel } from "./CycleReadinessPanel";
+import { HierarchyAddOverlay } from "./HierarchyAddOverlay";
 
 export const PRINT_CARDS_KEY = "ic-perf-print-cards";
 
@@ -92,6 +93,7 @@ type Dialog =
   | { kind: "transition"; to: CycleStatus; reversal: boolean }
   | { kind: "edit" }
   | { kind: "add" }
+  | { kind: "hierarchy" }
   | { kind: "exception"; person: WorkspacePerson }
   | { kind: "leader"; person: WorkspacePerson }
   | { kind: "remove"; person: WorkspacePerson }
@@ -339,9 +341,14 @@ export function CycleDesk({ cycleId, me: realMe, onToast, onChanged }: { cycleId
           </h4>
           <div className="flex flex-wrap gap-2">
             {canCycles && preOpen ? (
-              <button type="button" className={BTN_PRIMARY} onClick={() => setDialog({ kind: "add" })} data-testid="perf-add-people">
-                <UserPlus className="h-4 w-4" aria-hidden /> Incluir pessoas
-              </button>
+              <>
+                <button type="button" className={BTN_PRIMARY} onClick={() => setDialog({ kind: "hierarchy" })} data-testid="perf-add-hierarchy">
+                  <Network className="h-4 w-4" aria-hidden /> Adicionar por hierarquia
+                </button>
+                <button type="button" className={BTN_SECONDARY} onClick={() => setDialog({ kind: "add" })} data-testid="perf-add-people">
+                  <UserPlus className="h-4 w-4" aria-hidden /> Incluir pessoas
+                </button>
+              </>
             ) : null}
             {caps.invites && status === "OPEN" ? (
               <button type="button" className={BTN_PRIMARY} onClick={() => void issueBatch()} data-testid="perf-invites-batch">
@@ -466,6 +473,19 @@ export function CycleDesk({ cycleId, me: realMe, onToast, onChanged }: { cycleId
         />
       ) : null}
       {dialog?.kind === "edit" ? <EditCycleDialog ws={ws} onClose={() => setDialog(null)} onDone={() => { setDialog(null); onToast("Ciclo atualizado"); void reload(); onChanged(); }} /> : null}
+      {dialog?.kind === "hierarchy" ? (
+        <HierarchyAddOverlay
+          ws={ws}
+          caps={realMe.capabilities}
+          onClose={() => setDialog(null)}
+          onDone={(message) => {
+            setDialog(null);
+            onToast(message);
+            void reload();
+            onChanged();
+          }}
+        />
+      ) : null}
       {dialog?.kind === "add" ? (
         <AddPeopleDialog
           ws={ws}

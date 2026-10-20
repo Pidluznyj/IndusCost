@@ -374,6 +374,42 @@ export const previewPerformanceParticipants = (cycleId: string, employeeIds: str
 /** Antes da abertura: líder de cada participante pela hierarquia efetiva (exceção do RH preservada). */
 export const syncPerformanceLeaders = (cycleId: string) =>
   post<{ changed: number; withoutLeader: number; keptByHr: number }>(`${BASE}/cycles/${cycleId}/participants/sync-leaders`);
+// ------------------------------------------------------------------ inclusão por hierarquia
+export type InclusionMode = "DIRECT" | "TREE" | "REPORTS_ONLY" | "INDIVIDUAL" | "ALL";
+export type HierarchyPreviewRow = {
+  employeeId: string;
+  name: string;
+  roleName: string;
+  departmentName: string;
+  directorateName: string | null;
+  managerId: string | null;
+  managerName: string | null;
+  managerSource: string;
+  managerNote: string | null;
+  isLeader: boolean;
+  directReportCount: number;
+  eligibility: string;
+  reason: string;
+  inclusion: "NEW" | "ALREADY" | "REACTIVATE";
+  leaderOutside: boolean;
+};
+export type HierarchyPreview = {
+  mode: InclusionMode;
+  leader: { employeeId: string; name: string } | null;
+  rows: HierarchyPreviewRow[];
+  summary: { found: number; eligible: number; notEligible: number; insufficient: number; alreadyIncluded: number; newParticipants: number; leaders: number; withoutSuperior: number; hierarchyIssues: number; leadersOutside: number };
+  token: string;
+};
+export type HierarchyPreviewInput = { mode: InclusionMode; leaderEmployeeId?: string | null; employeeIds?: string[] };
+/** Prévia sem gravar nada. */
+export const previewHierarchyInclusion = (cycleId: string, input: HierarchyPreviewInput) => post<HierarchyPreview>(`${BASE}/cycles/${cycleId}/participants/hierarchy/preview`, input);
+/** Confirmação: o servidor refaz a prévia e recusa (409 PREVIEW_STALE) se a estrutura mudou. */
+export const confirmHierarchyInclusion = (cycleId: string, input: HierarchyPreviewInput & { token: string; exceptions: Record<string, string>; confirmAll?: boolean }) =>
+  post<{ eligible: number; notEligible: number; insufficient: number; added: number; duplicates: number; reactivated: number; missing: number }>(`${BASE}/cycles/${cycleId}/participants`, {
+    hierarchy: { mode: input.mode, leaderEmployeeId: input.leaderEmployeeId ?? null, employeeIds: input.employeeIds ?? [], token: input.token, confirmAll: input.confirmAll === true },
+    exceptions: input.exceptions,
+  });
+
 export const savePerformanceParticipants = (cycleId: string, employeeIds: string[], exceptions: Record<string, string> = {}) =>
   post<{ eligible: number; notEligible: number; insufficient: number; added: number; duplicates: number; reactivated: number; missing: number }>(`${BASE}/cycles/${cycleId}/participants`, { employeeIds, exceptions });
 export const removePerformanceParticipant = (participantId: string, reason: string) => post(`${BASE}/participants/${participantId}/remove`, { reason });

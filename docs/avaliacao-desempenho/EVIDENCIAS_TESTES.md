@@ -236,3 +236,20 @@ Implementação do [DOSSIE_AVALIACOES_POR_PERFIL.md](DOSSIE_AVALIACOES_POR_PERFI
 | 12.08 líder vê numa linha o que falta com ele | PASS |
 
 Unitários novos: `performanceReadiness.test.ts` (7). Módulo: 114/114. Regressão igual à `main` (`c397e62`): `tsc` 1369; suíte de unidade com as mesmas 5 falhas; consistência de permissões com os mesmos 3 achados; build e checagens de import OK.
+
+## 11. Inclusão de participantes por hierarquia (20/10/2026, local)
+
+Desenho e regras em [INCLUSAO_POR_HIERARQUIA.md](INCLUSAO_POR_HIERARQUIA.md). Cadeia fictícia Carla (topo) → Bruno → equipe; Carla → Marcos → Otávio.
+
+| Passo (`part13-hierarchy-add.mjs`) | Resultado |
+| --- | --- |
+| 13.01 Teste A — Bruno, líder + diretos: prévia com 9 pessoas; Bruno líder (8) com superior Carla; equipe com superior Bruno; Caio não elegível e Eva com evidência insuficiente, com motivo | PASS |
+| 13.01b confirmação pela tela: 9 incluídos; a prévia não gravou nada; superiores preservados | PASS |
+| 13.02 Teste D — snapshot: `isLeader`, `directReportCount`, `leadershipSnapshotAt`, `managerSource` gravados | PASS |
+| 13.03 Teste B — Carla, líder + árvore: 12 encontradas, 9 "já participa", 3 novas; Ana continua com Bruno; Carla topo; Marcos líder | PASS |
+| 13.04 Teste C — deduplicação: segunda confirmação `0` incluídos; uma linha por pessoa | PASS |
+| 13.05 assinatura de outra prévia: `409 PREVIEW_STALE` | PASS |
+| 13.06 Teste E — toda a organização: prévia de volume (13); confirmação só com a frase | PASS |
+| 13.07 RH Operacional: sem o modo "toda a organização" na tela e `403` na API | PASS |
+
+Unitários e rotas: `performanceHierarchyInclusion.test.ts` (8), cobrindo prévia sem gravação, concorrência, idempotência, auditoria, prévia desatualizada, ciclo aberto, permissões e abertura com 180° sem tarefas duplicadas. Módulo: 122/122. Regressão igual à `main`: `tsc` 1369; suíte com as mesmas 5 falhas; consistência de permissões com os mesmos 3 achados; build e checagens de import OK.
