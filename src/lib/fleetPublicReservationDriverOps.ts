@@ -1,9 +1,9 @@
 import type { FleetDriver, FleetPublicReservationRequestStatus } from "@prisma/client";
 import { prisma } from "@/src/lib/prisma.js";
 import { assertUniqueActiveDriverCpf, writeFleetAuditLog } from "@/src/lib/fleetService.js";
-import { normalizeCpf } from "@/src/lib/fleetDriverOps.js";
+import { normalizeCpf, resolveDriverPersonLink } from "@/src/lib/fleetDriverOps.js";
 import { FleetValidationError, computeCnhStatus } from "@/src/lib/fleetValidation.js";
-import { isValidCpf, normalizeCpfDigits } from "@/src/lib/fleetCpfUtils.js";
+import { isValidCpf, maskCpfForDisplay, normalizeCpfDigits } from "@/src/lib/fleetCpfUtils.js";
 
 export type DriverPublicApprovalStatus = "APPROVED" | "PENDING_REVIEW" | "REJECTED";
 
@@ -213,10 +213,12 @@ export async function registerPublicDriver(input: PublicRegisterInput): Promise<
   const email = typeof input.email === "string" ? input.email.trim() || null : null;
   const department = typeof input.department === "string" ? input.department.trim() || null : null;
 
+  const personId = await resolveDriverPersonLink(cpfDigits, null);
   const created = await prisma.fleetDriver.create({
     data: {
       name,
       cpf: cpfDigits,
+      personId,
       phone,
       email,
       unit: department,
@@ -233,7 +235,7 @@ export async function registerPublicDriver(input: PublicRegisterInput): Promise<
     entityType: "FleetDriver",
     entityId: created.id,
     action: "PUBLIC_REGISTER",
-    newValue: cpfDigits,
+    newValue: maskCpfForDisplay(cpfDigits),
     userId: null,
   });
 

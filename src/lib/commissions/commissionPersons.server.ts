@@ -19,6 +19,8 @@ import {
   findExistingCommissionPerson,
   upsertCommissionPersonFromImport,
 } from "./commissionPersonResolution.server.js";
+import { CanonicalPersonError } from "@/src/lib/canonicalPerson.js";
+import { assertPersonLinkable, resolvePersonByCpf } from "@/src/lib/people/personIdentityResolve.server.js";
 
 export { CommissionValidationError };
 
@@ -32,6 +34,7 @@ type PersonRow = {
   document: string | null;
   active: boolean;
   notes: string | null;
+  personId?: string | null;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -76,6 +79,7 @@ function serializePerson(row: PersonRow) {
     document: row.document,
     active: row.active,
     notes: row.notes,
+    personId: row.personId ?? null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -255,6 +259,34 @@ export async function listCommissionPersons(query: CommissionPersonsQuery) {
   return { items: payload.items, pagination: payload.pagination };
 }
 
+/**
+ * Vínculo com a Pessoa canônica: explícito (validado, nunca em Pessoa unificada) ou resolvido
+ * pelo CPF do documento quando há exatamente uma Pessoa com aquele CPF. E-mail e nome nunca
+ * vinculam sozinhos. Nunca cria Pessoa. Não altera regras, valores, aliases nem ids Nomus.
+ */
+async function resolveCommissionPersonLink(input: {
+  personId?: string | null;
+  document?: string | null;
+  currentPersonId: string | null;
+}): Promise<string | null> {
+  try {
+    if (input.personId !== undefined) {
+      if (input.personId === null) return null;
+      const p = await assertPersonLinkable(prisma, input.personId);
+      return p.id;
+    }
+    if (input.currentPersonId) return input.currentPersonId;
+    if (!input.document) return null;
+    const resolved = await resolvePersonByCpf(prisma, input.document);
+    return resolved.personId;
+  } catch (error) {
+    if (error instanceof CanonicalPersonError) {
+      throw new CommissionValidationError(error.status === 404 ? "NOT_FOUND" : "CONFLICT", error.message);
+    }
+    throw error;
+  }
+}
+
 export async function createCommissionPerson(input: CommissionPersonWriteInput) {
   await assertUniqueNomusPerson(input.nomusPersonId, input.type);
   const equivalent = await findExistingCommissionPerson(prisma, {
@@ -268,6 +300,11 @@ export async function createCommissionPerson(input: CommissionPersonWriteInput) 
       `Já existe uma pessoa equivalente (${equivalent.name}). Use o registro existente ou edite-o.`
     );
   }
+  const personId = await resolveCommissionPersonLink({
+    personId: input.personId,
+    document: input.document ?? null,
+    currentPersonId: null,
+  });
   const row = await prisma.commissionPerson.create({
     data: {
       name: input.name,
@@ -278,6 +315,7 @@ export async function createCommissionPerson(input: CommissionPersonWriteInput) 
       document: input.document ?? null,
       notes: input.notes ?? null,
       active: input.active ?? true,
+      personId,
     },
   });
   return serializePerson(row);
@@ -295,6 +333,14 @@ export async function updateCommissionPerson(
   const nextNomusId =
     input.nomusPersonId !== undefined ? input.nomusPersonId : existing.nomusPersonId;
   await assertUniqueNomusPerson(nextNomusId, nextType, id);
+  const personId =
+    input.personId !== undefined || (input.document !== undefined && !existing.personId)
+      ? await resolveCommissionPersonLink({
+          personId: input.personId,
+          document: input.document !== undefined ? input.document : existing.document,
+          currentPersonId: existing.personId,
+        })
+      : undefined;
 
   const row = await prisma.commissionPerson.update({
     where: { id },
@@ -307,6 +353,7 @@ export async function updateCommissionPerson(
       document: input.document,
       notes: input.notes,
       active: input.active,
+      personId,
     },
   });
   return serializePerson(row);

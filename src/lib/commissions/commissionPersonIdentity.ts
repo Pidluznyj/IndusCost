@@ -134,26 +134,38 @@ export function pickCanonicalCommissionPerson<T extends CommissionPersonIdentity
   })[0]!;
 }
 
-function identityKeysForPerson(person: CommissionPersonIdentityRow): string[] {
+export type CommissionPersonGroupingOptions = {
+  /**
+   * Nome normalizado como chave de agrupamento. Serve para *sugerir/resolver* leituras; para
+   * *mesclar* registros (dedupe) deve ser `false`: nome nunca é identidade (homônimos).
+   */
+  nameKeys?: boolean;
+};
+
+function identityKeysForPerson(person: CommissionPersonIdentityRow, nameKeys: boolean): string[] {
   const keys: string[] = [];
   if (person.nomusPersonId != null && person.nomusPersonId > 0) {
     keys.push(buildCommissionPersonNomusKey(person.type, person.nomusPersonId));
   }
-  const nameKey = buildCommissionPersonNameKey(person.type, person.name);
-  if (nameKey) keys.push(nameKey);
+  if (nameKeys) {
+    const nameKey = buildCommissionPersonNameKey(person.type, person.name);
+    if (nameKey) keys.push(nameKey);
+  }
   return keys;
 }
 
-/** Agrupa pessoas que compartilham nomusPersonId ou nome normalizado equivalente. */
+/** Agrupa pessoas que compartilham nomusPersonId ou (opcionalmente) nome normalizado equivalente. */
 export function groupCommissionPersonsByIdentity<T extends CommissionPersonIdentityRow>(
-  persons: T[]
+  persons: T[],
+  options: CommissionPersonGroupingOptions = {}
 ): T[][] {
+  const nameKeys = options.nameKeys ?? true;
   const keyToIds = new Map<string, Set<string>>();
   const idToPerson = new Map<string, T>();
 
   for (const person of persons) {
     idToPerson.set(person.id, person);
-    for (const key of identityKeysForPerson(person)) {
+    for (const key of identityKeysForPerson(person, nameKeys)) {
       const set = keyToIds.get(key) ?? new Set<string>();
       set.add(person.id);
       keyToIds.set(key, set);

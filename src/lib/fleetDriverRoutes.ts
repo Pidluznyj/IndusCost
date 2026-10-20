@@ -18,6 +18,7 @@ import {
   changeDriverStatus,
   getDriverOrThrow,
   parseDriverInput,
+  resolveDriverPersonLink,
   serializeDriver,
 } from "@/src/lib/fleetDriverOps.js";
 import {
@@ -113,11 +114,13 @@ export function registerFleetDriverRoutes(app: express.Express, auth: AuthGuards
     try {
       const data = parseDriverInput(req.body ?? {});
       await assertUniqueActiveDriverCpf(data.cpf);
+      const personId = await resolveDriverPersonLink(data.cpf, null);
       const userId = await actorId(req, getCurrentAppUser);
       const created = await prisma.fleetDriver.create({
         data: {
           name: data.name,
           cpf: data.cpf,
+          personId,
           cnhNumber: data.cnhNumber ?? null,
           cnhCategory: data.cnhCategory ?? null,
           cnhExpirationDate:
@@ -134,7 +137,7 @@ export function registerFleetDriverRoutes(app: express.Express, auth: AuthGuards
         entityType: "FleetDriver",
         entityId: created.id,
         action: "CREATE",
-        newValue: JSON.stringify({ name: created.name, status: created.status }),
+        newValue: JSON.stringify({ name: created.name, status: created.status, personId: created.personId }),
         userId,
       });
       res.status(201).json({ driver: created });
@@ -150,12 +153,17 @@ export function registerFleetDriverRoutes(app: express.Express, auth: AuthGuards
       const existing = await getDriverOrThrow(id);
       const data = parseDriverInput(req.body ?? {}, existing);
       if (data.cpf !== existing.cpf) await assertUniqueActiveDriverCpf(data.cpf, id);
+      const personId =
+        data.cpf !== existing.cpf || !existing.personId
+          ? await resolveDriverPersonLink(data.cpf, existing.personId)
+          : existing.personId;
       const userId = await actorId(req, getCurrentAppUser);
       const updated = await prisma.fleetDriver.update({
         where: { id },
         data: {
           name: data.name,
           cpf: data.cpf,
+          personId,
           cnhNumber: data.cnhNumber,
           cnhCategory: data.cnhCategory,
           cnhExpirationDate: data.cnhExpirationDate,
@@ -171,8 +179,8 @@ export function registerFleetDriverRoutes(app: express.Express, auth: AuthGuards
         entityType: "FleetDriver",
         entityId: id,
         action: "UPDATE",
-        oldValue: JSON.stringify({ status: existing.status }),
-        newValue: JSON.stringify({ status: updated.status }),
+        oldValue: JSON.stringify({ status: existing.status, personId: existing.personId }),
+        newValue: JSON.stringify({ status: updated.status, personId: updated.personId }),
         userId,
       });
       res.json({ driver: updated });

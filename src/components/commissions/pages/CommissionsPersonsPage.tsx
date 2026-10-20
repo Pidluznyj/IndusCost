@@ -157,6 +157,7 @@ export function CommissionsPersonsPage() {
         document: payload.document,
         active: payload.active,
         notes: payload.notes,
+        personId: payload.personId,
       });
       closeModal();
       await reload();

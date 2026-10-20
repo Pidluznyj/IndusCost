@@ -41,6 +41,7 @@ async function main(): Promise<void> {
   const mode = parseScriptMode();
 
   console.log("=== Deduplicação de pessoas comissionadas ===");
+  console.log("Critério: apenas registros com o MESMO nomusPersonId e tipo. Nome nunca funde cadastros.");
   console.log(`Modo: ${mode === "preview" ? "preview (sem alterações)" : "apply (grava no banco)"}\n`);
 
   const preview = await previewCommissionPersonDedupe(prisma);

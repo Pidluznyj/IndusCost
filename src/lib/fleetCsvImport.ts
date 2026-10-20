@@ -1,7 +1,8 @@
 import type { FleetDriverStatus, FleetVehicleOrigin, FleetVehicleStatus } from "@prisma/client";
 import { prisma } from "@/src/lib/prisma.js";
 import { loadFleetSettings, writeFleetAuditLog } from "@/src/lib/fleetService.js";
-import { normalizeCpf } from "@/src/lib/fleetDriverOps.js";
+import { normalizeCpf, resolveDriverPersonLink } from "@/src/lib/fleetDriverOps.js";
+import { isValidCpf, maskCpfForDisplay } from "@/src/lib/fleetCpfUtils.js";
 import {
   assertNonNegativeKm,
   computeCnhStatus,
@@ -359,6 +360,7 @@ export function validateDriverImportRow(
 
   const cpf = normalizeCpf(cpfRaw);
   if (cpf && cpf.length !== 11) errors.push("CPF deve conter 11 dígitos.");
+  else if (cpf && !isValidCpf(cpf)) errors.push("CPF inválido: dígitos verificadores não conferem.");
 
   if (cpf) {
     const prev = ctx.seenCpfs.get(cpf);
@@ -658,23 +660,26 @@ export async function applyDriverCsvImport(
 
       const existingId = existingCpfs.get(cpf);
       if (existingId && options.allowUpdate) {
-        await prisma.fleetDriver.update({ where: { id: existingId }, data });
+        const current = await prisma.fleetDriver.findUnique({ where: { id: existingId }, select: { personId: true } });
+        const personId = await resolveDriverPersonLink(cpf, current?.personId ?? null);
+        await prisma.fleetDriver.update({ where: { id: existingId }, data: { ...data, personId } });
         await writeFleetAuditLog({
           entityType: "FleetDriver",
           entityId: existingId,
           action: "IMPORT_UPDATE",
-          newValue: cpf,
+          newValue: maskCpfForDisplay(cpf),
           userId: options.userId ?? null,
         });
         results.push({ ...validation, action: "update" });
       } else {
-        const created = await prisma.fleetDriver.create({ data });
+        const personId = await resolveDriverPersonLink(cpf, null);
+        const created = await prisma.fleetDriver.create({ data: { ...data, personId } });
         existingCpfs.set(cpf, created.id);
         await writeFleetAuditLog({
           entityType: "FleetDriver",
           entityId: created.id,
           action: "IMPORT_CREATE",
-          newValue: cpf,
+          newValue: maskCpfForDisplay(cpf),
           userId: options.userId ?? null,
         });
         results.push({ ...validation, action: "create" });
