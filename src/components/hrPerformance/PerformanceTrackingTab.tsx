@@ -112,7 +112,8 @@ export function PerformanceTrackingTab({ cycleId, caps, onSelectCycle, onToast }
 
   useEffect(() => {
     void fetchPerformanceCycles()
-      .then((payload) => setCycles(payload.cycles))
+      // Ciclo inativo não entra na central (consulta e reativação ficam na aba Ciclos).
+      .then((payload) => setCycles(payload.cycles.filter((c) => c.activation !== "INACTIVE")))
       .catch((cause) => setError(cause instanceof Error ? cause.message : "Falha ao carregar os ciclos."));
   }, []);
   // Vazio = nenhum ciclo escolhido (o seletor nativo devolve "" quando a opção ainda não carregou).
@@ -147,7 +148,7 @@ export function PerformanceTrackingTab({ cycleId, caps, onSelectCycle, onToast }
     }
   };
 
-  if (cycles && cycles.length === 0) return <div className={PANEL}><PanelState kind="empty" message="Nenhum ciclo criado ainda." /></div>;
+  if (cycles && cycles.length === 0) return <div className={PANEL}><PanelState kind="empty" message="Nenhum ciclo ativo." /></div>;
 
   return (
     <section className="space-y-4" data-testid="perf-tracking-tab">

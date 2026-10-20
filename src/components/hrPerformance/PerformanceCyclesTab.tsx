@@ -61,7 +61,18 @@ export function PerformanceCyclesTab({
   const published = models.filter((m) => m.status === "PUBLISHED" && m.kind !== "LEADERSHIP");
   const leadershipModels = models.filter((m) => m.status === "PUBLISHED" && m.kind === "LEADERSHIP");
   const inactiveCount = (cycles ?? []).filter((c) => c.activation === "INACTIVE").length;
-  const listed = (cycles ?? []).filter((c) => showInactive || c.activation !== "INACTIVE" || c.id === selectedId);
+  // Sem a opção marcada, ciclo inativo não aparece nem quando é o selecionado (a seleção fica guardada no navegador).
+  const listed = (cycles ?? []).filter((c) => showInactive || c.activation !== "INACTIVE");
+  const activeCycles = (cycles ?? []).filter((c) => c.activation !== "INACTIVE");
+
+  useEffect(() => {
+    if (!cycles || showInactive) return;
+    const selected = selectedId ? cycles.find((c) => c.id === selectedId) : null;
+    if (selected && selected.activation !== "INACTIVE") return;
+    // Selecionado inativo ou excluído: vai para o primeiro ciclo ativo (ou nenhum).
+    const next = cycles.find((c) => c.activation !== "INACTIVE")?.id ?? null;
+    if (next !== selectedId) onSelect(next);
+  }, [cycles, showInactive, selectedId, onSelect]);
 
   return (
     <section className="space-y-4" data-testid="perf-cycles-tab">
@@ -85,6 +96,10 @@ export function PerformanceCyclesTab({
       {cycles === null ? (
         <div className={PANEL}>
           <PanelState kind="loading" message="Carregando ciclos…" />
+        </div>
+      ) : cycles.length > 0 && listed.length === 0 ? (
+        <div className={PANEL} data-testid="perf-no-active-cycle">
+          <PanelState kind="empty" message="Nenhum ciclo ativo. Marque “Mostrar ciclos inativos” para consultar os inativos." />
         </div>
       ) : cycles.length === 0 ? (
         <div className={PANEL}>
@@ -130,7 +145,7 @@ export function PerformanceCyclesTab({
           })}
         </div>
       )}
-      {selectedId ? (
+      {selectedId && (showInactive || activeCycles.some((c) => c.id === selectedId)) ? (
         <React.Fragment key={selectedId}>
           <CycleDesk
             cycleId={selectedId}

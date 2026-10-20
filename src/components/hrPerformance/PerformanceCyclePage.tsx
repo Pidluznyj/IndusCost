@@ -6,7 +6,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { OverlayTabs } from "@/src/components/ui/overlay";
 import { useAuthOptional } from "@/src/contexts/AuthContext";
-import { fetchPerformanceMe, type PerformanceMe } from "@/src/lib/hrPerformance/performanceClient";
+import { fetchPerformanceCycles, fetchPerformanceMe, type PerformanceMe } from "@/src/lib/hrPerformance/performanceClient";
 import { usePerformanceFeature } from "./usePerformanceFeature";
 import { InfoBanner, PanelState, useToast } from "./performanceUi";
 import { PerformanceCyclesTab } from "./PerformanceCyclesTab";
@@ -55,6 +55,8 @@ function PerformanceModule() {
   const [cycleId, setCycleId] = useState<string | null>(readStored(CYCLE_KEY));
   const [version, setVersion] = useState(0);
   const toast = useToast();
+  // Ciclos ativos e existentes: as outras abas nunca trabalham com ciclo inativo ou excluído.
+  const [activeCycleIds, setActiveCycleIds] = useState<string[] | null>(null);
 
   useEffect(() => {
     void fetchPerformanceMe()
@@ -80,6 +82,15 @@ function PerformanceModule() {
     [caps]
   );
   const active = tabs.some((t) => t.id === tab) ? tab : tabs[0]?.id ?? "ciclos";
+
+  // Recarrega ao trocar de aba: um ciclo inativado ou excluído na aba Ciclos some das demais.
+  useEffect(() => {
+    if (!caps?.view) return;
+    void fetchPerformanceCycles()
+      .then((payload) => setActiveCycleIds(payload.cycles.filter((c) => c.activation !== "INACTIVE").map((c) => c.id)))
+      .catch(() => setActiveCycleIds(null));
+  }, [caps?.view, active, version]);
+  const workingCycleId = activeCycleIds === null ? null : cycleId && activeCycleIds.includes(cycleId) ? cycleId : activeCycleIds[0] ?? null;
   const selectTab = (id: TabId) => {
     setTab(id);
     store(TAB_KEY, id);
@@ -108,7 +119,7 @@ function PerformanceModule() {
         </InfoBanner>
       ) : null}
       <OverlayTabs<TabId> tabs={tabs} active={active} onChange={selectTab} variant="pill" ariaLabel="Seções de desempenho" testId="perf-tabs" />
-      {active === "acompanhamento" ? <PerformanceTrackingTab cycleId={cycleId} caps={caps} onSelectCycle={selectCycle} onToast={toast.setToast} /> : null}
+      {active === "acompanhamento" ? <PerformanceTrackingTab cycleId={workingCycleId} caps={caps} onSelectCycle={selectCycle} onToast={toast.setToast} /> : null}
       {active === "ciclos" ? (
         <React.Fragment key={version}>
           <PerformanceCyclesTab me={me} selectedId={cycleId} onSelect={selectCycle} onToast={toast.setToast} />
@@ -116,11 +127,11 @@ function PerformanceModule() {
       ) : null}
       {active === "equipe" ? <PerformanceTeamTab onToast={toast.setToast} actorName={actorName} linkedEmployee={Boolean(me.actorEmployeeId)} /> : null}
       {active === "calibracao" ? (
-        <PerformanceCalibrationTab cycleId={cycleId} onToast={toast.setToast} canCalibrate={Boolean(caps.calibrate)} canHomologate={Boolean(caps.homologate ?? caps.calibrate)} canSeeHistory={Boolean(caps.calibrate || caps.results)} />
+        <PerformanceCalibrationTab cycleId={workingCycleId} onToast={toast.setToast} canCalibrate={Boolean(caps.calibrate)} canHomologate={Boolean(caps.homologate ?? caps.calibrate)} canSeeHistory={Boolean(caps.calibrate || caps.results)} />
       ) : null}
-      {active === "ninebox" ? <PerformanceNineBoxTab cycleId={cycleId} canReport={caps.report} /> : null}
-      {active === "pdi" ? <PerformancePdiTab cycleId={cycleId} canReport={caps.report} actorName={actorName} onToast={toast.setToast} /> : null}
-      {active === "painel" ? <PerformanceDashboardTab cycleId={cycleId} /> : null}
+      {active === "ninebox" ? <PerformanceNineBoxTab cycleId={workingCycleId} canReport={caps.report} /> : null}
+      {active === "pdi" ? <PerformancePdiTab cycleId={workingCycleId} canReport={caps.report} actorName={actorName} onToast={toast.setToast} /> : null}
+      {active === "painel" ? <PerformanceDashboardTab cycleId={workingCycleId} /> : null}
       {active === "modelos" ? <PerformanceModelsTab canManage={Boolean(caps.models ?? caps.manage)} onToast={toast.setToast} onChanged={() => setVersion((v) => v + 1)} /> : null}
       {toast.node}
     </div>
