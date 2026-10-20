@@ -11,9 +11,9 @@ Ambiente local: PostgreSQL descartável `127.0.0.1:54329` (`perf_e2e` para naveg
 | CP2 Segurança E3 (sem exclusão física) | código + testes | `DELETE /api/admin/users/:id` → inativação + revogação + `USER_DELETE_REQUEST_CONVERTED`; `PATCH isActive` audita e revoga |
 | CP2 Segurança E4 (conta nasce com Pessoa) | código + testes | `POST /api/admin/users` copia `employee.personId`; `PERSON_ALREADY_HAS_USER`; `PUT /api/employees/:id` propaga (`canonicalPersonSync.server.ts`) |
 | CP2 Segurança E1 (desligamento revoga) | código + testes (flag) | `userAccessLifecycle(.server).ts`; flag `HR_TERMINATION_REVOKES_ACCESS` (default off) |
-| CP3 Governança Person | pendente | transação, prévia sem efeito, `ensurePersonFromSource` com checagem, migration aditiva `PersonLinkEvent`/`mergedIntoPersonId` |
-| CP4 Pessoas 360° v1 | pendente | |
-| CP5 v1.1 escrita | pendente | |
+| CP3 Governança Person | feito (adf90ea) | prévia sem escrita; `ensurePersonFromSource` reutiliza por CPF/recusa e-mail; plano+aplicação na transação do colaborador; migration `20261027120000_person_link_event`; `canonicalPersonGovernance.integration.test.ts` 6/6 |
+| CP4 Pessoas 360° v1 | feito (8ec96e9) | `/people`, `/people/:id`; `GET /api/people`, `/api/people/:id`; verificado no navegador (lista, ficha, conflito do caso real) |
+| CP5 v1.1 escrita | feito (2c34782) | prévia/vincular/corrigir/desvincular/unificar/reverter; `personLinkOps.integration.test.ts` 7/7; correção do caso real verificada no navegador |
 | CP6 Frota/Comissões | pendente | |
 | CP7 Qualidade/E2E/docs | pendente | |
 

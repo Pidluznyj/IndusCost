@@ -340,11 +340,11 @@ export function PersonProfilePage({ personId }: { personId: string }) {
         <ShieldCheck className="h-3.5 w-3.5" /> Cada cartão aplica a permissão do módulo de origem no servidor; a ficha não concede acesso a salário, documentos privados ou permissões.
       </p>
 
-      {stepUp.dialog}
       {dialog?.type === "relink" ? <RelinkDialog personId={person.id} entityKind={dialog.kind} entityId={dialog.id} onClose={() => setDialog(null)} onDone={() => { setDialog(null); void load(); }} /> : null}
       {dialog?.type === "unlink" ? <UnlinkDialog personId={person.id} entityKind={dialog.kind} entityId={dialog.id} label={dialog.label} onClose={() => setDialog(null)} onDone={() => { setDialog(null); void load(); }} /> : null}
       {dialog?.type === "merge" ? <MergeDialog personId={person.id} otherPersonId={dialog.otherPersonId} onClose={() => setDialog(null)} onDone={() => { setDialog(null); void load(); }} runWithStepUp={stepUp.run} /> : null}
       {dialog?.type === "revert" ? <RevertMergeDialog personId={person.id} eventId={dialog.eventId} onClose={() => setDialog(null)} onDone={() => { setDialog(null); void load(); }} runWithStepUp={stepUp.run} /> : null}
+      {stepUp.dialog}
     </div>
   );
 }

@@ -120,7 +120,7 @@ describe("PERM-36 — filterOfficialSidebarByEffectiveAccess", () => {
     const dto = effectiveAccessDtoFromAllowedResources(["admin.employees"]);
     const nav = filterOfficialSidebarByEffectiveAccess(dto);
     assert.ok(nav.groups.some((g) => g.id === "gestao_pessoas"));
-    assert.deepEqual(groupItemIds(nav, "gestao_pessoas"), ["employees", "org-chart"]);
+    assert.deepEqual(groupItemIds(nav, "gestao_pessoas"), ["employees", "people", "org-chart"]);
     assert.equal(nav.groups.some((g) => g.id === "comercial"), false);
     assert.equal(nav.groups.some((g) => g.id === "engenharia"), false);
     assert.equal(nav.groups.some((g) => g.id === "operacoes"), false);

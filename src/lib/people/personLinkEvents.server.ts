@@ -84,9 +84,18 @@ export async function recordPersonLinkEvent(db: EventDb, input: PersonLinkEventI
 }
 
 export async function listPersonLinkEvents(db: EventDb, personId: string, limit = 50) {
-  return db.personLinkEvent.findMany({
+  const rows = await db.personLinkEvent.findMany({
     where: { OR: [{ personId }, { fromPersonId: personId }, { toPersonId: personId }] },
     orderBy: { createdAt: "desc" },
     take: Math.min(200, Math.max(1, limit)),
   });
+  // Operações entre duas Pessoas (unificação/reversão) gravam um evento por lado; na ficha, mostra-se um só,
+  // preferindo o registro da própria Pessoa (é nele que fica o controle de reversão).
+  const seen = new Map<string, (typeof rows)[number]>();
+  for (const r of rows) {
+    const key = [r.eventKind, r.entityKind ?? "", r.entityId ?? "", r.fromPersonId ?? "", r.toPersonId ?? "", r.createdAt.toISOString()].join("|");
+    const prev = seen.get(key);
+    if (!prev || (prev.personId !== personId && r.personId === personId)) seen.set(key, r);
+  }
+  return rows.filter((r) => seen.get([r.eventKind, r.entityKind ?? "", r.entityId ?? "", r.fromPersonId ?? "", r.toPersonId ?? "", r.createdAt.toISOString()].join("|")) === r);
 }

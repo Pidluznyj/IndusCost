@@ -36,7 +36,7 @@ export const AdminStepUpDialog: React.FC<Props> = ({ open, onClose, onConfirmed 
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4">
       <div
         role="dialog"
         aria-modal="true"

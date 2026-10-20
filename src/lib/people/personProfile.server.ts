@@ -241,10 +241,12 @@ export type PendingLink = {
 export async function findPendingLinksForPerson(prisma: PrismaClient, personId: string): Promise<PendingLink[]> {
   const person = await prisma.person.findUnique({
     where: { id: personId },
-    select: { id: true, displayName: true, cpfNormalized: true, corporateEmail: true, employees: { select: { id: true, name: true, appUser: { select: { id: true, name: true, email: true, personId: true, person: { select: { displayName: true } } } } } } },
+    select: { id: true, displayName: true, status: true, cpfNormalized: true, corporateEmail: true, employees: { select: { id: true, name: true, appUser: { select: { id: true, name: true, email: true, personId: true, person: { select: { displayName: true } } } } } } },
   });
   if (!person) throw new CanonicalPersonError("PERSON_NOT_FOUND", "Pessoa não encontrada.", 404);
   const out: PendingLink[] = [];
+  // Pessoa já unificada em outra: nada pendente aqui — os vínculos vivem na Pessoa que ficou.
+  if (person.status === "MERGED") return out;
   const cpf = person.cpfNormalized;
   const email = normalizeEmailLoose(person.corporateEmail);
 
