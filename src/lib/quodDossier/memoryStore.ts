@@ -19,6 +19,14 @@ export function createMemoryQuodStore(): QuodStore & { rows: QuodConsultationRec
     async listByCustomer(customerId) {
       return rows.filter((row) => row.customerId === customerId);
     },
+    async monthSpend(monthStart, monthEnd) {
+      return rows
+        .filter((row) => {
+          const created = Date.parse(row.createdAt);
+          return created >= monthStart.getTime() && created < monthEnd.getTime() && row.billingStatus !== "NOT_SENT";
+        })
+        .reduce((sum, row) => sum + row.authorizedCostCents, 0);
+    },
     async reserve(input) {
       const previous = locks.get(input.cnpj) ?? Promise.resolve();
       let release: () => void = () => undefined;

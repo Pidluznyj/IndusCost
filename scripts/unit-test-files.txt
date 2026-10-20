@@ -92,6 +92,8 @@ src/lib/cnpjWeeklyRefresh/refreshRun.test.ts
 src/lib/cnpjWeeklyRefresh/adminRoutes.test.ts
 src/lib/quodDossier/quodDossier.test.ts
 src/lib/quodDossier/idempotencyKey.test.ts
+src/lib/creditIntelligencePackage/creditIntelligencePackage.test.ts
+src/components/customers/CreditIntelligencePackageSection.test.tsx
 src/components/customers/QuodDossierSection.test.tsx
 src/components/settings/CnpjWeeklyRefreshAdminCard.test.tsx
 src/lib/commercial/customerSalesBlockUi.test.tsx

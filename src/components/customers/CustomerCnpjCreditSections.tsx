@@ -112,6 +112,9 @@ export function CreditDecisionHeader({
             {loading && !credit ? "Avaliando crédito…" : title}
           </p>
           <p className="mt-1 text-sm font-medium opacity-90">{description}</p>
+          {tone === "blocked" || tone === "critical" ? (
+            <p className="mt-1 text-sm font-bold uppercase">Não vender a prazo sem liberação autorizada</p>
+          ) : null}
           <p className="mt-2 text-[11px] uppercase tracking-wide opacity-70">
             Decisão do motor comercial · Última avaliação:{" "}
             {credit?.decisionEvaluatedAtLabel ?? INTELLIGENCE_FACT_LABEL.NOT_CONSULTED}

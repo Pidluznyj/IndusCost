@@ -8,6 +8,7 @@ import type {
   CommercialCreditDecision,
   CommercialCreditDecisionStatus,
   CommercialExternalProtestStatus,
+  CommercialIeptbEvidence,
   CommercialQuodEvidence,
 } from "./commercialCreditDecision.js";
 import type { CommercialDelinquencyAnalysis } from "./customerDelinquencyAnalysis.js";
@@ -145,6 +146,19 @@ const CREDIT_REASON_CATALOG: Record<string, Omit<CreditDecisionReason, "code">> 
     origin: "Dossiê QUOD — Direct Data",
     severity: "INFO",
   },
+  IEPTB_NATIONAL_PROTEST: {
+    label: "Protesto nacional IEPTB",
+    description:
+      "Protesto nacional confirmado na consulta IEPTB. Exige decisão administrativa. Não substitui o protesto interno Nomus.",
+    origin: "Protestos Nacional — IEPTB Online",
+    severity: "MEDIUM",
+  },
+  IEPTB_INSUFFICIENT: {
+    label: "Consulta nacional de protestos insuficiente",
+    description: "A consulta IEPTB não trouxe informação suficiente. Não significa ausência de protesto.",
+    origin: "Protestos Nacional — IEPTB Online",
+    severity: "INFO",
+  },
 };
 
 export function describeCreditDecisionReasons(reasons: readonly string[]): CreditDecisionReason[] {
@@ -238,6 +252,8 @@ export type CommercialCreditIntelligenceView = {
   decisionEvaluatedAtLabel: string;
   quodState: CommercialQuodEvidence["state"];
   quodConfirmedRestriction: boolean;
+  ieptbState: CommercialIeptbEvidence["state"];
+  ieptbConfirmedProtest: boolean;
   situationLabel: string;
   reason: string | null;
   cadastralAuthorizesCredit: false;
@@ -390,6 +406,8 @@ export function notConsultedCommercialCreditView(): CommercialCreditIntelligence
     decisionEvaluatedAtLabel: INTELLIGENCE_FACT_LABEL.NOT_CONSULTED,
     quodState: "NOT_CONSULTED",
     quodConfirmedRestriction: false,
+    ieptbState: "NOT_CONSULTED",
+    ieptbConfirmedProtest: false,
     situationLabel: INTELLIGENCE_FACT_LABEL.NOT_CONSULTED,
     reason: null,
     cadastralAuthorizesCredit: false,
@@ -450,6 +468,8 @@ export function buildCommercialCreditIntelligenceView(input: {
     decisionEvaluatedAtLabel: formatCreditDateTime(input.delinquency.lastSyncedAt),
     quodState: input.decision.evidence.quodState,
     quodConfirmedRestriction: input.decision.evidence.quodConfirmedRestriction === true,
+    ieptbState: input.decision.evidence.ieptbState,
+    ieptbConfirmedProtest: input.decision.evidence.ieptbConfirmedProtest === true,
     situationLabel: unavailable && status === "EM_ANALISE" ? "Não verificado" : situationLabel(status),
     reason,
     cadastralAuthorizesCredit: false,
