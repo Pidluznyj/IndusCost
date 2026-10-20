@@ -15590,6 +15590,25 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     },
     // Avaliação 180°: liderados diretos ativos pela hierarquia efetiva, no instante da abertura.
     loadLeadershipSnapshot: (employeeIds) => loadDirectReportsSnapshot(prisma, employeeIds),
+    // Prontidão do ciclo: quem tem usuário ativo para avaliar e desde quando cada pessoa está com o líder atual.
+    loadLinkedEmployeeIds: async (employeeIds) => {
+      if (employeeIds.length === 0) return new Set<string>();
+      const rows = await prisma.appUser.findMany({ where: { employeeId: { in: employeeIds }, isActive: true }, select: { employeeId: true } });
+      return new Set(rows.map((row) => row.employeeId).filter((id): id is string => Boolean(id)));
+    },
+    loadLeaderSince: async (employeeIds) => {
+      const out = new Map<string, { since: string; managerId: string | null; previousManagerName: string | null }>();
+      if (employeeIds.length === 0) return out;
+      const rows = await prisma.hrEmployeeHistory.findMany({
+        where: { employeeId: { in: employeeIds }, newManagerId: { not: null } },
+        orderBy: { effectiveDate: "desc" },
+        select: { employeeId: true, effectiveDate: true, newManagerId: true, previousManagerName: true },
+      });
+      for (const row of rows) {
+        if (!out.has(row.employeeId)) out.set(row.employeeId, { since: row.effectiveDate.toISOString(), managerId: row.newManagerId, previousManagerName: row.previousManagerName });
+      }
+      return out;
+    },
     // Central de acompanhamento: diretoria de cada setor (somente leitura do organograma).
     loadOrgUnits: async () => {
       const rows = await prisma.hrDepartment.findMany({ select: { id: true, name: true, directorate: { select: { name: true } } } });

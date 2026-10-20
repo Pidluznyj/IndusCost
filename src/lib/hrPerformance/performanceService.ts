@@ -1372,13 +1372,16 @@ export function calibrate(
     potentialBand?: NineBoxBand | null;
     /** Exceção explícita: confirmar sem avaliação do líder (fica sem quadrante e auditado). */
     acceptMissingLeader?: boolean;
+    /** Quem participou da sessão de calibração (comitê: líder de líderes, pares, RH). Vai para a nota e a auditoria. */
+    committee?: string | null;
     scope?: PerformanceScope;
   },
   options: ServiceOptions
 ): ServiceResult<{ reviewStatus: string; quadrant: string }> {
   const denied = hrOnly(input.scope ?? HR_SCOPE);
   if (denied) return denied;
-  const note = clean(input.note, 600);
+  const committee = clean(input.committee ?? "", 300);
+  const note = committee ? clean(`Comitê: ${committee} · ${clean(input.note, 600)}`, 600) : clean(input.note, 600);
   if (note.length < 8) return fail("NOTE_REQUIRED", "A calibração precisa de um motivo com pelo menos 8 caracteres.");
   const db = cloneDb(source);
   const participant = db.participants.find((p) => p.id === input.participantId && !p.removedAt);

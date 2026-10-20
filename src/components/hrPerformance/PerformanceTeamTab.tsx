@@ -46,6 +46,15 @@ export function PerformanceTeamTab({ onToast, actorName, linkedEmployee = true }
     .filter((i) => (filter === "pending" ? i.status !== "SUBMITTED" : filter === "submitted" ? i.status === "SUBMITTED" : true))
     .sort((a, b) => a.dueAt.localeCompare(b.dueAt) || a.employeeName.localeCompare(b.employeeName, "pt-BR"));
   const pending = (items ?? []).filter((i) => i.status !== "SUBMITTED").length;
+  // Resumo do que falta para o líder, numa linha: avaliações individuais, de liderança e calibrações.
+  const leadershipPending = leadership.filter((i) => i.status !== "SUBMITTED").length;
+  const calibrationsPending = leadership.filter((i) => i.leadershipStatus === "AVAILABLE").length;
+  const nextDue = (items ?? []).filter((i) => i.status !== "SUBMITTED").map((i) => i.dueAt).sort()[0] ?? null;
+  const todo = [
+    pending ? `${pending} avaliação(ões) da equipe` : null,
+    leadershipPending ? `${leadershipPending} avaliação(ões) de liderança` : null,
+    calibrationsPending ? `${calibrationsPending} calibração(ões) de liderança` : null,
+  ].filter(Boolean);
 
   return (
     <section className="space-y-4" data-testid="perf-team-tab">
@@ -88,6 +97,25 @@ export function PerformanceTeamTab({ onToast, actorName, linkedEmployee = true }
         </div>
       </div>
       <ErrorBanner message={error} />
+      {items !== null ? (
+        <div className={`${PANEL} flex flex-wrap items-center justify-between gap-2 p-3`} data-testid="perf-team-todo">
+          <p className="text-sm">
+            {todo.length === 0 ? (
+              <span className="text-emerald-700">Tudo em dia: nenhuma avaliação pendente com você.</span>
+            ) : (
+              <>
+                <strong>Falta com você:</strong> {todo.join(" · ")}
+                {nextDue ? <span className="text-muted-foreground"> · prazo mais próximo {dateBr(nextDue)}</span> : null}
+              </>
+            )}
+          </p>
+          {leadershipPending ? (
+            <a href="#perf-team-leadership" className={BTN_SECONDARY} data-testid="perf-team-goto-leadership">
+              Ir para liderança
+            </a>
+          ) : null}
+        </div>
+      ) : null}
       {items === null ? (
         <div className={PANEL}>
           <PanelState kind="loading" message="Carregando a sua equipe…" />
@@ -234,7 +262,7 @@ export function PerformanceTeamTab({ onToast, actorName, linkedEmployee = true }
         />
       ) : null}
       {leadership.length > 0 ? (
-        <section className={`${PANEL} space-y-3 p-4`} data-testid="perf-team-leadership">
+        <section id="perf-team-leadership" className={`${PANEL} space-y-3 p-4`} data-testid="perf-team-leadership">
           <div>
             <h3 className="text-base font-semibold">Liderança da sua equipe (180°)</h3>
             <p className="text-sm text-muted-foreground">

@@ -59,6 +59,7 @@ import {
   rateText,
 } from "./performanceUi";
 import { cn } from "@/src/lib/utils";
+import { CycleReadinessPanel } from "./CycleReadinessPanel";
 
 export const PRINT_CARDS_KEY = "ic-perf-print-cards";
 
@@ -114,6 +115,8 @@ export function CycleDesk({ cycleId, me: realMe, onToast, onChanged }: { cycleId
   const [issued, setIssued] = useState<IssuedInvite[]>([]);
   const [filters, setFilters] = useState({ text: "", department: "", role: "", manager: "", state: "" });
   const [lifecycleOpen, setLifecycleOpen] = useState(false);
+  const [readinessBlocked, setReadinessBlocked] = useState(false);
+  const [reloads, setReloads] = useState(0);
   // Ciclo inativo: só consulta. A tela esconde as ações; o servidor recusa do mesmo jeito.
   const inactive = ws?.cycle.activation === "INACTIVE";
   const me: PerformanceMe = inactive
@@ -126,6 +129,7 @@ export function CycleDesk({ cycleId, me: realMe, onToast, onChanged }: { cycleId
   const reload = useCallback(async () => {
     try {
       setWs(await fetchCycleWorkspace(cycleId));
+      setReloads((n) => n + 1);
       setError(null);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Não foi possível abrir o ciclo.");
@@ -258,7 +262,14 @@ export function CycleDesk({ cycleId, me: realMe, onToast, onChanged }: { cycleId
             </button>
           ) : null}
           {next && (next === "HOMOLOGATED" ? caps.homologate ?? caps.calibrate : canCycles) ? (
-            <button type="button" className={BTN_PRIMARY} onClick={() => setDialog({ kind: "transition", to: next, reversal: false })} data-testid="perf-cycle-next">
+            <button
+              type="button"
+              className={BTN_PRIMARY}
+              disabled={next === "OPEN" && readinessBlocked}
+              title={next === "OPEN" && readinessBlocked ? "Resolva os itens da prontidão antes de abrir" : undefined}
+              onClick={() => setDialog({ kind: "transition", to: next, reversal: false })}
+              data-testid="perf-cycle-next"
+            >
               {NEXT_LABEL[status]}
             </button>
           ) : null}
@@ -295,6 +306,23 @@ export function CycleDesk({ cycleId, me: realMe, onToast, onChanged }: { cycleId
       ) : null}
       <ErrorBanner message={error} testId="perf-cycle-error" />
 
+      {preOpen && !inactive ? (
+        <CycleReadinessPanel
+          cycleId={cycleId}
+          version={reloads}
+          canManage={canCycles}
+          onChanged={async (message) => {
+            onToast(message);
+            await reload();
+            onChanged();
+          }}
+          onBlockedChange={setReadinessBlocked}
+          onPickLeader={(participantId) => {
+            const person = ws.people.find((p) => p.participant.id === participantId);
+            if (person) setDialog({ kind: "leader", person });
+          }}
+        />
+      ) : null}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6" data-testid="perf-cycle-kpis">
         <KpiTile label="Elegíveis" value={counts.eligible} hint={`${counts.notEligible} não elegíveis · ${counts.insufficient} evidência insuficiente`} />
         <KpiTile label="Convidados" value={counts.invited} hint={rateText(counts.rates.invited)} />

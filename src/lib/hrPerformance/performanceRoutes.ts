@@ -13,6 +13,8 @@ import type { RequestHandler } from "express";
 import { buildPerformanceScope, type PerformanceAccessScope, type PerformanceScope } from "./performanceAccess.js";
 import { canSeeResultOf, NO_CAPS, resolvePerformanceCaps, type PerformanceCapabilityKey, type PerformanceCaps } from "./performancePermissions.js";
 import { redactCalibrationQueue, redactDashboard, redactLeadershipRows, redactWorkspace } from "./performanceDisclosure.js";
+import { evaluatorStats, personDossier } from "./performanceDossier.js";
+import { cycleReadiness, readinessBlocked, type ReadinessContext } from "./performanceReadiness.js";
 import { OBLIGATION_STATUSES, trackingBoard, trackingCsv, type ObligationStatus, type OrgUnits, type TrackingModality } from "./performanceTracking.js";
 import { classifyEligibility, isCycleStatus, isNineBoxBand, parseAnswer, parseRules, type EmployeeSnapshotSource } from "./performanceDomain.js";
 import { requirePerformanceCycleEnabled } from "./performanceFeatureFlags.js";
@@ -136,6 +138,10 @@ export type PerformanceRouteDeps = {
   isSuperAdmin?: (req: express.Request) => Promise<boolean>;
   /** Avaliação 180°: liderados diretos ativos (hierarquia efetiva) na abertura do ciclo. */
   loadLeadershipSnapshot?: (employeeIds: string[]) => Promise<LeadershipSnapshot>;
+  /** Prontidão: colaboradores com usuário ativo vinculado (quem consegue avaliar a equipe). */
+  loadLinkedEmployeeIds?: (employeeIds: string[]) => Promise<Set<string>>;
+  /** Prontidão: desde quando cada pessoa está com o líder atual (histórico do cadastro). */
+  loadLeaderSince?: (employeeIds: string[]) => Promise<Map<string, { since: string; managerId: string | null; previousManagerName: string | null }>>;
   /** Central de acompanhamento: diretoria de cada setor (organograma). */
   loadOrgUnits?: () => Promise<{ id: string; name: string; directorateName: string | null }[]>;
 };
@@ -746,6 +752,62 @@ export function registerPerformanceRoutes(expressApp: express.Application, deps:
     );
   });
 
+  // ---------------------------------------------------------------- prontidão (antes de abrir)
+  /** Monta o contexto externo. Sem `loadLinkedEmployeeIds` (testes antigos), a trava não se aplica. */
+  const readinessOf = async (db: PerformanceDatabase, cycleId: string) => {
+    const cycle = db.cycles.find((c) => c.id === cycleId);
+    if (!cycle || !deps.loadLinkedEmployeeIds) return null;
+    const live = db.participants.filter((p) => p.cycleId === cycleId && !p.removedAt);
+    const evaluatorIds = [...new Set(live.map((p) => p.managerId).filter((id): id is string => Boolean(id)))];
+    const outsideIds = evaluatorIds.filter((id) => !live.some((p) => p.employeeId === id));
+    const [linked, leaderSince, outsiders] = await Promise.all([
+      deps.loadLinkedEmployeeIds(evaluatorIds),
+      deps.loadLeaderSince ? deps.loadLeaderSince(live.map((p) => p.employeeId)) : Promise.resolve(new Map()),
+      outsideIds.length ? deps.loadEmployees(outsideIds) : Promise.resolve([]),
+    ]);
+    const ctx: ReadinessContext = { linkedEmployeeIds: linked, leaderSince, names: new Map(outsiders.map((e) => [e.id, e.name])) };
+    return cycleReadiness(db, cycle, ctx, now());
+  };
+
+  app.get("/api/hr/performance/cycles/:id/readiness", ...lifecycleReadGuard, async (req, res) => {
+    const db = await deps.store.read();
+    const cycle = db.cycles.find((c) => c.id === req.params.id);
+    noStore(res);
+    if (!cycle) return res.status(404).json({ error: "NOT_FOUND", message: "Ciclo não encontrado." });
+    const issues = cycle.status === "DRAFT" || cycle.status === "PREPARED" ? (await readinessOf(db, cycle.id)) ?? [] : [];
+    res.json({ issues, blocked: readinessBlocked(issues).length > 0 });
+  });
+
+  /** Inclui no ciclo os líderes que faltam, subindo a cadeia até o topo (um clique). */
+  app.post("/api/hr/performance/cycles/:id/participants/include-leaders", ...manage, async (req, res) => {
+    const actorUserId = await deps.actorUserId(req);
+    const { scope } = await scopeOf(req);
+    const first = await deps.store.read();
+    const cycle = first.cycles.find((c) => c.id === req.params.id);
+    if (!cycle) {
+      noStore(res);
+      return res.status(404).json({ error: "NOT_FOUND", message: "Ciclo não encontrado." });
+    }
+    const present = new Set(first.participants.filter((p) => p.cycleId === cycle.id && !p.removedAt).map((p) => p.employeeId));
+    let frontier = [...new Set(first.participants.filter((p) => p.cycleId === cycle.id && !p.removedAt && p.managerId && !present.has(p.managerId)).map((p) => p.managerId!))];
+    const toAdd = new Set<string>();
+    for (let depth = 0; depth < 12 && frontier.length > 0; depth += 1) {
+      for (const id of frontier) toAdd.add(id);
+      const loaded = await deps.loadEmployees(frontier);
+      frontier = [...new Set(loaded.map((e) => e.managerId).filter((id): id is string => Boolean(id) && !present.has(id!) && !toAdd.has(id!)))];
+    }
+    const ids = [...toAdd];
+    if (ids.length === 0) {
+      noStore(res);
+      return res.json({ added: 0 });
+    }
+    const employees = await deps.loadEmployees(ids);
+    const signals = await signalsFor(ids, cycle.minObservationDays ?? 90);
+    await mutateAdmin(deps.store, res, (db) =>
+      applyParticipants(db, { cycleId: cycle.id, employees, selectedIds: ids, exceptions: {}, absenceIds: signals.absenceIds, roleChangeIds: signals.roleChangeIds, actorUserId, scope }, deps.options)
+    );
+  });
+
   app.post("/api/hr/performance/cycles/:id/transition", ...manage, async (req, res) => {
     const actorUserId = await deps.actorUserId(req);
     const { scope, actorEmployeeId } = await scopeOf(req);
@@ -762,6 +824,12 @@ export function registerPerformanceRoutes(expressApp: express.Application, deps:
     }
     let leadershipSnapshot: LeadershipSnapshot | undefined;
     if (to === "OPEN") {
+      const issues = await readinessOf(await deps.store.read(), req.params.id);
+      const blocked = issues ? readinessBlocked(issues) : [];
+      if (blocked.length > 0) {
+        noStore(res);
+        return res.status(409).json({ error: "READINESS_BLOCKED", message: `Antes de abrir: ${blocked.map((i) => i.title.toLowerCase()).join("; ")}.`, issues });
+      }
       const current = await deps.store.read();
       const cycle = current.cycles.find((c) => c.id === req.params.id);
       if (cycle?.leadershipModelId && deps.loadLeadershipSnapshot) {
@@ -961,6 +1029,7 @@ export function registerPerformanceRoutes(expressApp: express.Application, deps:
           technicalBand: isNineBoxBand(req.body?.technicalBand) ? req.body.technicalBand : null,
           potentialBand: isNineBoxBand(req.body?.potentialBand) ? req.body.potentialBand : null,
           acceptMissingLeader: req.body?.acceptMissingLeader === true,
+          committee: strOrNull(req.body?.committee, 300),
           actorUserId,
           actorEmployeeId,
           scope,
@@ -968,6 +1037,24 @@ export function registerPerformanceRoutes(expressApp: express.Application, deps:
         deps.options
       )
     );
+  });
+
+  /** Dossiê da pessoa: todos os ângulos numa ficha (calibrar ou consultar resultados). */
+  app.get("/api/hr/performance/participants/:id/dossier", ...resultHistoryGuard, async (req, res) => {
+    const db = await deps.store.read();
+    const access = await accessOf(req);
+    const dossier = personDossier(db, req.params.id, access.resultScope, access.actorEmployeeId);
+    noStore(res);
+    if (dossier.ok === false) return res.status(statusOf(dossier.code)).json({ error: dossier.code, message: dossier.message });
+    res.json(dossier);
+  });
+
+  /** Painel por avaliador: distribuição das notas dadas por cada líder (sem conteúdo de resposta). */
+  app.get("/api/hr/performance/cycles/:id/calibration/evaluators", ...resultHistoryGuard, async (req, res) => {
+    const db = await deps.store.read();
+    noStore(res);
+    if (!db.cycles.some((c) => c.id === req.params.id)) return res.status(404).json({ error: "NOT_FOUND", message: "Ciclo não encontrado." });
+    res.json({ evaluators: evaluatorStats(db, req.params.id) });
   });
 
   app.get("/api/hr/performance/participants/:id/results", ...resultHistoryGuard, async (req, res) => {

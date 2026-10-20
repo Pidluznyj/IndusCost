@@ -4,8 +4,8 @@
  * Toda decisão gera nova versão do resultado; a anterior fica consultável.
  */
 import React, { useCallback, useEffect, useState } from "react";
-import { History, RotateCcw, Scale, ShieldCheck } from "lucide-react";
-import { Overlay, OverlayBody, OverlayFooter, OverlayHeader, OverlayField, OverlaySelect } from "@/src/components/ui/overlay";
+import { BookOpenText, History, RotateCcw, Scale, ShieldCheck, Users } from "lucide-react";
+import { Overlay, OverlayBadge, OverlayBody, OverlayFooter, OverlayHeader, OverlayField, OverlayInput, OverlaySelect } from "@/src/components/ui/overlay";
 import { NINE_BOX_BANDS, NINE_BOX_BAND_LABELS, PILLARS, PILLAR_SHORT_LABELS, scoreLabel, NOT_OBSERVED_LABEL, type Pillar } from "@/src/lib/hrPerformance/performanceDomain";
 import {
   calibratePerformance,
@@ -38,6 +38,8 @@ import {
 } from "./performanceUi";
 import { ReasonDialog } from "./CycleDesk";
 import { LeadershipCalibrationSection } from "./PerformanceLeadershipUi";
+import { EvaluatorBiasBadges, PersonDossierOverlay } from "./PersonDossierOverlay";
+import { fetchCalibrationEvaluators, type EvaluatorStat } from "@/src/lib/hrPerformance/performanceClient";
 
 type Dialog =
   | { kind: "validate"; row: CalibrationRow }
@@ -70,16 +72,20 @@ export function PerformanceCalibrationTab({
   const [onlyDivergent, setOnlyDivergent] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [dialog, setDialog] = useState<Dialog>(null);
+  const [dossier, setDossier] = useState<string | null>(null);
+  const [evaluators, setEvaluators] = useState<EvaluatorStat[] | null>(null);
+  const [showEvaluators, setShowEvaluators] = useState(false);
 
   const reload = useCallback(async () => {
     if (!cycleId) return;
     try {
       setData(await fetchCalibrationQueue(cycleId));
       setError(null);
+      if (canCalibrate) fetchCalibrationEvaluators(cycleId).then((r) => setEvaluators(r.evaluators)).catch(() => setEvaluators(null));
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Não foi possível abrir a calibração.");
     }
-  }, [cycleId]);
+  }, [cycleId, canCalibrate]);
 
   useEffect(() => {
     void reload();
@@ -129,6 +135,45 @@ export function PerformanceCalibrationTab({
           <input type="checkbox" className="h-4 w-4" checked={onlyDivergent} onChange={(e) => setOnlyDivergent(e.target.checked)} /> Só com divergência
         </label>
       </div>
+      {canCalibrate && evaluators && evaluators.length > 0 ? (
+        <section className={`${PANEL} p-4`} data-testid="perf-evaluators">
+          <button type="button" className="flex w-full items-center justify-between text-left" onClick={() => setShowEvaluators((v) => !v)} aria-expanded={showEvaluators} data-testid="perf-evaluators-toggle">
+            <span className="flex items-center gap-2 text-sm font-semibold">
+              <Users className="h-4 w-4" aria-hidden /> Como cada líder avalia ({evaluators.length}) {evaluators.some((e) => e.flags.length) ? <OverlayBadge tone="amber">{evaluators.filter((e) => e.flags.length).length} com sinal de viés</OverlayBadge> : null}
+            </span>
+            <span className="text-xs text-muted-foreground">{showEvaluators ? "ocultar" : "mostrar"}</span>
+          </button>
+          {showEvaluators ? (
+            <TableScroll>
+              <table className="mt-3 w-full min-w-[760px] text-left text-sm">
+                <thead className="border-b border-border text-xs uppercase tracking-wide text-muted-foreground">
+                  <tr>
+                    <th className="py-2 pr-3 font-semibold">Líder</th>
+                    <th className="py-2 pr-3 font-semibold">Avaliou</th>
+                    <th className="py-2 pr-3 font-semibold">Média (ciclo)</th>
+                    <th className="py-2 pr-3 font-semibold">Nunca · Às vezes · Maioria · Sempre</th>
+                    <th className="py-2 pr-3 font-semibold">Extremas</th>
+                    <th className="py-2 font-semibold">Leitura</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {evaluators.map((e) => (
+                    <tr key={e.evaluatorEmployeeId} data-testid={`perf-evaluator-${e.evaluatorName}`}>
+                      <td className="py-2 pr-3 font-medium">{e.evaluatorName ?? e.evaluatorEmployeeId}</td>
+                      <td className="py-2 pr-3 tabular-nums">{e.submitted} de {e.evaluated}</td>
+                      <td className="py-2 pr-3 tabular-nums">{e.mean ?? "—"} <span className="text-xs text-muted-foreground">({e.cycleMean ?? "—"})</span></td>
+                      <td className="py-2 pr-3 tabular-nums">{e.distribution[1]} · {e.distribution[2]} · {e.distribution[3]} · {e.distribution[4]}{e.distribution.notObserved ? ` · ${e.distribution.notObserved} não observei` : ""}</td>
+                      <td className="py-2 pr-3 tabular-nums">{e.extremeShare == null ? "—" : `${Math.round(e.extremeShare * 100)}%`}</td>
+                      <td className="py-2"><EvaluatorBiasBadges stat={e} /></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <p className="mt-2 text-xs text-muted-foreground">Sinais só com 3 ou mais avaliações enviadas. Servem para orientar a conversa do comitê; não mudam nota sozinhos.</p>
+            </TableScroll>
+          ) : null}
+        </section>
+      ) : null}
       <div className={PANEL}>
         <TableScroll>
           <table className="w-full min-w-[1040px] text-left text-sm" data-testid="perf-calibration-table">
@@ -208,6 +253,11 @@ export function PerformanceCalibrationTab({
                           </button>
                         ) : null}
                         {canSeeHistory ? (
+                          <button type="button" className={BTN_GHOST} onClick={() => setDossier(row.participantId)} data-testid={`perf-cal-dossier-${row.employeeName}`}>
+                            <BookOpenText className="h-3.5 w-3.5" aria-hidden /> Dossiê
+                          </button>
+                        ) : null}
+                        {canSeeHistory ? (
                           <button type="button" className={BTN_GHOST} onClick={() => setDialog({ kind: "history", row })}>
                             <History className="h-3.5 w-3.5" aria-hidden /> Versões ({row.versions})
                           </button>
@@ -236,6 +286,7 @@ export function PerformanceCalibrationTab({
         </TableScroll>
       </div>
 
+      {dossier ? <PersonDossierOverlay participantId={dossier} onClose={() => setDossier(null)} /> : null}
       {dialog?.kind === "validate" ? <ValidateDialog row={dialog.row} onClose={() => setDialog(null)} onDone={(m) => { setDialog(null); onToast(m); void reload(); }} /> : null}
       {dialog?.kind === "calibrate" ? <CalibrateDialog row={dialog.row} onClose={() => setDialog(null)} onDone={(m) => { setDialog(null); onToast(m); void reload(); }} /> : null}
       {dialog?.kind === "return" ? (
@@ -362,6 +413,7 @@ function CalibrateDialog({ row, onClose, onDone }: { row: CalibrationRow; onClos
   const [technicalBand, setTechnicalBand] = useState(result?.nineX ?? "MID");
   const [potentialBand, setPotentialBand] = useState(result?.nineY ?? "MID");
   const [note, setNote] = useState("");
+  const [committee, setCommittee] = useState("");
   const changed = technicalBand !== result?.nineX || potentialBand !== result?.nineY;
   return (
     <PerformanceModal
@@ -377,7 +429,7 @@ function CalibrateDialog({ row, onClose, onDone }: { row: CalibrationRow; onClos
       onSave={async () => {
         const out = await calibratePerformance(
           row.participantId,
-          decision === "ADJUST" ? { note, decision, technicalBand, potentialBand } : { note, decision, acceptMissingLeader: withoutLeader && acceptMissingLeader }
+          decision === "ADJUST" ? { note, decision, technicalBand, potentialBand, committee: committee || undefined } : { note, decision, acceptMissingLeader: withoutLeader && acceptMissingLeader, committee: committee || undefined }
         );
         onDone(decision === "ADJUST" ? `Ajustado para ${out.quadrant}` : withoutLeader ? "Exceção registrada: sem avaliação do líder" : "Calibração registrada");
       }}
@@ -424,6 +476,9 @@ function CalibrateDialog({ row, onClose, onDone }: { row: CalibrationRow; onClos
           </OverlayField>
         </div>
       ) : null}
+      <OverlayField label="Quem participou desta calibração (comitê)" hint="Boa prática: líder de líderes da área, pares e RH. Fica na nota e na auditoria.">
+        {(p) => <OverlayInput {...p} value={committee} onChange={(e) => setCommittee(e.target.value)} placeholder="Ex.: Carla (diretora), Marcos (par), Rita (RH)" data-testid="perf-calibrate-committee" />}
+      </OverlayField>
       <ReasonField label="Justificativa" value={note} onChange={setNote} placeholder="Fatos e evidências considerados" testId="perf-calibrate-note" />
     </PerformanceModal>
   );

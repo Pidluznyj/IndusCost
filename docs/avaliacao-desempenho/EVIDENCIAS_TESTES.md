@@ -219,3 +219,20 @@ Estável em 4 rodadas seguidas, depois da correção abaixo. A parte 9 foi refei
 - Suíte de unidade: 5253 testes, com as mesmas 4 falhas da `main`.
 - `tsc`: 1370, igual à `main`.
 - Build, `check:browser-bundle` (66 artefatos) e checagens de import: OK.
+
+## 10. Prontidão do ciclo, dossiê e painel por avaliador (20/10/2026, local)
+
+Implementação do [DOSSIE_AVALIACOES_POR_PERFIL.md](DOSSIE_AVALIACOES_POR_PERFIL.md) §10.
+
+| Passo (`part12-readiness-dossier.mjs`) | Resultado |
+| --- | --- |
+| 12.01 ciclo oficial nasce com a 180° escolhida | PASS |
+| 12.02 prontidão aponta o líder fora e quem ele lidera | PASS |
+| 12.03 "Incluir os líderes" sobe até o topo (Bruno e Carla entram) | PASS |
+| 12.04 só o aviso do topo fica; abrir liberado | PASS |
+| 12.05 abrir pela API com líder fora: 409 `READINESS_BLOCKED` | PASS |
+| 12.06 painel por avaliador com média, distribuição e sinal de viés | PASS |
+| 12.07 dossiê com os seis blocos, sem comentário da equipe | PASS |
+| 12.08 líder vê numa linha o que falta com ele | PASS |
+
+Unitários novos: `performanceReadiness.test.ts` (7). Módulo: 114/114. Regressão igual à `main` (`c397e62`): `tsc` 1369; suíte de unidade com as mesmas 5 falhas; consistência de permissões com os mesmos 3 achados; build e checagens de import OK.

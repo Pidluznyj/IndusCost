@@ -227,6 +227,20 @@ export type CycleLifecycleInfo = {
   history: { id: string; at: string; action: string; actorUserId: string | null; detail: Record<string, string | number | boolean | null> }[];
   canManage: boolean;
 };
+// ------------------------------------------------------------------ prontidão (antes de abrir)
+export type ReadinessAction = "SET_LEADERSHIP_MODEL" | "INCLUDE_LEADERS" | "LINK_USERS" | "SET_EVALUATOR" | "REVIEW_LEADER";
+export type ReadinessIssue = {
+  code: string;
+  severity: "BLOCK" | "WARN";
+  title: string;
+  message: string;
+  action: ReadinessAction;
+  people: { participantId: string | null; employeeId: string; name: string; detail?: string | null }[];
+};
+export const fetchCycleReadiness = (cycleId: string) => json<{ issues: ReadinessIssue[]; blocked: boolean }>(`${BASE}/cycles/${cycleId}/readiness`);
+/** Inclui no ciclo os líderes que faltam, subindo a cadeia até o topo. */
+export const includeCycleLeaders = (cycleId: string) => post<{ added: number }>(`${BASE}/cycles/${cycleId}/participants/include-leaders`);
+
 export const fetchCycleLifecycle = (cycleId: string) => json<CycleLifecycleInfo>(`${BASE}/cycles/${cycleId}/lifecycle`);
 export const classifyPerformanceCycleAsTest = (cycleId: string, reason: string) => post(`${BASE}/cycles/${cycleId}/classification`, { classification: "TEST", reason });
 export const inactivatePerformanceCycle = (cycleId: string, reason: string) =>
@@ -536,9 +550,37 @@ export const validatePerformanceTechnical = (participantId: string, decision: "V
   post(`${BASE}/participants/${participantId}/validation`, { decision, note });
 export const calibratePerformance = (
   participantId: string,
-  input: { note: string; decision: "CONFIRM" | "ADJUST"; technicalBand?: string; potentialBand?: string; acceptMissingLeader?: boolean }
+  input: { note: string; decision: "CONFIRM" | "ADJUST"; technicalBand?: string; potentialBand?: string; acceptMissingLeader?: boolean; committee?: string }
 ) =>
   post<{ reviewStatus: string; quadrant: string }>(`${BASE}/participants/${participantId}/calibration`, input);
+// ------------------------------------------------------------------ dossiê e avaliadores
+export type BiasFlag = "LENIENT" | "SEVERE" | "CENTRAL" | "HALO";
+export type EvaluatorStat = {
+  evaluatorEmployeeId: string;
+  evaluatorName: string | null;
+  evaluated: number;
+  submitted: number;
+  mean: number | null;
+  cycleMean: number | null;
+  distribution: { 1: number; 2: number; 3: number; 4: number; notObserved: number };
+  extremeShare: number | null;
+  flatShare: number | null;
+  flags: BiasFlag[];
+};
+export const fetchCalibrationEvaluators = (cycleId: string) => json<{ evaluators: EvaluatorStat[] }>(`${BASE}/cycles/${cycleId}/calibration/evaluators`);
+export type PersonDossier = {
+  participant: { id: string; employeeId: string; employeeName: string; roleName: string; departmentName: string; managerName: string | null; managerSource: string; admissionDate: string | null; isLeader: boolean; directReportCount: number; eligibility: string };
+  cycle: { id: string; name: string; status: string; periodLabel: string };
+  rules: PerformanceRules | null;
+  individual: CalibrationRow | null;
+  leadership: LeadershipComparison | null;
+  asEvaluator: EvaluatorStat | null;
+  previousCycles: EmployeeHistory["cycles"];
+  pdis: { id: string; title: string; competencyCode: string | null; status: string; dueAt: string | null; checkins: { note: string; obstacle: string | null; nextStep: string | null; createdAt: string }[] }[];
+  versions: { version: number; reviewStatus: string; quadrant: string; adjusted: boolean; calibrationNote: string | null; calibratedAt: string | null; official: boolean }[];
+};
+export const fetchPersonDossier = (participantId: string) => json<PersonDossier>(`${BASE}/participants/${participantId}/dossier`);
+
 export type ResultHistory = {
   participant: { id: string; employeeName: string };
   versions: (ResultSummary & { createdAt: string; supersedesId: string | null; calibratedByUserId: string | null })[];

@@ -197,15 +197,24 @@ function CreateCycleOverlay({
   const [classification, setClassification] = useState<"" | CycleClassification>("");
   useEffect(() => {
     if (open && !modelId && models[0]) setModelId(models[0].id);
-  }, [open, models, modelId]);
-  const valid = name.trim().length >= 3 && periodLabel.trim().length >= 2 && Boolean(modelId) && Boolean(selfDueAt) && leaderDueAt >= selfDueAt && classification !== "";
+    // 180° vem ligada por padrão: sem ela, ninguém avalia o próprio líder.
+    if (open && !leadershipModelId && leadershipModels[0]) setLeadershipModelId(leadershipModels[0].id);
+  }, [open, models, modelId, leadershipModels, leadershipModelId]);
+  const needsLeadership = classification === "OFFICIAL" && !leadershipModelId;
+  const valid = name.trim().length >= 3 && periodLabel.trim().length >= 2 && Boolean(modelId) && Boolean(selfDueAt) && leaderDueAt >= selfDueAt && classification !== "" && !needsLeadership;
   return (
     <PerformanceModal
       open={open}
       title="Novo ciclo"
       subtitle="O ciclo usa uma versão publicada do modelo. As pessoas são escolhidas depois, no cadastro oficial."
       saveLabel="Criar rascunho"
-      footerHint={leaderDueAt < selfDueAt ? "O prazo do líder não pode vir antes do prazo da pessoa." : "Prazos podem ser ajustados depois, com registro."}
+      footerHint={
+        leaderDueAt < selfDueAt
+          ? "O prazo do líder não pode vir antes do prazo da pessoa."
+          : needsLeadership
+            ? "Ciclo oficial inclui a avaliação de liderança. Publique um modelo de liderança em Modelos."
+            : "Prazos podem ser ajustados depois, com registro."
+      }
       canSave={valid}
       onClose={onClose}
       size="md"
@@ -246,7 +255,7 @@ function CreateCycleOverlay({
         <OverlayField label="Avaliação 180° de liderança" colSpan={2}>
           {(p) => (
             <OverlaySelect {...p} value={leadershipModelId} onChange={(e) => setLeadershipModelId(e.target.value)} data-testid="perf-cycle-create-leadership">
-              <option value="">Não incluir</option>
+              <option value="">{classification === "OFFICIAL" ? "Obrigatória no ciclo oficial" : "Não incluir (só em ciclo de teste)"}</option>
               {leadershipModels.map((m) => (
                 <option key={m.id} value={m.id}>
                   {m.name} · v{m.version}
