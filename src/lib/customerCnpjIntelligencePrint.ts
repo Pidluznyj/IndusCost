@@ -1,4 +1,5 @@
 import type { CnpjIntelligencePayload } from "./customerCnpjIntelligenceTypes.js";
+import type { CommercialCreditIntelligenceView } from "./commercial/commercialCreditIntelligenceView.js";
 
 export const CNPJ_INTELLIGENCE_PRINT_ROOT_ID = "cnpj-intelligence-print-root";
 export const CNPJ_INTELLIGENCE_PRINT_BODY_CLASS = "cnpj-intelligence-printing";
@@ -15,6 +16,8 @@ export type CnpjIntelligencePrintPayload = {
   commercial: CnpjIntelligencePayload["commercial"];
   comparison: CnpjIntelligencePayload["comparison"];
   publicContactSuggestion: CnpjIntelligencePayload["publicContactSuggestion"];
+  credit: CommercialCreditIntelligenceView | null;
+  creditState: "loaded" | "loading" | "error" | "not_consulted";
 };
 
 export function canPrintCnpjIntelligenceReport(
@@ -32,10 +35,17 @@ export function isCnpjIntelligencePrintButtonDisabled(
 
 export function toCnpjIntelligencePrintPayload(
   data: CnpjIntelligencePayload,
-  generatedAt = new Date().toISOString()
+  extras?:
+    | string
+    | {
+        generatedAt?: string;
+        credit?: CommercialCreditIntelligenceView | null;
+        creditState?: "loaded" | "loading" | "error" | "not_consulted";
+      }
 ): CnpjIntelligencePrintPayload {
+  const options = typeof extras === "string" ? { generatedAt: extras } : extras;
   return {
-    generatedAt,
+    generatedAt: options?.generatedAt ?? new Date().toISOString(),
     cnpj: data.cnpj,
     source: data.source,
     fetchedAt: data.fetchedAt,
@@ -45,6 +55,13 @@ export function toCnpjIntelligencePrintPayload(
     commercial: data.commercial,
     comparison: data.comparison,
     publicContactSuggestion: data.publicContactSuggestion,
+    credit: options && typeof options !== "string" ? options.credit ?? null : null,
+    creditState:
+      options && typeof options !== "string" && options.creditState
+        ? options.creditState
+        : options && typeof options !== "string" && options.credit
+          ? "loaded"
+          : "not_consulted",
   };
 }
 

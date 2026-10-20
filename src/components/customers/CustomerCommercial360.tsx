@@ -32,6 +32,7 @@ import {
   CustomerCadastralStatusBadge,
   CustomerSalesBlockBadge,
 } from "@/src/components/customers/CustomerSalesBlockBadge";
+import { CustomerCreditOperationCard } from "@/src/components/customers/CustomerCreditOperationCard";
 import type { PortfolioAbcResult } from "@/src/lib/customerCommercialShared";
 import type { OfficialScopedOrderMetrics } from "@/src/lib/salesOrderRulesAdapter.js";
 import {
@@ -598,6 +599,8 @@ export const CustomerCommercial360: React.FC<Props> = ({ open, customerId, onClo
             </Link>
           </div>
         ) : null}
+
+        {customerId ? <CustomerCreditOperationCard customerId={customerId} /> : null}
 
         <div className="flex-1 overflow-y-auto p-4 space-y-6">
           {loading && (

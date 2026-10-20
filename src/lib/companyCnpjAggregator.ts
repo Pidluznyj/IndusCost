@@ -323,7 +323,7 @@ export async function aggregateCnpjIntelligence(input: {
     if (attempt.status === "ok" && attempt.summary) {
       bySource[attempt.id] = attempt.summary;
       if (attempt.raw != null) rawBySource[attempt.id] = attempt.raw;
-    } else {
+    } else if (attempt.status !== "not_applicable") {
       warnings.push(
         `${CNPJ_SOURCE_LABELS[attempt.id]} indisponível` +
           (attempt.message ? `: ${attempt.message}` : ".")

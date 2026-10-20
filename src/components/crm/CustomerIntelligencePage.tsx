@@ -22,6 +22,7 @@ import {
 } from "@/src/lib/customerIntelligencePageFilters";
 import type { CustomerIntelligenceReport } from "@/src/lib/customerIntelligenceTypes";
 import { CustomerIntelligenceHeader } from "./customer-intelligence/CustomerIntelligenceHeader";
+import { CustomerCreditOperationCard } from "@/src/components/customers/CustomerCreditOperationCard";
 import { CustomerIntelligenceFilters } from "./customer-intelligence/CustomerIntelligenceFilters";
 import { CustomerIntelligenceDataQuality } from "./customer-intelligence/CustomerIntelligenceDataQuality";
 import {
@@ -236,6 +237,7 @@ export function CustomerIntelligencePage() {
           <CustomerIntelligenceDataQuality dataQuality={report.dataQuality} />
           <div className="customer-intelligence-sticky-header space-y-4">
             <CustomerIntelligenceHeader report={report} />
+            <CustomerCreditOperationCard customerId={report.customer.id} />
           </div>
 
           {isFilteredEmpty(report) && !isEmptyReport(report) ? (

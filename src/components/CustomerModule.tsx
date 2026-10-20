@@ -44,6 +44,7 @@ import {
   canImportCustomers,
 } from "@/src/lib/commercialEngineeringPermissions";
 import { CustomerCnpjIntelligencePanel } from "./customers/CustomerCnpjIntelligencePanel";
+import { CustomerCreditOccurrenceHistory } from "./customers/CustomerCreditOccurrenceHistory";
 import { CustomerListReportPrintDocument } from "./customers/CustomerListReportPrintDocument";
 import { CustomerCnpjRiskTag } from "./customers/CustomerCnpjRiskTag";
 import {
@@ -79,7 +80,7 @@ const CUSTOMER_LIST_OWNER_NONE = "none";
 
 type CommercialOwnerFilterOption = { key: string; name: string };
 
-type CustomerFormTab = "cadastro" | "commercial-owner" | "people-links";
+type CustomerFormTab = "cadastro" | "commercial-owner" | "people-links" | "credit-occurrences";
 
 const STICKY_ACTIONS =
   "sticky right-0 z-10 bg-card group-hover:bg-accent/30 shadow-[-6px_0_8px_-6px_rgba(0,0,0,0.12)]";
@@ -829,6 +830,21 @@ export const CustomerModule = () => {
                 >
                   Pessoas e vínculos
                 </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOwnerSelectFocus(false);
+                    setFormTab("credit-occurrences");
+                  }}
+                  className={cn(
+                    "px-4 py-2 text-sm font-medium rounded-t-lg border border-b-0 transition-colors",
+                    formTab === "credit-occurrences"
+                      ? "bg-card border-border text-foreground"
+                      : "bg-transparent border-transparent text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  Ocorrências de crédito
+                </button>
               </div>
             ) : null}
             
@@ -848,6 +864,10 @@ export const CustomerModule = () => {
                     if (ownerFilter) void fetchData();
                   }}
                 />
+              </div>
+            ) : formTab === "credit-occurrences" && editingCustomer ? (
+              <div className="flex-1 overflow-y-auto p-6">
+                <CustomerCreditOccurrenceHistory customerId={editingCustomer.id} />
               </div>
             ) : formTab === "people-links" && editingCustomer ? (
               <div className="flex-1 overflow-y-auto p-6">
