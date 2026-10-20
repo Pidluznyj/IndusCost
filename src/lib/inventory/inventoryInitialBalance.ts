@@ -192,7 +192,12 @@ export function buildInitialBalanceReportCsv(
   return lines.join("\n") + "\n";
 }
 
-/** Relatório CSV de saldos (físico/reservado/bloqueado/disponível). */
+/**
+ * Relatório CSV de saldos (físico/reservado/bloqueado/disponível).
+ * Contrato distinto do XLS/PDF consolidado: uma linha por almoxarifado/local,
+ * apenas registros de InventoryBalance. Não inclui itens sem saldo e não aplica
+ * `zeroBalanceMode`. Consumidores existentes devem continuar neste endpoint.
+ */
 export function buildBalancesReportCsv(
   rows: ReadonlyArray<{
     itemCode: string;

@@ -120,6 +120,7 @@ import { buildInventoryDashboard } from "@/src/lib/inventory/inventoryDashboard.
 import { proposeInventoryItemCode } from "@/src/lib/inventory/inventoryItemCodeSequence.js";
 import {
   buildInventoryItemsOrderBy,
+  parseInventoryBalanceReportQuery,
   parseInventoryBalancesListQuery,
   parseInventoryItemsListQuery,
   parseInventoryMovementsListQuery,
@@ -1496,9 +1497,10 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
   });
 
   // Relatório de saldos para análise de compra (mesmos filtros da consulta; somente leitura).
+  // `zeroBalanceMode` só vale nestas rotas; omitido = contrato legado.
   app.get("/api/inventory/balances/report", ...view, async (req, res) => {
     try {
-      const q = parseInventoryBalancesListQuery(req.query as Record<string, unknown>);
+      const q = parseInventoryBalanceReportQuery(req.query as Record<string, unknown>);
       res.json(await loadInventoryBalanceReport(prisma, q, new Date()));
     } catch (e: unknown) {
       console.error("GET /api/inventory/balances/report", e);
@@ -1508,7 +1510,7 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
 
   app.get("/api/inventory/balances/report.xlsx", ...view, async (req, res) => {
     try {
-      const q = parseInventoryBalancesListQuery(req.query as Record<string, unknown>);
+      const q = parseInventoryBalanceReportQuery(req.query as Record<string, unknown>);
       const report = await loadInventoryBalanceReport(prisma, q, new Date());
       const filename = inventoryBalanceReportFilename(report.generatedAt);
       res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
@@ -1520,6 +1522,9 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
     }
   });
 
+  // CSV operacional por almoxarifado/local: ledger de InventoryBalance, não o
+  // relatório consolidado. Não inclui itens sem registro de saldo e ignora
+  // `zeroBalanceMode` — contrato distinto do XLS/PDF, preservado para consumidores.
   app.get("/api/inventory/balances/export", ...view, async (req, res) => {
     try {
       const q = parseInventoryBalancesListQuery(req.query as Record<string, unknown>);

@@ -109,7 +109,7 @@ export function InventoryBalanceReportPrintDocument({
           <tbody>
             {report.rows.length === 0 ? (
               <tr>
-                <td colSpan={colSpan}>Nenhum item com saldo registrado para os filtros informados.</td>
+                <td colSpan={colSpan}>Nenhum item para os filtros informados.</td>
               </tr>
             ) : (
               report.rows.map((row) => (

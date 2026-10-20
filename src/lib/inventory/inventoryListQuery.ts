@@ -58,6 +58,25 @@ export type InventoryBalancesListQuery = {
   locationId: string | null;
 };
 
+/**
+ * Como o relatório de saldos trata itens com saldo físico consolidado igual a zero
+ * e itens cadastrados sem `InventoryBalance`.
+ *
+ * - `legacy`: omitir o parâmetro. Mantém o contrato antigo — saldos registrados,
+ *   inclusive zerados, sem itens só de cadastro.
+ * - `nonzero`: somente itens cujo saldo físico consolidado ≠ 0.
+ * - `including_zero`: positivos, negativos, zerados registrados e itens de cadastro
+ *   sem saldo, apresentados como 0.
+ */
+export const INVENTORY_BALANCE_REPORT_ZERO_MODES = ["legacy", "nonzero", "including_zero"] as const;
+export type InventoryBalanceReportZeroMode = (typeof INVENTORY_BALANCE_REPORT_ZERO_MODES)[number];
+export const INVENTORY_BALANCE_REPORT_UI_ZERO_MODES = ["nonzero", "including_zero"] as const;
+export type InventoryBalanceReportUiZeroMode = (typeof INVENTORY_BALANCE_REPORT_UI_ZERO_MODES)[number];
+
+export type InventoryBalanceReportQuery = Omit<InventoryBalancesListQuery, "page" | "pageSize" | "skip"> & {
+  zeroBalanceMode: InventoryBalanceReportZeroMode;
+};
+
 export type InventoryMovementsListQuery = {
   page: number;
   pageSize: number;
@@ -206,6 +225,36 @@ export function parseInventoryBalancesListQuery(
     hasQuarantine: parseBool(query.hasQuarantine),
     negativeStock: parseBool(query.negativeStock),
     locationId: optTrim(query.locationId),
+  };
+}
+
+export function parseInventoryBalanceReportZeroMode(value: unknown): InventoryBalanceReportZeroMode {
+  const raw = safeTrim(value);
+  if (raw === "nonzero" || raw === "including_zero") return raw;
+  return "legacy";
+}
+
+/** Query do relatório XLS/PDF. Ausência de `zeroBalanceMode` = comportamento legado. */
+export function parseInventoryBalanceReportQuery(
+  query: Record<string, unknown> = {}
+): InventoryBalanceReportQuery {
+  const parsed = parseInventoryBalancesListQuery(query);
+  return {
+    search: parsed.search,
+    itemId: parsed.itemId,
+    warehouseId: parsed.warehouseId,
+    itemType: parsed.itemType,
+    status: parsed.status,
+    family: parsed.family,
+    group: parsed.group,
+    belowMinimum: parsed.belowMinimum,
+    belowReorderPoint: parsed.belowReorderPoint,
+    hasReservation: parsed.hasReservation,
+    hasBlocked: parsed.hasBlocked,
+    hasQuarantine: parsed.hasQuarantine,
+    negativeStock: parsed.negativeStock,
+    locationId: parsed.locationId,
+    zeroBalanceMode: parseInventoryBalanceReportZeroMode(query.zeroBalanceMode),
   };
 }
 

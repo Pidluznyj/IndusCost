@@ -7,6 +7,7 @@ import {
   emptyInventoryDashboard,
 } from "./inventory/inventoryDashboard.server.js";
 import {
+  parseInventoryBalanceReportQuery,
   parseInventoryBalancesListQuery,
   parseInventoryItemsListQuery,
 } from "./inventory/inventoryListQuery.js";
@@ -286,6 +287,10 @@ describe("inventoryListQuery", () => {
     assert.equal(balances.page, 1);
     assert.equal(balances.hasReservation, false);
     assert.equal(balances.negativeStock, false);
+
+    const report = parseInventoryBalanceReportQuery({});
+    assert.equal(report.zeroBalanceMode, "legacy");
+    assert.equal(parseInventoryBalanceReportQuery({ zeroBalanceMode: "including_zero" }).zeroBalanceMode, "including_zero");
   });
 });
 

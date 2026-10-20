@@ -98,6 +98,9 @@ export function InventoryBalancesTab() {
   const [hasBlocked, setHasBlocked] = useState(() => readBoolParam(searchParams, "hasBlocked"));
   const [hasQuarantine, setHasQuarantine] = useState(() => readBoolParam(searchParams, "hasQuarantine"));
   const [negativeStock, setNegativeStock] = useState(() => readBoolParam(searchParams, "negativeStock"));
+  const [zeroBalanceMode, setZeroBalanceMode] = useState<"nonzero" | "including_zero">(() =>
+    searchParams.get("zeroBalanceMode") === "including_zero" ? "including_zero" : "nonzero"
+  );
 
   const [items, setItems] = useState<InventoryItemRow[]>([]);
   const [warehouses, setWarehouses] = useState<InventoryWarehouseRow[]>([]);
@@ -200,7 +203,7 @@ export function InventoryBalancesTab() {
     };
   }, [warehouseId]);
 
-  /** Filtros da tela, sem paginação — a consulta e o relatório usam os mesmos. */
+  /** Filtros da tela, sem paginação — a consulta paginada e o relatório usam os mesmos. */
   const filterQuery = useMemo(() => {
     const q = new URLSearchParams();
     appendQueryIfPresent(q, "search", search);
@@ -235,10 +238,17 @@ export function InventoryBalancesTab() {
     negativeStock,
   ]);
 
+  /** Extração XLS/PDF: mesmos filtros da tela + opção de itens zerados. A grade paginada não usa isto. */
+  const reportQuery = useMemo(() => {
+    const q = new URLSearchParams(filterQuery);
+    q.set("zeroBalanceMode", zeroBalanceMode);
+    return q.toString();
+  }, [filterQuery, zeroBalanceMode]);
+
   const downloadReportXlsx = async () => {
     setError(null);
     try {
-      const response = await fetch(`/api/inventory/balances/report.xlsx?${filterQuery}`, {
+      const response = await fetch(`/api/inventory/balances/report.xlsx?${reportQuery}`, {
         credentials: "include",
       });
       if (!response.ok) throw new Error("Não foi possível extrair a planilha de saldos.");
@@ -375,10 +385,26 @@ export function InventoryBalancesTab() {
             ...(locationId ? { locationId } : {}),
           }).toString()}`}
           className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+          title="CSV operacional por almoxarifado e local. Não usa o seletor de zerados do XLS/PDF e não inclui itens sem registro de saldo."
           data-testid="inventory-balances-export-link"
         >
           Exportar CSV
         </a>
+        <label className="inline-flex min-w-[220px] flex-col gap-0.5">
+          <span className="text-[11px] font-medium text-slate-600">Itens do relatório</span>
+          <select
+            className={inventoryFilterInputClass}
+            value={zeroBalanceMode}
+            onChange={(e) =>
+              setZeroBalanceMode(e.target.value === "including_zero" ? "including_zero" : "nonzero")
+            }
+            title="Aplica-se à extração Excel e PDF, não à consulta paginada"
+            data-testid="inventory-balances-report-zero-mode"
+          >
+            <option value="nonzero">Somente itens com saldo</option>
+            <option value="including_zero">Todos os itens, incluindo zerados</option>
+          </select>
+        </label>
         <button
           type="button"
           onClick={() => void downloadReportXlsx()}
@@ -392,7 +418,7 @@ export function InventoryBalancesTab() {
         <button
           type="button"
           onClick={() =>
-            navigate(`/inventory/balances/report/print${filterQuery ? `?${filterQuery}` : ""}`)
+            navigate(`/inventory/balances/report/print${reportQuery ? `?${reportQuery}` : ""}`)
           }
           className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
           title="Relatório de saldos por item, do maior para o menor, com os filtros desta tela"

@@ -7,10 +7,13 @@ import * as XLSX from "xlsx";
 import {
   buildInventoryBalanceReport,
   inventoryBalanceReportFilename,
+  inventoryBalanceReportNotes,
   type InventoryBalanceReportSourceLine,
 } from "./inventoryBalanceReport.js";
 import {
+  buildCatalogZeroItemsWhere,
   buildInventoryBalancesWhere,
+  canIncludeCatalogZeroItems,
   loadInventoryBalanceReport,
 } from "./inventoryBalanceReport.server.js";
 import {
@@ -19,7 +22,10 @@ import {
   INVENTORY_BALANCE_REPORT_COLUMNS,
   INVENTORY_BALANCE_REPORT_SHEETS,
 } from "./inventoryBalanceReportXlsx.js";
-import { parseInventoryBalancesListQuery } from "./inventoryListQuery.js";
+import {
+  parseInventoryBalanceReportQuery,
+  parseInventoryBalancesListQuery,
+} from "./inventoryListQuery.js";
 
 function read(path: string): string {
   return readFileSync(join(process.cwd(), path), "utf8");
@@ -216,9 +222,497 @@ describe("inventory balance report — carga", () => {
     const routes = read("src/lib/inventoryRoutes.ts");
     assert.match(routes, /app\.get\("\/api\/inventory\/balances\/report", \.\.\.view/);
     assert.match(routes, /app\.get\("\/api\/inventory\/balances\/report\.xlsx", \.\.\.view/);
+    assert.match(routes, /parseInventoryBalanceReportQuery/);
     const tab = read("src/components/inventory/InventoryBalancesTab.tsx");
-    assert.match(tab, /\/api\/inventory\/balances\/report\.xlsx\?\$\{filterQuery\}/);
+    assert.match(tab, /\/api\/inventory\/balances\/report\.xlsx\?\$\{reportQuery\}/);
     assert.match(tab, /\/inventory\/balances\/report\/print/);
+    assert.match(tab, /inventory-balances-report-zero-mode/);
+    assert.match(tab, /Somente itens com saldo/);
+    assert.match(tab, /Todos os itens, incluindo zerados/);
     assert.match(read("src/App.tsx"), /path="\/inventory\/balances\/report\/print"/);
+  });
+
+  it("CSV operacional permanece no contrato por local e ignora zeroBalanceMode", () => {
+    const routes = read("src/lib/inventoryRoutes.ts");
+    const start = routes.indexOf('app.get("/api/inventory/balances/export"');
+    const end = routes.indexOf('app.post("/api/inventory/balances/rebuild"');
+    const handler = routes.slice(start, end === -1 ? undefined : end);
+    const preamble = routes.slice(Math.max(0, start - 500), start);
+    assert.match(handler, /parseInventoryBalancesListQuery/);
+    assert.doesNotMatch(handler, /parseInventoryBalanceReportQuery/);
+    assert.match(preamble, /zeroBalanceMode/);
+    const tab = read("src/components/inventory/InventoryBalancesTab.tsx");
+    assert.match(tab, /inventory-balances-export-link/);
+    assert.match(tab, /Não usa o seletor de zerados/);
+  });
+
+  it("carga do relatório não grava saldo nem movimento", () => {
+    const server = read("src/lib/inventory/inventoryBalanceReport.server.ts");
+    assert.doesNotMatch(server, /inventoryBalance\.(create|update|upsert|delete)/);
+    assert.doesNotMatch(server, /inventoryMovement\.(create|update|upsert|delete)/);
+    assert.doesNotMatch(server, /inventoryItem\.(create|update|upsert|delete)/);
+  });
+});
+
+describe("inventory balance report — zeroBalanceMode", () => {
+  it("API sem parâmetro permanece legado: zerados registrados entram, cadastro sem saldo não", () => {
+    const omitted = parseInventoryBalanceReportQuery({ warehouseId: "w1" });
+    const empty = parseInventoryBalanceReportQuery({});
+    const unknown = parseInventoryBalanceReportQuery({ zeroBalanceMode: "all" });
+    assert.equal(omitted.zeroBalanceMode, "legacy");
+    assert.equal(empty.zeroBalanceMode, "legacy");
+    assert.equal(unknown.zeroBalanceMode, "legacy");
+    assert.equal(parseInventoryBalanceReportQuery({ zeroBalanceMode: "nonzero" }).zeroBalanceMode, "nonzero");
+    assert.equal(
+      parseInventoryBalanceReportQuery({ zeroBalanceMode: "including_zero" }).zeroBalanceMode,
+      "including_zero"
+    );
+    assert.match(inventoryBalanceReportNotes("legacy").join(" "), /não aparecem/);
+  });
+
+  it("nonzero exclui zero registrado e soma consolidada zero, preserva positivo e negativo", () => {
+    const report = buildInventoryBalanceReport({
+      generatedAt: GENERATED_AT,
+      zeroBalanceMode: "nonzero",
+      lines: [
+        line("pos", "ADM-POS", 12),
+        line("zero", "ADM-ZERO", 0),
+        line("neg", "ADM-NEG", -4),
+        line("net", "ADM-NET0", 8),
+        line("net", "ADM-NET0", -8),
+      ],
+      lastCountAtByItemId: new Map(),
+    });
+    assert.deepEqual(
+      report.rows.map((row) => [row.itemCode, row.physicalQuantity]),
+      [
+        ["ADM-POS", 12],
+        ["ADM-NEG", -4],
+      ]
+    );
+    assert.equal(report.zeroItems, 0);
+    assert.equal(report.filters.at(-1)?.value, "somente itens com saldo");
+  });
+
+  it("including_zero mantém positivo, negativo, zero registrado e soma consolidada zero", () => {
+    const report = buildInventoryBalanceReport({
+      generatedAt: GENERATED_AT,
+      zeroBalanceMode: "including_zero",
+      lines: [
+        line("pos", "ADM-POS", 12),
+        line("zero", "ADM-ZERO", 0),
+        line("neg", "ADM-NEG", -4),
+        line("net", "ADM-NET0", 8),
+        line("net", "ADM-NET0", -8),
+        line("cat", "ADM-NEW", 0, null, { description: "Grampeador novo" }),
+      ],
+      lastCountAtByItemId: new Map([["cat", new Date("2026-10-01T10:00:00.000Z")]]),
+    });
+    assert.deepEqual(
+      report.rows.map((row) => [row.itemCode, row.physicalQuantity]),
+      [
+        ["ADM-POS", 12],
+        ["ADM-NET0", 0],
+        ["ADM-NEW", 0],
+        ["ADM-ZERO", 0],
+        ["ADM-NEG", -4],
+      ]
+    );
+    assert.equal(report.zeroItems, 3);
+    assert.equal(report.rows.find((row) => row.itemCode === "ADM-NEW")?.description, "Grampeador novo");
+    assert.equal(report.rows.find((row) => row.itemCode === "ADM-NEW")?.lastCountAt, "2026-10-01T10:00:00.000Z");
+    assert.equal(report.filters.at(-1)?.value, "incluindo itens zerados");
+    assert.match(report.notes.join(" "), /itens cadastrados sem registro de saldo/);
+  });
+});
+
+type CatalogItem = {
+  id: string;
+  code: string;
+  description: string;
+  unit: string;
+  itemType: string;
+  status: "ACTIVE" | "INACTIVE";
+  family: string | null;
+  group: string | null;
+  controlsStock: boolean;
+  defaultWarehouseId: string | null;
+  minimumStock: number | null;
+  reorderPoint: number | null;
+};
+
+type BalanceRec = {
+  itemId: string;
+  warehouseId: string;
+  locationId: string | null;
+  physicalQuantity: string;
+  availableQuantity: string;
+  reservedQuantity: string;
+  blockedQuantity: string;
+  quarantineQuantity: string;
+  lastMovementAt: Date | null;
+};
+
+const WH_ADM = "wh-adm";
+const WH_IND = "wh-ind";
+const LOC_A = "loc-a";
+const LOC_B = "loc-b";
+
+function catalogItem(partial: Partial<CatalogItem> & Pick<CatalogItem, "id" | "code">): CatalogItem {
+  return {
+    description: `Item ${partial.code}`,
+    unit: "UN",
+    itemType: "ADMINISTRATIVE_SUPPLY",
+    status: "ACTIVE",
+    family: "Escritório",
+    group: "Papelaria",
+    controlsStock: true,
+    defaultWarehouseId: WH_ADM,
+    minimumStock: null,
+    reorderPoint: null,
+    ...partial,
+  };
+}
+
+function balanceRec(
+  itemId: string,
+  physical: number,
+  extra: Partial<BalanceRec> = {}
+): BalanceRec {
+  return {
+    itemId,
+    warehouseId: WH_ADM,
+    locationId: LOC_A,
+    physicalQuantity: String(physical),
+    availableQuantity: String(physical),
+    reservedQuantity: "0",
+    blockedQuantity: "0",
+    quarantineQuantity: "0",
+    lastMovementAt: physical === 0 ? null : new Date("2026-10-01T12:00:00.000Z"),
+    ...extra,
+  };
+}
+
+function containsInsensitive(value: string | null, clause: unknown): boolean {
+  if (!clause || typeof clause !== "object" || !("contains" in clause)) return true;
+  const needle = String((clause as { contains?: string }).contains ?? "").toLowerCase();
+  return (value ?? "").toLowerCase().includes(needle);
+}
+
+function itemMatchesWhere(item: CatalogItem, where: Record<string, unknown>): boolean {
+  if (where.controlsStock === true && !item.controlsStock) return false;
+  if (typeof where.id === "string" && item.id !== where.id) return false;
+  if (where.itemType && item.itemType !== where.itemType) return false;
+  if (where.status && item.status !== where.status) return false;
+  if (where.defaultWarehouseId && item.defaultWarehouseId !== where.defaultWarehouseId) return false;
+  if (where.family && !containsInsensitive(item.family, where.family)) return false;
+  if (where.group && !containsInsensitive(item.group, where.group)) return false;
+  if (Array.isArray(where.OR)) {
+    const ok = where.OR.some((entry: { code?: unknown; description?: unknown }) => {
+      if (entry.code) return containsInsensitive(item.code, entry.code);
+      if (entry.description) return containsInsensitive(item.description, entry.description);
+      return false;
+    });
+    if (!ok) return false;
+  }
+  return true;
+}
+
+function qtyGtZero(value: string, clause: unknown): boolean {
+  if (!clause || typeof clause !== "object" || !("gt" in clause)) return true;
+  return Number(value) > Number((clause as { gt: number }).gt);
+}
+
+function qtyLtZero(value: string, clause: unknown): boolean {
+  if (!clause || typeof clause !== "object" || !("lt" in clause)) return true;
+  return Number(value) < Number((clause as { lt: number }).lt);
+}
+
+function createReportFixtureDb() {
+  const items: CatalogItem[] = [
+    catalogItem({ id: "i-new", code: "ADM-NEW", description: "Grampeador novo" }),
+    catalogItem({ id: "i-fresh", code: "ADM-FRESH", description: "Item administrativo recém-cadastrado" }),
+    catalogItem({ id: "i-pos", code: "ADM-POS" }),
+    catalogItem({ id: "i-zero", code: "ADM-ZERO" }),
+    catalogItem({ id: "i-neg", code: "ADM-NEG" }),
+    catalogItem({ id: "i-multi", code: "ADM-MULTI" }),
+    catalogItem({ id: "i-net0", code: "ADM-NET0" }),
+    catalogItem({
+      id: "i-ind",
+      code: "IND-ONLY",
+      itemType: "RAW_MATERIAL",
+      family: "Insumos",
+      group: "Metais",
+      defaultWarehouseId: WH_IND,
+    }),
+    catalogItem({
+      id: "i-ind-cat",
+      code: "IND-CAT",
+      itemType: "RAW_MATERIAL",
+      family: "Insumos",
+      group: "Metais",
+      defaultWarehouseId: WH_IND,
+    }),
+    catalogItem({
+      id: "i-ppe",
+      code: "EPI-001",
+      itemType: "PPE",
+      family: "EPI",
+      group: "Proteção",
+    }),
+    catalogItem({ id: "i-old", code: "ADM-OLD", status: "INACTIVE" }),
+    catalogItem({ id: "i-nocontrol", code: "ADM-OFF", controlsStock: false }),
+  ];
+  const balances: BalanceRec[] = [
+    balanceRec("i-pos", 10),
+    balanceRec("i-zero", 0, { lastMovementAt: new Date("2026-09-01T12:00:00.000Z") }),
+    balanceRec("i-neg", -3),
+    balanceRec("i-multi", 4, { locationId: LOC_A }),
+    balanceRec("i-multi", 6, { locationId: LOC_B, lastMovementAt: new Date("2026-10-05T12:00:00.000Z") }),
+    balanceRec("i-net0", 5, { locationId: LOC_A }),
+    balanceRec("i-net0", -5, { locationId: LOC_B }),
+    balanceRec("i-ind", 8, { warehouseId: WH_IND, locationId: null }),
+    balanceRec("i-ppe", 2),
+  ];
+  const calls: { itemFindMany?: unknown; mutations: string[] } = { mutations: [] };
+
+  const itemsById = new Map(items.map((item) => [item.id, item]));
+
+  return {
+    calls,
+    db: {
+      inventoryBalance: {
+        findMany: async ({ where }: { where: Record<string, unknown> }) =>
+          balances
+            .filter((row) => {
+              if (where.itemId && row.itemId !== where.itemId) return false;
+              if (where.warehouseId && row.warehouseId !== where.warehouseId) return false;
+              if (where.locationId && row.locationId !== where.locationId) return false;
+              if (where.reservedQuantity && !qtyGtZero(row.reservedQuantity, where.reservedQuantity)) return false;
+              if (where.blockedQuantity && !qtyGtZero(row.blockedQuantity, where.blockedQuantity)) return false;
+              if (where.quarantineQuantity && !qtyGtZero(row.quarantineQuantity, where.quarantineQuantity)) {
+                return false;
+              }
+              if (Array.isArray(where.OR)) {
+                const ok = where.OR.some((entry: { physicalQuantity?: unknown; availableQuantity?: unknown }) => {
+                  if (entry.physicalQuantity) return qtyLtZero(row.physicalQuantity, entry.physicalQuantity);
+                  if (entry.availableQuantity) return qtyLtZero(row.availableQuantity, entry.availableQuantity);
+                  return false;
+                });
+                if (!ok) return false;
+              }
+              const item = itemsById.get(row.itemId);
+              if (!item) return false;
+              if (where.item && !itemMatchesWhere(item, where.item as Record<string, unknown>)) return false;
+              return true;
+            })
+            .map((row) => {
+              const item = itemsById.get(row.itemId)!;
+              return {
+                physicalQuantity: row.physicalQuantity,
+                availableQuantity: row.availableQuantity,
+                lastMovementAt: row.lastMovementAt,
+                item: {
+                  id: item.id,
+                  code: item.code,
+                  description: item.description,
+                  unit: item.unit,
+                  itemType: item.itemType,
+                  minimumStock: item.minimumStock,
+                  reorderPoint: item.reorderPoint,
+                },
+              };
+            }),
+        create: async () => {
+          calls.mutations.push("balance.create");
+        },
+        update: async () => {
+          calls.mutations.push("balance.update");
+        },
+      },
+      inventoryCountLine: {
+        findMany: async () => [
+          {
+            itemId: "i-new",
+            updatedAt: new Date("2026-10-02T08:00:00.000Z"),
+            currentObservation: { observedAt: new Date("2026-10-02T08:00:00.000Z") },
+          },
+        ],
+      },
+      inventoryWarehouse: {
+        findUnique: async ({ where }: { where: { id: string } }) =>
+          where.id === WH_ADM
+            ? { code: "ADMINISTRATIVO", name: "Estoque Administrativo" }
+            : { code: "INDUSTRIAL", name: "Industrial" },
+      },
+      inventoryLocation: {
+        findUnique: async ({ where }: { where: { id: string } }) =>
+          where.id === LOC_A ? { code: "A01", name: "Sala" } : { code: "B01", name: "Armário" },
+      },
+      inventoryItem: {
+        findUnique: async ({ where }: { where: { id: string } }) => itemsById.get(where.id) ?? null,
+        findMany: async ({ where }: { where: Record<string, unknown> }) => {
+          calls.itemFindMany = where;
+          return items.filter((item) => itemMatchesWhere(item, where));
+        },
+        create: async () => {
+          calls.mutations.push("item.create");
+        },
+      },
+    },
+  };
+}
+
+describe("inventory balance report — catálogo sem saldo", () => {
+  it("incluindo zerados traz cadastro ativo sem InventoryBalance no almoxarifado filtrado", async () => {
+    const { db, calls } = createReportFixtureDb();
+    const q = parseInventoryBalanceReportQuery({
+      warehouseId: WH_ADM,
+      status: "ACTIVE",
+      zeroBalanceMode: "including_zero",
+    });
+    const report = await loadInventoryBalanceReport(db as never, q, GENERATED_AT);
+    const codes = report.rows.map((row) => row.itemCode);
+
+    assert.ok(codes.includes("ADM-NEW"));
+    assert.ok(codes.includes("ADM-FRESH"));
+    assert.ok(codes.includes("ADM-POS"));
+    assert.ok(codes.includes("ADM-ZERO"));
+    assert.ok(codes.includes("ADM-NEG"));
+    assert.ok(codes.includes("ADM-MULTI"));
+    assert.ok(codes.includes("ADM-NET0"));
+    assert.ok(codes.includes("EPI-001"));
+    assert.ok(!codes.includes("IND-ONLY"));
+    assert.ok(!codes.includes("IND-CAT"));
+    assert.ok(!codes.includes("ADM-OLD"));
+    assert.ok(!codes.includes("ADM-OFF"));
+    assert.equal(codes.filter((code) => code === "ADM-MULTI").length, 1);
+    assert.equal(report.rows.find((row) => row.itemCode === "ADM-MULTI")?.physicalQuantity, 10);
+    assert.equal(report.rows.find((row) => row.itemCode === "ADM-NEW")?.physicalQuantity, 0);
+    assert.equal(report.rows.find((row) => row.itemCode === "ADM-NEW")?.lastMovementAt, null);
+    assert.equal(report.rows.find((row) => row.itemCode === "ADM-NEW")?.lastCountAt, "2026-10-02T08:00:00.000Z");
+    assert.equal(report.rows.find((row) => row.itemCode === "ADM-FRESH")?.lastCountAt, null);
+    assert.equal(report.filters.find((filter) => filter.label === "Saldos")?.value, "incluindo itens zerados");
+    assert.deepEqual(calls.itemFindMany, buildCatalogZeroItemsWhere(q));
+    assert.deepEqual(calls.mutations, []);
+  });
+
+  it("legado e somente com saldo não incluem item sem InventoryBalance", async () => {
+    const { db, calls } = createReportFixtureDb();
+    const legacy = await loadInventoryBalanceReport(
+      db as never,
+      parseInventoryBalanceReportQuery({ warehouseId: WH_ADM, status: "ACTIVE" }),
+      GENERATED_AT
+    );
+    const nonzero = await loadInventoryBalanceReport(
+      db as never,
+      parseInventoryBalanceReportQuery({
+        warehouseId: WH_ADM,
+        status: "ACTIVE",
+        zeroBalanceMode: "nonzero",
+      }),
+      GENERATED_AT
+    );
+
+    assert.ok(!legacy.rows.some((row) => row.itemCode === "ADM-NEW"));
+    assert.ok(legacy.rows.some((row) => row.itemCode === "ADM-ZERO"));
+    assert.ok(legacy.rows.some((row) => row.itemCode === "ADM-NET0"));
+    assert.equal(calls.itemFindMany, undefined);
+
+    const nonzeroCodes = nonzero.rows.map((row) => row.itemCode);
+    assert.deepEqual(
+      nonzeroCodes.sort(),
+      ["ADM-MULTI", "ADM-NEG", "ADM-POS", "EPI-001"].sort()
+    );
+    assert.ok(!nonzeroCodes.includes("ADM-ZERO"));
+    assert.ok(!nonzeroCodes.includes("ADM-NET0"));
+    assert.ok(!nonzeroCodes.includes("ADM-NEW"));
+  });
+
+  it("respeita tipo, família e grupo no modo completo", async () => {
+    const { db } = createReportFixtureDb();
+    const report = await loadInventoryBalanceReport(
+      db as never,
+      parseInventoryBalanceReportQuery({
+        warehouseId: WH_ADM,
+        status: "ACTIVE",
+        itemType: "PPE",
+        family: "EPI",
+        group: "Proteção",
+        zeroBalanceMode: "including_zero",
+      }),
+      GENERATED_AT
+    );
+    assert.deepEqual(
+      report.rows.map((row) => row.itemCode),
+      ["EPI-001"]
+    );
+  });
+
+  it("filtro de local não inventa endereço para item sem saldo", async () => {
+    const { db, calls } = createReportFixtureDb();
+    const q = parseInventoryBalanceReportQuery({
+      warehouseId: WH_ADM,
+      locationId: LOC_A,
+      status: "ACTIVE",
+      zeroBalanceMode: "including_zero",
+    });
+    assert.equal(canIncludeCatalogZeroItems(q), false);
+    const report = await loadInventoryBalanceReport(db as never, q, GENERATED_AT);
+    assert.equal(calls.itemFindMany, undefined);
+    assert.ok(!report.rows.some((row) => row.itemCode === "ADM-NEW"));
+    assert.ok(report.rows.some((row) => row.itemCode === "ADM-POS"));
+  });
+
+  it("reserva, bloqueio, quarentena, negativo e abaixo do mínimo não aceitam zero virtual", async () => {
+    const flags = ["hasReservation", "hasBlocked", "hasQuarantine", "negativeStock", "belowMinimum"] as const;
+    for (const flag of flags) {
+      const q = parseInventoryBalanceReportQuery({
+        warehouseId: WH_ADM,
+        [flag]: "true",
+        zeroBalanceMode: "including_zero",
+      });
+      assert.equal(canIncludeCatalogZeroItems(q), false, flag);
+    }
+    const { db, calls } = createReportFixtureDb();
+    const report = await loadInventoryBalanceReport(
+      db as never,
+      parseInventoryBalanceReportQuery({
+        warehouseId: WH_ADM,
+        negativeStock: "true",
+        zeroBalanceMode: "including_zero",
+      }),
+      GENERATED_AT
+    );
+    assert.equal(calls.itemFindMany, undefined);
+    assert.ok(report.rows.every((row) => row.physicalQuantity < 0 || row.itemCode === "ADM-NET0" || row.itemCode === "ADM-NEG"));
+    assert.ok(!report.rows.some((row) => row.itemCode === "ADM-NEW"));
+  });
+
+  it("XLS e PDF consomem a mesma população consolidada", async () => {
+    const { db } = createReportFixtureDb();
+    const report = await loadInventoryBalanceReport(
+      db as never,
+      parseInventoryBalanceReportQuery({
+        warehouseId: WH_ADM,
+        status: "ACTIVE",
+        zeroBalanceMode: "including_zero",
+      }),
+      GENERATED_AT
+    );
+    const workbook = XLSX.read(await buildInventoryBalanceReportXlsx(report), { type: "buffer" });
+    const sheet = workbook.Sheets[INVENTORY_BALANCE_REPORT_SHEETS[0]];
+    const grid = XLSX.utils.sheet_to_json<(string | number)[]>(sheet, { header: 1, raw: true, defval: "" });
+    const xlsCodes = grid
+      .slice(5, 5 + report.rows.length)
+      .map((row) => String(row[0]));
+    assert.deepEqual(xlsCodes, report.rows.map((row) => row.itemCode));
+    assert.match(String(grid[2][0]), /Saldos: incluindo itens zerados/);
+
+    const print = read("src/components/inventory/InventoryBalanceReportPrintDocument.tsx");
+    assert.match(print, /report\.rows\.map/);
+    assert.match(print, /report\.filters\.map/);
+    assert.match(print, /report\.notes\.map/);
+    assert.match(print, /Nenhum item para os filtros informados/);
   });
 });

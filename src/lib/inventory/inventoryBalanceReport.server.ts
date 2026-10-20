@@ -1,22 +1,34 @@
 /**
  * Carga do relatório de saldos de estoque. Somente leitura.
  * Usa os mesmos filtros da consulta de saldos (Estoque › Saldos).
+ * Não cria, atualiza nem exclui InventoryBalance / InventoryMovement.
  */
 import type { Prisma, PrismaClient } from "@prisma/client";
 import {
   buildInventoryBalanceReport,
   type InventoryBalanceReport,
   type InventoryBalanceReportFilter,
+  type InventoryBalanceReportSourceLine,
 } from "./inventoryBalanceReport.js";
 import { INVENTORY_ITEM_TYPE_LABELS } from "./inventoryItemTypeLabels.js";
-import type { InventoryBalancesListQuery } from "./inventoryListQuery.js";
+import type {
+  InventoryBalanceReportQuery,
+  InventoryBalanceReportZeroMode,
+  InventoryBalancesListQuery,
+} from "./inventoryListQuery.js";
 import { inventoryDec, inventoryDecOrNull } from "./inventorySerialization.server.js";
 
 type BalanceFilterQuery = Omit<InventoryBalancesListQuery, "page" | "pageSize" | "skip">;
 
-/** Filtro de saldos compartilhado entre a consulta (Estoque › Saldos) e o relatório. */
-export function buildInventoryBalancesWhere(q: BalanceFilterQuery): Prisma.InventoryBalanceWhereInput {
-  const itemWhere: Prisma.InventoryItemWhereInput = {
+export type InventoryBalanceReportLoadQuery = BalanceFilterQuery & {
+  zeroBalanceMode?: InventoryBalanceReportZeroMode;
+};
+
+/** Filtros de cadastro do item compartilhados entre saldo e catálogo. */
+export function buildInventoryItemWhereFromBalanceQuery(
+  q: BalanceFilterQuery
+): Prisma.InventoryItemWhereInput {
+  return {
     ...(q.itemType ? { itemType: q.itemType } : {}),
     ...(q.status ? { status: q.status } : {}),
     ...(q.family ? { family: { contains: q.family, mode: "insensitive" } } : {}),
@@ -30,6 +42,11 @@ export function buildInventoryBalancesWhere(q: BalanceFilterQuery): Prisma.Inven
         }
       : {}),
   };
+}
+
+/** Filtro de saldos compartilhado entre a consulta (Estoque › Saldos) e o relatório. */
+export function buildInventoryBalancesWhere(q: BalanceFilterQuery): Prisma.InventoryBalanceWhereInput {
+  const itemWhere = buildInventoryItemWhereFromBalanceQuery(q);
 
   return {
     ...(q.itemId ? { itemId: q.itemId } : {}),
@@ -44,6 +61,36 @@ export function buildInventoryBalancesWhere(q: BalanceFilterQuery): Prisma.Inven
         }
       : {}),
     ...(Object.keys(itemWhere).length ? { item: itemWhere } : {}),
+  };
+}
+
+/**
+ * Itens só de cadastro (sem InventoryBalance) só entram no modo que inclui zerados,
+ * e nunca para satisfazer filtro de local, reserva, bloqueio, quarentena, negativo
+ * ou abaixo do mínimo/reposição — esses exigem evidência de saldo inexistente.
+ */
+export function canIncludeCatalogZeroItems(q: InventoryBalanceReportLoadQuery): boolean {
+  return (
+    q.zeroBalanceMode === "including_zero" &&
+    !q.locationId &&
+    !q.hasReservation &&
+    !q.hasBlocked &&
+    !q.hasQuarantine &&
+    !q.negativeStock &&
+    !q.belowMinimum &&
+    !q.belowReorderPoint
+  );
+}
+
+export function buildCatalogZeroItemsWhere(
+  q: InventoryBalanceReportLoadQuery
+): Prisma.InventoryItemWhereInput {
+  const itemWhere = buildInventoryItemWhereFromBalanceQuery(q);
+  return {
+    controlsStock: true,
+    ...itemWhere,
+    ...(q.itemId ? { id: q.itemId } : {}),
+    ...(q.warehouseId ? { defaultWarehouseId: q.warehouseId } : {}),
   };
 }
 
@@ -96,9 +143,11 @@ async function describeFilters(db: ReportDb, q: BalanceFilterQuery): Promise<Inv
 
 export async function loadInventoryBalanceReport(
   db: ReportDb,
-  q: BalanceFilterQuery,
+  q: InventoryBalanceReportLoadQuery | InventoryBalanceReportQuery | BalanceFilterQuery,
   generatedAt = new Date()
 ): Promise<InventoryBalanceReport> {
+  const zeroBalanceMode: InventoryBalanceReportZeroMode =
+    "zeroBalanceMode" in q && q.zeroBalanceMode ? q.zeroBalanceMode : "legacy";
   const balances = await db.inventoryBalance.findMany({
     where: buildInventoryBalancesWhere(q),
     select: {
@@ -129,7 +178,45 @@ export async function loadInventoryBalanceReport(
     return true;
   });
 
-  const itemIds = [...new Set(filtered.map((row) => row.item.id))];
+  const lines: InventoryBalanceReportSourceLine[] = filtered.map((row) => ({
+    itemId: row.item.id,
+    code: row.item.code,
+    description: row.item.description,
+    unit: row.item.unit,
+    itemType: row.item.itemType,
+    physicalQuantity: inventoryDec(row.physicalQuantity),
+    lastMovementAt: row.lastMovementAt,
+  }));
+
+  const seenItemIds = new Set(lines.map((line) => line.itemId));
+
+  if (canIncludeCatalogZeroItems({ ...q, zeroBalanceMode })) {
+    const catalogItems = await db.inventoryItem.findMany({
+      where: buildCatalogZeroItemsWhere({ ...q, zeroBalanceMode }),
+      select: {
+        id: true,
+        code: true,
+        description: true,
+        unit: true,
+        itemType: true,
+      },
+    });
+    for (const item of catalogItems) {
+      if (seenItemIds.has(item.id)) continue;
+      seenItemIds.add(item.id);
+      lines.push({
+        itemId: item.id,
+        code: item.code,
+        description: item.description,
+        unit: item.unit,
+        itemType: item.itemType,
+        physicalQuantity: 0,
+        lastMovementAt: null,
+      });
+    }
+  }
+
+  const itemIds = [...seenItemIds];
   const countLines =
     itemIds.length === 0
       ? []
@@ -157,17 +244,10 @@ export async function loadInventoryBalanceReport(
   }
 
   return buildInventoryBalanceReport({
-    lines: filtered.map((row) => ({
-      itemId: row.item.id,
-      code: row.item.code,
-      description: row.item.description,
-      unit: row.item.unit,
-      itemType: row.item.itemType,
-      physicalQuantity: inventoryDec(row.physicalQuantity),
-      lastMovementAt: row.lastMovementAt,
-    })),
+    lines,
     lastCountAtByItemId,
     filters: await describeFilters(db, q),
     generatedAt,
+    zeroBalanceMode,
   });
 }
