@@ -255,6 +255,7 @@ export function CreditIntelligenceSourceCards({
   ieptbValidUntil,
   complete,
   ieptbEnabled,
+  canConsult = false,
   canQuery,
   onViewQuod,
   onViewIeptb,
@@ -276,6 +277,7 @@ export function CreditIntelligenceSourceCards({
   ieptbValidUntil: string | null;
   complete: boolean;
   ieptbEnabled: boolean;
+  canConsult?: boolean;
   canQuery: boolean;
   onViewQuod: () => void;
   onViewIeptb: () => void;
@@ -299,10 +301,16 @@ export function CreditIntelligenceSourceCards({
           <h3 className="text-xs font-bold uppercase tracking-wider text-slate-600">Inteligência externa de crédito</h3>
           {!complete ? (
             <p className="text-xs text-amber-800">
-              Análise completa indisponível: uma das fontes obrigatórias está ausente ou desatualizada.
+              {canConsult
+                ? "Análise completa indisponível: uma das fontes obrigatórias está ausente ou desatualizada."
+                : "Análise completa ainda não consultada. A consulta paga é feita pelo Super Admin."}
             </p>
           ) : (
-            <p className="text-xs text-slate-600">Análise completa armazenada. Nova cobrança: R$ 0,00, salvo reconsulta antecipada.</p>
+            <p className="text-xs text-slate-600">
+              {canConsult
+                ? "Análise completa armazenada. Nova cobrança: R$ 0,00, salvo reconsulta antecipada."
+                : "Análise completa armazenada."}
+            </p>
           )}
         </div>
       </div>
@@ -353,25 +361,27 @@ export function CreditIntelligenceSourceCards({
           </button>
         </article>
       </div>
-      <div className="flex flex-wrap gap-2">
-        <button
-          type="button"
-          className="rounded bg-slate-900 px-3 py-2 text-xs text-white disabled:opacity-40"
-          disabled={!canQuery || !ieptbEnabled}
-          onClick={onRequestPackage}
-          data-testid="package-request-paid"
-        >
-          Consultar risco completo — QUOD + Protestos Brasil
-        </button>
-        {complete ? (
-          <button type="button" className="rounded border px-3 py-2 text-xs" onClick={onForceRefresh} data-testid="package-force-refresh">
-            Atualizar análise
+      {canConsult ? (
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            className="rounded bg-slate-900 px-3 py-2 text-xs text-white disabled:opacity-40"
+            disabled={!canQuery || !ieptbEnabled}
+            onClick={onRequestPackage}
+            data-testid="package-request-paid"
+          >
+            Consultar risco completo — QUOD + Protestos Brasil
           </button>
-        ) : null}
-        {!ieptbEnabled ? (
-          <p className="text-xs text-slate-500">Protestos nacionais ainda não habilitados. O dossiê QUOD permanece disponível.</p>
-        ) : null}
-      </div>
+          {complete ? (
+            <button type="button" className="rounded border px-3 py-2 text-xs" onClick={onForceRefresh} data-testid="package-force-refresh">
+              Atualizar análise
+            </button>
+          ) : null}
+          {!ieptbEnabled ? (
+            <p className="text-xs text-slate-500">Protestos nacionais ainda não habilitados. O dossiê QUOD permanece disponível.</p>
+          ) : null}
+        </div>
+      ) : null}
     </section>
   );
 }

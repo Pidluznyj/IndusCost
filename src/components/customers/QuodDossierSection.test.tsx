@@ -97,5 +97,7 @@ describe("confirmação do dossiê QUOD", () => {
     assert.equal(panel.includes("crypto.randomUUID()"), false);
     assert.match(panel, /generateIdempotencyKey\(\)/);
     assert.match(panel, /submitting/);
+    assert.equal(panel.includes("if (!isSuperAdmin || !customerId)"), false);
+    assert.match(panel, /canConsult=\{isSuperAdmin\}/);
   });
 });

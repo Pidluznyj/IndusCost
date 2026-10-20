@@ -94,6 +94,7 @@ function civilInstant(year: number, month: number, day: number): Date {
   return new Date(utc);
 }
 
+/** Só SUPER_ADMIN dispara consulta paga QUOD/IEPTB. A leitura do resultado é autenticada. */
 export function canAccessQuodDossier(user: { role?: string | null } | null | undefined): boolean {
   return user?.role === "SUPER_ADMIN";
 }
