@@ -66,6 +66,7 @@ export type TrackingRow = {
   eligibility: string;
   isLeader: boolean;
   selfAssignmentId: string | null;
+  invite: { status: "NONE" | "ACTIVE" | "REVOKED" | "LOCKED" | "EXPIRED"; delivered: boolean; accessed: boolean };
   journeyStarted: boolean;
   journeyDone: boolean;
   obligations: TrackingObligation[];
@@ -421,6 +422,9 @@ export type IssuedInvite = { participantId: string; employeeName: string; roleNa
 export const issuePerformanceInvite = (assignmentId: string) => post<IssuedInvite>(`${BASE}/assignments/${assignmentId}/invites`);
 export const issuePerformanceInvitesBatch = (cycleId: string, input: { participantIds?: string[]; onlyMissing: boolean }) =>
   post<{ issued: IssuedInvite[]; skipped: number }>(`${BASE}/cycles/${cycleId}/invites`, input);
+export const markPerformanceInviteDelivered = (assignmentId: string) => post<{ inviteId: string }>(`${BASE}/assignments/${assignmentId}/invites/delivered`);
+export type CycleException = { at: string; kind: string; label: string; person: string | null; reason: string | null; actorUserId: string | null };
+export const fetchCycleExceptions = (cycleId: string) => json<{ exceptions: CycleException[] }>(`${BASE}/cycles/${cycleId}/exceptions`);
 export const revokePerformanceInvite = (assignmentId: string, reason: string) => post<{ revoked: number }>(`${BASE}/assignments/${assignmentId}/invites/revoke`, { reason });
 export const openAssistedPerformance = (assignmentId: string, reason: string) => post<{ sessionToken: string }>(`${BASE}/assignments/${assignmentId}/assist`, { reason });
 

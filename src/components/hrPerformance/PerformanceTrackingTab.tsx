@@ -4,13 +4,16 @@
  * resposta chega a esta tela (o servidor monta o quadro sem ler respostas).
  */
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Download, RefreshCw, Send, ShieldOff } from "lucide-react";
+import { Download, HandMetal, RefreshCw, Send, ShieldOff } from "lucide-react";
 import { OverlayBadge, type OverlayBadgeTone } from "@/src/components/ui/overlay";
 import { CYCLE_STATUS_LABELS, type CycleStatus } from "@/src/lib/hrPerformance/performanceDomain";
 import {
+  fetchCycleExceptions,
   fetchPerformanceCycles,
   fetchTrackingBoard,
   issuePerformanceInvite,
+  markPerformanceInviteDelivered,
+  type CycleException,
   revokePerformanceInvite,
   trackingExportUrl,
   type CoverageRow,
@@ -109,6 +112,7 @@ export function PerformanceTrackingTab({ cycleId, caps, onSelectCycle, onToast }
   const [filters, setFilters] = useState<TrackingFilterInput>({});
   const [busy, setBusy] = useState<string | null>(null);
   const [lastIssued, setLastIssued] = useState<{ name: string; url: string; otp: string } | null>(null);
+  const [exceptions, setExceptions] = useState<CycleException[] | null>(null);
 
   useEffect(() => {
     void fetchPerformanceCycles()
@@ -124,6 +128,7 @@ export function PerformanceTrackingTab({ cycleId, caps, onSelectCycle, onToast }
     try {
       setBoard(await fetchTrackingBoard(current, filters));
       setError(null);
+      fetchCycleExceptions(current).then((r) => setExceptions(r.exceptions)).catch(() => setExceptions(null));
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Falha ao carregar o acompanhamento.");
     }
@@ -189,7 +194,7 @@ export function PerformanceTrackingTab({ cycleId, caps, onSelectCycle, onToast }
           <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-6" data-testid="perf-tracking-kpis">
             <KpiTile label="Elegíveis" value={i.eligible} testId="perf-kpi-eligible" />
             <KpiTile label="Convites gerados" value={i.invitesGenerated} hint={`${i.invitesAccessed} acessado(s) com código`} testId="perf-kpi-invites" />
-            <KpiTile label="Convites entregues" value="—" hint="Sem confirmação confiável de entrega" testId="perf-kpi-delivered" />
+            <KpiTile label="Convites entregues" value={i.invitesDelivered ?? 0} hint="Registrados pelo RH ao entregar em mãos" testId="perf-kpi-delivered" />
             <KpiTile label="Pesquisas iniciadas" value={i.surveysStarted} testId="perf-kpi-started" />
             <KpiTile label="Pesquisas concluídas" value={i.surveysCompleted} tone="positive" testId="perf-kpi-completed" />
             <KpiTile label="Participantes pendentes" value={i.participantsPending} tone={i.participantsPending ? "warning" : "neutral"} testId="perf-kpi-pending" />
@@ -281,17 +286,34 @@ export function PerformanceTrackingTab({ cycleId, caps, onSelectCycle, onToast }
                           <td className="px-3 py-2 text-right">
                             {canReissue ? (
                               <div className="flex flex-col items-end gap-1">
+                                {row.invite.status === "ACTIVE" && !row.invite.delivered && !row.invite.accessed ? (
+                                  <button
+                                    type="button"
+                                    className={BTN_GHOST}
+                                    disabled={busy !== null}
+                                    onClick={() =>
+                                      void act(`deliver-${row.participantId}`, async () => {
+                                        await markPerformanceInviteDelivered(row.selfAssignmentId!);
+                                        onToast(`Entrega registrada para ${row.employeeName}`);
+                                      })
+                                    }
+                                    data-testid={`perf-tracking-deliver-${row.employeeName}`}
+                                  >
+                                    <HandMetal className="h-3.5 w-3.5" aria-hidden /> Entreguei
+                                  </button>
+                                ) : null}
                                 <button
                                   type="button"
                                   className={BTN_GHOST}
                                   disabled={busy !== null}
-                                  onClick={() =>
+                                  onClick={() => {
+                                    if (row.invite.status === "ACTIVE" && !window.confirm(`Reemitir o convite de ${row.employeeName}? A folha anterior deixa de valer na hora. Avise a pessoa se ela já recebeu.`)) return;
                                     void act(`issue-${row.participantId}`, async () => {
                                       const issued = await issuePerformanceInvite(row.selfAssignmentId!);
                                       setLastIssued({ name: row.employeeName, url: issued.url, otp: issued.otp });
                                       onToast("Convite reemitido; o anterior deixou de valer");
-                                    })
-                                  }
+                                    });
+                                  }}
                                   data-testid={`perf-tracking-reissue-${row.employeeName}`}
                                 >
                                   <Send className="h-3.5 w-3.5" aria-hidden /> Reemitir
@@ -331,6 +353,26 @@ export function PerformanceTrackingTab({ cycleId, caps, onSelectCycle, onToast }
             <CoverageTable title="Cobertura por setor" rows={board.coverage.byDepartment} testId="perf-tracking-coverage-department" />
             <CoverageTable title="Cobertura por diretoria" rows={board.coverage.byDirectorate} testId="perf-tracking-coverage-directorate" />
           </div>
+          {exceptions ? (
+            <section className={`${PANEL} p-4`} data-testid="perf-tracking-exceptions">
+              <p className="mb-1 text-sm font-semibold">Exceções deste ciclo ({exceptions.length})</p>
+              <p className="mb-2 text-xs text-muted-foreground">Tudo que o RH decidiu fora da regra, com motivo. Para o comitê e para a auditoria; sem notas.</p>
+              {exceptions.length === 0 ? (
+                <p className="text-sm text-muted-foreground">Nenhuma exceção até agora.</p>
+              ) : (
+                <ul className="divide-y divide-border text-sm">
+                  {exceptions.map((e, idx) => (
+                    <li key={idx} className="flex flex-wrap items-baseline gap-x-2 py-1.5">
+                      <span className="text-xs text-muted-foreground">{dateBr(e.at)}</span>
+                      <span className="font-medium">{e.label}</span>
+                      {e.person ? <span>· {e.person}</span> : null}
+                      {e.reason ? <span className="text-muted-foreground">· {e.reason}</span> : null}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+          ) : null}
           <p className="text-xs text-muted-foreground">
             Prazos: autoavaliação e etapas de liderança até {dateBr(board.cycle.selfDueAt)}; avaliações de líderes até {dateBr(board.cycle.leaderDueAt)}. “Vencida” = prazo passado sem envio,
             ou coleta encerrada sem envio. Exceções (troca de líder, elegibilidade, calibração sem fonte) ficam na aba Ciclos e na Calibração, com motivo e auditoria.

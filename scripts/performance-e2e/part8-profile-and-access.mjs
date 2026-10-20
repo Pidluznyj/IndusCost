@@ -18,7 +18,15 @@ try {
   await sleep(500);
   const text = await hr.eval(`document.querySelector('[data-testid="people-performance-history"]').innerText`);
   await hr.shot("39-ficha-colaborador-historico");
-  step("39 histórico na ficha do colaborador (mesmo registro de Pessoas)", /Ciclo piloto 2026-S2/.test(text) && /Desempenho alto · Potencial médio/.test(text), text.split("\n").slice(0, 3).join(" / "));
+  // Ciclo de teste nunca entra na ficha oficial; o mesmo registro (rota da ficha) devolve o resultado rotulado só com includeNonOfficial.
+  const employeeId = await hr.eval(`fetch("/api/hr/performance/directory?q=" + encodeURIComponent("[DEMO] Ana Souza")).then(r => r.json()).then(d => d.employees.find(e => e.name === "[DEMO] Ana Souza").id)`);
+  const labeled = await hr.eval(`fetch("/api/hr/performance/employees/${employeeId}/history?includeNonOfficial=1").then(r => r.json())`);
+  const row = labeled.cycles?.find((c) => c.cycleName === "Ciclo piloto 2026-S2");
+  step(
+    "39 ficha do colaborador: ciclo de teste fora do histórico oficial e rotulado na consulta do RH",
+    !/Ciclo piloto 2026-S2/.test(text) && row?.quadrant === "Desempenho alto · Potencial médio" && row?.classification === "TEST",
+    `${text.split("\n").slice(0, 2).join(" / ")} · rotulado=${JSON.stringify(row ?? {}).slice(0, 120)}`
+  );
 
   // usuário desativado perde acesso mesmo com sessão aberta
   const leaderCtx = await browser.newContext();

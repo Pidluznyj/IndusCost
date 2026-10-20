@@ -66,12 +66,15 @@ export function cycleReadiness(db: PerformanceDatabase, cycle: CycleRecord, ctx:
     if (!p.managerId || p.managerId === p.employeeId || byEmployee.has(p.managerId)) continue;
     outside.set(p.managerId, [...(outside.get(p.managerId) ?? []), p]);
   }
+  // Sem 180° a equipe não avalia o líder: ele só avalia (pela Minha equipe) e pode ficar fora. Com 180°, fora do ciclo ele escapa da avaliação.
   if (outside.size > 0) {
     issues.push({
       code: "LEADER_OUTSIDE_CYCLE",
-      severity: "BLOCK",
+      severity: cycle.leadershipModelId ? "BLOCK" : "WARN",
       title: `${outside.size} líder(es) fora do ciclo`,
-      message: "Quem lidera pessoas do ciclo precisa participar: a equipe avalia o líder e o líder é avaliado. Inclua os líderes com um clique.",
+      message: cycle.leadershipModelId
+        ? "Quem lidera pessoas do ciclo precisa participar: a equipe avalia o líder e o líder é avaliado. Inclua os líderes com um clique."
+        : "Estes líderes avaliam a equipe, mas não são avaliados neste ciclo (sem 180°). Se quiser que participem, inclua-os com um clique.",
       action: "INCLUDE_LEADERS",
       people: [...outside.entries()].map(([managerId, team]) => ({
         participantId: null,

@@ -14,6 +14,7 @@ import { buildPerformanceScope, type PerformanceAccessScope, type PerformanceSco
 import { canSeeResultOf, NO_CAPS, resolvePerformanceCaps, type PerformanceCapabilityKey, type PerformanceCaps } from "./performancePermissions.js";
 import { redactCalibrationQueue, redactDashboard, redactLeadershipRows, redactWorkspace } from "./performanceDisclosure.js";
 import { evaluatorStats, personDossier } from "./performanceDossier.js";
+import { cycleExceptions } from "./performanceExceptions.js";
 import { buildHierarchyPreview, isInclusionMode, resolveInclusionScope, type HierarchyReader, type InclusionMode } from "./performanceHierarchyInclusion.js";
 import { cycleReadiness, readinessBlocked, type ReadinessContext } from "./performanceReadiness.js";
 import { OBLIGATION_STATUSES, trackingBoard, trackingCsv, type ObligationStatus, type OrgUnits, type TrackingModality } from "./performanceTracking.js";
@@ -66,6 +67,7 @@ import {
   issueInvite,
   issueInvitesBatch,
   issueReport,
+  markInviteDelivered,
   leaderQueue,
   moveDraftQuestion,
   openAssisted,
@@ -1028,6 +1030,20 @@ export function registerPerformanceRoutes(expressApp: express.Application, deps:
     const actorUserId = await deps.actorUserId(req);
     const { scope } = await scopeOf(req);
     await mutateAdmin(deps.store, res, (db) => issueInvite(db, { assignmentId: req.params.id, actorUserId, scope }, deps.options), 201);
+  });
+
+  app.post("/api/hr/performance/assignments/:id/invites/delivered", ...invites, async (req, res) => {
+    const actorUserId = await deps.actorUserId(req);
+    const { scope } = await scopeOf(req);
+    await mutateAdmin(deps.store, res, (db) => markInviteDelivered(db, { assignmentId: req.params.id, actorUserId, scope }, deps.options));
+  });
+
+  /** Exceções do ciclo (motivo e autor), só pela auditoria: nada de nota nem comentário. */
+  app.get("/api/hr/performance/cycles/:id/exceptions", ...tracking, async (req, res) => {
+    const db = await deps.store.read();
+    noStore(res);
+    if (!db.cycles.some((c) => c.id === req.params.id)) return res.status(404).json({ error: "NOT_FOUND", message: "Ciclo não encontrado." });
+    res.json({ exceptions: cycleExceptions(db, req.params.id) });
   });
 
   app.post("/api/hr/performance/assignments/:id/invites/revoke", ...invites, async (req, res) => {

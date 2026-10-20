@@ -77,7 +77,22 @@ function inviteReason(db: PerformanceDatabase, assignment: AssignmentRecord, tod
   if (last.locked) return "Convite bloqueado por tentativas de código";
   if (last.expiresAt.slice(0, 10) < today) return "Convite vencido";
   const accessed = db.sessions.some((s) => s.inviteId === last.id && s.phase === "VERIFIED");
-  return accessed ? "Convite acessado, sem envio" : "Convite emitido, ainda não acessado";
+  if (accessed) return "Convite acessado, sem envio";
+  return inviteDelivered(db, last.id) ? "Convite entregue, ainda não acessado" : "Convite emitido, ainda não entregue";
+}
+
+/** Entrega registrada pelo RH (auditoria `INVITE_DELIVERED`). */
+export function inviteDelivered(db: PerformanceDatabase, inviteId: string): boolean {
+  return db.audits.some((a) => a.action === "INVITE_DELIVERED" && a.entityId === inviteId);
+}
+
+/** Situação do convite da autoavaliação, para a central agir (entregar, reemitir, revogar). */
+export function inviteStateOf(db: PerformanceDatabase, assignmentId: string | null, today: string): { status: "NONE" | "ACTIVE" | "REVOKED" | "LOCKED" | "EXPIRED"; delivered: boolean; accessed: boolean } {
+  if (!assignmentId) return { status: "NONE", delivered: false, accessed: false };
+  const last = db.invites.filter((i) => i.assignmentId === assignmentId).sort((a, b) => a.createdAt.localeCompare(b.createdAt)).at(-1);
+  if (!last) return { status: "NONE", delivered: false, accessed: false };
+  const status = last.revokedAt ? "REVOKED" : last.locked ? "LOCKED" : last.expiresAt.slice(0, 10) < today ? "EXPIRED" : "ACTIVE";
+  return { status, delivered: inviteDelivered(db, last.id), accessed: db.sessions.some((s) => s.inviteId === last.id && s.phase === "VERIFIED") };
 }
 
 function taskObligation(
@@ -241,6 +256,7 @@ export function trackingBoard(db: PerformanceDatabase, cycleId: string, filters:
       eligibility: participant.eligibility,
       isLeader: participant.isLeader,
       selfAssignmentId: activeAssignment(db, participant.id, "SELF")?.id ?? null,
+      invite: inviteStateOf(db, activeAssignment(db, participant.id, "SELF")?.id ?? null, today),
       journeyStarted: journey.some((a) => a.status !== "NOT_STARTED"),
       journeyDone: journey.length > 0 && journey.every((a) => a.status === "SUBMITTED"),
       obligations,
@@ -271,8 +287,8 @@ export function trackingBoard(db: PerformanceDatabase, cycleId: string, filters:
     indicators: {
       eligible: eligibleRows.length,
       invitesGenerated: invitedTasks.length,
-      /** Não há confirmação confiável de entrega (QR impresso, entregue em mãos): fica nulo. */
-      invitesDelivered: null as number | null,
+      /** Entrega registrada pelo RH ("entreguei em mãos"); não é confirmação do aparelho. */
+      invitesDelivered: eligibleRows.filter((r) => r.invite.delivered).length,
       invitesAccessed: accessedTasks.length,
       surveysStarted: eligibleRows.filter((r) => r.journeyStarted).length,
       surveysCompleted: eligibleRows.filter((r) => r.journeyDone).length,

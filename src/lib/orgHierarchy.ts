@@ -86,7 +86,8 @@ export type ManagerResolutionWarning =
   | "EXPLICIT_INACTIVE_IGNORED"
   | "EXPLICIT_CYCLE_IGNORED"
   | "LEADER_ALSO_MEMBER"
-  | "PARENT_UNIT_INACTIVE";
+  | "PARENT_UNIT_INACTIVE"
+  | "LOWER_UNIT_CHAIN_IGNORED";
 
 export type ManagerCandidate = { managerId: string | null; managerName: string | null; via: OrgUnitRef; status: "RESOLVED" | "TOP" };
 
@@ -151,6 +152,7 @@ export const MANAGER_WARNING_LABELS: Record<ManagerResolutionWarning, string> = 
   EXPLICIT_CYCLE_IGNORED: "O gestor do cadastro formaria um ciclo; o valor foi ignorado.",
   LEADER_ALSO_MEMBER: "A pessoa lidera uma unidade e ainda consta como membro de departamento; vale a liderança.",
   PARENT_UNIT_INACTIVE: "A unidade superior está inativa; a cadeia termina aqui.",
+  LOWER_UNIT_CHAIN_IGNORED: "A pessoa lidera uma diretoria e também departamentos; o superior vem da diretoria.",
 };
 
 function isActive(status: string | null | undefined): boolean {
@@ -302,7 +304,13 @@ export function buildOrgHierarchy(input: OrgGraphInput): OrgHierarchy {
       const topmost = topmostLed(employeeId, led);
       // Toda unidade liderada está abaixo de outra liderada pela mesma pessoa: só há ciclo.
       if (topmost.length === 0) return { ...result, status: "CYCLE", reason: "UNIT_CYCLE", unit: led[0] };
-      const climbs = topmost.map((unit) => ({ unit, climb: climb(employeeId, unit, false) }));
+      // A posição mais alta da pessoa define o superior dela: quem lidera uma diretoria responde
+      // pela cadeia da diretoria; departamentos que ela também lidera não criam outro superior.
+      // (Camadas repetidas da mesma pessoa já foram consolidadas em `topmostLed`.)
+      const highestKind = topmost.some((u) => u.kind === "directorate") ? "directorate" : "department";
+      const considered = topmost.filter((u) => u.kind === highestKind);
+      if (considered.length < topmost.length) result.warnings.push("LOWER_UNIT_CHAIN_IGNORED");
+      const climbs = considered.map((unit) => ({ unit, climb: climb(employeeId, unit, false) }));
       const failed = climbs.find((c) => c.climb.kind === "FAIL");
       if (failed) return fromClimb(result, failed.climb);
       const outcomes = new Set(climbs.map((c) => (c.climb.kind === "FOUND" ? c.climb.managerId : "TOP")));
@@ -382,9 +390,11 @@ export function buildOrgHierarchy(input: OrgGraphInput): OrgHierarchy {
     resolved.set(id, { ...r, message: describe(r) });
   }
 
+  // Liderados diretos: pessoas ATIVAS cujo superior efetivo é esta pessoa (cada uma uma vez, por id).
   const reports = new Map<string, string[]>();
   for (const r of resolved.values()) {
     if (r.status !== "RESOLVED" || !r.managerId) continue;
+    if (!isActive(employees.get(r.employeeId)?.status)) continue;
     const list = reports.get(r.managerId) ?? [];
     list.push(r.employeeId);
     reports.set(r.managerId, list);

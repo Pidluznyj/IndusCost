@@ -1,14 +1,17 @@
 /**
  * Relatório SOMENTE LEITURA da hierarquia efetiva (gestor do cadastro + liderança das unidades).
- * Não grava nada: só `findMany` em Employee, HrDirectorate e HrDepartment.
+ * Não grava nada: só `findMany` em Employee, HrDirectorate e HrDepartment. Pode rodar em produção.
  *
- * Uso (no servidor de homologação, com o DATABASE_URL do ambiente):
- *   npx tsx scripts/auditOrgHierarchy.ts
- *   npx tsx scripts/auditOrgHierarchy.ts --name="Eduardo Cardoso" --name="Joseane" --name="Paulo Pidluznyj"
- *   npx tsx scripts/auditOrgHierarchy.ts --json > /tmp/org-hierarchy.json
+ * Uso (com o DATABASE_URL do ambiente):
+ *   npx tsx scripts/auditOrgHierarchy.ts                      # tabela com TODOS os ativos
+ *   npx tsx scripts/auditOrgHierarchy.ts --name="Eduardo" --name="Paulo"
+ *   npx tsx scripts/auditOrgHierarchy.ts --json > hierarquia.json
+ *   npx tsx scripts/auditOrgHierarchy.ts --csv  > hierarquia.csv
  *
- * Mostra: quantos resolvem, topo, pendências (com motivo), ambiguidades (com candidatos),
- * ciclos, divergências entre o gestor do cadastro e o organograma, e líderes sem superior.
+ * Para cada colaborador ativo: gestor do cadastro, unidade, líder da unidade, liderança superior,
+ * superior efetivo, origem, liderados diretos, conflito, topo, e a classificação:
+ *   CORRETO · TOPO_HIERARQUICO · CONFLITO · SEM_SUPERIOR · REFERENCIA_INVALIDA · CICLO_HIERARQUICO
+ * Quem não tem `managerId` mas é líder de unidade NÃO é inconsistência: a classificação vem do resolvedor.
  */
 import "dotenv/config";
 import { PrismaClient } from "@prisma/client";
@@ -18,6 +21,18 @@ import { loadOrgHierarchy } from "../src/lib/orgHierarchy.server.js";
 const args = process.argv.slice(2);
 const names = args.filter((a) => a.startsWith("--name=")).map((a) => a.slice("--name=".length).toLowerCase());
 const asJson = args.includes("--json");
+const asCsv = args.includes("--csv");
+
+type Classification = "CORRETO" | "TOPO_HIERARQUICO" | "CONFLITO" | "SEM_SUPERIOR" | "REFERENCIA_INVALIDA" | "CICLO_HIERARQUICO";
+
+function classify(r: EffectiveManagerResolution): Classification {
+  if (r.status === "RESOLVED") return "CORRETO";
+  if (r.status === "TOP") return "TOPO_HIERARQUICO";
+  if (r.status === "AMBIGUOUS") return "CONFLITO";
+  if (r.status === "CYCLE") return "CICLO_HIERARQUICO";
+  if (r.reason === "LEADER_NOT_FOUND" || r.reason === "LEADER_INACTIVE" || r.reason === "DEPARTMENT_NOT_FOUND" || r.reason === "DEPARTMENT_INACTIVE") return "REFERENCIA_INVALIDA";
+  return "SEM_SUPERIOR";
+}
 
 function host(url: string | undefined): string {
   try {
@@ -31,59 +46,98 @@ function host(url: string | undefined): string {
 async function main() {
   const prisma = new PrismaClient();
   try {
-    const [hierarchy, people] = await Promise.all([
+    const [hierarchy, people, departments, directorates] = await Promise.all([
       loadOrgHierarchy(prisma),
-      prisma.employee.findMany({ select: { id: true, name: true, socialName: true, status: true, managerId: true } }),
+      prisma.employee.findMany({ select: { id: true, name: true, socialName: true, status: true, managerId: true, departmentId: true, department: true } }),
+      prisma.hrDepartment.findMany({ select: { id: true, name: true, status: true, leaderEmployeeId: true, parentDepartmentId: true, directorateId: true } }),
+      prisma.hrDirectorate.findMany({ select: { id: true, name: true, status: true, leaderEmployeeId: true, parentDirectorateId: true } }),
     ]);
     const nameOf = new Map(people.map((p) => [p.id, p.socialName?.trim() || p.name]));
+    const deptById = new Map(departments.map((d) => [d.id, d]));
+    const dirById = new Map(directorates.map((d) => [d.id, d]));
     const active = people.filter((p) => (p.status ?? "ACTIVE").toUpperCase() !== "INACTIVE");
-    const rows = active.map((p) => ({ person: p, r: hierarchy.resolve(p.id) }));
-    const line = (p: { id: string; name: string; managerId: string | null }, r: EffectiveManagerResolution) => ({
-      colaborador: nameOf.get(p.id) ?? p.name,
-      superior: r.managerName,
-      situacao: r.status,
-      origem: MANAGER_SOURCE_LABELS[r.source],
-      unidade: r.unit ? `${r.unit.kind === "directorate" ? "Diretoria" : "Departamento"} ${r.unit.name}` : null,
-      cadeia: hierarchy.leadershipChain(p.id).map((id) => nameOf.get(id) ?? id).join(" → ") || null,
-      lidera: r.ledUnits.map((u) => u.name).join(", ") || null,
-      gestorNoCadastro: p.managerId ? nameOf.get(p.managerId) ?? p.managerId : null,
-      motivo: r.reason ? MANAGER_REASON_LABELS[r.reason] : null,
-      alertas: r.warnings.map((w) => MANAGER_WARNING_LABELS[w]),
-      candidatos: r.candidates.map((c) => `${c.managerName ?? "topo"} (pela ${c.via.name})`),
-    });
+    const activeIds = new Set(active.map((p) => p.id));
+    const referenceAt = new Date().toISOString();
 
-    const count = (status: string) => rows.filter((x) => x.r.status === status).length;
-    const summary = {
-      banco: host(process.env.DATABASE_URL),
-      geradoEm: new Date().toISOString(),
-      ativos: rows.length,
-      resolvidos: count("RESOLVED"),
-      topo: count("TOP"),
-      pendentes: count("UNRESOLVED"),
-      ambiguos: count("AMBIGUOUS"),
-      ciclos: count("CYCLE"),
-      lideresComManagerIdNulo: rows.filter((x) => x.r.ledUnits.length > 0 && !x.person.managerId).length,
-      divergenciasCadastroOrganograma: rows.filter((x) => x.r.warnings.includes("EXPLICIT_DIVERGES_FROM_ORG")).length,
+    const unitInfo = (p: (typeof people)[number]) => {
+      const dept = p.departmentId ? deptById.get(p.departmentId) : undefined;
+      const dir = dept ? dirById.get(dept.directorateId) : undefined;
+      const parentDept = dept?.parentDepartmentId ? deptById.get(dept.parentDepartmentId) : undefined;
+      return {
+        unidade: dept ? `Departamento ${dept.name}` : p.department ? `(${p.department}: sem departamento oficial)` : null,
+        liderDaUnidade: dept ? nameOf.get(dept.leaderEmployeeId) ?? dept.leaderEmployeeId : null,
+        liderancaSuperior: parentDept ? `Departamento ${parentDept.name} → ${nameOf.get(parentDept.leaderEmployeeId) ?? "?"}` : dir ? `Diretoria ${dir.name} → ${nameOf.get(dir.leaderEmployeeId) ?? "?"}` : null,
+      };
     };
 
-    const selected = names.length > 0 ? rows.filter((x) => names.some((n) => (nameOf.get(x.person.id) ?? "").toLowerCase().includes(n) || x.person.name.toLowerCase().includes(n))) : [];
-    const problems = rows.filter((x) => x.r.status !== "RESOLVED" || x.r.warnings.length > 0);
+    const rows = active.map((p) => {
+      const r = hierarchy.resolve(p.id);
+      const reports = hierarchy.directReports(p.id).filter((id) => activeIds.has(id));
+      const u = unitInfo(p);
+      return {
+        colaborador: nameOf.get(p.id) ?? p.name,
+        classificacao: classify(r),
+        gestorNoCadastro: p.managerId ? nameOf.get(p.managerId) ?? p.managerId : null,
+        unidade: u.unidade,
+        liderDaUnidade: u.liderDaUnidade,
+        liderancaSuperior: u.liderancaSuperior,
+        lidera: r.ledUnits.map((x) => `${x.kind === "directorate" ? "Dir." : "Dep."} ${x.name}`).join("; ") || null,
+        superiorEfetivo: r.managerName,
+        origem: MANAGER_SOURCE_LABELS[r.source],
+        unidadeDaDecisao: r.unit ? `${r.unit.kind === "directorate" ? "Diretoria" : "Departamento"} ${r.unit.name}` : null,
+        caminho: r.path.map((x) => x.name).join(" → ") || null,
+        cadeiaDePessoas: hierarchy.leadershipChain(p.id).map((id) => nameOf.get(id) ?? id).join(" → ") || null,
+        liderados: reports.length,
+        eLider: reports.length > 0,
+        topo: r.status === "TOP",
+        conflito: r.status === "AMBIGUOUS",
+        candidatos: r.candidates.map((c) => `${c.managerName ?? "topo"} (pela ${c.via.name})`).join("; ") || null,
+        motivo: r.reason ? MANAGER_REASON_LABELS[r.reason] : null,
+        alertas: r.warnings.map((w) => MANAGER_WARNING_LABELS[w]).join(" ") || null,
+        referencia: referenceAt,
+      };
+    });
 
-    if (asJson) {
-      console.log(JSON.stringify({ summary, selecionados: selected.map((x) => line(x.person, x.r)), atencao: problems.map((x) => line(x.person, x.r)), todos: rows.map((x) => line(x.person, x.r)) }, null, 2));
+    const count = (c: Classification) => rows.filter((x) => x.classificacao === c).length;
+    const summary = {
+      banco: host(process.env.DATABASE_URL),
+      geradoEm: referenceAt,
+      ativos: rows.length,
+      CORRETO: count("CORRETO"),
+      TOPO_HIERARQUICO: count("TOPO_HIERARQUICO"),
+      CONFLITO: count("CONFLITO"),
+      SEM_SUPERIOR: count("SEM_SUPERIOR"),
+      REFERENCIA_INVALIDA: count("REFERENCIA_INVALIDA"),
+      CICLO_HIERARQUICO: count("CICLO_HIERARQUICO"),
+      lideres: rows.filter((x) => x.eLider).length,
+      lideresSemManagerId: rows.filter((x) => x.eLider && !x.gestorNoCadastro).length,
+      divergenciasCadastroOrganograma: rows.filter((x) => (x.alertas ?? "").includes(MANAGER_WARNING_LABELS.EXPLICIT_DIVERGES_FROM_ORG)).length,
+    };
+    const selected = names.length > 0 ? rows.filter((x) => names.some((n) => x.colaborador.toLowerCase().includes(n))) : rows;
+
+    if (asCsv) {
+      const cols = Object.keys(rows[0] ?? { colaborador: "" });
+      const cell = (v: unknown) => {
+        const s = v == null ? "" : String(v);
+        const safe = /^[=+\-@]/.test(s) ? `'${s}` : s;
+        return /[",\n;]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
+      };
+      console.log(`﻿${cols.join(",")}\n${selected.map((r) => cols.map((c) => cell((r as Record<string, unknown>)[c])).join(",")).join("\n")}`);
       return;
     }
-    console.log("Hierarquia efetiva — relatório somente leitura");
-    console.table([summary]);
-    if (selected.length > 0) {
-      console.log("\nPessoas pedidas:");
-      for (const x of selected) console.log(JSON.stringify(line(x.person, x.r), null, 2));
+    if (asJson) {
+      console.log(JSON.stringify({ summary, colaboradores: selected }, null, 2));
+      return;
     }
-    console.log(`\nPrecisam de atenção (${problems.length}): topo, pendência, ambiguidade, ciclo ou alerta.`);
-    console.table(problems.map((x) => {
-      const l = line(x.person, x.r);
-      return { colaborador: l.colaborador, situacao: l.situacao, superior: l.superior, motivo: l.motivo ?? l.alertas.join(" ") };
-    }));
+    console.log("Hierarquia efetiva — relatório somente leitura (nada é gravado)");
+    console.table([summary]);
+    console.log(`\nTodos os ativos${names.length ? " (filtrados)" : ""}:`);
+    console.table(selected.map((r) => ({ colaborador: r.colaborador, classificacao: r.classificacao, superiorEfetivo: r.superiorEfetivo, origem: r.origem, lidera: r.lidera, liderados: r.liderados, motivo: r.motivo ?? r.alertas ?? "" })));
+    const attention = rows.filter((r) => r.classificacao !== "CORRETO" && r.classificacao !== "TOPO_HIERARQUICO");
+    if (attention.length > 0) {
+      console.log(`\nPrecisam de decisão do RH (${attention.length}):`);
+      console.table(attention.map((r) => ({ colaborador: r.colaborador, classificacao: r.classificacao, motivo: r.motivo, candidatos: r.candidatos })));
+    }
   } finally {
     await prisma.$disconnect();
   }

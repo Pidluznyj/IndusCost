@@ -8,7 +8,8 @@ import { Overlay, OverlayBadge, OverlayBody, OverlayFooter, OverlayHeader } from
 import { PILLARS, PILLAR_SHORT_LABELS, NOT_OBSERVED_LABEL, scoreLabel } from "@/src/lib/hrPerformance/performanceDomain";
 import { fetchPersonDossier, type BiasFlag, type EvaluatorStat, type PersonDossier } from "@/src/lib/hrPerformance/performanceClient";
 import { formatScore } from "@/src/lib/hrPerformance/performanceLeadership";
-import { BTN_SECONDARY, CultureBadge, ErrorBanner, OfficialBadge, PANEL, PERF_EYEBROW, PanelState, PdiBadge, dateBr, quadrantText } from "./performanceUi";
+import { BTN_GHOST, BTN_SECONDARY, CultureBadge, ErrorBanner, OfficialBadge, PANEL, PERF_EYEBROW, PanelState, PdiBadge, dateBr, quadrantText } from "./performanceUi";
+import { DossierCalibrateInline } from "./DossierCalibrateInline";
 
 const BIAS_LABEL: Record<BiasFlag, string> = {
   LENIENT: "Tende a notas altas",
@@ -39,14 +40,27 @@ function Block({ title, children, testId }: { title: string; children: React.Rea
   );
 }
 
-export function PersonDossierOverlay({ participantId, onClose }: { participantId: string; onClose: () => void }) {
+export function PersonDossierOverlay({
+  participantId,
+  onClose,
+  calibration,
+}: {
+  participantId: string;
+  onClose: () => void;
+  /** Calibrar aqui dentro e percorrer a fila ("próxima pessoa") sem voltar à lista. */
+  calibration?: { canCalibrate: boolean; stageOk: boolean; order: string[]; onSelect: (participantId: string) => void; onCalibrated: (message: string) => void };
+}) {
   const [d, setD] = useState<PersonDossier | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [reloads, setReloads] = useState(0);
   useEffect(() => {
     void fetchPersonDossier(participantId)
       .then(setD)
       .catch((cause) => setError(cause instanceof Error ? cause.message : "Não foi possível abrir o dossiê."));
-  }, [participantId]);
+  }, [participantId, reloads]);
+  const position = calibration ? calibration.order.indexOf(participantId) : -1;
+  const prev = position > 0 ? calibration!.order[position - 1] : null;
+  const next = calibration && position >= 0 && position < calibration.order.length - 1 ? calibration.order[position + 1] : null;
   const p = d?.participant;
   const ind = d?.individual ?? null;
   const lead = d?.leadership ?? null;
@@ -113,6 +127,19 @@ export function PersonDossierOverlay({ participantId, onClose }: { participantId
               )}
             </Block>
 
+            {calibration?.canCalibrate && calibration.stageOk && ind ? (
+              <Block title="Decisão da calibração" testId="perf-dossier-decision-block">
+                <div key={`${participantId}-${d.versions.length}`}>
+                  <DossierCalibrateInline
+                    row={ind}
+                    onDone={(message) => {
+                      calibration.onCalibrated(message);
+                      setReloads((n) => n + 1);
+                    }}
+                  />
+                </div>
+              </Block>
+            ) : null}
             <Block title="2. Posição preliminar e versões" testId="perf-dossier-position">
               {ind?.result ? (
                 <div className="flex flex-wrap items-center gap-2 text-sm">
@@ -241,6 +268,17 @@ export function PersonDossierOverlay({ participantId, onClose }: { participantId
         ) : null}
       </OverlayBody>
       <OverlayFooter>
+        {calibration ? (
+          <span className="mr-auto flex items-center gap-2 text-xs text-muted-foreground">
+            {position >= 0 ? `${position + 1} de ${calibration.order.length}` : ""}
+            <button type="button" className={BTN_GHOST} disabled={!prev} onClick={() => prev && calibration.onSelect(prev)} data-testid="perf-dossier-prev">
+              ← Anterior
+            </button>
+            <button type="button" className={BTN_GHOST} disabled={!next} onClick={() => next && calibration.onSelect(next)} data-testid="perf-dossier-next">
+              Próxima pessoa →
+            </button>
+          </span>
+        ) : null}
         <button type="button" className={BTN_SECONDARY} onClick={onClose}>
           Fechar
         </button>

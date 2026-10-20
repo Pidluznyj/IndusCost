@@ -39,6 +39,7 @@ import {
 import { ReasonDialog } from "./CycleDesk";
 import { LeadershipCalibrationSection } from "./PerformanceLeadershipUi";
 import { EvaluatorBiasBadges, PersonDossierOverlay } from "./PersonDossierOverlay";
+import { Term } from "./performanceGlossary";
 import { fetchCalibrationEvaluators, type EvaluatorStat } from "@/src/lib/hrPerformance/performanceClient";
 
 type Dialog =
@@ -109,11 +110,13 @@ export function PerformanceCalibrationTab({
           <p>
             <strong className="text-foreground">{data.cycle.name}</strong> · {calibrated} de {data.rows.length} calibrados · {pendingValidation} aguardando validação técnica · {openRevisions} revisão(ões) aberta(s)
           </p>
-          <p>A nota oficial usa a avaliação do líder; a autoavaliação aparece para comparar. Divergência não muda nota sozinha. Cultura não entra na Nine-Box.</p>
+          <p>
+            A nota oficial usa a avaliação do líder; a autoavaliação aparece para comparar. Divergência não muda nota sozinha. Cultura não entra na <Term k="ninebox" />. Abra o <strong>Dossiê</strong> de cada pessoa para ver todos os ângulos e <Term k="calibrar" /> ali mesmo.
+          </p>
         </div>
         {mayHomologate ? (
           <button type="button" className={BTN_PRIMARY} disabled={!canHomologate} onClick={() => setDialog({ kind: "homologate" })} title={canHomologate ? undefined : "Exige o ciclo em calibração, todos calibrados, técnico validado e nenhuma revisão aberta"} data-testid="perf-homologate">
-            <ShieldCheck className="h-4 w-4" aria-hidden /> Homologar ciclo
+            <ShieldCheck className="h-4 w-4" aria-hidden /> Tornar os resultados oficiais
           </button>
         ) : null}
       </div>
@@ -286,7 +289,23 @@ export function PerformanceCalibrationTab({
         </TableScroll>
       </div>
 
-      {dossier ? <PersonDossierOverlay participantId={dossier} onClose={() => setDossier(null)} /> : null}
+      {dossier ? (
+        <PersonDossierOverlay
+          participantId={dossier}
+          onClose={() => setDossier(null)}
+          calibration={{
+            canCalibrate,
+            stageOk,
+            // Ordem da fila como está na tela: pendentes primeiro, para "próxima pessoa" ser a próxima a calibrar.
+            order: [...rows].sort((a, b) => Number(a.result?.reviewStatus === "CALIBRATED") - Number(b.result?.reviewStatus === "CALIBRATED")).map((r) => r.participantId),
+            onSelect: setDossier,
+            onCalibrated: (m) => {
+              onToast(m);
+              void reload();
+            },
+          }}
+        />
+      ) : null}
       {dialog?.kind === "validate" ? <ValidateDialog row={dialog.row} onClose={() => setDialog(null)} onDone={(m) => { setDialog(null); onToast(m); void reload(); }} /> : null}
       {dialog?.kind === "calibrate" ? <CalibrateDialog row={dialog.row} onClose={() => setDialog(null)} onDone={(m) => { setDialog(null); onToast(m); void reload(); }} /> : null}
       {dialog?.kind === "return" ? (

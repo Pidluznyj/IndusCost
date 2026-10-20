@@ -4,11 +4,11 @@
  * servidor (/me); o servidor recusa o resto mesmo que alguém chame a API direto.
  */
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { OverlayTabs } from "@/src/components/ui/overlay";
 import { useAuthOptional } from "@/src/contexts/AuthContext";
 import { fetchPerformanceCycles, fetchPerformanceMe, type PerformanceMe } from "@/src/lib/hrPerformance/performanceClient";
 import { usePerformanceFeature } from "./usePerformanceFeature";
 import { InfoBanner, PanelState, useToast } from "./performanceUi";
+import { cn } from "@/src/lib/utils";
 import { PerformanceCyclesTab } from "./PerformanceCyclesTab";
 import { PerformanceModelsTab } from "./PerformanceModelsTab";
 import { PerformanceTeamTab } from "./PerformanceTeamTab";
@@ -65,6 +65,8 @@ function PerformanceModule() {
   }, []);
 
   const caps = me?.capabilities;
+  // Grupos por intenção: operar o ciclo, avaliar e calibrar, ler resultados, configurar.
+  const GROUP_OF: Record<TabId, string> = { acompanhamento: "Operar", ciclos: "Operar", equipe: "Avaliar e calibrar", calibracao: "Avaliar e calibrar", ninebox: "Resultados", pdi: "Resultados", painel: "Resultados", modelos: "Configurar" };
   const tabs = useMemo(
     () =>
       [
@@ -118,11 +120,36 @@ function PerformanceModule() {
           {me.actorEmployeeId ? "Você vê a sua equipe e as avaliações atribuídas a você." : "Seu usuário não está ligado a um colaborador. Peça ao RH o vínculo para ver a sua equipe."}
         </InfoBanner>
       ) : null}
-      <OverlayTabs<TabId> tabs={tabs} active={active} onChange={selectTab} variant="pill" ariaLabel="Seções de desempenho" testId="perf-tabs" />
+      <nav role="tablist" aria-label="Seções de desempenho" data-testid="perf-tabs" className="flex flex-wrap gap-x-5 gap-y-2 rounded-xl border border-border bg-muted/40 px-3 py-2">
+        {["Operar", "Avaliar e calibrar", "Resultados", "Configurar"].map((group) => {
+          const inGroup = tabs.filter((t) => GROUP_OF[t.id] === group);
+          if (inGroup.length === 0) return null;
+          return (
+            <div key={group} className="flex flex-col gap-1" data-testid={`perf-tab-group-${group}`}>
+              <span className="px-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{group}</span>
+              <div className="flex flex-wrap gap-1">
+                {inGroup.map((t) => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={t.id === active}
+                    onClick={() => selectTab(t.id)}
+                    data-testid={`perf-tabs-tab-${t.id}`}
+                    className={cn("rounded-md px-3 py-1.5 text-sm font-medium transition-colors", t.id === active ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </nav>
       {active === "acompanhamento" ? <PerformanceTrackingTab cycleId={workingCycleId} caps={caps} onSelectCycle={selectCycle} onToast={toast.setToast} /> : null}
       {active === "ciclos" ? (
         <React.Fragment key={version}>
-          <PerformanceCyclesTab me={me} selectedId={cycleId} onSelect={selectCycle} onToast={toast.setToast} />
+          <PerformanceCyclesTab me={me} selectedId={cycleId} onSelect={selectCycle} onToast={toast.setToast} onGoToModels={() => selectTab("modelos")} />
         </React.Fragment>
       ) : null}
       {active === "equipe" ? <PerformanceTeamTab onToast={toast.setToast} actorName={actorName} linkedEmployee={Boolean(me.actorEmployeeId)} /> : null}

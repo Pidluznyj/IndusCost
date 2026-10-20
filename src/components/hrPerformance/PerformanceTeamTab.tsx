@@ -50,6 +50,22 @@ export function PerformanceTeamTab({ onToast, actorName, linkedEmployee = true }
   const leadershipPending = leadership.filter((i) => i.status !== "SUBMITTED").length;
   const calibrationsPending = leadership.filter((i) => i.leadershipStatus === "AVAILABLE").length;
   const nextDue = (items ?? []).filter((i) => i.status !== "SUBMITTED").map((i) => i.dueAt).sort()[0] ?? null;
+  const nextTask = (() => {
+    const ind = (items ?? []).filter((i) => i.status !== "SUBMITTED" && i.editable).sort((a, b) => a.dueAt.localeCompare(b.dueAt))[0];
+    if (ind) return { kind: "individual" as const, id: ind.assignmentId };
+    const lead = leadership.find((i) => i.status !== "SUBMITTED");
+    if (lead) return { kind: "leadership" as const, item: lead };
+    const cal = leadership.find((i) => i.leadershipStatus === "AVAILABLE");
+    return cal ? { kind: "calibrate" as const, item: cal } : null;
+  })();
+  const doNext = () => {
+    if (!nextTask) return;
+    if (nextTask.kind === "individual") setOpen(nextTask.id);
+    else if (nextTask.kind === "leadership") setLeadershipOpen({ kind: "evaluate", item: nextTask.item });
+    else setLeadershipOpen({ kind: "calibrate", item: nextTask.item });
+  };
+  // Liderança por pessoa: entra no mesmo cartão da avaliação individual dela.
+  const leadershipByEmployee = new Map<string, SuperiorLeadershipItem>(leadership.map((l) => [`${l.cycleId}|${l.employeeName}`, l]));
   const todo = [
     pending ? `${pending} avaliação(ões) da equipe` : null,
     leadershipPending ? `${leadershipPending} avaliação(ões) de liderança` : null,
@@ -109,10 +125,10 @@ export function PerformanceTeamTab({ onToast, actorName, linkedEmployee = true }
               </>
             )}
           </p>
-          {leadershipPending ? (
-            <a href="#perf-team-leadership" className={BTN_SECONDARY} data-testid="perf-team-goto-leadership">
-              Ir para liderança
-            </a>
+          {nextTask ? (
+            <button type="button" className={BTN_PRIMARY} onClick={doNext} data-testid="perf-team-do-next">
+              Fazer a próxima
+            </button>
           ) : null}
         </div>
       ) : null}
@@ -185,7 +201,7 @@ export function PerformanceTeamTab({ onToast, actorName, linkedEmployee = true }
                 <div className="flex flex-wrap gap-2">
                   <button type="button" className={item.editable && item.status !== "SUBMITTED" ? BTN_PRIMARY : BTN_SECONDARY} onClick={() => setOpen(item.assignmentId)} data-testid={`perf-team-open-${item.employeeName}`}>
                     <ClipboardCheck className="h-4 w-4" aria-hidden />
-                    {item.status === "NOT_STARTED" ? "Avaliar" : item.status === "SUBMITTED" || !item.editable ? "Ver avaliação" : "Continuar"}
+                    {item.status === "NOT_STARTED" ? "Avaliar o trabalho" : item.status === "SUBMITTED" || !item.editable ? "Ver avaliação" : "Continuar a avaliação"}
                   </button>
                   {item.officialResult && !item.feedback ? (
                     <button type="button" className={BTN_SECONDARY} onClick={() => setDialog({ kind: "feedback", item })} data-testid={`perf-team-feedback-${item.employeeName}`}>
@@ -203,6 +219,30 @@ export function PerformanceTeamTab({ onToast, actorName, linkedEmployee = true }
                     </button>
                   ) : null}
                 </div>
+                {(() => {
+                  const lead = leadershipByEmployee.get(`${item.cycleId}|${item.employeeName}`);
+                  if (!lead) return null;
+                  const canCalibrate = lead.leadershipStatus !== "PENDING" && lead.leadershipStatus !== "NOT_APPLICABLE";
+                  return (
+                    <div className="rounded-lg border border-violet-200 bg-violet-50/40 p-3" data-testid={`perf-team-leadership-${lead.employeeName}`}>
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="text-sm font-medium">Como {lead.employeeName.split(" ")[0]} lidera a equipe dele(a) · lidera {lead.directReportCount}</p>
+                        <LeadershipStatusBadge status={lead.leadershipStatus} />
+                      </div>
+                      <p className="mt-1 text-xs text-muted-foreground">Diferente da avaliação do trabalho acima: aqui você avalia a liderança, nas mesmas oito competências que a equipe e a própria pessoa respondem.</p>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        <button type="button" className={lead.status === "SUBMITTED" ? BTN_GHOST : BTN_SECONDARY} onClick={() => setLeadershipOpen({ kind: "evaluate", item: lead })} data-testid={`perf-team-leadership-evaluate-${lead.employeeName}`}>
+                          {lead.status === "SUBMITTED" ? "Ver avaliação de liderança" : "Avaliar a liderança"}
+                        </button>
+                        {canCalibrate ? (
+                          <button type="button" className={BTN_PRIMARY} onClick={() => setLeadershipOpen({ kind: "calibrate", item: lead })} data-testid={`perf-team-leadership-calibrate-${lead.employeeName}`}>
+                            {lead.leadershipStatus === "AVAILABLE" ? "Calibrar a liderança" : "Ver calibração"}
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>
+                  );
+                })()}
               </li>
             );
           })}
@@ -261,7 +301,7 @@ export function PerformanceTeamTab({ onToast, actorName, linkedEmployee = true }
           }}
         />
       ) : null}
-      {leadership.length > 0 ? (
+      {leadership.filter((l) => !shown.some((i) => i.cycleId === l.cycleId && i.employeeName === l.employeeName)).length > 0 ? (
         <section id="perf-team-leadership" className={`${PANEL} space-y-3 p-4`} data-testid="perf-team-leadership">
           <div>
             <h3 className="text-base font-semibold">Liderança da sua equipe (180°)</h3>
@@ -270,7 +310,7 @@ export function PerformanceTeamTab({ onToast, actorName, linkedEmployee = true }
             </p>
           </div>
           <ul className="grid gap-2 lg:grid-cols-2">
-            {leadership.map((item) => {
+            {leadership.filter((l) => !shown.some((i) => i.cycleId === l.cycleId && i.employeeName === l.employeeName)).map((item) => {
               const canCalibrate = item.leadershipStatus !== "PENDING" && item.leadershipStatus !== "NOT_APPLICABLE";
               return (
                 <li key={item.assignmentId} className="rounded-lg border border-border p-3" data-testid={`perf-team-leadership-${item.employeeName}`}>

@@ -235,7 +235,7 @@ try {
   await login(carla, "gerente.teste@induscost.test");
   await openModule(carla);
   await carla.clickTestId("perf-tabs-tab-equipe");
-  await carla.waitTestId("perf-team-leadership", 20000);
+  await carla.waitTestId("perf-team-leadership-evaluate-[DEMO] Bruno Líder", 20000);
   await carla.shot("9-07a-gerente-minha-equipe");
   await carla.clickTestId("perf-team-leadership-evaluate-[DEMO] Bruno Líder");
   await carla.waitTestId("perf-superior-q-LD-08", 20000);

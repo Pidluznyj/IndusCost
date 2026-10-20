@@ -31,6 +31,8 @@ try {
   const preselected = await hr.eval(`document.querySelector('[data-testid="perf-cycle-create-leadership"]').value`);
   await hr.shot("12-01-novo-ciclo-180-padrao");
   await hr.clickTestId("perf-cycle-create-save");
+  await hr.waitTestId("perf-cycle-list", 20000);
+  await hr.clickText("Ciclo prontidão 2027-S2", "button");
   await hr.waitFor(`document.querySelector('[data-testid="perf-cycle-title"]')?.innerText.includes("Ciclo prontidão 2027-S2")`, { label: "ciclo novo na mesa", timeout: 20000 });
   const cycleId = await hr.eval(`sessionStorage.getItem("ic-perf-cycle")`);
   step("12.01 ciclo oficial nasce com a avaliação de liderança escolhida", Boolean(preselected) && Boolean(cycleId));

@@ -46,6 +46,14 @@ const profile = await prisma.accessProfile.findUnique({ where: { name: "[DEMO] L
 if (!profile) throw new Error("perfil de líder fictício ausente");
 const passwordHash = await hashPassword(password);
 const access = { passwordHash, isActive: true, role: "VIEWER" as const, employeeId: carla.id, permissions: profile.permissions, accessProfileId: profile.id };
+// Marcos também avalia a equipe dele: precisa de usuário (a prontidão bloqueia avaliador sem acesso).
+const marcos = await find("Marcos Manutenção");
+const marcosAccess = { ...access, employeeId: marcos.id };
+await prisma.appUser.upsert({
+  where: { email: "marcos.teste@induscost.test" },
+  create: { name: "Marcos Manutenção (teste)", email: "marcos.teste@induscost.test", ...marcosAccess },
+  update: { ...marcosAccess, permissionsVersion: { increment: 1 } },
+});
 await prisma.appUser.upsert({
   where: { email: "gerente.teste@induscost.test" },
   create: { name: "Carla Gerente (teste)", email: "gerente.teste@induscost.test", ...access },

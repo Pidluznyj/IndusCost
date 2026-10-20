@@ -349,7 +349,7 @@ export function PerformancePortalPage() {
             <p className="pp-muted">Nas respostas “Nunca ou quase nunca” e “Sempre ou quase sempre”, conte um comportamento ou situação que você observou. Não precisa citar nomes.</p>
             {form.step.kind === "LEADERSHIP_UPWARD" ? (
               <p className="pp-muted" data-testid="portal-upward-privacy">
-                Suas respostas sobre o líder entram numa média com as dos colegas e só aparecem quando houver respostas suficientes. Seu líder não vê respostas individuais nem os comentários. A resposta fica registrada no sistema.
+                Aqui a sua voz conta de verdade. Suas respostas sobre o líder entram numa média com as dos colegas e só aparecem quando houver respostas suficientes. Seu líder não vê quem respondeu o quê, nem lê os comentários: ninguém lê. Pode falar com sinceridade.
               </p>
             ) : null}
             <button type="button" className="pp-btn pp-btn-primary" onClick={() => setStep("form")} data-testid="portal-start">
@@ -361,15 +361,15 @@ export function PerformancePortalPage() {
         {step === "intro" && form && (!form.step || form.step.kind === "SELF") ? (
           <section className="pp-card" data-testid="portal-intro">
             <h1 ref={headingRef} tabIndex={-1}>
-              Olá, {form.employeeName}
+              Olá, {form.employeeName.split(" ")[0]}. Que bom ter você aqui.
             </h1>
             <p>
-              São {questions.length} perguntas curtas sobre o seu dia a dia de trabalho, uma por tela. Leva uns 10 minutos.
+              Esta é a sua vez de contar como foi o seu trabalho no período. São {questions.length} perguntas curtas, uma por tela, e leva uns 10 minutos.
               {form.step && form.step.total > 1 ? ` Depois vêm mais ${form.step.total - 1} etapa(s) curta(s) sobre liderança.` : ""}
             </p>
             <p>{form.instructions}</p>
             <p className="pp-muted">
-              Não há resposta certa ou errada. Suas respostas não são anônimas: o RH e a sua liderança usam para conversar com você sobre desenvolvimento. Cada toque fica salvo; se a internet cair, você continua depois.
+              Não existe resposta certa ou errada: o que vale é a sua percepção. Suas respostas não são anônimas, e é isso que permite a conversa de desenvolvimento com você depois. Cada toque fica salvo; se a internet cair, você continua de onde parou.
             </p>
             {assisted ? <p className="pp-alert pp-alert-warn">Preenchimento com ajuda do RH. As respostas são suas: no final, você confere e confirma.</p> : null}
             <button type="button" className="pp-btn pp-btn-primary" onClick={() => setStep("form")} data-testid="portal-start">
@@ -529,10 +529,13 @@ export function PerformancePortalPage() {
         {step === "done" ? (
           <section className="pp-card" data-testid="portal-done">
             <h1 ref={headingRef} tabIndex={-1}>
-              Obrigado!
+              Obrigado, {form?.employeeName.split(" ")[0] ?? "você"}. Sua voz foi registrada.
             </h1>
-            <p className="pp-alert pp-alert-ok">Suas respostas foram enviadas.</p>
-            <p>{assisted ? "Pode devolver o aparelho para o RH." : "Você já pode fechar esta página."}</p>
+            <p className="pp-alert pp-alert-ok">Tudo enviado. Não precisa fazer mais nada por aqui.</p>
+            <p>
+              <strong>O que acontece agora:</strong> o seu líder faz a avaliação dele, o RH confere tudo com cuidado e, depois disso, vocês dois conversam sobre o resultado e sobre o seu desenvolvimento. Esse é o momento de ouvir e de ser ouvido.
+            </p>
+            <p className="pp-muted">{assisted ? "Pode devolver o aparelho para o RH." : "Você já pode fechar esta página."}</p>
           </section>
         ) : null}
 

@@ -104,10 +104,10 @@ type Dialog =
 const NEXT_LABEL: Partial<Record<CycleStatus, string>> = {
   DRAFT: "Preparar ciclo",
   PREPARED: "Abrir ciclo",
-  OPEN: "Encerrar coleta",
-  CONSOLIDATION: "Iniciar calibração",
-  CALIBRATION: "Homologar resultados",
-  HOMOLOGATED: "Encerrar ciclo",
+  OPEN: "Fechar a coleta",
+  CONSOLIDATION: "Iniciar a calibração",
+  CALIBRATION: "Tornar os resultados oficiais",
+  HOMOLOGATED: "Encerrar o ciclo",
 };
 
 export function CycleDesk({ cycleId, me: realMe, onToast, onChanged }: { cycleId: string; me: PerformanceMe; onToast: (message: string) => void; onChanged: (deleted?: boolean) => void }) {
@@ -235,34 +235,39 @@ export function CycleDesk({ cycleId, me: realMe, onToast, onChanged }: { cycleId
             {ws.cycle.periodLabel} · {ws.model?.name} v{ws.model?.version} · autoavaliação até {dateBr(ws.cycle.selfDueAt)} · líder até {dateBr(ws.cycle.leaderDueAt)}
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          {realMe.capabilities.cycles || realMe.capabilities.track || realMe.capabilities.manage ? (
-            <button type="button" className={BTN_SECONDARY} onClick={() => setLifecycleOpen(true)} data-testid="perf-cycle-lifecycle">
-              <Settings2 className="h-4 w-4" aria-hidden /> Ciclo de vida
-            </button>
-          ) : null}
-          {canCycles && status !== "HOMOLOGATED" && status !== "CLOSED" ? (
-            <button type="button" className={BTN_SECONDARY} onClick={() => setDialog({ kind: "edit" })} data-testid="perf-cycle-edit">
-              <Pencil className="h-4 w-4" aria-hidden /> Editar
-            </button>
-          ) : null}
-          {canCycles && preOpen ? (
-            <button
-              type="button"
-              className={BTN_SECONDARY}
-              onClick={() => void syncLeaders()}
-              title="Líder de cada pessoa pela estrutura organizacional. Exceções do RH ficam como estão."
-              data-testid="perf-sync-leaders"
-            >
-              <Network className="h-4 w-4" aria-hidden /> Atualizar líderes
-            </button>
-          ) : null}
-          {/* Reabrir resultado homologado é decisão de homologação (o servidor também exige). */}
-          {canCycles && back && (status !== "HOMOLOGATED" || (caps.homologate ?? caps.calibrate)) ? (
-            <button type="button" className={BTN_SECONDARY} onClick={() => setDialog({ kind: "transition", to: back, reversal: true })} data-testid="perf-cycle-back">
-              <RotateCcw className="h-4 w-4" aria-hidden /> Voltar para {CYCLE_STATUS_LABELS[back].toLowerCase()}
-            </button>
-          ) : null}
+        <div className="flex flex-wrap items-start gap-2">
+          <details className="relative" data-testid="perf-cycle-more">
+            <summary className={`${BTN_SECONDARY} cursor-pointer list-none`}>Mais</summary>
+            <div className="absolute right-0 z-10 mt-1 flex min-w-[240px] flex-col gap-1 rounded-lg border border-border bg-card p-2 shadow-lg">
+              {realMe.capabilities.cycles || realMe.capabilities.track || realMe.capabilities.manage ? (
+                <button type="button" className={BTN_GHOST} onClick={() => setLifecycleOpen(true)} data-testid="perf-cycle-lifecycle">
+                  <Settings2 className="h-4 w-4" aria-hidden /> Ciclo de vida
+                </button>
+              ) : null}
+              {canCycles && status !== "HOMOLOGATED" && status !== "CLOSED" ? (
+                <button type="button" className={BTN_GHOST} onClick={() => setDialog({ kind: "edit" })} data-testid="perf-cycle-edit">
+                  <Pencil className="h-4 w-4" aria-hidden /> Editar nome e prazos
+                </button>
+              ) : null}
+              {canCycles && preOpen ? (
+                <button
+                  type="button"
+                  className={BTN_GHOST}
+                  onClick={() => void syncLeaders()}
+                  title="Líder de cada pessoa pela estrutura organizacional. Exceções do RH ficam como estão."
+                  data-testid="perf-sync-leaders"
+                >
+                  <Network className="h-4 w-4" aria-hidden /> Atualizar líderes pelo organograma
+                </button>
+              ) : null}
+              {/* Reabrir resultado homologado é decisão de homologação (o servidor também exige). */}
+              {canCycles && back && (status !== "HOMOLOGATED" || (caps.homologate ?? caps.calibrate)) ? (
+                <button type="button" className={BTN_GHOST} onClick={() => setDialog({ kind: "transition", to: back, reversal: true })} data-testid="perf-cycle-back">
+                  <RotateCcw className="h-4 w-4" aria-hidden /> Voltar para {CYCLE_STATUS_LABELS[back].toLowerCase()}
+                </button>
+              ) : null}
+            </div>
+          </details>
           {next && (next === "HOMOLOGATED" ? caps.homologate ?? caps.calibrate : canCycles) ? (
             <button
               type="button"
@@ -325,7 +330,17 @@ export function CycleDesk({ cycleId, me: realMe, onToast, onChanged }: { cycleId
           }}
         />
       ) : null}
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6" data-testid="perf-cycle-kpis">
+      {preOpen ? (
+        <p className="text-sm text-muted-foreground" data-testid="perf-stage-hint">
+          {status === "DRAFT" ? "Agora: inclua as pessoas e confira a prontidão. Os números do ciclo aparecem depois da abertura." : "Agora: confira a prontidão e abra o ciclo. A lista congela na abertura."}
+        </p>
+      ) : null}
+      {status === "OPEN" ? (
+        <p className="text-sm text-muted-foreground" data-testid="perf-stage-hint">
+          Agora: gere e entregue os convites. Quem concluiu, quem falta e os prazos ficam na aba <strong>Acompanhamento</strong>.
+        </p>
+      ) : null}
+      <div className={cn("grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6", preOpen && "hidden")} data-testid="perf-cycle-kpis">
         <KpiTile label="Elegíveis" value={counts.eligible} hint={`${counts.notEligible} não elegíveis · ${counts.insufficient} evidência insuficiente`} />
         <KpiTile label="Convidados" value={counts.invited} hint={rateText(counts.rates.invited)} />
         <KpiTile label="Autoavaliações" value={counts.selfSubmitted} hint={rateText(counts.rates.selfSubmitted)} />

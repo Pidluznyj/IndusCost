@@ -429,6 +429,7 @@ src/lib/purchasing/purchasePaymentTermsBaseAudit.test.ts
 src/lib/purchasing/purchasePaymentTermsAnalysis.test.ts
 src/lib/purchasing/purchasePaymentTermsList.test.ts
 src/lib/orgHierarchy.test.ts
+src/lib/orgHierarchy.production.test.ts
 src/lib/orgHierarchy.integration.test.ts
 src/lib/hrPerformance/performanceLifecycle.test.ts
 src/lib/hrPerformance/performanceLeadership.test.ts

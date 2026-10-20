@@ -210,7 +210,7 @@ describe("central de acompanhamento: só metadados", () => {
     const carla = board.rows.find((r) => r.employeeId === "carla")!;
     assert.equal(status(carla, "leader"), "NOT_APPLICABLE");
     assert.equal(board.indicators.eligible, 7);
-    assert.equal(board.indicators.invitesDelivered, null, "sem confirmação confiável de entrega");
+    assert.equal(board.indicators.invitesDelivered, 0, "entrega só conta quando o RH registra");
     assert.equal(board.indicators.overdueObligations > 0, true);
   });
 

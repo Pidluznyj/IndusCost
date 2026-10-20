@@ -1619,6 +1619,23 @@ export function issueInvitesBatch(
   return { ok: true, db, value: { issued, skipped } };
 }
 
+/** O RH registra que a folha do QR foi entregue em mãos. Vai para a auditoria; a central mostra "entregue". */
+export function markInviteDelivered(
+  source: PerformanceDatabase,
+  input: { assignmentId: string; actorUserId: string | null; scope: PerformanceScope },
+  options: ServiceOptions
+): ServiceResult<{ inviteId: string }> {
+  const denied = hrOnly(input.scope);
+  if (denied) return denied;
+  const db = cloneDb(source);
+  const assignment = db.assignments.find((a) => a.id === input.assignmentId && a.active);
+  if (!assignment) return fail("NOT_FOUND", "Tarefa não encontrada.");
+  const invite = db.invites.filter((i) => i.assignmentId === assignment.id && !i.revokedAt).sort((a, b) => a.createdAt.localeCompare(b.createdAt)).at(-1);
+  if (!invite) return fail("INVITE_REQUIRED", "Não há convite ativo para registrar a entrega.");
+  audit(db, options.now(), input.actorUserId, "INVITE_DELIVERED", invite.id, { assignmentId: assignment.id });
+  return { ok: true, db, value: { inviteId: invite.id } };
+}
+
 export function revokeInvite(
   source: PerformanceDatabase,
   input: { assignmentId: string; reason: string; actorUserId: string | null; scope: PerformanceScope },

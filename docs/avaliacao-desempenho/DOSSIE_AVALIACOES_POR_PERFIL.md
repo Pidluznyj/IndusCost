@@ -178,7 +178,7 @@ Implementação sugerida, nesta ordem:
 | Lacuna | Entrega | Onde |
 | --- | --- | --- |
 | L1 | Ciclo oficial exige o modelo de liderança; a criação já vem com ele escolhido; prontidão bloqueia sem ele (ciclo de teste só avisa) | `performanceReadiness.ts`, aba Ciclos |
-| L2 | Prontidão aponta cada líder fora do ciclo e quem ele lidera; botão "Incluir os líderes" sobe a cadeia até o topo; abrir pela API é recusado (`409 READINESS_BLOCKED`) | `GET /cycles/:id/readiness`, `POST /cycles/:id/participants/include-leaders` |
+| L2 | Prontidão aponta cada líder fora do ciclo e quem ele lidera; botão "Incluir os líderes" sobe a cadeia até o topo; com 180° abrir pela API é recusado — sem 180° é só aviso (`409 READINESS_BLOCKED`) | `GET /cycles/:id/readiness`, `POST /cycles/:id/participants/include-leaders` |
 | L3 | Avaliador sem usuário vinculado bloqueia a abertura, com a lista de quem precisa de acesso | prontidão |
 | L4 | Aviso do topo sem avaliador, com "Definir avaliador" (troca com motivo) ou seguir com exceção | prontidão |
 | L11 | Aviso de pessoa com o líder atual há menos que a observação mínima (histórico do cadastro), com "Trocar líder" | prontidão |

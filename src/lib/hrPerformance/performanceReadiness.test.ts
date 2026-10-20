@@ -69,6 +69,13 @@ describe("prontidão do ciclo: cada perfil recebe as avaliações que lhe cabem"
     assert.match(outside.people.find((p) => p.name === "Bruno Gerente")!.detail ?? "", /Ana Operadora/);
   });
 
+  it("sem 180° o líder fora do ciclo só avisa: ele avalia a equipe, mas não é avaliado", () => {
+    const { db, cycle } = prepared(["ana", "bia", "dani", "otavio"], false, "TEST");
+    const issues = cycleReadiness(db, cycle, ctx(), NOW);
+    assert.equal(issues.find((i) => i.code === "LEADER_OUTSIDE_CYCLE")!.severity, "WARN");
+    assert.equal(readinessBlocked(issues).length, 0);
+  });
+
   it("avaliador sem usuário bloqueia (a avaliação dele nunca seria respondida)", () => {
     const { db, cycle } = prepared(people.map((p) => p.id));
     const issues = cycleReadiness(db, cycle, ctx({ linkedEmployeeIds: new Set(["carla", "bruno"]) }), NOW);

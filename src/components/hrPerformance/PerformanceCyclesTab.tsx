@@ -16,6 +16,9 @@ import {
 } from "@/src/lib/hrPerformance/performanceClient";
 import { BTN_PRIMARY, CycleStatusBadge, ErrorBanner, PANEL, PanelState, PerformanceModal, addDaysIso, dateBr } from "./performanceUi";
 import { CycleDesk } from "./CycleDesk";
+import { FirstCycleGuide } from "./FirstCycleGuide";
+import { GlossaryList } from "./performanceGlossary";
+import { fetchCycleReadiness } from "@/src/lib/hrPerformance/performanceClient";
 import { CycleGovernanceBadges } from "./CycleLifecyclePanel";
 import { cn } from "@/src/lib/utils";
 
@@ -23,11 +26,14 @@ export function PerformanceCyclesTab({
   me,
   selectedId,
   onSelect,
+  onGoToModels,
   onToast,
 }: {
   me: PerformanceMe;
   selectedId: string | null;
   onSelect: (id: string | null) => void;
+  /** Guia do primeiro ciclo: ir para a aba Modelos. */
+  onGoToModels?: () => void;
   onToast: (message: string) => void;
 }) {
   const [cycles, setCycles] = useState<CycleSummary[] | null>(null);
@@ -37,6 +43,7 @@ export function PerformanceCyclesTab({
   const [creating, setCreating] = useState(false);
   // Inativos saem da visão padrão; o RH liga a opção para consultar ou reativar.
   const [showInactive, setShowInactive] = useState(false);
+  const [readinessOk, setReadinessOk] = useState<boolean | null>(null);
 
   const reload = useCallback(async () => {
     try {
@@ -64,6 +71,18 @@ export function PerformanceCyclesTab({
   // Sem a opção marcada, ciclo inativo não aparece nem quando é o selecionado (a seleção fica guardada no navegador).
   const listed = (cycles ?? []).filter((c) => showInactive || c.activation !== "INACTIVE");
   const activeCycles = (cycles ?? []).filter((c) => c.activation !== "INACTIVE");
+  const selectedCycle = (cycles ?? []).find((c) => c.id === selectedId) ?? null;
+
+  // Guia: prontidão do ciclo selecionado enquanto ele ainda não abriu.
+  useEffect(() => {
+    if (!selectedCycle || (selectedCycle.status !== "DRAFT" && selectedCycle.status !== "PREPARED")) {
+      setReadinessOk(null);
+      return;
+    }
+    void fetchCycleReadiness(selectedCycle.id)
+      .then((r) => setReadinessOk(!r.blocked))
+      .catch(() => setReadinessOk(null));
+  }, [selectedCycle?.id, selectedCycle?.status, counts]);
 
   useEffect(() => {
     if (!cycles || showInactive) return;
@@ -78,7 +97,7 @@ export function PerformanceCyclesTab({
     <section className="space-y-4" data-testid="perf-cycles-tab">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="max-w-3xl text-sm text-muted-foreground">
-          O ciclo passa por rascunho, preparação, abertura, consolidação, calibração, homologação e encerramento. Cada etapa tem a sua guarda e fica registrada.
+          O ciclo segue uma ordem: preparar, abrir, coletar, calibrar, tornar oficial, conversar e encerrar. Cada passo tem a sua guarda e fica registrado.
         </p>
         {canManage ? (
           <button type="button" className={BTN_PRIMARY} onClick={() => setCreating(true)} disabled={published.length === 0} title={published.length === 0 ? "Publique um modelo antes" : undefined} data-testid="perf-cycle-new">
@@ -87,6 +106,19 @@ export function PerformanceCyclesTab({
         ) : null}
       </div>
       <ErrorBanner message={error} />
+      {canManage && cycles !== null ? (
+        <FirstCycleGuide
+          models={models}
+          cycle={selectedCycle}
+          counts={selectedId ? counts[selectedId] ?? null : null}
+          readinessOk={readinessOk}
+          onGo={(step) => {
+            if (step === "model" || step === "leadership") onGoToModels?.();
+            else if (step === "cycle") setCreating(true);
+            else document.querySelector('[data-testid="perf-cycle-desk"]')?.scrollIntoView({ behavior: "smooth", block: "start" });
+          }}
+        />
+      ) : null}
       {inactiveCount > 0 ? (
         <label className="inline-flex items-center gap-2 text-sm text-muted-foreground">
           <input type="checkbox" className="h-4 w-4" checked={showInactive} onChange={(e) => setShowInactive(e.target.checked)} data-testid="perf-show-inactive" />
@@ -170,6 +202,12 @@ export function PerformanceCyclesTab({
           void reload();
         }}
       />
+      <details className="rounded-xl border border-border bg-card p-3" data-testid="perf-glossary-details">
+        <summary className="cursor-pointer text-sm font-medium">Palavras deste processo, em uma linha cada</summary>
+        <div className="mt-3">
+          <GlossaryList keys={["elegibilidade", "evidencia", "consolidacao", "calibrar", "homologar", "ninebox", "ascendente", "devolutiva", "pdi", "topo"]} />
+        </div>
+      </details>
     </section>
   );
 }

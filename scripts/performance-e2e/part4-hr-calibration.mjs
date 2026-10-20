@@ -20,12 +20,12 @@ try {
   await hr.click('[data-testid="perf-accept-pending"]');
   await hr.shot("23a-encerrar-coleta-pendencias");
   await hr.clickTestId("perf-transition-dialog-save");
-  await hr.waitFor(`document.querySelector('[data-testid="perf-cycle-desk"]').innerText.includes("Iniciar calibração")`, { label: "consolidação" });
+  await hr.waitFor(`document.querySelector('[data-testid="perf-cycle-desk"]').innerText.includes("Iniciar a calibração")`, { label: "consolidação" });
   step("23 consolidação com tratamento explícito de pendências", blocked === true, pendingText.split("\n").find((l) => l.includes("pendente")) ?? "");
   await hr.clickTestId("perf-cycle-next");
   await hr.waitTestId("perf-transition-dialog");
   await hr.clickTestId("perf-transition-dialog-save");
-  await hr.waitFor(`document.querySelector('[data-testid="perf-cycle-desk"]').innerText.includes("Homologar resultados")`, { label: "calibração" });
+  await hr.waitFor(`document.querySelector('[data-testid="perf-cycle-desk"]').innerText.includes("Tornar os resultados oficiais")`, { label: "calibração" });
 
   // 24 calibração: comparação de perspectivas, divergências e evidências
   await hr.clickTestId("perf-tabs-tab-calibracao");

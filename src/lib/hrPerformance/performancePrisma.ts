@@ -240,10 +240,17 @@ async function deleteTestCycleInDb(db: PrismaClient, plan: CycleDeletionPlan, ex
 
 export async function loadPerformanceDatabase(db: PrismaClient): Promise<PerformanceDatabase> {
   const state = emptyPerformanceDatabase();
-  const [lock, ...rows] = await Promise.all([
-    db.hrPerformanceGraphLock.findUnique({ where: { id: GRAPH_LOCK_ID } }),
-    ...PERFORMANCE_COLLECTIONS.map((collection) => delegateOf(db, collection).findMany()),
-  ]);
+  // Retrato único: a revisão do grafo e as linhas saem do mesmo instantâneo (REPEATABLE READ).
+  // Lidos em conexões separadas, a revisão podia vir de depois de uma gravação e as linhas de antes,
+  // e a gravação seguinte passava pela trava com dados velhos (perda silenciosa da outra gravação).
+  const [lock, ...rows] = await db.$transaction(
+    (tx) =>
+      Promise.all([
+        tx.hrPerformanceGraphLock.findUnique({ where: { id: GRAPH_LOCK_ID } }),
+        ...PERFORMANCE_COLLECTIONS.map((collection) => delegateOf(tx, collection).findMany()),
+      ]),
+    { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead, timeout: 30_000, maxWait: 10_000 }
+  );
   PERFORMANCE_COLLECTIONS.forEach((collection, index) => {
     (state[collection] as unknown[]) = (rows[index] as Record<string, unknown>[]).map((row) => fromDbRow(collection, row));
   });

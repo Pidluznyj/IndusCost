@@ -67,7 +67,8 @@ try {
   await hr.type('[data-testid="perf-cycle-create-name"]', "Ciclo piloto 2026-S2");
   await hr.type('[data-testid="perf-cycle-create-period"]', "2º semestre de 2026");
   // O tipo do ciclo não tem valor padrão na tela (ciclo de vida): o roteiro escolhe oficial.
-  await hr.select('[data-testid="perf-cycle-create-classification"]', "OFFICIAL");
+  // Piloto local: ciclo de teste (o oficial exige o modelo de liderança, que a parte 1 não cria).
+  await hr.select('[data-testid="perf-cycle-create-classification"]', "TEST");
   await hr.clickTestId("perf-cycle-create-save");
   await hr.waitTestId("perf-cycle-desk", 20000);
   await hr.waitFor(`document.querySelector('[data-testid="perf-cycle-title"]')?.innerText.includes("Ciclo piloto 2026-S2")`);

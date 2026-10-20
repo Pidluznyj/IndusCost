@@ -2,9 +2,10 @@
  * Dados FICTÍCIOS para o piloto local do módulo Desempenho e Cultura.
  *
  * Só roda contra banco local (127.0.0.1 / localhost) e recusa qualquer outro host.
- * Cria cargos, pessoas, um afastamento e dois usuários de teste:
- *   - rh.teste@induscost.test    → SUPER_ADMIN (RH)
- *   - lider.teste@induscost.test → VIEWER + perfil "[DEMO] Líder de produção", vinculado a "Bruno Líder"
+ * Cria cargos, pessoas, um afastamento e três usuários de teste:
+ *   - rh.teste@induscost.test     → SUPER_ADMIN (RH)
+ *   - lider.teste@induscost.test  → VIEWER + perfil "[DEMO] Líder de produção", vinculado a "Bruno Líder"
+ *   - marcos.teste@induscost.test → idem, vinculado a "Marcos Manutenção" (avaliador de Otávio precisa de usuário)
  * A senha vem de PERF_DEMO_PASSWORD (obrigatória). Nada é enviado a Nomus ou a qualquer serviço.
  *
  * Uso:
@@ -120,7 +121,13 @@ async function main() {
       permissionsVersion: { increment: 1 },
     },
   });
-  console.log("Dados fictícios prontos: 11 pessoas, 1 afastamento, 2 usuários de teste.");
+  // Marcos avalia Otávio: todo avaliador precisa de usuário (a prontidão do ciclo bloqueia avaliador sem acesso).
+  await prisma.appUser.upsert({
+    where: { email: "marcos.teste@induscost.test" },
+    create: { name: "Marcos Manutenção (teste)", email: "marcos.teste@induscost.test", passwordHash, role: "VIEWER", isActive: true, employeeId: marcos.id, permissions: leaderPermissions, accessProfileId: leaderProfile.id },
+    update: { passwordHash, isActive: true, employeeId: marcos.id, permissions: leaderPermissions, accessProfileId: leaderProfile.id, permissionsVersion: { increment: 1 } },
+  });
+  console.log("Dados fictícios prontos: 11 pessoas, 1 afastamento, 3 usuários de teste.");
 }
 
 main()

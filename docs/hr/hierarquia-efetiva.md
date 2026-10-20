@@ -96,3 +96,9 @@ O relatório também lista quem está pendente, ambíguo, em ciclo ou com o gest
 Rollback: voltar o commit. Não há dado a desfazer.
 
 **Mudança de visibilidade a comunicar:** líderes com escopo de equipe (`employees.team.view` / `employees.team.descendants.view`) passam a ver os líderes das unidades subordinadas e as equipes deles (Pessoas/RH, Competências, Desempenho). Esse é o comportamento hierárquico esperado, mas amplia o que um diretor via antes.
+
+## Atualização de 20/10/2026 — liderança repetida na cadeia e liderados ativos
+
+- **Liderados diretos** passam a ser só pessoas **ativas** cujo superior efetivo é a pessoa. Desligados não contam (nem em `directReports`, nem em `descendants`, nem no retrato de liderança). "Líder" = tem pelo menos um liderado ativo, fora de qualquer ciclo.
+- **Posição mais alta decide**: quem lidera uma diretoria e também departamentos de outra cadeia responde pela diretoria; os departamentos ficam registrados no alerta `LOWER_UNIT_CHAIN_IGNORED`. Camadas repetidas da mesma pessoa (Montagem sob Fabricação, Administrativa sob Presidência) continuam consolidadas: a pessoa aparece uma vez e nunca é superior de si mesma.
+- Detalhes, casos reais e auditoria: [CORRECAO_HIERARQUIA_LIDERANCA.md](../avaliacao-desempenho/CORRECAO_HIERARQUIA_LIDERANCA.md).

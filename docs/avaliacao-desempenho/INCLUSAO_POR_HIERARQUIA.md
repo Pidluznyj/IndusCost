@@ -43,7 +43,7 @@ Selecionar líder (busca por nome, cargo ou setor) → abrangência → prévia 
 | Deduplicação | Por `employeeId`; árvores sobrepostas, repetição da prévia, clique duplo e requisições simultâneas resultam em `added = 0` para quem já está. Uma tarefa por pessoa e tipo (índice único já existente) |
 | Snapshot | `managerId`, `managerName`, `managerSource`, `isLeader`, `directReportCount`, `leadershipSnapshotAt` na inclusão; a abertura refaz o retrato e congela (`frozen`) |
 | Mudança de estrutura depois da abertura | Nada muda sozinho. Respostas enviadas ficam com o avaliador da época; tarefa pendente só muda por "Trocar líder" (motivo e auditoria). Ciclo homologado não muda |
-| Líder fora do ciclo | A prévia avisa; o superior **não** é trocado. A prontidão bloqueia a abertura e oferece "Incluir os líderes" |
+| Líder fora do ciclo | A prévia avisa; o superior **não** é trocado. Com 180° a prontidão bloqueia a abertura; sem 180° só avisa (o líder avalia, mas não é avaliado). Nos dois casos oferece "Incluir os líderes" |
 | Permissões | Preparar ciclo (`admin.employees.performance.cycles:manage` ou o `manage` anterior); `ALL` exige também homologação (RH Gestor) ou SUPER_ADMIN. Validado no servidor |
 
 ## 4. Testes

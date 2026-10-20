@@ -135,13 +135,17 @@ try {
   // painel e evolução
   await hr.clickTestId("perf-tabs-tab-painel");
   await hr.waitTestId("perf-dash-kpis", 20000);
-  await hr.waitTestId("perf-evolution-table", 20000);
+  // Ciclo de teste: fora dos indicadores oficiais (a evolução fica vazia); o RH enxerga pela consulta rotulada.
+  await hr.waitFor(`document.querySelector('[data-testid="perf-evolution-table"]') || /Nenhum ciclo/.test(document.body.innerText)`, { label: "evolução carregada", timeout: 20000 });
   await hr.fullShot("33-painel");
-  step("33 painel com numerador/denominador e evolução", /de 4/.test(await hr.eval(`document.querySelector('[data-testid="perf-dash-kpis"]').innerText`)));
+  const evoOfficial = await hr.eval(`fetch("/api/hr/performance/evolution").then(r => r.json())`);
+  const evoAll = await hr.eval(`fetch("/api/hr/performance/evolution?includeNonOfficial=1").then(r => r.json())`);
+  const evoRow = evoAll.cycles?.find((c) => c.name === "Ciclo piloto 2026-S2");
+  step("33 painel com numerador/denominador; ciclo de teste fora da evolução oficial e rotulado na consulta do RH", /de 4/.test(await hr.eval(`document.querySelector('[data-testid="perf-dash-kpis"]').innerText`)) && !(evoOfficial.cycles ?? []).some((c) => c.name === "Ciclo piloto 2026-S2") && evoRow?.classification === "TEST", `oficial=${evoOfficial.cycles?.length ?? 0} · com teste=${evoAll.cycles?.length ?? 0}`);
 
   // consulta histórica (API da ficha) — mesma rota usada pela seção da ficha do colaborador
-  const history = await hr.eval(`fetch("/api/hr/performance/employees/" + ${JSON.stringify(await hr.eval(`fetch("/api/hr/performance/cycles/${cycleId}/workspace").then(r => r.json()).then(ws => ws.people.find(p => p.participant.employeeName.includes("Ana Souza")).participant.employeeId)`))} + "/history").then(r => r.json())`);
-  step("34 consulta histórica", history.cycles?.[0]?.quadrant === "Desempenho alto · Potencial médio", JSON.stringify(history.cycles?.[0] ?? {}).slice(0, 160));
+  const history = await hr.eval(`fetch("/api/hr/performance/employees/" + ${JSON.stringify(await hr.eval(`fetch("/api/hr/performance/cycles/${cycleId}/workspace").then(r => r.json()).then(ws => ws.people.find(p => p.participant.employeeName.includes("Ana Souza")).participant.employeeId)`))} + "/history?includeNonOfficial=1").then(r => r.json())`);
+  step("34 consulta histórica (ciclo de teste só com includeNonOfficial)", history.cycles?.[0]?.quadrant === "Desempenho alto · Potencial médio", JSON.stringify(history.cycles?.[0] ?? {}).slice(0, 160));
 
   // responsividade do administrativo
   for (const vp of [{ width: 375, height: 812, mobile: true, name: "mobile" }, { width: 768, height: 1024, mobile: false, name: "tablet" }, { width: 1280, height: 800, name: "notebook" }, { width: 1920, height: 1080, name: "desktop" }]) {
