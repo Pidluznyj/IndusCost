@@ -157,6 +157,28 @@ export function CnpjCommercialIntelligencePrintReport({ data }: Props) {
         ) : (
           <p className="cnpj-intelligence-print-note">{data.credit?.bcbDetail ?? "Banco Central: não aplicável. Nenhuma consulta foi realizada."}</p>
         )}
+        {data.credit && data.credit.overdueTitles.length > 0 ? (
+          <table className="cnpj-intelligence-print-kv-table">
+            <thead>
+              <tr>
+                <th>Documento</th>
+                <th>Vencimento</th>
+                <th>Atraso</th>
+                <th>Saldo</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.credit.overdueTitles.map((title) => (
+                <tr key={title.id}>
+                  <td>{formatCnpjPrintText(title.documentLabel)}</td>
+                  <td>{title.dueDateLabel}</td>
+                  <td>{title.daysOverdueLabel}</td>
+                  <td>{title.amountLabel}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : null}
       </section>
 
       <section className="cnpj-intelligence-print-section cnpj-intelligence-print-risk">

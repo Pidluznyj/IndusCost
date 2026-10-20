@@ -79,6 +79,17 @@ describe("apresentação da consulta CNPJ", () => {
       overdueAmount: 1500,
       openAmount: 1500,
       maxDaysOverdue: 4,
+      overdueTitles: [
+        {
+          externalId: 4,
+          description: "Parcela NF 100",
+          sourceInvoiceNumber: "100",
+          dueDate: "2026-10-15",
+          daysOverdue: 4,
+          balanceReceivable: 1500,
+          protested: false,
+        },
+      ],
     });
     const decision = decideCommercialCredit({
       customerId: CUSTOMER,
@@ -112,6 +123,10 @@ describe("apresentação da consulta CNPJ", () => {
     assert.equal(hidden.maxDaysOverdueLabel, "Restrito");
     assert.equal(hidden.financialDetailsRestricted, true);
     assert.equal(JSON.stringify(hidden).includes("1500"), false);
+    assert.equal(visible.overdueTitles.length, 1);
+    assert.equal(visible.overdueTitles[0]?.documentLabel, "100");
+    assert.equal(visible.overdueTitles[0]?.dueDateLabel, "15/10/2026");
+    assert.equal(hidden.overdueTitles.length, 0);
     assert.equal(visible.cadastralScoreLabel, "91/100");
     assert.equal(visible.cadastralVerdict, "VENDA LIBERADA");
     assert.equal(visible.cadastralAuthorizesCredit, false);

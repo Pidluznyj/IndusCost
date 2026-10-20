@@ -161,6 +161,7 @@ export function CustomerQuodDossierPanel({
         quodState={quodState}
         ieptbLabel={ieptbLabel}
         ieptbState={ieptbState}
+        ieptbCount={ieptb?.protestCount ?? null}
       />
       {isSuperAdmin && customerId ? (
         <CreditIntelligenceSourceCards
