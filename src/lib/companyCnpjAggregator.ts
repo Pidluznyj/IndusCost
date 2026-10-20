@@ -216,6 +216,10 @@ export function mergeCnpjSummaries(
     partners,
     isMei: Boolean(bySource[CNPJ_SOURCE_BRASIL_API]?.isMei || bySource[CNPJ_SOURCE_PUBLICA_CNPJ_WS]?.isMei),
     hasPartners: partners.length > 0,
+    establishmentType:
+      (pickScalarField("establishmentType", bySource, provenance) as
+        | NormalizedCnpjSummary["establishmentType"]
+        | undefined) ?? null,
     sourceUpdatedAt:
       (pickScalarField("sourceUpdatedAt", bySource, provenance) as string | null | undefined) ?? null,
   };

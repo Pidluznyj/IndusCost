@@ -85,6 +85,12 @@ src/lib/commercial/externalProtest/externalProtestQuery.test.ts
 src/lib/commercial/corporateRelation.test.ts
 src/lib/commercial/commercialCreditOperation.test.ts
 src/lib/commercial/commercialCreditAuditScenario.test.ts
+src/lib/cnpjWeeklyRefresh/schedule.test.ts
+src/lib/cnpjWeeklyRefresh/eligibility.test.ts
+src/lib/cnpjWeeklyRefresh/throttle.test.ts
+src/lib/cnpjWeeklyRefresh/refreshRun.test.ts
+src/lib/cnpjWeeklyRefresh/adminRoutes.test.ts
+src/components/settings/CnpjWeeklyRefreshAdminCard.test.tsx
 src/lib/commercial/customerSalesBlockUi.test.tsx
 src/components/customers/CustomerCnpjRiskTag.test.tsx
 src/components/customers/CustomerCnpjCreditSections.test.tsx

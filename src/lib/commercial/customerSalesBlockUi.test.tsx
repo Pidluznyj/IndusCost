@@ -124,6 +124,9 @@ describe("customer sales block UI", () => {
     const header = read(HEADER);
     const proposals = read(PROPOSALS);
     assert.match(page, /CustomerSalesBlockBadge/);
+    assert.match(page, /salesBlock\?\.blocked === true/);
+    assert.match(page, /bg-red-50/);
+    assert.match(page, /customer-row-sale-blocked/);
     assert.match(page, /CustomerCadastralStatusBadge/);
     assert.match(page, /CustomerNewSaleButton/);
     assert.match(page, /salesBlock=\{editingCustomer\.salesBlock\}/);

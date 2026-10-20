@@ -27,6 +27,7 @@ const BRASIL_API_PAYLOAD = {
   razao_social: "EMPRESA BRASILAPI LTDA",
   nome_fantasia: "BRASILAPI TRADE",
   descricao_situacao_cadastral: "ATIVA",
+  descricao_identificador_matriz_filial: "MATRIZ",
   data_inicio_atividade: "2010-05-01",
   descricao_porte: "DEMAIS",
   natureza_juridica: "Sociedade Empresária Limitada",
@@ -55,6 +56,7 @@ const PUBLICA_PAYLOAD = {
     cnpj: VALID_CNPJ,
     nome_fantasia: "PUBLICA TRADE",
     situacao_cadastral: "Ativa",
+    tipo: "Filial",
     data_inicio_atividade: "2010-05-01",
     tipo_logradouro: "RUA",
     logradouro: "DAS FLORES",
@@ -110,6 +112,7 @@ describe("cnpj multi-source — normalize", () => {
     const s = normalizeBrasilApiCnpjPayload(BRASIL_API_PAYLOAD);
     assert.equal(s.companyName, "EMPRESA BRASILAPI LTDA");
     assert.equal(s.registrationStatusNormalized, "ATIVA");
+    assert.equal(s.establishmentType, "MATRIZ");
     assert.equal(s.mainCnae?.code, "2511000");
     assert.ok(s.partners.length >= 1);
   });
@@ -119,6 +122,7 @@ describe("cnpj multi-source — normalize", () => {
     assert.equal(s.companyName, "EMPRESA PUBLICA WS LTDA");
     assert.equal(s.stateTaxIds[0]?.number, "1234567890");
     assert.equal(s.partners[0]?.name, "João Silva");
+    assert.equal(s.establishmentType, "FILIAL");
   });
 });
 
