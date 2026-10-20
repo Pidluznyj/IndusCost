@@ -549,8 +549,17 @@ export const CustomerModule = () => {
                   </td>
                 </tr>
               ) : (
-                listRows.map((c) => (
-                  <tr key={c.id} className="hover:bg-accent/30 transition-colors group">
+                listRows.map((c) => {
+                  const saleBlocked = c.salesBlock?.blocked === true;
+                  return (
+                  <tr
+                    key={c.id}
+                    data-testid={saleBlocked ? "customer-row-sale-blocked" : undefined}
+                    className={cn(
+                      "transition-colors group",
+                      saleBlocked ? "bg-red-50 hover:bg-red-100/80" : "hover:bg-accent/30"
+                    )}
+                  >
                     <td className="px-3 py-1.5">
                       <div className="flex items-center gap-2 min-w-0">
                         <div className="h-7 w-7 shrink-0 rounded-md bg-primary/10 flex items-center justify-center text-primary">
@@ -563,6 +572,7 @@ export const CustomerModule = () => {
                           <p className="text-[11px] text-muted-foreground truncate" title={c.tradeName ?? undefined}>
                             {c.tradeName || "—"}
                           </p>
+                          <CustomerSalesBlockBadge salesBlock={c.salesBlock} className="mt-1 max-w-full" />
                         </div>
                       </div>
                     </td>
@@ -624,12 +634,16 @@ export const CustomerModule = () => {
                       </p>
                     </td>
                     <td className="px-3 py-1.5 whitespace-nowrap">
-                      <div className="flex flex-wrap items-center gap-1">
-                        <CustomerCadastralStatusBadge status={c.status} />
-                        <CustomerSalesBlockBadge salesBlock={c.salesBlock} />
-                      </div>
+                      <CustomerCadastralStatusBadge status={c.status} />
                     </td>
-                    <td className={cn("px-2 py-1.5 text-right whitespace-nowrap", STICKY_ACTIONS)}>
+                    <td
+                      className={cn(
+                        "px-2 py-1.5 text-right whitespace-nowrap",
+                        saleBlocked
+                          ? "sticky right-0 z-10 bg-red-50 group-hover:bg-red-100/80 shadow-[-6px_0_8px_-6px_rgba(0,0,0,0.12)]"
+                          : STICKY_ACTIONS
+                      )}
+                    >
                       <div className="flex items-center justify-end gap-0.5">
                         <button
                           type="button"
@@ -677,7 +691,8 @@ export const CustomerModule = () => {
                       </div>
                     </td>
                   </tr>
-                ))
+                  );
+                })
               )}
             </tbody>
           </table>
