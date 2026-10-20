@@ -26,6 +26,7 @@
     "sync:nomus:proposals:hourly:dry": "bash scripts/runNomusProposalsHourlySync.sh dry",
     "sync:nomus:proposals:hourly:apply": "bash scripts/runNomusProposalsHourlySync.sh apply",
     "audit:org-hierarchy": "tsx scripts/auditOrgHierarchy.ts",
+    "audit:people-identity": "tsx scripts/auditPeopleIdentity.ts",
     "audit:treasury-company-code": "tsx scripts/auditTreasuryAccountCompanyCode.ts",
     "repair:proposal-opened-at:dry": "tsx scripts/repairProposalOpenedAt.ts",
     "repair:proposal-opened-at:json": "tsx scripts/repairProposalOpenedAt.ts --json",
