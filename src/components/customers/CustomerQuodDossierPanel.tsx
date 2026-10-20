@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { fetchJsonOk } from "@/src/lib/http";
+import { generateIdempotencyKey, SecureRandomUnavailableError } from "@/src/lib/quodDossier/idempotencyKey";
 import type { QuodSections } from "@/src/lib/quodDossier/parse";
 import {
   QuodDossierReport,
@@ -51,6 +52,7 @@ export function CustomerQuodDossierPanel({
   const [confirming, setConfirming] = useState(false);
   const [showReport, setShowReport] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   const load = useCallback(async () => {
     if (!isSuperAdmin || !customerId) return;
@@ -66,19 +68,33 @@ export function CustomerQuodDossierPanel({
   const score = isSuperAdmin && status?.state === "VALID" ? status.consultation?.score ?? null : null;
 
   async function confirmPaid() {
-    if (!customerId) return;
+    if (!customerId || submitting) return;
     setMessage(null);
+    let idempotencyKey: string;
+    try {
+      idempotencyKey = generateIdempotencyKey();
+    } catch (error) {
+      setMessage(
+        error instanceof SecureRandomUnavailableError
+          ? error.message
+          : "Não foi possível gerar a chave de idempotência. A consulta paga foi bloqueada."
+      );
+      return;
+    }
+    setSubmitting(true);
     try {
       await fetchJsonOk(`/api/customers/${customerId}/quod-dossier`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ consent: true, idempotencyKey: crypto.randomUUID() }),
+        body: JSON.stringify({ consent: true, idempotencyKey }),
       });
       setConfirming(false);
       setShowReport(true);
       await load();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "A consulta paga não foi concluída.");
+    } finally {
+      setSubmitting(false);
     }
   }
 
@@ -135,7 +151,8 @@ export function CustomerQuodDossierPanel({
               ? `Consulta anterior em ${new Date(status.consultation.consultedAt).toLocaleString("pt-BR")}, válida até ${status.consultation.validUntil ? new Date(status.consultation.validUntil).toLocaleString("pt-BR") : "—"}. Atualizar gera nova consulta paga.`
               : null
           }
-          onCancel={() => setConfirming(false)}
+          submitting={submitting}
+          onCancel={() => { if (!submitting) setConfirming(false); }}
           onConfirm={() => void confirmPaid()}
         />
       ) : null}
