@@ -1307,6 +1307,28 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
     relationalResourceKeys: ["comissoes.tab.reprocessar"],
   },
 
+  {
+    resourceKey: "finance.commercial_credit_exception",
+    label: "Exceção formal de crédito",
+    parentKey: "finance",
+    groupId: "finance",
+    route: null,
+    sortOrder: 406,
+    actions: [
+      A(
+        ["commercial.credit.exception.grant", "commercial.credit.exception.grant.board"],
+        "Exige a chave explícita no usuário. O papel SUPER_ADMIN não concede."
+      ),
+    ],
+    relatedEndpoints: ["/api/commercial/credit-exceptions"],
+    sensitivity: "critical",
+    appearsInSidebar: false,
+    isTab: false,
+    isInternalAction: true,
+    isDetailScreen: false,
+    relationalResourceKeys: [],
+  },
+
   // ─── Finance ───────────────────────────────────────────────
   {
     resourceKey: "finance",

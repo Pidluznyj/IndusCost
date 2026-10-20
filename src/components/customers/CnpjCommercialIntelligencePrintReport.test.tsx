@@ -6,6 +6,9 @@ import { describe, it } from "node:test";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { CnpjCommercialIntelligencePrintReport } from "./CnpjCommercialIntelligencePrintReport";
+import { buildCommercialCreditIntelligenceView } from "@/src/lib/commercial/commercialCreditIntelligenceView";
+import { decideCommercialCredit } from "@/src/lib/commercial/commercialCreditDecision";
+import type { CommercialDelinquencyAnalysis } from "@/src/lib/commercial/customerDelinquencyAnalysis";
 import {
   canPrintCnpjIntelligenceReport,
   CNPJ_INTELLIGENCE_PRINT_BUTTON_LABEL,
@@ -136,6 +139,7 @@ describe("CnpjCommercialIntelligencePrintReport", () => {
     assert.ok(html.includes("Quadro societário (QSA)"));
     assert.ok(html.includes("João Silva"));
     assert.ok(html.includes("publica.cnpj.ws"));
+    assert.ok(html.includes("Situação de crédito não consultada."));
   });
 
   it("não expõe payload bruto nem valores inválidos", () => {
@@ -154,6 +158,67 @@ describe("CnpjCommercialIntelligencePrintReport", () => {
     assert.ok(!html.includes("undefined"));
     assert.ok(!html.includes("NaN"));
     assert.ok(html.includes("—"));
+  });
+
+  it("imprime score 91 e crédito bloqueado sem estourar a tabela", () => {
+    const delinquency: CommercialDelinquencyAnalysis = {
+      status: "OVERDUE",
+      unknownReason: null,
+      overdueTitleCount: 1,
+      overdueAmount: 910,
+      openAmount: 910,
+      maxDaysOverdue: 2,
+      lastSyncedAt: "2026-10-19T12:00:00.000Z",
+      evidence: {
+        source: "NomusAccountsReceivable",
+        toleranceDays: 0,
+        toleranceUnit: "CALENDAR_DAYS",
+        referenceDate: "2026-10-19",
+        cnpj: "11444777000161",
+        nomusPersonId: 100,
+        identity: "RESOLVED",
+        syncRunStatus: "SUCCESS",
+        payloadComplete: true,
+        sourceMaxSyncedAt: null,
+        includedTitleIds: [1],
+        overdueTitleIds: [1],
+        protestedTitleIds: [],
+        protestReading: "CLEAR",
+        exclusions: [],
+      },
+    };
+    const decision = decideCommercialCredit({
+      customerId: "11111111-1111-4111-8111-111111111111",
+      enforcement: "CREDIT_GRANT",
+      paymentTerms: "30",
+      delinquency,
+      cadastral: { score: 91, verdict: "VENDA LIBERADA" },
+      now: new Date(2026, 9, 19, 12, 0, 0),
+    });
+    const credit = buildCommercialCreditIntelligenceView({
+      decision,
+      delinquency,
+      externalProtest: "ABSENT",
+      revealFinancial: true,
+    });
+    const html = renderToStaticMarkup(
+      <CnpjCommercialIntelligencePrintReport
+        data={samplePrintPayload({
+          risk: { ...samplePrintPayload().risk, score: 91, verdict: "VENDA LIBERADA" },
+          credit,
+          creditState: "loaded",
+        })}
+      />
+    );
+    const css = readFileSync(join(__dirname, "../../cnpj-intelligence-print.css"), "utf8");
+    assert.match(html, /Score cadastral: 91\/100/);
+    assert.match(html, /CRÉDITO BLOQUEADO/);
+    assert.match(html, /Não autoriza crédito nem venda a prazo/);
+    assert.match(html, /Nenhuma consulta ao Banco Central foi realizada/);
+    assert.match(html, /cnpj-intelligence-print-kv-table/);
+    assert.match(css, /overflow-wrap:\s*anywhere/);
+    assert.match(css, /white-space:\s*normal/);
+    assert.equal(html.includes("not_applicable"), false);
   });
 });
 

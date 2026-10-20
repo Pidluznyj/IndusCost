@@ -2484,6 +2484,14 @@ model Customer {
   commissionReceivableSchedules    CommissionReceivableSchedule[]
   satisfactionInvitations          SatisfactionSurveyInvitation[]
   satisfactionResponses            SatisfactionSurveyResponse[]
+  commercialCreditExceptions       CommercialCreditException[]
+  corporateLinks                   CustomerCorporateLink[]       @relation("CorporateLinkSubject")
+  corporateLinksIncoming           CustomerCorporateLink[]       @relation("CorporateLinkRelated")
+  commercialExternalProtests       CommercialExternalProtest[]
+  commercialExternalProtestConsultations CommercialExternalProtestConsultation[]
+  commercialCorporateMemberships   CommercialCorporateMembership[]
+  commercialCreditOccurrences      CommercialCreditOccurrence[]
+  commercialCreditEvaluations      CommercialCreditEvaluation[]
 
   @@index([personId])
   @@index([contactPersonId])
@@ -3362,6 +3370,157 @@ model CommercialAuditLog {
   @@index([entityId])
   @@index([entityType])
   @@index([performedAt])
+}
+
+/// Exceção formal de crédito. Não copia saldo. SUPER_ADMIN não concede sozinho.
+model CommercialCreditException {
+  id                   String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  customerId           String    @db.Uuid
+  scope                String
+  justification        String
+  expiresAt            DateTime  @db.Timestamptz(6)
+  grantedByUserId      String
+  grantedByPermission  String
+  activeKey            String    @default("ACTIVE")
+  revokedAt            DateTime? @db.Timestamptz(6)
+  createdAt            DateTime  @default(now()) @db.Timestamptz(6)
+  Customer             Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([customerId, scope, activeKey])
+  @@index([customerId, expiresAt])
+}
+
+/// Vínculo societário confirmado entre clientes oficiais. Sem valor de dívida.
+model CustomerCorporateLink {
+  id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  customerId        String   @db.Uuid
+  relatedCustomerId String   @db.Uuid
+  evidenceRef       String?
+  createdAt         DateTime @default(now()) @db.Timestamptz(6)
+  Customer          Customer @relation("CorporateLinkSubject", fields: [customerId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  RelatedCustomer   Customer @relation("CorporateLinkRelated", fields: [relatedCustomerId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([customerId, relatedCustomerId])
+  @@index([relatedCustomerId])
+}
+
+/// Registro manual de protesto externo. A ausência de linha não significa consulta sem ocorrência.
+model CommercialExternalProtest {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  customerId     String    @db.Uuid
+  status         String
+  evidenceRef    String
+  effectiveFrom  DateTime  @db.Timestamptz(6)
+  effectiveUntil DateTime? @db.Timestamptz(6)
+  createdAt      DateTime  @default(now()) @db.Timestamptz(6)
+  Customer       Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([customerId, effectiveFrom])
+}
+
+/// Cache da consulta a protesto externo. Não guarda o payload bruto nem credencial.
+model CommercialExternalProtestConsultation {
+  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  customerId       String?   @db.Uuid
+  cnpj             String
+  provider         String
+  executionStatus  String
+  protestSituation String
+  occurrenceId     String?
+  evidenceRef      String?
+  source           String
+  consultedAt      DateTime  @db.Timestamptz(6)
+  validUntil       DateTime  @db.Timestamptz(6)
+  errorCode        String?
+  createdAt        DateTime  @default(now()) @db.Timestamptz(6)
+  Customer         Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([cnpj, validUntil])
+  @@index([provider, consultedAt])
+  @@index([customerId, consultedAt])
+}
+
+/// QSA normalizado. Histórico: uma consulta nova não apaga a anterior. CPF não é gravado.
+model CommercialCorporateMembership {
+  id                String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  subjectCnpj       String
+  subjectCustomerId String?   @db.Uuid
+  source            String
+  consultedAt       DateTime  @db.Timestamptz(6)
+  memberKind        String
+  roleText          String?
+  personKind        String
+  documentKind      String
+  memberCnpj        String?
+  reliability       String
+  evidenceRef       String    @unique
+  createdAt         DateTime  @default(now()) @db.Timestamptz(6)
+  Customer          Customer? @relation(fields: [subjectCustomerId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([subjectCnpj, consultedAt])
+  @@index([memberCnpj])
+  @@index([subjectCustomerId, consultedAt])
+}
+
+/// Avaliação de crédito no momento da decisão. Não copia título nem saldo.
+model CommercialCreditEvaluation {
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  customerId   String    @db.Uuid
+  evaluatedAt  DateTime  @db.Timestamptz(6)
+  evaluatedBy  String?
+  status       String
+  reason       String
+  enforcement  String
+  saleKind     String
+  allowed      Boolean
+  sources      String
+  validUntil   DateTime? @db.Timestamptz(6)
+  entityType   String?
+  entityId     String?   @db.Uuid
+  createdAt    DateTime  @default(now()) @db.Timestamptz(6)
+  Customer     Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([customerId, evaluatedAt])
+}
+
+/// Ocorrência de crédito. Referencia o título oficial sem copiar saldo.
+model CommercialCreditOccurrence {
+  id                 String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  customerId         String    @db.Uuid
+  titleExternalId    Int?
+  kind               String
+  status             String
+  origin             String
+  occurredAt         DateTime  @db.Timestamptz(6)
+  responsibleUserId  String
+  justification      String
+  dedupeKey          String    @unique
+  closesOccurrenceId String?   @db.Uuid
+  closedAt           DateTime? @db.Timestamptz(6)
+  closedByUserId     String?
+  createdAt          DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt          DateTime  @updatedAt @db.Timestamptz(6)
+  Customer           Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  evidences          CommercialCreditOccurrenceEvidence[]
+
+  @@index([customerId, status, kind])
+  @@index([customerId, titleExternalId])
+}
+
+/// Comprovante da ocorrência. Metadado no padrão de arquivo local já usado no sistema.
+model CommercialCreditOccurrenceEvidence {
+  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  occurrenceId     String   @db.Uuid
+  fileName         String
+  mimeType         String
+  fileSize         Int
+  storageKey       String
+  contentHash      String
+  uploadedByUserId String
+  createdAt        DateTime @default(now()) @db.Timestamptz(6)
+  Occurrence       CommercialCreditOccurrence @relation(fields: [occurrenceId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([occurrenceId])
 }
 
 model CustomerCnpjLookup {

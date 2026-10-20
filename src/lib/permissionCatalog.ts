@@ -124,6 +124,26 @@ export const PERMISSION_CATALOG: PermissionCatalogEntry[] = [
     type: "menu",
   }),
   perm({
+    key: "commercial.credit.exception.grant",
+    label: "Crédito — exceção (Financeiro)",
+    group: FIN,
+    module: "commercial-credit",
+    description:
+      "Autorizar exceção formal de crédito comercial. Não é concedida pelo papel SUPER_ADMIN.",
+    type: "action",
+    risk: "critical",
+  }),
+  perm({
+    key: "commercial.credit.exception.grant.board",
+    label: "Crédito — exceção (Diretoria)",
+    group: FIN,
+    module: "commercial-credit",
+    description:
+      "Autorizar exceção formal de crédito comercial pela Diretoria. Não é concedida pelo papel SUPER_ADMIN.",
+    type: "action",
+    risk: "critical",
+  }),
+  perm({
     key: "finance.accountsReceivable.view",
     label: "Financeiro — Contas a Receber",
     group: FIN,

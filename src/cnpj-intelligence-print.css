@@ -180,7 +180,8 @@
     color: #334155;
     padding: 4px 8px 4px 0;
     vertical-align: top;
-    white-space: nowrap;
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
 
   .cnpj-intelligence-print-ident-table td,
@@ -189,6 +190,16 @@
     padding: 4px 8px;
     vertical-align: top;
     color: #0f172a;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  .cnpj-intelligence-print-blocked {
+    margin: 0 0 8px;
+    border: 2px solid #991b1b;
+    padding: 8px 10px;
+    font-weight: 700;
+    color: #7f1d1d;
   }
 
   .cnpj-intelligence-print-data-table thead th {

@@ -60,9 +60,12 @@ export function CnpjCommercialIntelligencePrintReport({ data }: Props) {
       </header>
 
       <section className="cnpj-intelligence-print-section cnpj-intelligence-print-risk">
-        <h2 className="cnpj-intelligence-print-section-title">Análise de risco comercial</h2>
+        <h2 className="cnpj-intelligence-print-section-title">1. Score cadastral</h2>
         <p className="cnpj-intelligence-print-lead">
-          Score: {formatCnpjPrintScore(data.risk.score)} · {formatCnpjPrintText(data.risk.verdict)}
+          Score cadastral: {formatCnpjPrintScore(data.risk.score)} · {formatCnpjPrintText(data.risk.verdict)}
+        </p>
+        <p className="cnpj-intelligence-print-note">
+          Veredito cadastral. Não autoriza crédito nem venda a prazo.
         </p>
         <p>
           Risco: {formatCnpjPrintText(data.risk.riskLevel)} —{" "}
@@ -76,6 +79,84 @@ export function CnpjCommercialIntelligencePrintReport({ data }: Props) {
           </ul>
         ) : null}
         <p className="cnpj-intelligence-print-note">{formatCnpjPrintText(data.commercial.disclaimer)}</p>
+      </section>
+
+      <section className="cnpj-intelligence-print-section" data-testid="cnpj-print-credit">
+        <h2 className="cnpj-intelligence-print-section-title">Decisão de crédito</h2>
+        {data.credit?.headline ? (
+          <p className="cnpj-intelligence-print-blocked">{data.credit.headline}</p>
+        ) : null}
+        <p>
+          {data.creditState === "loading"
+            ? "Situação de crédito ainda carregando."
+            : data.creditState === "error"
+              ? "Situação de crédito indisponível."
+              : data.creditState === "not_consulted" || !data.credit
+                ? "Situação de crédito não consultada."
+                : data.credit.situationLabel}
+        </p>
+        {data.credit ? (
+          <table className="cnpj-intelligence-print-kv-table">
+            <tbody>
+              <tr>
+                <th>Valor vencido</th>
+                <td>{data.credit.overdueAmountLabel}</td>
+                <th>Títulos</th>
+                <td>{data.credit.overdueTitleCountLabel}</td>
+              </tr>
+              <tr>
+                <th>Maior atraso</th>
+                <td>{data.credit.maxDaysOverdueLabel}</td>
+                <th>Protesto interno</th>
+                <td>{data.credit.internalProtestLabel}</td>
+              </tr>
+              <tr>
+                <th>Sincronização Nomus</th>
+                <td>{data.credit.lastSyncedAtLabel}</td>
+                <th>Protesto externo</th>
+                <td>{data.credit.externalProtestLabel}</td>
+              </tr>
+              <tr>
+                <th>Banco Central</th>
+                <td colSpan={3}>{data.credit.bcbDetail}</td>
+              </tr>
+              <tr>
+                <th>Motivo</th>
+                <td colSpan={3}>{formatCnpjPrintText(data.credit.blockReason ?? data.credit.reason)}</td>
+              </tr>
+              <tr>
+                <th>Origem</th>
+                <td colSpan={3}>{data.credit.evidenceOrigin}</td>
+              </tr>
+              {data.credit.corporateRelations.length > 0 ? (
+                <tr>
+                  <th>Vínculos</th>
+                  <td colSpan={3}>
+                    {data.credit.corporateRelations.map((relation) => (
+                      <p key={`${relation.kindLabel}-${relation.relatedCompany}`}>
+                        {formatCnpjPrintText(
+                          `${relation.kindLabel} · ${relation.relatedCompany} · ${relation.creditStatusLabel}. ${relation.evidence}`
+                        )}
+                      </p>
+                    ))}
+                  </td>
+                </tr>
+              ) : null}
+              {data.credit.occurrenceLines.length > 0 ? (
+                <tr>
+                  <th>Ocorrências</th>
+                  <td colSpan={3}>
+                    {data.credit.occurrenceLines.map((line) => (
+                      <p key={line}>{formatCnpjPrintText(line)}</p>
+                    ))}
+                  </td>
+                </tr>
+              ) : null}
+            </tbody>
+          </table>
+        ) : (
+          <p className="cnpj-intelligence-print-note">{data.credit?.bcbDetail ?? "Banco Central: não aplicável. Nenhuma consulta foi realizada."}</p>
+        )}
       </section>
 
       <section className="cnpj-intelligence-print-section">

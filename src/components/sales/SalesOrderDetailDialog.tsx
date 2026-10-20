@@ -18,6 +18,7 @@ import { SalesOrderDetailView } from "./SalesOrderDetailView";
 import { SalesOrderTributosTab } from "./SalesOrderTributosTab";
 import { SalesOrderDetailCustosTab } from "./SalesOrderDetailCustosTab";
 import { SalesOrderDetailResultadoTab } from "./SalesOrderDetailResultadoTab";
+import { CustomerCreditOperationCard } from "@/src/components/customers/CustomerCreditOperationCard";
 
 const DETAIL_PRINT_BODY_CLASS = "sales-order-detail-print-route";
 
@@ -47,7 +48,7 @@ export function SalesOrderDetailDialog({
   orderCode,
   onClose,
   onOpenFullAudit,
-}: Props): JSX.Element | null {
+}: Props): React.ReactElement | null {
   const auth = useAuth();
   const canTributos = canViewSalesOrderFiscalTaxes(auth);
   const detailAccess = resolveSalesOrderDetailAccess({
@@ -299,6 +300,11 @@ export function SalesOrderDetailDialog({
 
         {/* Body com scroll interno — conteúdo liberado no @media print */}
         <div className="so-detail-dialog-body flex-1 overflow-y-auto bg-[#f8fafc] px-4 py-4">
+          {payload?.header.customerId ? (
+            <div className="so-detail-no-print mb-3">
+              <CustomerCreditOperationCard customerId={payload.header.customerId} />
+            </div>
+          ) : null}
           {loading ? (
             <div
               className="so-detail-no-print flex items-center justify-center py-12 text-[#6b7280]"

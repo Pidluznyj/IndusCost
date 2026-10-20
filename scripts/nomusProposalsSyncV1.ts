@@ -24,6 +24,7 @@ import {
   isProposalPlanEqual,
   type ProposalPlanComparisonData,
 } from "../src/lib/nomusProposalsIncremental.ts";
+import { assertExistingNomusObligationMirror } from "../src/lib/commercial/commercialCreditDecision.ts";
 
 const prisma = new PrismaClient();
 
@@ -1046,6 +1047,11 @@ async function applyPlans(plans: ProposalPlan[]): Promise<{
         totalCommission: new Prisma.Decimal(0),
         totalFreight: new Prisma.Decimal(0),
       };
+
+      assertExistingNomusObligationMirror({
+        sourceSystem: proposalCreateData.sourceSystem,
+        externalDocumentId: proposalCreateData.externalProposalId,
+      });
 
       let proposalId: string;
       if (!current) {

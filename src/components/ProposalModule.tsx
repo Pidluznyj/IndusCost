@@ -1,5 +1,6 @@
 // src/components/ProposalModule.tsx
 import React, { useEffect, useState, useMemo, useCallback, useRef } from "react";
+import { CustomerCreditOperationCard } from "@/src/components/customers/CustomerCreditOperationCard";
 import { useNavigate } from "react-router-dom";
 import { 
   Plus, 
@@ -2026,6 +2027,7 @@ export const ProposalModule = () => {
                     value={formData.customerId || ""}
                     onChange={(val) => setFormData({...formData, customerId: val})}
                   />
+                  <CustomerCreditOperationCard customerId={formData.customerId || null} />
                 </div>
 
                 <div className="space-y-1 md:col-span-2">
