@@ -108,9 +108,9 @@ Nada disso exige migration. As chaves novas entram pelo código, e os perfis de 
 
 | Suíte | Cobertura |
 | --- | --- |
-| `performancePermissions.test.ts` (12) | catálogo oficial; recursos estritos; capacidades por perfil; regra de resultado; central sem conteúdo; matriz de 16 endpoints × 6 perfis (RH Operacional, RH Gestor, líder, colaborador, sem permissão, SUPER_ADMIN); varredura de vazamento; ninguém responde pelo líder; auditoria de convites e do CSV |
+| `performancePermissions.test.ts` (14) | catálogo oficial; todas as rotas administrativas uma a uma (sem permissão: 403; RH Operacional: nenhum conteúdo, gravação de resultado recusada); recursos estritos; capacidades por perfil; regra de resultado; central sem conteúdo; matriz de 16 endpoints × 6 perfis (RH Operacional, RH Gestor, líder, colaborador, sem permissão, SUPER_ADMIN); varredura de vazamento; ninguém responde pelo líder; auditoria de convites e do CSV |
 | `accessProfiles.test.ts` | perfis de sistema e ausência de resultado, calibração, homologação e ocorrência no operacional |
-| Módulo (`src/lib/hrPerformance/*.test.ts`) | 105/105 |
+| Módulo (`src/lib/hrPerformance/*.test.ts`) | 107/107 |
 | Navegador, parte 10 (`part10-hr-roles.mjs`) | 10/10, estável em 4 rodadas seguidas |
 
 Como repetir no navegador (só banco local): rodar a parte 9 e depois `npx tsx scripts/performance-e2e/seedHrRoles.mts` e `node scripts/performance-e2e/part10-hr-roles.mjs`.

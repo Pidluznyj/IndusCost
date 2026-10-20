@@ -129,7 +129,7 @@ async function serve(db: PerformanceDatabase) {
     }
     return { status: res.status, text, json };
   };
-  return { server, store, call };
+  return { server, store, call, app };
 }
 
 const ACTORS = ["rhop", "rhgestor", "lider", "colaborador", "semacesso", "superadmin"] as const;
@@ -338,9 +338,72 @@ describe("autorização por endpoint (independente da tela)", () => {
       assert.equal(csv.status, 200);
       assert.match(csv.text, /obrigacao,situacao,responsavel,prazo,motivo/);
       assert.equal(csv.text.includes(LEADER_SECRET) || csv.text.includes(UPWARD_SECRET), false);
-      const actions = (await store.read()).audits.map((a) => a.action);
-      assert.ok(actions.includes("INVITE_ISSUED") || actions.some((a) => a.startsWith("INVITE")), actions.join(","));
-      assert.ok(actions.includes("EXPORTED") || actions.some((a) => a.includes("EXPORT")), actions.join(","));
+      const audits = (await store.read()).audits;
+      const by = (action: string) => audits.filter((a) => a.action === action && a.actorUserId === "u-rhop");
+      assert.equal(by("INVITE_ISSUED").length, 1, "reemissão auditada com o autor");
+      assert.equal(by("INVITE_REVOKED").length, 1, "revogação auditada com o autor");
+      assert.equal((by("EXPORT")[0]?.detail as { format?: string } | undefined)?.format, "CSV_OPERACIONAL", "CSV operacional auditado");
+    } finally {
+      server.close();
+    }
+  });
+});
+
+describe("todas as rotas administrativas, uma a uma (sem tela)", () => {
+  type Route = { method: string; path: string };
+  const routesOf = (app: express.Express): Route[] =>
+    ((app as unknown as { _router: { stack: { route?: { path: string; methods: Record<string, boolean> } }[] } })._router.stack ?? [])
+      .filter((layer) => layer.route && layer.route.path.startsWith("/api/hr/performance"))
+      .flatMap((layer) => Object.keys(layer.route!.methods).map((method) => ({ method: method.toUpperCase(), path: layer.route!.path })));
+
+  it("sem permissão: 403 em todas, menos situação da feature e /me (que responde tudo falso)", async () => {
+    const { db } = cycleInCalibration();
+    const { server, call, app } = await serve(db);
+    try {
+      const routes = routesOf(app);
+      assert.ok(routes.length >= 60, `${routes.length} rotas encontradas`);
+      for (const r of routes) {
+        const res = await call("semacesso", r.method, r.path.replace(/:[a-zA-Z]+/g, "00000000-0000-4000-8000-000000000000"), r.method === "GET" ? undefined : {});
+        if (r.path === "/api/hr/performance/feature-status") continue;
+        if (r.path === "/api/hr/performance/me") {
+          assert.equal(Object.entries(res.json.capabilities).some(([, v]) => v === true), false, "nenhuma capacidade");
+          continue;
+        }
+        assert.equal(res.status, 403, `${r.method} ${r.path} → ${res.status}`);
+      }
+    } finally {
+      server.close();
+    }
+  });
+
+  it("RH Operacional: nenhuma leitura devolve conteúdo de avaliação; mutações de resultado são recusadas", async () => {
+    const { db, cycleId } = cycleInCalibration();
+    const { server, call, app } = await serve(db);
+    const ana = db.participants.find((p) => p.employeeId === "ana")!;
+    const ids: Record<string, string> = {
+      cycles: cycleId,
+      participants: ana.id,
+      assignments: task(db, "LEADER", "ana").id,
+      employees: "ana",
+      models: db.models[0]!.id,
+    };
+    const fill = (path: string) => path.replace(/\/([a-z]+)\/:id/g, (_m, kind: string) => `/${kind}/${ids[kind] ?? "00000000-0000-4000-8000-000000000000"}`).replace(/:[a-zA-Z]+/g, "LD-01");
+    try {
+      const routes = routesOf(app);
+      for (const r of routes.filter((x) => x.method === "GET")) {
+        const res = await call("rhop", "GET", fill(r.path));
+        for (const forbidden of [UPWARD_SECRET, LEADER_SECRET, '"technicalSum"', '"nineX"', '"cultureBand"', '"evidence"']) {
+          assert.equal(res.text.includes(forbidden), false, `GET ${r.path} (${res.status}) devolveu ${forbidden}`);
+        }
+      }
+      const resultWrites = routes.filter(
+        (r) => r.method !== "GET" && /(calibration|validation|homologate|feedback|pdi|conducts|\/return|\/answers|\/submit|models)/.test(r.path) && !/cycles\/:id\/leadership$/.test(r.path)
+      );
+      assert.ok(resultWrites.length >= 15, `${resultWrites.length} mutações de conteúdo`);
+      for (const r of resultWrites) {
+        const res = await call("rhop", r.method, fill(r.path), {});
+        assert.equal(res.status === 403 || res.json?.error === "FORBIDDEN", true, `${r.method} ${r.path} → ${res.status} ${res.text.slice(0, 120)}`);
+      }
     } finally {
       server.close();
     }
