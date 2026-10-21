@@ -3,6 +3,7 @@
  */
 
 import type express from "express";
+import type { Prisma } from "@prisma/client";
 import type { RequestHandler } from "express";
 import { prisma } from "@/src/lib/prisma.js";
 import {
@@ -36,7 +37,7 @@ import {
 } from "@/src/lib/employeesAccess.js";
 import { logEmployeeHrAudit } from "@/src/lib/employeeHrAudit.js";
 
-type AuthGuards = {
+export type AuthGuards = {
   requireAppAuth: RequestHandler;
   requireResource: (resourceKey: string, action?: string) => RequestHandler;
   requirePermission: (permission: string) => RequestHandler;
@@ -104,6 +105,14 @@ async function resolveSystemLinksCaps(
   return buildSystemLinksViewerCaps(
     viewerCapsInput(await resolveAppUserBrief(req, getCurrentAppUser))
   );
+}
+
+/** Capacidades do visualizador para as rotas de Pessoas (mesma régua dos vínculos do colaborador). */
+export async function resolvePeopleViewerCaps(
+  req: express.Request,
+  getCurrentAppUser?: (req: express.Request) => Promise<AppUserBrief | null> | AppUserBrief | null
+) {
+  return buildSystemLinksViewerCaps(viewerCapsInput(await resolveAppUserBrief(req, getCurrentAppUser)));
 }
 
 export function registerCanonicalPersonRoutes(
@@ -263,7 +272,10 @@ export function registerCanonicalPersonRoutes(
   app.delete("/api/employees/:id/person-link", ...linksManageGuard, async (req, res) => {
     try {
       const actor = await resolveAppUserBrief(req, getCurrentAppUser);
-      await unlinkEmployeeFromPerson(prisma, req.params.id);
+      await unlinkEmployeeFromPerson(prisma, req.params.id, {
+        actorUserId: (actor as { id?: string } | null)?.id ?? null,
+        reason: typeof req.body?.reason === "string" ? req.body.reason : null,
+      });
       logEmployeeHrAudit({
         event: "employee.person_unlink",
         actorUserId: (actor as { id?: string } | null)?.id ?? null,
@@ -412,7 +424,53 @@ export function registerCanonicalPersonRoutes(
   );
 }
 
-/** Helper usado pelo POST/PUT employee. */
+/**
+ * Plano (somente leitura) do vínculo de Pessoa a partir do corpo do POST/PUT de colaborador.
+ * A execução (`applyPersonLinkPlan`) acontece dentro da transação do colaborador.
+ */
+export async function planPersonLinkFromEmployeeBody(
+  body: Record<string, unknown>,
+  existingEmployeeId?: string | null,
+  actorUserId?: string | null
+) {
+  const resolutions = (body.personFieldResolutions ??
+    {}) as Partial<Record<PersonFieldKey, FieldResolutionChoice>>;
+  const hasLink =
+    (typeof body.personId === "string" && body.personId.trim()) ||
+    (typeof body.personSourceId === "string" && body.personSourceId.trim());
+  const createNewPerson =
+    body.createNewPerson === true ||
+    (!existingEmployeeId && !hasLink && body.createNewPerson !== false);
+  const { planEmployeePersonLink } = await import("@/src/lib/canonicalPersonService.server.js");
+  return planEmployeePersonLink(prisma, {
+    personId: typeof body.personId === "string" ? body.personId.trim() || null : null,
+    createNewPerson,
+    sourceKind: (body.personSourceKind as PersonLinkSourceKind) ?? null,
+    sourceId: typeof body.personSourceId === "string" ? body.personSourceId.trim() || null : null,
+    form: {
+      name: typeof body.name === "string" ? body.name : null,
+      displayName: typeof body.name === "string" ? body.name : null,
+      socialName: typeof body.socialName === "string" ? body.socialName : null,
+      corporateEmail: typeof body.corporateEmail === "string" ? body.corporateEmail : null,
+      personalEmail: typeof body.personalEmail === "string" ? body.personalEmail : null,
+      cpf: typeof body.cpf === "string" ? body.cpf : null,
+      phone: typeof body.phone === "string" ? body.phone : null,
+    },
+    fieldResolutions: resolutions,
+    existingEmployeeId,
+    actorUserId: actorUserId ?? null,
+  });
+}
+
+export async function applyPersonLinkPlan(
+  tx: Prisma.TransactionClient,
+  plan: Awaited<ReturnType<typeof planPersonLinkFromEmployeeBody>>
+) {
+  const { applyEmployeePersonLinkPlan } = await import("@/src/lib/canonicalPersonService.server.js");
+  return applyEmployeePersonLinkPlan(tx, plan);
+}
+
+/** Compatibilidade: plano + execução em transação própria (fluxos antigos e testes). */
 export async function resolvePersonIdFromEmployeeBody(
   body: Record<string, unknown>,
   existingEmployeeId?: string | null

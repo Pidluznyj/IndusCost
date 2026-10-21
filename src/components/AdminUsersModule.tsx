@@ -32,6 +32,7 @@ import {
 import { requestSetCommercialPolicyRequired } from "@/src/lib/commercialPolicy/commercialPolicyClient";
 import { SellerNomusPicker, type SellerNomusPickerValue } from "@/src/components/admin/SellerNomusPicker";
 import { EmployeeUserPicker } from "@/src/components/admin/EmployeeUserPicker";
+import { useAdminStepUp } from "@/src/components/settings/useAdminStepUp";
 import type { AdminSellerOption } from "@/src/lib/adminSellerOptionsTypes";
 import type { EligibleEmployeeForUserDto } from "@/src/lib/adminUserEmployeeLink";
 import {
@@ -164,6 +165,8 @@ export const AdminUsersModule: React.FC = () => {
       authUser?.role === "SUPER_ADMIN"
   );
   const currentUserId = authUser?.id ?? null;
+  // E2: mudanças que concedem/retiram SUPER_ADMIN exigem step-up; o hook reabre a chamada após a senha.
+  const superAdminStepUp = useAdminStepUp();
 
   const [users, setUsers] = useState<AdminUserListItem[]>([]);
   const [accessProfiles, setAccessProfiles] = useState<AccessProfileRecord[]>([]);
@@ -653,7 +656,7 @@ export const AdminUsersModule: React.FC = () => {
     }
     setSaving(true);
     setSaveSuccess(null);
-    try {
+    const apply = async () => {
       const payload = await applyUserPermissionPreset(selectedId, {
         role,
         confirmClearOverrides: true,
@@ -664,6 +667,15 @@ export const AdminUsersModule: React.FC = () => {
         `Preset da role aplicado. permissionsVersion → ${payload.user.permissionsVersion}.`
       );
       await loadUsers();
+    };
+    try {
+      const touchesSuperAdmin = role === "SUPER_ADMIN" || detail.user.role === "SUPER_ADMIN";
+      if (touchesSuperAdmin) {
+        // O backend recusa sem elevação (ADMIN_ELEVATION_REQUIRED); o hook pede a senha e repete.
+        await superAdminStepUp.run(apply);
+      } else {
+        await apply();
+      }
     } catch (e) {
       setDetailError(e instanceof Error ? e.message : "Falha ao alterar role.");
     } finally {
@@ -697,7 +709,7 @@ export const AdminUsersModule: React.FC = () => {
     setSaving(true);
     setSaveSuccess(null);
     setDetailError(null);
-    try {
+    const applyProfile = async () => {
       await fetchJsonOk(`/api/admin/users/${selectedId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -710,6 +722,15 @@ export const AdminUsersModule: React.FC = () => {
           ? "Perfil de acesso vinculado e snapshot aplicado."
           : "Perfil de acesso desvinculado."
       );
+    };
+    try {
+      const nextProfile = accessProfileId ? accessProfiles.find((p) => p.id === accessProfileId) : null;
+      const touchesSuperAdmin = nextProfile?.roleBase === "SUPER_ADMIN" || detail.user.role === "SUPER_ADMIN";
+      if (touchesSuperAdmin) {
+        await superAdminStepUp.run(applyProfile);
+      } else {
+        await applyProfile();
+      }
     } catch (e) {
       setDetailError(
         e instanceof Error ? e.message : "Falha ao vincular perfil de acesso."
@@ -1240,7 +1261,7 @@ export const AdminUsersModule: React.FC = () => {
                           ? "Você não pode excluir o próprio usuário"
                           : deleteGuardPreview && !deleteGuardPreview.ok
                             ? deleteGuardPreview.message
-                            : "Excluir usuário permanentemente"
+                            : "Inativar a conta e encerrar as sessões (nada é apagado)"
                       }
                       onClick={() => {
                         setDeleteConfirmEmail("");
@@ -2063,6 +2084,12 @@ export const AdminUsersModule: React.FC = () => {
         </div>
       ) : null}
 
+      {superAdminStepUp.dialog}
+      {superAdminStepUp.notice ? (
+        <div className="fixed bottom-4 right-4 z-40 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900 shadow" role="status">
+          {superAdminStepUp.notice}
+        </div>
+      ) : null}
       {resetOpen ? (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm">
           <div
@@ -2151,12 +2178,13 @@ export const AdminUsersModule: React.FC = () => {
             className="bg-card w-full max-w-md rounded-2xl border border-border shadow-xl p-4 space-y-3"
             data-testid="admin-user-delete-modal"
           >
-            <h4 className="font-bold text-red-800">Excluir usuário</h4>
+            <h4 className="font-bold text-red-800">Inativar conta</h4>
             <p className="text-sm text-muted-foreground">
-              Esta ação remove permanentemente a conta{" "}
+              A conta{" "}
               <span className="font-semibold text-foreground">{selectedListUser.name}</span> (
-              {selectedListUser.email}). Sessões ativas serão encerradas e a pessoa do RH fica
-              liberada para novo vínculo.
+              {selectedListUser.email}) será inativada e as sessões ativas encerradas. Nada é apagado:
+              o histórico de operações, aprovações e auditoria continua apontando para esta conta.
+              Reativar depende de ação explícita da segurança.
             </p>
             {deleteError ? (
               <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
@@ -2201,7 +2229,7 @@ export const AdminUsersModule: React.FC = () => {
                   className="rounded-lg bg-red-600 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"
                   data-testid="admin-user-delete-confirm"
                 >
-                  {saving ? "Excluindo…" : "Excluir definitivamente"}
+                  {saving ? "Inativando…" : "Inativar conta"}
                 </button>
               </div>
             </form>

@@ -539,6 +539,7 @@ export type CommissionsPersonItem = {
   document: string | null;
   active: boolean;
   notes: string | null;
+  personId?: string | null;
   createdAt: string;
   updatedAt: string;
   linkedRulesCount?: number;
@@ -578,6 +579,8 @@ export type CommissionsPersonFormInput = {
   document: string | null;
   active: boolean;
   notes: string | null;
+  /** Pessoa canônica (identidade). `undefined` = deixar o servidor resolver pelo CPF do documento. */
+  personId?: string | null;
 };
 
 export type CommissionsRuleConditionItem = {

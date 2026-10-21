@@ -207,6 +207,7 @@ import {
   markCommissionPaymentBatchPaid,
 } from "@/src/lib/commissions/commission-payment-service.server.js";
 import { prisma } from "@/src/lib/prisma.js";
+import { suggestPersonsForIdentity } from "@/src/lib/people/personIdentityResolve.server.js";
 import {
   COMMERCIAL_ACTIONS,
   COMMERCIAL_RESOURCE_KEYS,
@@ -1595,6 +1596,21 @@ export function registerCommissionsRoutes(app: express.Express, auth: AuthGuards
       if (error instanceof CommissionValidationError) return handleValidationError(res, error);
       console.error("POST /api/commissions/persons/import-from-orders", error);
       return res.status(500).json({ error: "Erro ao importar pessoas comissionadas dos pedidos." });
+    }
+  });
+
+  app.get("/api/commissions/persons/person-suggestions", ...peopleManageGuard, async (req, res) => {
+    try {
+      const user = await getCurrentAppUser(req);
+      if (!user) return res.status(401).json({ error: "Não autenticado." });
+      const payload = await suggestPersonsForIdentity(prisma, {
+        cpf: typeof req.query.document === "string" ? req.query.document : undefined,
+        email: typeof req.query.email === "string" ? req.query.email : undefined,
+      });
+      return res.json(payload);
+    } catch (error) {
+      console.error("GET /api/commissions/persons/person-suggestions", error);
+      return res.status(500).json({ error: "Erro ao sugerir pessoa." });
     }
   });
 

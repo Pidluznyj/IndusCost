@@ -21,6 +21,7 @@ import {
   UserPermissionAdminError,
   type OverrideInput,
 } from "@/src/lib/security/userPermissionAdminService.js";
+import type { SuperAdminGuardActor } from "@/src/lib/security/superAdminRoleGuard.js";
 
 type RouteDeps = {
   requireAppAuth: express.RequestHandler;
@@ -33,6 +34,8 @@ type RouteDeps = {
   /** Somente admin.settings.security:manage (+ bootstrap) — auditoria completa. */
   requirePermissionsAdmin: express.RequestHandler;
   requireUsersView: express.RequestHandler;
+  /** E2: ator da requisição (id, papel, elevação de step-up) para a guarda de SUPER_ADMIN. */
+  resolveActor: (req: express.Request) => SuperAdminGuardActor;
 };
 
 const APP_ROLES = new Set<AppUserRole>([
@@ -72,6 +75,7 @@ function handleError(res: express.Response, error: unknown, label: string) {
         ? 404
         : error.code === "CONFIRM_CLEAR_OVERRIDES_REQUIRED" ||
             error.code === "CONFIRM_REQUIRED" ||
+            error.code === "CANNOT_PROMOTE_SELF" ||
             error.code === "LAST_SUPER_ADMIN" ||
             error.code === "CANNOT_DEMOTE_SELF" ||
             error.code === "CANNOT_REMOVE_OWN_USERS_MANAGE" ||
@@ -80,7 +84,9 @@ function handleError(res: express.Response, error: unknown, label: string) {
             error.code === "PERMISSION_CATALOG_MISSING" ||
             error.code === "CONFLICT"
           ? 409
-          : 400;
+          : error.code === "SUPER_ADMIN_REQUIRED" || error.code === "ADMIN_ELEVATION_REQUIRED"
+            ? 403
+            : 400;
     return res.status(status).json({
       error: error.code,
       code: error.code,
@@ -219,6 +225,7 @@ export function registerUserPermissionAdminRoutes(
           actorSessionId: actorSessionId(req),
           confirm,
           isEditingSelf: isEditingSelf(req, id),
+          actor: deps.resolveActor(req),
         });
         return res.json(payload);
       } catch (error) {
@@ -242,6 +249,7 @@ export function registerUserPermissionAdminRoutes(
         confirmClearOverrides: req.body?.confirmClearOverrides === true,
         isEditingSelf: isEditingSelf(req, id),
         reason: typeof req.body?.reason === "string" ? req.body.reason : undefined,
+        actor: deps.resolveActor(req),
       });
       return res.json(payload);
     } catch (error) {
@@ -269,6 +277,7 @@ export function registerUserPermissionAdminRoutes(
           isEditingSelf: isEditingSelf(req, id),
           auditKind: "preset",
           reason: typeof req.body?.reason === "string" ? req.body.reason : undefined,
+          actor: deps.resolveActor(req),
         });
         return res.json(payload);
       } catch (error) {
@@ -291,6 +300,7 @@ export function registerUserPermissionAdminRoutes(
           confirmClearOverrides: req.body?.confirmClearOverrides === true,
           isEditingSelf: isEditingSelf(req, id),
           reason: typeof req.body?.reason === "string" ? req.body.reason : undefined,
+          actor: deps.resolveActor(req),
         });
         return res.json(payload);
       } catch (error) {

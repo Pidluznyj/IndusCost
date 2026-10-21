@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { Loader2, X } from "lucide-react";
+import { fetchJsonOk } from "@/src/lib/http";
 import type {
   CommissionsPersonFormInput,
   CommissionsPersonItem,
@@ -28,7 +30,11 @@ const EMPTY: CommissionsPersonFormInput = {
   document: null,
   active: true,
   notes: null,
+  personId: undefined,
 };
+
+type PersonSuggestion = { id: string; displayName: string; status: string; cpfMasked: string | null; emailMasked: string | null; evidence: "CPF_EXACT" | "EMAIL_EXACT" };
+type PersonSuggestions = { byCpf: PersonSuggestion[]; byEmail: PersonSuggestion[]; cpfValid: boolean };
 
 export function CommissionsPersonFormModal({
   open,
@@ -40,9 +46,14 @@ export function CommissionsPersonFormModal({
   onSubmit,
 }: Props) {
   const [form, setForm] = useState(EMPTY);
+  const [suggestions, setSuggestions] = useState<PersonSuggestions | null>(null);
+  const [suggesting, setSuggesting] = useState(false);
+  const [suggestError, setSuggestError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) return;
+    setSuggestions(null);
+    setSuggestError(null);
     if (initial) {
       setForm({
         name: initial.name,
@@ -53,11 +64,28 @@ export function CommissionsPersonFormModal({
         document: initial.document,
         active: initial.active,
         notes: initial.notes,
+        personId: initial.personId ?? null,
       });
     } else {
       setForm(EMPTY);
     }
   }, [open, initial]);
+
+  async function loadSuggestions() {
+    setSuggesting(true);
+    setSuggestError(null);
+    try {
+      const qs = new URLSearchParams();
+      if (form.document) qs.set("document", form.document);
+      if (form.email) qs.set("email", form.email);
+      const data = await fetchJsonOk<PersonSuggestions>(`/api/commissions/persons/person-suggestions?${qs.toString()}`);
+      setSuggestions(data);
+    } catch (e) {
+      setSuggestError(e instanceof Error ? e.message : "Não foi possível buscar sugestões.");
+    } finally {
+      setSuggesting(false);
+    }
+  }
 
   if (!open) return null;
 
@@ -178,6 +206,53 @@ export function CommissionsPersonFormModal({
                 }
               />
             </label>
+          </div>
+
+          <div className="space-y-2 rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] p-3" data-testid="commission-person-identity">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs font-medium text-[#6B7280]">Pessoa (identidade canônica)</span>
+              <button
+                type="button"
+                onClick={() => void loadSuggestions()}
+                disabled={suggesting || (!form.document && !form.email)}
+                className="rounded border border-[#E5E7EB] bg-white px-2 py-1 text-xs font-medium text-[#374151] hover:bg-[#F3F4F6] disabled:opacity-50"
+              >
+                {suggesting ? "Buscando…" : "Sugerir pelo CPF / e-mail"}
+              </button>
+            </div>
+            {form.personId ? (
+              <div className="flex flex-wrap items-center gap-2 text-sm text-[#111827]">
+                <span>
+                  Vinculada: <Link to={`/people/${form.personId}`} className="font-mono text-xs text-[#2563EB] underline">{form.personId.slice(0, 8)}…</Link>
+                </span>
+                <button type="button" onClick={() => setForm((f) => ({ ...f, personId: null }))} className="text-xs text-[#B91C1C] underline">
+                  Remover vínculo
+                </button>
+              </div>
+            ) : (
+              <p className="text-xs text-[#6B7280]">
+                {form.personId === null ? "Sem vínculo (explícito)." : "Sem vínculo. Ao salvar, o servidor vincula pelo CPF do documento se houver exatamente uma Pessoa com esse CPF."}
+              </p>
+            )}
+            {suggestError ? <p className="text-xs text-[#B91C1C]">{suggestError}</p> : null}
+            {suggestions ? (
+              <ul className="space-y-1">
+                {suggestions.byCpf.length === 0 && suggestions.byEmail.length === 0 ? (
+                  <li className="text-xs text-[#6B7280]">Nenhuma Pessoa encontrada{!suggestions.cpfValid && form.document ? " (documento não é um CPF válido)" : ""}. Nunca se vincula por nome.</li>
+                ) : null}
+                {[...suggestions.byCpf, ...suggestions.byEmail].map((s) => (
+                  <li key={s.id} className="flex flex-wrap items-center justify-between gap-2 rounded border border-[#E5E7EB] bg-white px-2 py-1 text-xs">
+                    <span>
+                      <span className="font-medium text-[#111827]">{s.displayName}</span> · {s.cpfMasked ?? "CPF —"} · {s.emailMasked ?? "e-mail —"} ·{" "}
+                      <span className={s.evidence === "CPF_EXACT" ? "text-[#047857]" : "text-[#B45309]"}>{s.evidence === "CPF_EXACT" ? "CPF igual (forte)" : "e-mail igual (só sugestão)"}</span>
+                    </span>
+                    <button type="button" onClick={() => setForm((f) => ({ ...f, personId: s.id }))} className="rounded border border-[#2563EB] px-2 py-0.5 font-medium text-[#2563EB] hover:bg-[#EFF6FF]">
+                      Usar
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
           </div>
 
           <label className="inline-flex items-center gap-2 text-sm text-[#374151]">

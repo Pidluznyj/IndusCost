@@ -6,6 +6,10 @@ import {
   computeCnhStatus,
 } from "@/src/lib/fleetValidation.js";
 import { assertUniqueActiveDriverCpf, loadFleetSettings, writeFleetAuditLog } from "@/src/lib/fleetService.js";
+import { isValidCpf } from "@/src/lib/fleetCpfUtils.js";
+import { FleetBusinessError } from "@/src/lib/fleetErrors.js";
+import { CanonicalPersonError } from "@/src/lib/canonicalPerson.js";
+import { planOperationalPersonLink } from "@/src/lib/people/personIdentityResolve.server.js";
 
 export type FleetDriverAlert = {
   level: "critical" | "warning";
@@ -71,6 +75,7 @@ export function parseDriverInput(body: Record<string, unknown>, existing?: Fleet
   const cpf = normalizeCpf(cpfRaw);
   if (!name) throw new FleetValidationError("Nome é obrigatório.");
   if (!cpf) throw new FleetValidationError("CPF é obrigatório.");
+  if (!isValidCpf(cpf)) throw new FleetValidationError("CPF inválido: dígitos verificadores não conferem.");
 
   const cnhExpirationDate =
     body.cnhExpirationDate !== undefined
@@ -116,6 +121,27 @@ export function parseDriverInput(body: Record<string, unknown>, existing?: Fleet
         ? (typeof body.notes === "string" ? body.notes.trim() || null : null)
         : undefined,
   };
+}
+
+/**
+ * Pessoa canônica do motorista a partir do CPF (evidência forte). Nunca cria Pessoa e nunca
+ * sobrescreve um vínculo existente: CPF novo divergente da Pessoa vinculada é recusado (409),
+ * e a correção é feita em Pessoas 360° com prévia e auditoria.
+ */
+export async function resolveDriverPersonLink(
+  cpf: string,
+  currentPersonId: string | null,
+  db: Parameters<typeof planOperationalPersonLink>[0] = prisma,
+): Promise<string | null> {
+  try {
+    const plan = await planOperationalPersonLink(db, { cpf, currentPersonId });
+    return plan.personId;
+  } catch (error) {
+    if (error instanceof CanonicalPersonError) {
+      throw new FleetBusinessError(error.message, { code: error.code, httpStatus: error.status });
+    }
+    throw error;
+  }
 }
 
 export async function getDriverOrThrow(id: string) {

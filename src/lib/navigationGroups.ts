@@ -113,6 +113,7 @@ export const MODULE_MENU_PERMISSION_KEYS: Record<AppModuleId, readonly string[]>
   "commercial-announcements": ["commercial.announcements.view"],
   employees: ["employees.view"],
   "employees-dashboard": ["employees.dashboard.view", "employees.edit"],
+  people: ["employees.view", "people.search"],
   "org-chart": ["employees.view"],
   competencies: ["employees.competencies.view", "employees.edit"],
   "performance-cycle": ["employees.performance.view"],
@@ -249,7 +250,7 @@ export const NAVIGATION_GROUP_DEFINITIONS: readonly NavigationGroup[] = [
     label: "Gestão de pessoas",
     iconKey: "Users",
     order: 7,
-    itemIds: ["employees-dashboard", "employees", "org-chart", "competencies", "performance-cycle"],
+    itemIds: ["employees-dashboard", "employees", "people", "org-chart", "competencies", "performance-cycle"],
   },
   {
     id: "administracao",

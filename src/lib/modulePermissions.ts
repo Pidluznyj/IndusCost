@@ -12,6 +12,7 @@ export type AppModuleId =
   | "dashboard"
   | "employees"
   | "employees-dashboard"
+  | "people"
   | "org-chart"
   | "competencies"
   | "performance-cycle"
@@ -68,6 +69,7 @@ export const SIDEBAR_MODULE_ORDER: AppModuleId[] = [
   "dashboard",
   "employees-dashboard",
   "employees",
+  "people",
   "org-chart",
   "competencies",
   "performance-cycle",
@@ -170,6 +172,9 @@ export function canAccessModule(moduleId: AppModuleId, check: PermissionChecker)
         check.hasPermission("employees.dashboard.view") ||
         check.hasPermission("employees.edit")
       );
+    case "people":
+      // Pessoas 360°: quem vê Pessoas / RH ou tem a busca canônica.
+      return check.hasPermission("employees.view") || check.hasPermission("people.search");
     case "org-chart":
       return check.hasPermission("employees.view");
     case "competencies":
@@ -470,6 +475,7 @@ export const MODULE_LABELS: Record<AppModuleId, string> = {
   dashboard: "Dashboard",
   employees: "Pessoas / RH",
   "employees-dashboard": "Dashboard de Pessoas",
+  people: "Pessoas 360°",
   "org-chart": "Organograma",
   competencies: "Competências e Desenvolvimento",
   "performance-cycle": "Desempenho e Cultura",

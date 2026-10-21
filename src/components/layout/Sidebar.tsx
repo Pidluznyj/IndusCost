@@ -122,6 +122,7 @@ const MENU_ITEM_ICONS: Record<AppModuleId, LucideIcon> = {
   dashboard: LayoutDashboard,
   employees: Users,
   "employees-dashboard": LayoutDashboard,
+  people: Contact,
   "org-chart": Network,
   competencies: GraduationCap,
   "performance-cycle": Target,

@@ -72,7 +72,13 @@ model Person {
   customersAsIdentity Customer[]         @relation("CustomerIdentityPerson")
   /// Contatos cadastrais de clientes (tipicamente PJ) apontando para esta pessoa.
   customersAsContact  Customer[]         @relation("CustomerContactPerson")
+  /// Pessoas 360°: unificação controlada. A Pessoa absorvida fica status=MERGED apontando para a que ficou; nunca é apagada.
+  mergedIntoPersonId  String?            @db.Uuid
+  mergedInto          Person?            @relation("PersonMergedInto", fields: [mergedIntoPersonId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  mergedFrom          Person[]           @relation("PersonMergedInto")
+  linkEvents          PersonLinkEvent[]
 
+  @@index([mergedIntoPersonId])
   @@index([displayName])
   @@index([corporateEmail])
   @@index([personalEmail])
@@ -81,6 +87,36 @@ model Person {
   @@index([status])
   @@index([origin])
   @@index([createdByUserId])
+}
+
+/// Pessoas 360°: auditoria imutável de vínculo, desvínculo, correção e unificação de identidade.
+/// Nunca guarda CPF completo; o snapshot carrega só o necessário para rastrear e reverter.
+model PersonLinkEvent {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  personId      String   @db.Uuid
+  /// LINKED | UNLINKED | RELINKED | MERGED | MERGE_REVERTED | REVIEW_FLAGGED | PERSON_CREATED
+  eventKind     String
+  /// employee | app_user | fleet_driver | commission_person | customer_pf | person
+  entityKind    String?
+  entityId      String?  @db.Uuid
+  fromPersonId  String?  @db.Uuid
+  toPersonId    String?  @db.Uuid
+  actorUserId   String?  @db.Uuid
+  actorName     String?
+  reason        String?
+  /// CPF_EXACT | EMAIL_EXACT | MANUAL | BACKFILL | SYSTEM
+  evidence      String?
+  snapshot      Json?
+  reversible    Boolean  @default(false)
+  revertedAt    DateTime? @db.Timestamptz(6)
+  revertedByEventId String? @db.Uuid
+  createdAt     DateTime @default(now()) @db.Timestamptz(6)
+  person        Person   @relation(fields: [personId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@index([personId, createdAt])
+  @@index([entityKind, entityId])
+  @@index([eventKind])
+  @@index([createdAt])
 }
 
 model Employee {

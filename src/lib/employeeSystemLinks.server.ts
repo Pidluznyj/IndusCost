@@ -403,22 +403,26 @@ async function collectPersonLinkedCards(
   if (!person) return out;
 
   if (caps.canViewEmployees) {
+    // Visão a partir da Pessoa (sem colaborador de referência): o colaborador é o vínculo
+    // principal, não um "par"; só há conflito quando mais de um aponta para a mesma Pessoa.
+    const personCentric = !opts.excludeEmployeeId;
+    const multiple = person.employees.length > 1;
     for (const e of person.employees) {
       if (opts.excludeEmployeeId && e.id === opts.excludeEmployeeId) continue;
       out.push({
         card: card({
           cardKey: `peer-${e.id.slice(0, 8)}`,
-          kind: "employee_peer",
+          kind: personCentric && !multiple ? "employee_self" : "employee_peer",
           entityLabel: e.socialName?.trim() || e.name,
           entitySubtitle: e.department || null,
           statusLabel: statusBr(e.status),
-          originLabel: "Mesma pessoa canônica",
+          originLabel: personCentric ? "Vínculo de colaborador" : "Mesma pessoa canônica",
           asOfLabel: fmtDate(e.updatedAt),
-          alert: "Mais de um colaborador aponta para a mesma Person.",
-          alertTone: "conflict",
+          alert: multiple || !personCentric ? "Mais de um colaborador aponta para a mesma Person." : null,
+          alertTone: multiple || !personCentric ? "conflict" : "none",
           action: {
-            label: "Abrir RH",
-            href: "/employees",
+            label: "Abrir ficha do colaborador",
+            href: `/employees?edit=${e.id}`,
             available: true,
             unavailableReason: null,
           },

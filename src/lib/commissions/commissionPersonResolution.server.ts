@@ -253,7 +253,10 @@ export async function previewCommissionPersonDedupe(
     linkedRecordCount: recordCountMap.get(p.id) ?? 0,
   }));
 
-  const grouped = groupCommissionPersonsByIdentity(enriched).filter((g) => g.length > 1);
+  // Mesclagem só por identidade operacional (nomusPersonId). Nome nunca funde registros:
+  // homônimos reais seriam unidos e comissões trocariam de pessoa. Duplicidades por nome são
+  // tratadas em Pessoas 360° (vínculo à mesma Pessoa canônica), não por fusão de cadastros.
+  const grouped = groupCommissionPersonsByIdentity(enriched, { nameKeys: false }).filter((g) => g.length > 1);
   const groups: CommissionPersonDedupeGroup[] = [];
 
   for (const group of grouped) {

@@ -69,6 +69,16 @@ function optionalString(value: unknown): string | null {
   return t || null;
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function optionalUuid(value: unknown, field: string): string | null {
+  if (value == null || value === "") return null;
+  if (typeof value !== "string" || !UUID_RE.test(value.trim())) {
+    throw new CommissionValidationError("INVALID_FIELD", `${field} inválido.`);
+  }
+  return value.trim();
+}
+
 function optionalInt(value: unknown, field: string): number | null {
   if (value == null || value === "") return null;
   const n = Number(value);
@@ -106,6 +116,8 @@ export type CommissionPersonWriteInput = {
   document?: string | null;
   notes?: string | null;
   active?: boolean;
+  /** Pessoa canônica (identidade). `undefined` = resolver pelo CPF do documento; `null` = sem vínculo. */
+  personId?: string | null;
 };
 
 export function parseCommissionPersonCreateBody(body: unknown): CommissionPersonWriteInput {
@@ -136,6 +148,7 @@ export function parseCommissionPersonCreateBody(body: unknown): CommissionPerson
     document: optionalString(raw.document),
     notes: optionalString(raw.notes),
     active: raw.active === undefined ? true : Boolean(raw.active),
+    personId: raw.personId === undefined ? undefined : optionalUuid(raw.personId, "personId"),
   };
 }
 
@@ -166,6 +179,7 @@ export function parseCommissionPersonUpdateBody(body: unknown): Partial<Commissi
   if (raw.document !== undefined) out.document = optionalString(raw.document);
   if (raw.notes !== undefined) out.notes = optionalString(raw.notes);
   if (raw.active !== undefined) out.active = Boolean(raw.active);
+  if (raw.personId !== undefined) out.personId = optionalUuid(raw.personId, "personId");
 
   return out;
 }

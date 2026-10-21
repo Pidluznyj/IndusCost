@@ -15,6 +15,8 @@ export type EmployeeHrAuditEvent =
   | "employee.person_conflict_resolve"
   | "employee.user_link"
   | "employee.user_unlink"
+  | "employee.termination.access_revoked"
+  | "employee.person.propagation"
   | "employee.admin_access"
   | "employee.career.change"
   | "employee.compensation.view_values"
