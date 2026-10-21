@@ -1,17 +1,16 @@
 /**
  * Série histórica do valor de matéria-prima em estoque — regras puras.
  *
- * O gráfico mostra a flutuação SEMANAL. Como cada conferência de estoque gera
- * uma foto (e o usuário confere várias MPs ao longo da semana), há vários
- * snapshots por semana. A regra de agregação é: **o último snapshot de cada
- * semana representa a semana** — é o valor com que a semana fechou, depois de
- * todas as conferências daquele período.
+ * O gráfico mostra CADA conferência física aplicada. Cada snapshot capturado
+ * após `generateInventoryCountAdjustments` vira um ponto: o valor total de MP
+ * (mesma fórmula do card "Valor em estoque (MP)") imediatamente depois daquela
+ * contagem. Várias conferências na mesma semana (ou no mesmo dia) aparecem
+ * todas — a série não esconde ponto atrás de agregação semanal.
  *
- * Semana ISO: segunda a domingo. A data exibida é a SEGUNDA-feira da semana,
- * para o eixo do gráfico ficar estável e comparável.
+ * A janela (8/13/26/52 semanas) só recorta o período; não muda a regra do ponto.
  */
 
-/** Série semanal do valor de MP em estoque (leitura). */
+/** Série do valor de MP em estoque (leitura). */
 export const MATERIAL_STOCK_VALUE_SERIES_PATH =
   "/api/materials/stock-value/series" as const;
 
@@ -28,27 +27,20 @@ export type MaterialStockValueSnapshotPoint = {
   capturedAt: string;
 };
 
-export type MaterialStockValueWeekPoint = {
-  /** Segunda-feira da semana ISO (YYYY-MM-DD) — chave e rótulo do eixo. */
-  weekStart: string;
-  /** Domingo da mesma semana (YYYY-MM-DD). */
-  weekEnd: string;
-  /** Valor com que a semana fechou (último snapshot dentro dela). */
+export type MaterialStockValueCountPoint = {
+  civilDate: string;
+  capturedAt: string;
   totalValue: number;
   materialsWithStock: number;
   materialsConsidered: number;
-  /** Quantas fotos existiram na semana (contexto de confiabilidade). */
-  snapshotCount: number;
-  /** Data civil do snapshot que representa a semana. */
-  representativeCivilDate: string;
   /**
-   * Variação absoluta em relação à semana anterior COM dado.
-   * `null` na primeira semana da série (não há com o que comparar) —
-   * nunca 0, que significaria "não mudou".
+   * Variação absoluta em relação à conferência anterior da série.
+   * `null` no primeiro ponto (não há com o que comparar) — nunca 0, que
+   * significaria "não mudou".
    */
-  deltaFromPreviousWeek: number | null;
+  deltaFromPrevious: number | null;
   /** Variação percentual; `null` quando não há anterior ou anterior é zero. */
-  deltaPercentFromPreviousWeek: number | null;
+  deltaPercentFromPrevious: number | null;
 };
 
 function roundValue(value: number): number {
@@ -79,62 +71,66 @@ export function resolveIsoWeekEnd(weekStart: string): string {
 }
 
 /**
- * Agrega snapshots em pontos semanais.
- *
- * Regra: dentro de cada semana ISO, vence o snapshot de `capturedAt` mais
- * recente (desempate por `civilDate` quando o instante empatar). Semanas sem
- * nenhum snapshot simplesmente não aparecem — a série não inventa pontos, e
- * o gráfico liga os que existem.
+ * Segunda-feira da semana ISO mais antiga da janela de `weeks` semanas,
+ * incluindo a semana corrente de `civilToday`.
  */
-export function aggregateMaterialStockValueByWeek(
+export function resolveMaterialStockValueWindowStart(
+  civilToday: string,
+  weeks: number
+): string {
+  const currentWeekStart = resolveIsoWeekStart(civilToday);
+  const safeWeeks = Number.isFinite(weeks) && weeks > 0 ? Math.floor(weeks) : 1;
+  const [y, m, d] = currentWeekStart.split("-").map(Number);
+  const dt = new Date(Date.UTC(y!, m! - 1, d!));
+  dt.setUTCDate(dt.getUTCDate() - (safeWeeks - 1) * 7);
+  return dt.toISOString().slice(0, 10);
+}
+
+function snapshotSortKey(snap: MaterialStockValueSnapshotPoint): string {
+  return `${snap.capturedAt}\0${snap.civilDate}`;
+}
+
+/**
+ * Monta a série com um ponto por conferência (snapshot).
+ *
+ * Regra: cada snapshot vira ponto, na ordem cronológica de `capturedAt`
+ * (desempate por `civilDate`). Semanas ou dias sem conferência simplesmente
+ * não aparecem — a série não inventa pontos, e o gráfico liga os que existem.
+ */
+export function buildMaterialStockValueCountSeries(
   snapshots: readonly MaterialStockValueSnapshotPoint[]
-): MaterialStockValueWeekPoint[] {
-  if (snapshots.length === 0) return [];
+): MaterialStockValueCountPoint[] {
+  const ordered = snapshots
+    .filter((snap) => Boolean(snap.civilDate) && Boolean(snap.capturedAt))
+    .slice()
+    .sort((a, b) => {
+      const ka = snapshotSortKey(a);
+      const kb = snapshotSortKey(b);
+      return ka < kb ? -1 : ka > kb ? 1 : 0;
+    });
 
-  const byWeek = new Map<string, MaterialStockValueSnapshotPoint>();
-  const countByWeek = new Map<string, number>();
-
-  for (const snap of snapshots) {
-    if (!snap.civilDate) continue;
-    const weekStart = resolveIsoWeekStart(snap.civilDate);
-    countByWeek.set(weekStart, (countByWeek.get(weekStart) ?? 0) + 1);
-
-    const current = byWeek.get(weekStart);
-    if (!current) {
-      byWeek.set(weekStart, snap);
-      continue;
-    }
-    // Mais recente vence: compara instante e, em empate, a data civil.
-    const isNewer =
-      snap.capturedAt > current.capturedAt ||
-      (snap.capturedAt === current.capturedAt &&
-        snap.civilDate > current.civilDate);
-    if (isNewer) byWeek.set(weekStart, snap);
-  }
-
-  const weeks = [...byWeek.keys()].sort();
-  const out: MaterialStockValueWeekPoint[] = [];
+  const out: MaterialStockValueCountPoint[] = [];
   let previousValue: number | null = null;
 
-  for (const weekStart of weeks) {
-    const snap = byWeek.get(weekStart)!;
+  for (const snap of ordered) {
     const totalValue = roundValue(snap.totalValue);
-    const delta = previousValue != null ? roundValue(totalValue - previousValue) : null;
+    const delta =
+      previousValue != null ? roundValue(totalValue - previousValue) : null;
     const deltaPercent =
       previousValue != null && previousValue !== 0
-        ? Math.round(((totalValue - previousValue) / Math.abs(previousValue)) * 10000) / 100
+        ? Math.round(
+            ((totalValue - previousValue) / Math.abs(previousValue)) * 10000
+          ) / 100
         : null;
 
     out.push({
-      weekStart,
-      weekEnd: resolveIsoWeekEnd(weekStart),
+      civilDate: snap.civilDate,
+      capturedAt: snap.capturedAt,
       totalValue,
       materialsWithStock: snap.materialsWithStock,
       materialsConsidered: snap.materialsConsidered,
-      snapshotCount: countByWeek.get(weekStart) ?? 1,
-      representativeCivilDate: snap.civilDate,
-      deltaFromPreviousWeek: delta,
-      deltaPercentFromPreviousWeek: deltaPercent,
+      deltaFromPrevious: delta,
+      deltaPercentFromPrevious: deltaPercent,
     });
     previousValue = totalValue;
   }
@@ -143,86 +139,83 @@ export function aggregateMaterialStockValueByWeek(
 }
 
 export type MaterialStockValueSeriesSummary = {
-  /** Valor mais recente da série (última semana com dado). */
+  /** Valor da conferência mais recente da série. */
   latestValue: number | null;
-  latestWeekStart: string | null;
-  /** Variação da última semana em relação à anterior. */
+  latestCapturedAt: string | null;
+  latestCivilDate: string | null;
+  /** Variação da última conferência em relação à anterior. */
   latestDelta: number | null;
   latestDeltaPercent: number | null;
   /** Maior e menor valor observados no período. */
   maxValue: number | null;
-  maxWeekStart: string | null;
+  maxCapturedAt: string | null;
   minValue: number | null;
-  minWeekStart: string | null;
-  /** Quantas semanas têm dado. */
-  weeksWithData: number;
-  /** Total de fotos no período (contexto de densidade). */
+  minCapturedAt: string | null;
+  /** Quantas conferências (fotos) há no período. */
   totalSnapshots: number;
 };
 
 /** Resumo para os cards ao lado do gráfico — derivado da própria série. */
 export function summarizeMaterialStockValueSeries(
-  weeks: readonly MaterialStockValueWeekPoint[]
+  points: readonly MaterialStockValueCountPoint[]
 ): MaterialStockValueSeriesSummary {
-  if (weeks.length === 0) {
+  if (points.length === 0) {
     return {
       latestValue: null,
-      latestWeekStart: null,
+      latestCapturedAt: null,
+      latestCivilDate: null,
       latestDelta: null,
       latestDeltaPercent: null,
       maxValue: null,
-      maxWeekStart: null,
+      maxCapturedAt: null,
       minValue: null,
-      minWeekStart: null,
-      weeksWithData: 0,
+      minCapturedAt: null,
       totalSnapshots: 0,
     };
   }
 
-  const last = weeks[weeks.length - 1]!;
-  let maxValue = weeks[0]!.totalValue;
-  let maxWeekStart = weeks[0]!.weekStart;
-  let minValue = weeks[0]!.totalValue;
-  let minWeekStart = weeks[0]!.weekStart;
-  let totalSnapshots = 0;
+  const last = points[points.length - 1]!;
+  let maxValue = points[0]!.totalValue;
+  let maxCapturedAt = points[0]!.capturedAt;
+  let minValue = points[0]!.totalValue;
+  let minCapturedAt = points[0]!.capturedAt;
 
-  for (const w of weeks) {
-    if (w.totalValue > maxValue) {
-      maxValue = w.totalValue;
-      maxWeekStart = w.weekStart;
+  for (const point of points) {
+    if (point.totalValue > maxValue) {
+      maxValue = point.totalValue;
+      maxCapturedAt = point.capturedAt;
     }
-    if (w.totalValue < minValue) {
-      minValue = w.totalValue;
-      minWeekStart = w.weekStart;
+    if (point.totalValue < minValue) {
+      minValue = point.totalValue;
+      minCapturedAt = point.capturedAt;
     }
-    totalSnapshots += w.snapshotCount;
   }
 
   return {
     latestValue: last.totalValue,
-    latestWeekStart: last.weekStart,
-    latestDelta: last.deltaFromPreviousWeek,
-    latestDeltaPercent: last.deltaPercentFromPreviousWeek,
+    latestCapturedAt: last.capturedAt,
+    latestCivilDate: last.civilDate,
+    latestDelta: last.deltaFromPrevious,
+    latestDeltaPercent: last.deltaPercentFromPrevious,
     maxValue,
-    maxWeekStart,
+    maxCapturedAt,
     minValue,
-    minWeekStart,
-    weeksWithData: weeks.length,
-    totalSnapshots,
+    minCapturedAt,
+    totalSnapshots: points.length,
   };
 }
 
-/** Rótulo curto pt-BR do eixo: "05/08" (segunda da semana). */
-export function formatWeekAxisLabel(weekStart: string): string {
-  const [, m, d] = weekStart.slice(0, 10).split("-");
+/** Rótulo curto pt-BR do eixo: "05/08" (data civil da conferência). */
+export function formatCivilDateAxisLabel(civilDate: string): string {
+  const [, m, d] = civilDate.slice(0, 10).split("-");
   return `${d}/${m}`;
 }
 
 /** Resposta do endpoint da série — contrato compartilhado client/servidor. */
 export type MaterialStockValueSeriesResponse = {
-  weeks: MaterialStockValueWeekPoint[];
+  points: MaterialStockValueCountPoint[];
   summary: MaterialStockValueSeriesSummary;
-  /** Janela consultada, em semanas. */
+  /** Janela consultada, em semanas ISO (só recorte; cada conferência vira ponto). */
   weeksRequested: number;
   /** Data civil do snapshot mais recente (null quando não há histórico). */
   lastCapturedCivilDate: string | null;

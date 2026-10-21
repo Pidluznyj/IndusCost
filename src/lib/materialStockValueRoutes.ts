@@ -1,5 +1,6 @@
 /**
  * Rotas da série histórica do VALOR de matéria-prima em estoque.
+ * Um ponto por conferência física; a query `weeks` só recorta a janela.
  *
  * Namespace próprio (não `stock-tablet`, que é explicitamente sem custos):
  * aqui o dado É financeiro, então usa a mesma permissão da listagem de

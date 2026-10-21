@@ -17,7 +17,8 @@ import {
   sumMaterialCatalogStockValue,
 } from "./materialQuantityTotal.js";
 import {
-  aggregateMaterialStockValueByWeek,
+  buildMaterialStockValueCountSeries,
+  resolveMaterialStockValueWindowStart,
   summarizeMaterialStockValueSeries,
   type MaterialStockValueSeriesResponse,
   type MaterialStockValueSnapshotPoint,
@@ -162,17 +163,20 @@ export function parseMaterialStockValueSeriesQuery(
 }
 
 /**
- * Série semanal para o gráfico. Busca os snapshots da janela e delega a
- * agregação ao domínio puro (`aggregateMaterialStockValueByWeek`).
+ * Série para o gráfico. Busca os snapshots da janela e devolve UM ponto por
+ * conferência (`buildMaterialStockValueCountSeries`) — sem fechar a semana.
  */
 export async function listMaterialStockValueSeries(
   db: PrismaClient,
   input: { weeks: number; now?: Date }
 ): Promise<MaterialStockValueSeriesResponse> {
   const now = input.now ?? new Date();
-  // Janela com folga de 1 semana para a semana corrente entrar inteira.
-  const fromDate = new Date(now);
-  fromDate.setUTCDate(fromDate.getUTCDate() - (input.weeks + 1) * 7);
+  const civilToday = toSaoPauloCivilDate(now);
+  const windowStart = resolveMaterialStockValueWindowStart(
+    civilToday,
+    input.weeks
+  );
+  const fromDate = civilDateToUtcDate(windowStart);
 
   const rows = await db.materialStockValueSnapshot.findMany({
     where: { civilDate: { gte: fromDate } },
@@ -186,7 +190,7 @@ export async function listMaterialStockValueSeries(
     },
   });
 
-  const points: MaterialStockValueSnapshotPoint[] = rows.map((r) => ({
+  const snapshots: MaterialStockValueSnapshotPoint[] = rows.map((r) => ({
     civilDate: r.civilDate.toISOString().slice(0, 10),
     capturedAt: r.capturedAt.toISOString(),
     totalValue: Number(r.totalValue),
@@ -194,14 +198,11 @@ export async function listMaterialStockValueSeries(
     materialsConsidered: r.materialsConsidered,
   }));
 
-  const allWeeks = aggregateMaterialStockValueByWeek(points);
-  // Recorta para a quantidade pedida (as mais recentes).
-  const weeks =
-    allWeeks.length > input.weeks ? allWeeks.slice(-input.weeks) : allWeeks;
+  const points = buildMaterialStockValueCountSeries(snapshots);
 
   return {
-    weeks,
-    summary: summarizeMaterialStockValueSeries(weeks),
+    points,
+    summary: summarizeMaterialStockValueSeries(points),
     weeksRequested: input.weeks,
     lastCapturedCivilDate:
       points.length > 0 ? points[points.length - 1]!.civilDate : null,

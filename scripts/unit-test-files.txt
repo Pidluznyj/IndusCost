@@ -38,6 +38,8 @@ src/lib/simulationsRoutes.test.ts
 src/lib/simulationsDomainBoundary.test.ts
 src/lib/productCostBaseline.server.test.ts
 src/lib/materialEffectiveCost.test.ts
+src/lib/materialStockValueSeries.test.ts
+src/components/materials/MaterialStockValueTrendChart.test.tsx
 src/lib/pricing/commercialPriceFormula.test.ts
 src/lib/projectsSimulationProvenance.test.ts
 src/lib/projectsSimulationTotal.test.ts

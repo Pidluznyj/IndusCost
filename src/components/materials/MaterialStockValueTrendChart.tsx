@@ -1,13 +1,12 @@
 /**
- * Flutuação semanal do valor de matéria-prima em estoque.
+ * Histórico do valor de matéria-prima em estoque por conferência física.
  *
- * Cada ponto é o valor com que a semana FECHOU — a última foto capturada
- * depois das conferências daquela semana. Semanas sem conferência não viram
- * ponto (a série não inventa dado); a linha simplesmente liga as semanas que
- * existem.
+ * Cada ponto é o valor total de MP imediatamente após uma contagem física
+ * aplicada. Várias conferências na mesma semana aparecem todas. Semanas sem
+ * conferência não viram ponto (a série não inventa dado).
  *
  * Todos os números vêm prontos do backend (`/api/materials/stock-value/series`),
- * que agrega com a mesma fórmula do card "Valor em estoque (MP)".
+ * que usa a mesma fórmula do card "Valor em estoque (MP)".
  */
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
@@ -26,9 +25,9 @@ import { fetchJsonOk } from "@/src/lib/http";
 import { formatCurrency } from "@/src/lib/utils";
 import {
   MATERIAL_STOCK_VALUE_SERIES_PATH,
-  formatWeekAxisLabel,
+  formatCivilDateAxisLabel,
+  type MaterialStockValueCountPoint,
   type MaterialStockValueSeriesResponse,
-  type MaterialStockValueWeekPoint,
 } from "@/src/lib/materialStockValueSeries";
 import { cn } from "@/src/lib/utils";
 
@@ -40,30 +39,41 @@ const WEEK_OPTIONS = [
 ];
 
 type ChartRow = {
-  weekStart: string;
+  capturedAt: string;
+  civilDate: string;
   label: string;
   value: number;
-  snapshotCount: number;
-  deltaFromPreviousWeek: number | null;
-  deltaPercentFromPreviousWeek: number | null;
+  deltaFromPrevious: number | null;
+  deltaPercentFromPrevious: number | null;
   materialsWithStock: number;
 };
 
-function toChartRows(weeks: readonly MaterialStockValueWeekPoint[]): ChartRow[] {
-  return weeks.map((w) => ({
-    weekStart: w.weekStart,
-    label: formatWeekAxisLabel(w.weekStart),
-    value: w.totalValue,
-    snapshotCount: w.snapshotCount,
-    deltaFromPreviousWeek: w.deltaFromPreviousWeek,
-    deltaPercentFromPreviousWeek: w.deltaPercentFromPreviousWeek,
-    materialsWithStock: w.materialsWithStock,
+function toChartRows(points: readonly MaterialStockValueCountPoint[]): ChartRow[] {
+  return points.map((point) => ({
+    capturedAt: point.capturedAt,
+    civilDate: point.civilDate,
+    label: formatCivilDateAxisLabel(point.civilDate),
+    value: point.totalValue,
+    deltaFromPrevious: point.deltaFromPrevious,
+    deltaPercentFromPrevious: point.deltaPercentFromPrevious,
+    materialsWithStock: point.materialsWithStock,
   }));
 }
 
-function formatWeekRangeLabel(weekStart: string): string {
-  const [y, m, d] = weekStart.split("-");
-  return `semana de ${d}/${m}/${y}`;
+function formatCountDateTime(capturedAt: string, civilDate: string): string {
+  const instant = new Date(capturedAt);
+  if (Number.isNaN(instant.getTime())) {
+    const [, m, d] = civilDate.slice(0, 10).split("-");
+    return `${d}/${m}`;
+  }
+  return instant.toLocaleString("pt-BR", {
+    timeZone: "America/Sao_Paulo",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 function TrendTooltip({
@@ -77,13 +87,13 @@ function TrendTooltip({
   const row = payload[0]?.payload;
   if (!row) return null;
 
-  const delta = row.deltaFromPreviousWeek;
-  const deltaPct = row.deltaPercentFromPreviousWeek;
+  const delta = row.deltaFromPrevious;
+  const deltaPct = row.deltaPercentFromPrevious;
 
   return (
     <div className="min-w-[240px] rounded-lg border border-border bg-card p-2.5 text-xs shadow-md">
       <p className="mb-1 font-bold uppercase tracking-wide text-muted-foreground">
-        {formatWeekRangeLabel(row.weekStart)}
+        Conferência em {formatCountDateTime(row.capturedAt, row.civilDate)}
       </p>
       <p className="text-base font-extrabold tabular-nums text-foreground">
         {formatCurrency(row.value)}
@@ -109,25 +119,27 @@ function TrendTooltip({
             </span>
           ) : null}
           <span className="text-[11px] font-normal text-muted-foreground">
-            vs. semana anterior
+            vs. conferência anterior
           </span>
         </p>
       ) : (
         <p className="mt-1 text-[11px] text-muted-foreground">
-          Primeira semana da série — sem comparação.
+          Primeira conferência da série — sem comparação.
         </p>
       )}
       <p className="mt-1.5 border-t border-border/60 pt-1.5 text-[11px] text-muted-foreground">
-        {row.materialsWithStock} MP com quantidade ·{" "}
-        {row.snapshotCount === 1
-          ? "1 conferência na semana"
-          : `${row.snapshotCount} conferências na semana`}
+        {row.materialsWithStock} MP com quantidade
       </p>
     </div>
   );
 }
 
-export function MaterialStockValueTrendChart() {
+export function MaterialStockValueTrendChart({
+  onRefreshValue,
+}: {
+  /** Recarrega o card "Valor em estoque (MP)" junto com o gráfico. */
+  onRefreshValue?: () => void;
+} = {}) {
   const [weeks, setWeeks] = useState(13);
   const [data, setData] = useState<MaterialStockValueSeriesResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -162,11 +174,16 @@ export function MaterialStockValueTrendChart() {
     return () => controller.abort();
   }, [load, weeks]);
 
-  const rows = useMemo(() => (data ? toChartRows(data.weeks) : []), [data]);
+  const rows = useMemo(() => (data ? toChartRows(data.points) : []), [data]);
   const summary = data?.summary ?? null;
 
   const hasData = rows.length > 0;
   const hasSinglePoint = rows.length === 1;
+
+  const refreshAll = () => {
+    void load(weeks);
+    onRefreshValue?.();
+  };
 
   return (
     <section
@@ -176,11 +193,11 @@ export function MaterialStockValueTrendChart() {
       <header className="mb-3 flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="text-sm font-semibold text-foreground">
-            Valor em estoque (MP) — flutuação semanal
+            Valor em estoque (MP) — por conferência física
           </h2>
           <p className="text-xs text-muted-foreground">
-            Cada ponto é o valor com que a semana fechou, após as conferências
-            de estoque daquele período.
+            Cada ponto é o valor total de MP logo após uma contagem física
+            aplicada. Várias conferências na mesma semana aparecem todas.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -208,7 +225,7 @@ export function MaterialStockValueTrendChart() {
           </div>
           <button
             type="button"
-            onClick={() => void load(weeks)}
+            onClick={refreshAll}
             disabled={loading}
             className="inline-flex items-center gap-1 rounded-lg border border-border bg-background px-2.5 py-1 text-[11px] font-semibold hover:bg-accent disabled:opacity-50"
             data-testid="material-stock-value-refresh"
@@ -244,8 +261,8 @@ export function MaterialStockValueTrendChart() {
           </p>
           <p className="max-w-md text-xs text-muted-foreground">
             O valor em estoque passa a ser fotografado a cada conferência
-            registrada em <strong>Conferência Física</strong>. Após a
-            primeira semana de lançamentos, a flutuação aparece aqui.
+            física aplicada. Após a primeira contagem, o ponto aparece aqui e o
+            indicador acima usa o mesmo total.
           </p>
         </div>
       ) : (
@@ -258,7 +275,10 @@ export function MaterialStockValueTrendChart() {
               >
                 <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
                 <XAxis
-                  dataKey="label"
+                  dataKey="capturedAt"
+                  tickFormatter={(value: string) =>
+                    rows.find((row) => row.capturedAt === value)?.label ?? ""
+                  }
                   tick={{ fontSize: 11 }}
                   className="fill-muted-foreground"
                   interval="preserveStartEnd"
@@ -282,7 +302,7 @@ export function MaterialStockValueTrendChart() {
                   className="stroke-primary"
                   strokeWidth={2.5}
                   // Um único ponto não desenha linha — o dot garante que
-                  // a primeira semana já apareça no gráfico.
+                  // a primeira conferência já apareça no gráfico.
                   dot={hasSinglePoint ? { r: 5 } : { r: 3 }}
                   activeDot={{ r: 5 }}
                   isAnimationActive={false}
@@ -294,7 +314,7 @@ export function MaterialStockValueTrendChart() {
           {summary ? (
             <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
               <SummaryTile
-                label="Última semana"
+                label="Última conferência"
                 value={summary.latestValue}
                 delta={summary.latestDelta}
                 deltaPercent={summary.latestDeltaPercent}
@@ -306,12 +326,12 @@ export function MaterialStockValueTrendChart() {
                   Cobertura
                 </p>
                 <p className="mt-0.5 text-sm font-bold tabular-nums text-foreground">
-                  {summary.weeksWithData}{" "}
-                  {summary.weeksWithData === 1 ? "semana" : "semanas"}
-                </p>
-                <p className="text-[10px] text-muted-foreground">
                   {summary.totalSnapshots}{" "}
                   {summary.totalSnapshots === 1 ? "conferência" : "conferências"}
+                </p>
+                <p className="text-[10px] text-muted-foreground">
+                  na janela de {weeks}{" "}
+                  {weeks === 1 ? "semana" : "semanas"}
                 </p>
               </div>
             </div>
@@ -319,8 +339,8 @@ export function MaterialStockValueTrendChart() {
 
           {hasSinglePoint ? (
             <p className="mt-2 text-[11px] text-muted-foreground">
-              Só há uma semana com dado até agora — a linha de tendência aparece
-              a partir da segunda semana de conferências.
+              Só há uma conferência com dado até agora — a linha de tendência
+              aparece a partir da segunda contagem física.
             </p>
           ) : null}
         </>

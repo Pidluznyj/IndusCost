@@ -131,8 +131,8 @@ export const MaterialModule = () => {
     [materials]
   );
 
-  const fetchData = async () => {
-    setLoading(true);
+  const fetchData = async (opts?: { silent?: boolean }) => {
+    if (!opts?.silent) setLoading(true);
     try {
       const data = await fetchJsonOk<Material[]>("/api/materials");
       setMaterials(Array.isArray(data) ? data : []);
@@ -140,7 +140,7 @@ export const MaterialModule = () => {
       console.error("Erro ao buscar materiais:", error);
       alert(error instanceof Error ? error.message : "Não foi possível carregar materiais.");
     } finally {
-      setLoading(false);
+      if (!opts?.silent) setLoading(false);
     }
   };
 
@@ -366,9 +366,10 @@ export const MaterialModule = () => {
         />
       </SummaryKpiGrid>
 
-      {/* Histórico do card acima: como o valor flutuou semana a semana.
-          Alimentado pelas fotos capturadas a cada conferência de estoque. */}
-      <MaterialStockValueTrendChart />
+      {/* Histórico do card acima: uma foto por conferência física aplicada. */}
+      <MaterialStockValueTrendChart
+        onRefreshValue={() => void fetchData({ silent: true })}
+      />
 
       {/* Header Actions */}
       <div

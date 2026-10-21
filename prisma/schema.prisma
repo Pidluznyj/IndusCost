@@ -1705,7 +1705,7 @@ model MaterialStockConference {
 
 /// O que disparou a captura do valor de estoque de MP.
 enum MaterialStockValueSnapshotSource {
-  /// Conferência de estoque registrada (fluxo semanal do usuário).
+  /// Conferência física aplicada (generateInventoryCountAdjustments).
   CONFERENCE
   /// Captura manual sob demanda (botão/rota administrativa).
   MANUAL
@@ -1720,15 +1720,15 @@ enum MaterialStockValueSnapshotSource {
 /// A captura acontece após a aplicação oficial da Conferência Física
 /// (generateInventoryCountAdjustments), best-effort, jamais revertendo o estoque.
 ///
-/// Append-only: nunca atualizar nem apagar linha. O gráfico agrega (último
-/// snapshot de cada semana), então vários pontos por semana são esperados e
-/// preservam a auditoria de como o total evoluiu dentro da semana.
+/// Append-only: nunca atualizar nem apagar linha. O gráfico mostra CADA
+/// snapshot (cada conferência física), na data em que foi aplicada — várias
+/// conferências na mesma semana aparecem todas, sem agregação de fechamento.
 model MaterialStockValueSnapshot {
   id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   /// Instante exato da captura (relógio do servidor).
   capturedAt DateTime @default(now()) @db.Timestamptz(6)
-  /// Data civil (America/Sao_Paulo) — chave estável de agregação do gráfico,
-  /// imune a virada de fuso na hora de agrupar por semana.
+  /// Data civil (America/Sao_Paulo) — chave estável da janela do gráfico,
+  /// imune a virada de fuso na hora de recortar o período.
   civilDate  DateTime @db.Date
 
   /// Σ (quantity × currentCost) — MESMA fórmula do card
