@@ -13,6 +13,7 @@ import { filterKnownPermissions } from "@/src/lib/appAuth.js";
 import { bumpPermissionsVersionAndSyncSessions } from "@/src/lib/permissionsVersion.js";
 import {
   evaluateSuperAdminRoleChange,
+  roleChangeTouchesSuperAdmin,
   superAdminAuditAction,
   superAdminGuardDenial,
   type SuperAdminGuardActor,
@@ -736,6 +737,8 @@ export async function restoreUserPermissionBaseline(
     confirmClearOverrides?: boolean;
     isEditingSelf: boolean;
     reason?: string | null;
+    /** E2: quem está operando (papel + elevação). Sem ator, mudanças que tocam SUPER_ADMIN são recusadas. */
+    actor?: SuperAdminGuardActor;
   }
 ) {
   const user = await prisma.appUser.findUnique({
@@ -766,6 +769,33 @@ export async function restoreUserPermissionBaseline(
     });
     const nextRole = applied.role ?? user.role;
     const legacyPermissions = filterKnownPermissions(applied.permissions);
+
+    // E2: restaurar o snapshot do perfil pode conceder ou retirar SUPER_ADMIN (roleBase do perfil);
+    // vale a mesma guarda das demais escritas de papel, com auditoria da negativa.
+    if (roleChangeTouchesSuperAdmin(user.role, nextRole)) {
+      const superAdminGuard = evaluateSuperAdminRoleChange({
+        actor: args.actor ?? { id: args.actorUserId, role: null, elevated: false },
+        target: { id: user.id, role: user.role },
+        nextRole,
+      });
+      const superAdminDenied = superAdminGuardDenial(superAdminGuard);
+      if (superAdminDenied) {
+        await writeAuditPlans(prisma, {
+          actorUserId: args.actorUserId,
+          targetUserId: user.id,
+          plans: [
+            {
+              action: "SUPER_ADMIN_ROLE_CHANGE_DENIED",
+              resourceKey: null,
+              targetRole: user.role,
+              beforeJson: { role: user.role },
+              afterJson: { attemptedRole: nextRole, denied: superAdminDenied.code, via: "restore-access-profile" },
+            },
+          ],
+        });
+        throw new UserPermissionAdminError(superAdminDenied.code, superAdminDenied.message);
+      }
+    }
 
     assertSelfUsersManageLock({
       isEditingSelf: args.isEditingSelf,
@@ -829,6 +859,7 @@ export async function restoreUserPermissionBaseline(
     isEditingSelf: args.isEditingSelf,
     auditKind: "restore",
     reason: args.reason,
+    actor: args.actor,
   });
 }
 
@@ -841,6 +872,7 @@ export async function clearUserPermissionOverrides(
     confirm: boolean;
     isEditingSelf: boolean;
     reason?: string | null;
+    actor?: SuperAdminGuardActor;
   }
 ) {
   if (!args.confirm) {
@@ -856,6 +888,7 @@ export async function clearUserPermissionOverrides(
     confirmClearOverrides: true,
     isEditingSelf: args.isEditingSelf,
     reason: args.reason,
+    actor: args.actor,
   });
 }
 

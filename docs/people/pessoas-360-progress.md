@@ -15,9 +15,17 @@ Ambiente local: PostgreSQL descartável `127.0.0.1:54329` (`perf_e2e` para naveg
 | CP4 Pessoas 360° v1 | feito (8ec96e9) | `/people`, `/people/:id`; `GET /api/people`, `/api/people/:id`; verificado no navegador (lista, ficha, conflito do caso real) |
 | CP5 v1.1 escrita | feito (2c34782, c55a0f6) | prévia/vincular/corrigir/desvincular/unificar/reverter; `personLinkOps.integration.test.ts` 7/7; correção do caso real verificada no navegador |
 | CP6 Frota/Comissões | feito (bdcba11) | `personIdentityResolve.server.ts`; motorista/CSV/QR com checksum e `personId`; comissionável com `personId` + sugestões; dedupe só por `nomusPersonId`; testes 21/21 |
-| CP7 Qualidade/E2E/docs | feito | tsc 0 novos vs base; integração 19/19; build OK; E2E `part15-people-360.mjs` 21/21; [pessoas-360-implementation.md](pessoas-360-implementation.md), [pessoas-360-validation.md](pessoas-360-validation.md), [pessoas-360-deployment-runbook.md](pessoas-360-deployment-runbook.md) |
+| CP7 Qualidade/E2E/docs | **encerrado** (c4510a1 + commit de fechamento) | tsc 0 novos vs base; integração 19/19; build OK; E2E `part15-people-360.mjs` 21/21; [pessoas-360-implementation.md](pessoas-360-implementation.md), [pessoas-360-validation.md](pessoas-360-validation.md), [pessoas-360-deployment-runbook.md](pessoas-360-deployment-runbook.md) |
 
 ## Como retomar
 1. `git status` na branch; ler esta tabela.
 2. Subir PG local: `cd C:/Dev/induscost-claude-deps/pgtool && node pg-start.mjs`.
 3. Testes do checkpoint corrente: `npx tsx --test src/lib/security/superAdminRoleGuard.test.ts src/lib/security/userAccessLifecycle.test.ts src/lib/security/userPermissionAdminAudit.test.ts src/lib/accessProfilesApply.test.ts`; integração: `PEOPLE_PG_TEST_URL=postgresql://induscost_local:local_only_disposable@127.0.0.1:54329/perf_empty npx tsx --test src/lib/security/userAccessLifecycle.integration.test.ts`.
+
+## Encerramento do CP7 (2026-10-21)
+
+- E2E final (21/21, exit 0) reexecutado em 2026-10-21 com o servidor reiniciado no código final. Gates finais reexecutados no código final: ver [pessoas-360-validation.md](pessoas-360-validation.md) §1 (números e exit codes).
+- 6 falhas unitárias investigadas uma a uma contra o checkout da base: todas pré-existentes, nenhuma regressão (validação §1.1).
+- Correções do fechamento: guarda E2 no restore/clear de perfil de acesso; `people` no contrato e no mapa de recursos da sidebar; teste de integração `NEWER_DEPENDENCIES`.
+- Resultado: **PRONTO COM RESSALVAS** — pendências: 6 falhas unitárias pré-existentes fora do escopo; cenário #7 só por revisão de código; E1 atrás de flag.
+- Sem push, sem merge, sem deploy, sem migration fora do PG local.

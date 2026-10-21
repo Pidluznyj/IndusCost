@@ -13,7 +13,7 @@ Data: 2026-10-20. Base: `main` em `97e71bc`. Referência conceitual: [auditoria-
 | CP4 Pessoas 360° v1 | `8ec96e9` | `/people` (lista) e `/people/:id` (ficha) somente consulta; `GET /api/people`, `/api/people/:id` |
 | CP5 Pessoas 360° v1.1 | `2c34782`, `c55a0f6` | Vincular, corrigir, desvincular, unificar e reverter — prévia, estado esperado (CAS), step-up para unificar, eventos |
 | CP6 Frota/Comissões | `bdcba11` | Motorista e comissionável resolvem Pessoa por CPF validado; sem fusão por nome; CPF fora dos logs |
-| CP7 Qualidade | (este) | Gates (tsc, unidade, integração, build), E2E jornadas 1–5, matriz de 25 cenários, docs |
+| CP7 Qualidade | `c4510a1` + fechamento | Gates (tsc, unidade, integração, build), E2E jornadas 1–5, matriz de 25 cenários, docs; no fechamento: guarda E2 no restore de perfil, mapeamento `people` no contrato/consistência, teste de reversão com dependências novas |
 
 ## 2. Modelo de dados (aditivo)
 
@@ -37,7 +37,7 @@ Migration `prisma/migrations/20261027120000_person_link_event/migration.sql` (id
 
 | Item | Regra implementada | Onde | Auditoria |
 |---|---|---|---|
-| E2 | Conceder ou retirar SUPER_ADMIN só por SUPER_ADMIN **com step-up** (`ADMIN_ELEVATION_REQUIRED`); ninguém se promove (`CANNOT_PROMOTE_SELF`); vale para `PATCH /api/admin/users/:id`, `PUT /:id/role`, `apply-preset` e aplicação de perfil em lote | `src/lib/security/superAdminRoleGuard.ts`, `server.ts`, `userPermissionAdminService.ts`, `accessProfilesService.ts` | `PermissionAuditLog`: `SUPER_ADMIN_ROLE_GRANTED/REVOKED/CHANGE_DENIED` |
+| E2 | Conceder ou retirar SUPER_ADMIN só por SUPER_ADMIN **com step-up** (`ADMIN_ELEVATION_REQUIRED`); ninguém se promove (`CANNOT_PROMOTE_SELF`); vale para `PATCH /api/admin/users/:id`, `PUT /:id/role`, `apply-preset`, `restore-role-default`, `DELETE …/permission-overrides` (restauram o `roleBase` do perfil) e aplicação de perfil em lote | `src/lib/security/superAdminRoleGuard.ts`, `server.ts`, `userPermissionAdminService.ts`, `accessProfilesService.ts` | `PermissionAuditLog`: `SUPER_ADMIN_ROLE_GRANTED/REVOKED/CHANGE_DENIED` |
 | E1 | Desligamento efetivo (`status=INACTIVE` + data de desligamento) inativa a conta ligada por `AppUser.employeeId` e revoga sessões; recontratação **não** reativa a conta | `userAccessLifecycle(.server).ts`, `PUT /api/employees/:id` | `SecurityAuditLog`: `USER_DEACTIVATED_BY_TERMINATION` |
 | E1 flag | `HR_TERMINATION_REVOKES_ACCESS=1\|true\|yes` — **desligada por padrão** até homologação | `parseTerminationRevokesAccessFlag` | — |
 | E3 | `DELETE /api/admin/users/:id` vira inativação lógica + revogação de sessões (`physicallyDeleted: false`); histórico e FKs preservados | `server.ts` | `USER_DELETE_REQUEST_CONVERTED`, `USER_DEACTIVATED` |

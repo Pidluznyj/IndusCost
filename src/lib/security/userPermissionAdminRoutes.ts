@@ -225,6 +225,7 @@ export function registerUserPermissionAdminRoutes(
           actorSessionId: actorSessionId(req),
           confirm,
           isEditingSelf: isEditingSelf(req, id),
+          actor: deps.resolveActor(req),
         });
         return res.json(payload);
       } catch (error) {
@@ -299,6 +300,7 @@ export function registerUserPermissionAdminRoutes(
           confirmClearOverrides: req.body?.confirmClearOverrides === true,
           isEditingSelf: isEditingSelf(req, id),
           reason: typeof req.body?.reason === "string" ? req.body.reason : undefined,
+          actor: deps.resolveActor(req),
         });
         return res.json(payload);
       } catch (error) {

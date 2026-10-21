@@ -189,6 +189,21 @@ describe("Pessoas 360° v1.1 — operações em PostgreSQL local", { skip }, () 
     await assert.rejects(() => revertPersonMerge(prisma, { eventId: done!.eventId, reason: "de novo", actor }), (err: unknown) => err instanceof CanonicalPersonError && err.code === "ALREADY_REVERTED");
   });
 
+  it("reversão recusada quando a vencedora recebeu vínculos novos depois da unificação (NEWER_DEPENDENCIES)", async () => {
+    const W = await person("Dep W", { cpfNormalized: "11144477735" });
+    const L = await person("Dep L", { cpfNormalized: "11144477735" });
+    const d = await prisma.fleetDriver.create({ data: { name: `${TAG} dep motorista`, cpf: "11144477735", status: "PENDING" } });
+    ids.drivers.push(d.id);
+    const done = await executePersonMerge(prisma, { winnerId: W.id, loserId: L.id, reason: "unificação para teste de dependência", actor, expectedMoveCount: 0 });
+    await relinkEntity(prisma, { targetPersonId: W.id, entityKind: "fleet_driver", entityId: d.id, expectedCurrentPersonId: null, reason: "vínculo novo depois da unificação", actor });
+    await assert.rejects(
+      () => revertPersonMerge(prisma, { eventId: done!.eventId, reason: "tentativa de reverter", actor }),
+      (err: unknown) => err instanceof CanonicalPersonError && err.code === "NEWER_DEPENDENCIES" && err.status === 409
+    );
+    assert.equal((await prisma.person.findUniqueOrThrow({ where: { id: L.id } })).status, "MERGED", "absorvida continua MERGED");
+    assert.equal((await prisma.fleetDriver.findUniqueOrThrow({ where: { id: d.id } })).personId, W.id, "vínculo novo preservado");
+  });
+
   it("unificação com duas contas ativas é bloqueada (cardinalidade)", async () => {
     const W = await person("Two W");
     const L = await person("Two L");

@@ -1,0 +1,107 @@
+[
+  {
+    "name": "15.00 preparação: conta da Carla na Pessoa B, colaborador e CPF na Pessoa A",
+    "ok": true,
+    "detail": "appUser=CONFLICT flags=USER_ON_OTHER_PERSON"
+  },
+  {
+    "name": "15.01 J1 lista: busca por nome traz as duas Pessoas e sinaliza conflito",
+    "ok": true,
+    "detail": "Carla\teb9d429c…\tAtiva\t | \t | 0\t20/10/2026 || [DEMO] Carla Gerente | Conta do colaborador aponta para outra Pessoa | \t03d86662…\tAtiva\t | \t | 0\t20/10/2026"
+  },
+  {
+    "name": "15.02 J1 ficha: cabeçalho, cartão Funcionário vinculado, duplicidade e conta pendente visíveis",
+    "ok": true,
+    "detail": "[DEMO] Carla Gerente · Funcionário\nVinculado\n\nCOLABORADOR (ESTE"
+  },
+  {
+    "name": "15.03 J2 prévia mostra origem/destino e exige justificativa",
+    "ok": true,
+    "detail": "Corrigir vínculo — Usuário IndusCost\nFechar\nCadastro\tCarla Gerente (teste) · VIEWER · ligado a colaborador · ge***@indus"
+  },
+  {
+    "name": "15.04 J2 correção: conta volta para a Pessoa A, evento RELINKED com autor e motivo",
+    "ok": true,
+    "detail": "Rita RH (teste) · MANUAL"
+  },
+  {
+    "name": "15.05 J3 unificar sem confirmação de senha é recusado (403 ADMIN_ELEVATION_REQUIRED)",
+    "ok": true,
+    "detail": "403 ADMIN_ELEVATION_REQUIRED"
+  },
+  {
+    "name": "15.06 J3 prévia da unificação: CPF igual, pessoa que fica, o que não muda",
+    "ok": true,
+    "detail": "Unificar pessoas (operação controlada)\nFechar\n\nEvidência: CPF validado igual (evidência forte). Nunca se unifica por nom"
+  },
+  {
+    "name": "15.07 J3 unificação com step-up: B fica MERGED apontando para A; A sem pendência; evento MERGED reversível",
+    "ok": true,
+    "detail": "B=MERGED → 03d86662"
+  },
+  {
+    "name": "15.08 J3 Pessoa unificada não propõe unificar com a vencedora",
+    "ok": true,
+    "detail": "pendências B=0"
+  },
+  {
+    "name": "15.09 J3 reversão: B volta a ACTIVE, evento MERGED marcado como revertido, MERGE_REVERTED gravado",
+    "ok": true,
+    "detail": "B=ACTIVE"
+  },
+  {
+    "name": "15.10 J4 Frota recusa CPF sem dígitos verificadores válidos",
+    "ok": true,
+    "detail": "400"
+  },
+  {
+    "name": "15.11 J4 CPF com duas Pessoas candidatas (A e B): motorista nasce sem vínculo, nada é escolhido sozinho",
+    "ok": true,
+    "detail": "personId=null"
+  },
+  {
+    "name": "15.12 J4 ficha da Pessoa A mostra o motorista como pendência por CPF igual",
+    "ok": true,
+    "detail": "Pendente · [E2E] Motorista Carla\n\nMotorista com o mesmo CPF ainda sem Pessoa.\n\nEvidência: CPF igual."
+  },
+  {
+    "name": "15.13 J4 vincular motorista pela ficha: cartão Motorista vinculado, evento LINKED com evidência CPF_EXACT",
+    "ok": true,
+    "detail": "CPF_EXACT"
+  },
+  {
+    "name": "15.14 J4 comissionável com vínculo explícito aparece na ficha; desvincular remove só o vínculo (cadastro, tipo e nome intactos) e grava UNLINKED",
+    "ok": true,
+    "detail": "lista=1"
+  },
+  {
+    "name": "15.15 E2 conceder SUPER_ADMIN sem step-up é recusado e auditado (403 ADMIN_ELEVATION_REQUIRED)",
+    "ok": true,
+    "detail": "403 ADMIN_ELEVATION_REQUIRED"
+  },
+  {
+    "name": "15.16 E3 DELETE de usuário não apaga: conta continua existindo, inativa, com histórico",
+    "ok": true,
+    "detail": "200 physicallyDeleted=false"
+  },
+  {
+    "name": "15.17 E4 criar conta a partir do colaborador copia a Pessoa: a ficha da Pessoa do colaborador mostra a conta nova vinculada",
+    "ok": true,
+    "detail": "201 person=de8802ec linked=true"
+  },
+  {
+    "name": "15.18 J5 ADMIN não eleva (403), não unifica (403) nem se promove a SUPER_ADMIN (403)",
+    "ok": true,
+    "detail": "elevate=403 merge=403/PERMISSION_DENIED self=403/PERMISSION_DENIED"
+  },
+  {
+    "name": "15.19 J5 matriz: SUPER_ADMIN vê lista e ficha, prepara vínculo e prévia de unificação; executar unificação exige step-up",
+    "ok": true,
+    "detail": "{\"label\":\"SUPER_ADMIN (rh.teste, sem step-up)\",\"list\":200,\"ficha\":200,\"link\":200,\"mergePreview\":200,\"merge\":403,\"mergeCode\":\"ADMIN_ELEVATION_REQUIRED\"}"
+  },
+  {
+    "name": "15.20 J5 matriz: perfis sem permissão do módulo Pessoas recebem 403 em lista, ficha, vínculo e unificação (nunca 500)",
+    "ok": true,
+    "detail": "[{\"label\":\"ADMIN (marcos.teste)\",\"list\":403,\"ficha\":403,\"link\":403,\"mergePreview\":403,\"merge\":403,\"mergeCode\":\"PERMISSION_DENIED\"},{\"label\":\"RH gestor (perfil Desempenho)\",\"list\":403,\"ficha\":403,\"link\":403,\"mergePreview\":403,\"merge\":403,\"mergeCode\":\"PERMISSION_DENIED\"},{\"label\":\"RH operacional (perfil Desempenho)\",\"list\":403,\"ficha\":403,\"link\":403,\"mergePreview\":403,\"merge\":403,\"mergeCode\":\"PERMISSION_DENIED\"},{\"label\":\"comum (líder de produção)\",\"list\":403,\"ficha\":403,\"link\":403,\"mergePreview\":403,\"merge\":403,\"mergeCode\":\"PERMISSION_DENIED\",\"uiBlocked\":true}]"
+  }
+]
