@@ -336,6 +336,8 @@ export async function previewLinkEmployeeToPerson(
     sourceKind?: PersonLinkSourceKind | null;
     sourceId?: string | null;
     form: PersonIdentitySnapshot;
+    /** Pessoa atual do colaborador: pode continuar mesmo se INACTIVE (edição de legado). */
+    currentPersonId?: string | null;
   }
 ): Promise<{
   personId: string | null;
@@ -368,6 +370,9 @@ export async function previewLinkEmployeeToPerson(
     if (!person) throw new CanonicalPersonError("PERSON_NOT_FOUND", "Pessoa não encontrada.", 404);
     if (person.status === "MERGED") {
       throw new CanonicalPersonError("PERSON_MERGED", "Esta pessoa foi unificada em outra. Selecione a pessoa que ficou.", 409);
+    }
+    if (person.status === "INACTIVE" && person.id !== (input.currentPersonId ?? null)) {
+      throw new CanonicalPersonError("PERSON_INACTIVE", "Esta pessoa está inativa. Reative-a em Pessoas 360° (com justificativa) antes de vinculá-la a um colaborador.", 409);
     }
     personSnap = {
       displayName: person.displayName,
@@ -444,11 +449,15 @@ export async function planEmployeePersonLink(
   };
 
   if (input.personId || (input.sourceKind && input.sourceId)) {
+    const currentPersonId = input.existingEmployeeId
+      ? (await db.employee.findUnique({ where: { id: input.existingEmployeeId }, select: { personId: true } }))?.personId ?? null
+      : null;
     const preview = await previewLinkEmployeeToPerson(db, {
       personId: input.personId,
       sourceKind: input.sourceKind,
       sourceId: input.sourceId,
       form: formSnap,
+      currentPersonId,
     });
     const unresolved = preview.conflicts.filter((c) => !input.fieldResolutions?.[c.field]);
     if (unresolved.length > 0) {

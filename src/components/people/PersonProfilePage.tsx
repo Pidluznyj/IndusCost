@@ -337,7 +337,7 @@ export function PersonProfilePage({ personId }: { personId: string }) {
                     Habilitar acesso ao IndusCost
                   </button>
                 ) : null}
-                {caps.canManagePersonLink ? (
+                {caps.canAttachAccount ? (
                   <button type="button" onClick={() => setDialog({ type: "attach-account", accountId: null })} className="rounded-lg border border-border px-2.5 py-1 text-[11px] font-semibold hover:bg-muted" data-testid="person-attach-account-open">
                     Regularizar vínculo existente
                   </button>

@@ -130,7 +130,7 @@ export const EMPLOYEES_PILOT_ENDPOINTS = [
   { method: "GET", path: "/api/people/:id/access/candidates", resourceKey: "admin.employees.user_link", action: "manage" },
   { method: "POST", path: "/api/people/:id/access/attach/preview", resourceKey: "admin.employees.user_link", action: "manage" },
   { method: "POST", path: "/api/people/:id/access/attach", resourceKey: "admin.employees.user_link", action: "manage" },
-  { method: "GET", path: "/api/people/:id/driver/preview", resourceKey: "operations.fleet", action: "view" },
+  { method: "GET", path: "/api/people/:id/driver/preview", resourceKey: "operations.fleet", action: "manage" },
   { method: "POST", path: "/api/people/:id/driver", resourceKey: "operations.fleet", action: "manage" },
   { method: "GET", path: "/api/people/resolve", resourceKey: "admin.employees", action: "view" },
   {

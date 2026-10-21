@@ -1,0 +1,97 @@
+[
+  {
+    "name": "16.00 preparação: lista de Pessoas responde",
+    "ok": true,
+    "detail": "total=17"
+  },
+  {
+    "name": "16.01 J1 criar Pessoa pela lista: ficha abre, origem MANUAL, evento PERSON_CREATED",
+    "ok": true,
+    "detail": "aa3ad38c MANUAL"
+  },
+  {
+    "name": "16.02 J1 duplicidade: Pessoa nova com o mesmo CPF → 409 DUPLICATE_CPF (nada criado)",
+    "ok": true,
+    "detail": "409 DUPLICATE_CPF"
+  },
+  {
+    "name": "16.03 J1 editar pela ficha: nome social aplicado, evento IDENTITY_UPDATED com autor e motivo",
+    "ok": true,
+    "detail": "Nova 662499"
+  },
+  {
+    "name": "16.04 J2 habilitar acesso: conta nasce VIEWER, sem perfil, ligada à Pessoa e sem colaborador; evento LINKED",
+    "ok": true,
+    "detail": "e2e.nova.662499@induscost.test role=VIEWER"
+  },
+  {
+    "name": "16.05 J2 segunda conta para a mesma Pessoa → 409 PERSON_ALREADY_HAS_USER (campo role ignorado)",
+    "ok": true,
+    "detail": "409 PERSON_ALREADY_HAS_USER"
+  },
+  {
+    "name": "16.06 J3 habilitar motorista: ação CREATE, motorista PENDING com CPF/nome da Pessoa e personId; evento LINKED CPF_EXACT",
+    "ok": true,
+    "detail": "CREATE PENDING"
+  },
+  {
+    "name": "16.07 J3 segunda habilitação → ALREADY_ENABLED (uma identidade, um motorista ativo)",
+    "ok": true,
+    "detail": "ALREADY_ENABLED"
+  },
+  {
+    "name": "16.08 L4 caso simples: personId copiado; role SELLER, permissões e colaborador intactos",
+    "ok": true,
+    "detail": "SELLER eventos=6"
+  },
+  {
+    "name": "16.09 L3 e-mails divergentes: sem confirmação → 409; com confirmação explícita vincula e o login não muda",
+    "ok": true,
+    "detail": "409 EMAIL_MISMATCH_CONFIRMATION_REQUIRED"
+  },
+  {
+    "name": "16.10 L1 SUPER_ADMIN sem vínculos: após step-up, personId + employeeId gravados; papel SUPER_ADMIN preservado; evento com autor",
+    "ok": true,
+    "detail": "SUPER_ADMIN emp=caa6fcd0"
+  },
+  {
+    "name": "16.11 L2 Pessoa inativa: 409 TARGET_INACTIVE; aviso na ficha; reativação auditada; depois regulariza",
+    "ok": true,
+    "detail": "409 TARGET_INACTIVE flag=true"
+  },
+  {
+    "name": "16.12 L5 colaborador sem Pessoa: Pessoa criada pela ficha, conta e colaborador ligados na mesma transação (evento do colaborador)",
+    "ok": true,
+    "detail": "a19374de"
+  },
+  {
+    "name": "16.13 L6 Pessoa já com outra conta: 409 TARGET_HAS_USER, nada muda (dono preservado)",
+    "ok": true,
+    "detail": "409 TARGET_HAS_USER"
+  },
+  {
+    "name": "16.14 L7 CPF repetido: ficha sinaliza duplicidade; habilitar motorista fica BLOQUEADO (DUPLICATE_PERSON_CPF) até unificar",
+    "ok": true,
+    "detail": "BLOCKED"
+  },
+  {
+    "name": "16.15 J5 SUPER_ADMIN: cria (201), edita (200), inativar com vínculos ativos recusa (409), habilitar acesso para Pessoa cujo colaborador já tem conta recusa (409 EMPLOYEE_ALREADY_LINKED), prévias 200",
+    "ok": true,
+    "detail": "{\"label\":\"SUPER_ADMIN\",\"createPerson\":201,\"editPerson\":200,\"status\":409,\"access\":409,\"attachPreview\":200,\"driverPreview\":200}"
+  },
+  {
+    "name": "16.16 J5 perfis sem permissão: 403 em todas as rotas novas (nunca 500)",
+    "ok": true,
+    "detail": "[{\"label\":\"RH gestor (perfil Desempenho)\",\"createPerson\":403,\"editPerson\":403,\"status\":403,\"access\":403,\"attachPreview\":403,\"driverPreview\":403},{\"label\":\"comum\",\"createPerson\":403,\"editPerson\":403,\"status\":403,\"access\":403,\"attachPreview\":403,\"driverPreview\":403}]"
+  },
+  {
+    "name": "16.17 J6 Comissões/Nomus intactos após regularizar e renomear a Pessoa: externalSellerId(s), sellerResponsibleName, papel, CommissionPerson (nome, nomusPersonId, ativo)",
+    "ok": true,
+    "detail": "{\"externalSellerId\":999464,\"externalSellerIds\":[999464,999646],\"sellerResponsibleName\":\"VENDEDOR LEGADO\",\"role\":\"SELLER\",\"permissions\":[]}"
+  },
+  {
+    "name": "16.18 J7 ANTES×DEPOIS: 6 contas legadas regularizadas apontam para a Pessoa certa; L6 (ocupada) e L7 (CPF repetido) ficam como pendência explícita",
+    "ok": true,
+    "detail": "6/6"
+  }
+]

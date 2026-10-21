@@ -8,6 +8,7 @@ import { CanonicalPersonError, isPersonUuid, maskCpf, maskEmail } from "@/src/li
 import { createPersonCore, updatePersonCore } from "@/src/lib/canonicalPersonCore.server.js";
 import { PERSON_LINK_EVENT_KINDS, recordPersonLinkEvent } from "@/src/lib/people/personLinkEvents.server.js";
 import { decidePersonStatusChange, maskedIdentityDiff, validatePersonIdentityInput, type PersonIdentityPatch } from "@/src/lib/people/personMaster.js";
+import { lockIdentityKeys, lockPersonRows } from "@/src/lib/people/personLocks.server.js";
 
 export type PersonMasterActor = { id: string | null; name?: string | null };
 
@@ -34,6 +35,7 @@ function requireReason(reason: unknown): string {
 export async function createPersonManual(prisma: PrismaClient, input: { actor: PersonMasterActor; body: unknown }) {
   const patch = validatePersonIdentityInput(input.body, { partial: false });
   return prisma.$transaction(async (tx) => {
+    await lockIdentityKeys(tx, [patch.cpf ? `cpf:${patch.cpf}` : null, patch.corporateEmail ? `email:${patch.corporateEmail}` : null]);
     const created = await createPersonCore(tx as unknown as PrismaClient, {
       displayName: patch.displayName!,
       socialName: patch.socialName ?? null,
@@ -78,6 +80,8 @@ export async function loadPersonIdentityForEdit(prisma: PrismaClient, personId: 
     cpf: caps.canViewPii ? row.cpfNormalized : null,
     cpfMasked: maskCpf(row.cpfNormalized),
     phone: caps.canViewPii ? row.phoneNormalized : null,
+    /** Sem PII os campos sensíveis vêm nulos: a UI não deve reenviá-los (nulo apaga). */
+    piiVisible: caps.canViewPii,
     editable: row.status !== "MERGED",
   };
 }
@@ -92,6 +96,9 @@ export async function updatePersonIdentity(prisma: PrismaClient, personId: strin
   if (Object.keys(patch).length === 0) throw new CanonicalPersonError("NOTHING_TO_UPDATE", "Nenhum campo para alterar.", 400);
   const reason = typeof input.reason === "string" && input.reason.trim() ? input.reason.trim() : null;
   return prisma.$transaction(async (tx) => {
+    // Linha travada: edições concorrentes da mesma Pessoa são serializadas (sem "lost update").
+    await lockPersonRows(tx, [personId], "UPDATE");
+    await lockIdentityKeys(tx, [patch.cpf ? `cpf:${patch.cpf}` : null, patch.corporateEmail ? `email:${patch.corporateEmail}` : null]);
     const before = await tx.person.findUnique({ where: { id: personId }, select: IDENTITY_SELECT });
     if (!before) throw new CanonicalPersonError("PERSON_NOT_FOUND", "Pessoa não encontrada.", 404);
     if (before.status === "MERGED") throw new CanonicalPersonError("PERSON_MERGED", "Esta pessoa foi unificada em outra; edite a pessoa que ficou.", 409);
@@ -127,11 +134,14 @@ export async function setPersonStatus(prisma: PrismaClient, personId: string, in
   if (!isPersonUuid(personId)) throw new CanonicalPersonError("INVALID_PERSON_ID", "ID de pessoa inválido.", 400);
   const reason = requireReason(input.reason);
   return prisma.$transaction(async (tx) => {
+    // FOR UPDATE: vínculos novos (que tomam FOR SHARE na Pessoa) esperam a decisão de situação.
+    await lockPersonRows(tx, [personId], "UPDATE");
     const row = await tx.person.findUnique({
       where: { id: personId },
       select: {
         id: true,
         status: true,
+        commissionPeople: { select: { id: true, active: true } },
         appUsers: { select: { id: true, isActive: true } },
         employees: { select: { id: true, status: true } },
         fleetDrivers: { select: { id: true, status: true } },
@@ -145,6 +155,7 @@ export async function setPersonStatus(prisma: PrismaClient, personId: string, in
         activeUsers: row.appUsers.filter((u) => u.isActive).length,
         activeEmployees: row.employees.filter((e) => (e.status ?? "ACTIVE").toUpperCase() !== "INACTIVE").length,
         activeDrivers: row.fleetDrivers.filter((d) => d.status !== "INACTIVE").length,
+        activeCommissionPeople: row.commissionPeople.filter((c) => c.active).length,
       },
     });
     if ("code" in decision) {

@@ -95,7 +95,7 @@ export type PersonStatusDecision =
 export function decidePersonStatusChange(args: {
   currentStatus: string;
   nextStatus: unknown;
-  activeLinks: { activeUsers: number; activeEmployees: number; activeDrivers: number };
+  activeLinks: { activeUsers: number; activeEmployees: number; activeDrivers: number; activeCommissionPeople?: number };
 }): PersonStatusDecision {
   const next = typeof args.nextStatus === "string" ? args.nextStatus.trim().toUpperCase() : "";
   if (next !== "ACTIVE" && next !== "INACTIVE") {
@@ -112,6 +112,7 @@ export function decidePersonStatusChange(args: {
     if (args.activeLinks.activeUsers > 0) details.push(`${args.activeLinks.activeUsers} conta(s) de acesso ativa(s)`);
     if (args.activeLinks.activeEmployees > 0) details.push(`${args.activeLinks.activeEmployees} colaborador(es) ativo(s)`);
     if (args.activeLinks.activeDrivers > 0) details.push(`${args.activeLinks.activeDrivers} motorista(s) não inativo(s)`);
+    if ((args.activeLinks.activeCommissionPeople ?? 0) > 0) details.push(`${args.activeLinks.activeCommissionPeople} comissionável(is) ativo(s)`);
     if (details.length > 0) {
       return {
         ok: false,

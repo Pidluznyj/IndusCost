@@ -8,6 +8,7 @@ import { Prisma } from "@prisma/client";
 import { CanonicalPersonError, isPersonUuid, maskCpf } from "@/src/lib/canonicalPerson.js";
 import { PERSON_LINK_EVENT_KINDS, recordPersonLinkEvent } from "@/src/lib/people/personLinkEvents.server.js";
 import { parseDriverFleetFields, planDriverEnable, type DriverCandidate, type DriverEnablePlan } from "@/src/lib/people/personDriverEnable.js";
+import { lockPersonRows } from "@/src/lib/people/personLocks.server.js";
 
 type Actor = { id: string | null; name?: string | null };
 
@@ -79,6 +80,7 @@ export async function enableDriverForPerson(
   const requested = typeof body.action === "string" ? body.action.toUpperCase() : null;
   try {
     return await prisma.$transaction(async (tx) => {
+      if (isPersonUuid(personId)) await lockPersonRows(tx, [personId], "SHARE");
       const ctx = await loadContext(tx as unknown as PrismaClient, personId);
       const plan = ctx.plan;
       if (plan.action === "BLOCKED" || plan.action === "CONFLICT") {
@@ -138,14 +140,14 @@ export async function enableDriverForPerson(
       const driverId = plan.driverId!;
       const driver = ctx.drivers.find((d) => d.id === driverId)!;
       if (plan.action === "LINK") {
-        const r = await tx.fleetDriver.updateMany({ where: { id: driverId, personId: null }, data: { personId: ctx.person.id } });
+        const r = await tx.fleetDriver.updateMany({ where: { id: driverId, personId: null, status: { not: "INACTIVE" } }, data: { personId: ctx.person.id } });
         if (r.count !== 1) throw new CanonicalPersonError("STALE", "O motorista mudou desde a prévia. Recarregue.", 409);
         await audit(driverId, "UPDATE", JSON.stringify({ personId: null }), { personId: ctx.person.id, origin: "PERSON_360" });
       } else {
         // REACTIVATE: INACTIVE → PENDING, ligado à Pessoa; CNH e histórico intocados.
         const active = await tx.fleetDriver.findFirst({ where: { cpf: driver.cpf, status: { not: "INACTIVE" }, id: { not: driverId } }, select: { id: true } });
         if (active) throw new CanonicalPersonError("DRIVER_CPF_ACTIVE", "Já existe motorista ativo com este CPF.", 409);
-        const r = await tx.fleetDriver.updateMany({ where: { id: driverId, status: "INACTIVE" }, data: { status: "PENDING", personId: ctx.person.id } });
+        const r = await tx.fleetDriver.updateMany({ where: { id: driverId, status: "INACTIVE", personId: driver.personId }, data: { status: "PENDING", personId: ctx.person.id } });
         if (r.count !== 1) throw new CanonicalPersonError("STALE", "O motorista mudou desde a prévia. Recarregue.", 409);
         await audit(driverId, "REACTIVATE", JSON.stringify({ status: "INACTIVE", personId: driver.personId }), { status: "PENDING", personId: ctx.person.id, origin: "PERSON_360" });
       }

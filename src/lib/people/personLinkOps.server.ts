@@ -17,6 +17,7 @@ import { PERSON_LINK_EVENT_KINDS, recordPersonLinkEvent, type PersonLinkEvidence
 import { evaluateSuperAdminAccountOperation, superAdminGuardDenial, type SuperAdminGuardActor } from "@/src/lib/security/superAdminRoleGuard.js";
 import { decideAttachAccount, emailsMatch } from "@/src/lib/people/personAccountLink.js";
 import { SECURITY_AUDIT_EVENTS, writeSecurityAuditLog } from "@/src/lib/auth/securityAudit.server.js";
+import { lockPersonRows } from "@/src/lib/people/personLocks.server.js";
 
 type Db = Prisma.TransactionClient;
 export type OpsActor = { id: string | null; name?: string | null };
@@ -162,6 +163,7 @@ export async function relinkEntity(
   if (reason.length < 5) throw new CanonicalPersonError("REASON_REQUIRED", "Informe a justificativa (mínimo 5 caracteres).", 400);
   try {
     return await prisma.$transaction(async (tx) => {
+      await lockPersonRows(tx, [targetId], "SHARE");
       const [target, entity] = await Promise.all([loadIdentityForMerge(tx, targetId), loadEntity(tx, kind, entityId)]);
       if (kind === "app_user") assertAccountOperationAllowed(input.actor, entity.role);
       const decision = decideRelink({
@@ -273,6 +275,7 @@ export async function executePersonMerge(
   if (reason.length < 5) throw new CanonicalPersonError("REASON_REQUIRED", "Informe a justificativa (mínimo 5 caracteres).", 400);
   try {
     return await prisma.$transaction(async (tx) => {
+      await lockPersonRows(tx, [winnerId, loserId], "UPDATE");
       const [winner, loser] = await Promise.all([loadIdentityForMerge(tx, winnerId), loadIdentityForMerge(tx, loserId)]);
       const plan = planPersonMerge(winner, loser);
       if (plan.blockers.length > 0) {
@@ -291,7 +294,7 @@ export async function executePersonMerge(
         data: { status: "MERGED", mergedIntoPersonId: winner.id, inactivatedAt: new Date() },
       });
       if (marked.count !== 1) throw new CanonicalPersonError("STALE", "A pessoa absorvida mudou durante a unificação.", 409);
-      const snapshot = { moves: plan.moves, fillFromLoser: plan.fillFromLoser, loserDisplayName: loser.displayName, winnerDisplayName: winner.displayName };
+      const snapshot = { moves: plan.moves, fillFromLoser: plan.fillFromLoser, loserDisplayName: loser.displayName, winnerDisplayName: winner.displayName, loserStatus: loser.status };
       const event = await recordPersonLinkEvent(tx, {
         personId: winner.id,
         eventKind: PERSON_LINK_EVENT_KINDS.MERGED,
@@ -334,6 +337,7 @@ export async function revertPersonMerge(prisma: PrismaClient, input: { eventId: 
   try {
     return await prisma.$transaction(async (tx) => {
       const ev = await tx.personLinkEvent.findUnique({ where: { id: eventId } });
+      if (ev?.fromPersonId && ev?.toPersonId) await lockPersonRows(tx, [ev.fromPersonId, ev.toPersonId], "UPDATE");
       if (!ev || ev.eventKind !== PERSON_LINK_EVENT_KINDS.MERGED || !ev.reversible) throw new CanonicalPersonError("EVENT_NOT_REVERSIBLE", "Este evento não pode ser revertido.", 409);
       if (ev.revertedAt) throw new CanonicalPersonError("ALREADY_REVERTED", "Esta unificação já foi revertida.", 409);
       const winnerId = ev.toPersonId!;
@@ -348,7 +352,12 @@ export async function revertPersonMerge(prisma: PrismaClient, input: { eventId: 
       if (plan.fillFromLoser.includes("cpfNormalized")) unfill.cpfNormalized = null;
       if (plan.fillFromLoser.includes("corporateEmail")) unfill.corporateEmail = null;
       if (Object.keys(unfill).length > 0) await tx.person.update({ where: { id: winnerId }, data: unfill });
-      await tx.person.update({ where: { id: loserId }, data: { status: "ACTIVE", mergedIntoPersonId: null, inactivatedAt: null } });
+      // Reversão restaura a situação que a absorvida tinha antes (INACTIVE continua inativa).
+      const loserStatusBefore = (ev.snapshot as { loserStatus?: string } | null)?.loserStatus === "INACTIVE" ? "INACTIVE" : "ACTIVE";
+      await tx.person.update({
+        where: { id: loserId },
+        data: loserStatusBefore === "INACTIVE" ? { status: "INACTIVE", mergedIntoPersonId: null } : { status: "ACTIVE", mergedIntoPersonId: null, inactivatedAt: null },
+      });
       const revert = await recordPersonLinkEvent(tx, {
         personId: loserId,
         eventKind: PERSON_LINK_EVENT_KINDS.MERGE_REVERTED,
@@ -431,7 +440,8 @@ export async function listCandidateAccounts(prisma: PrismaClient, personId: stri
   const employeeUserIds = target.employees.map((e) => e.appUser?.id).filter((x): x is string => Boolean(x));
   const where: Prisma.AppUserWhereInput = {
     OR: [
-      { personId: null, ...(q ? { OR: [{ name: { contains: q, mode: "insensitive" } }, { email: { contains: q, mode: "insensitive" } }] } : {}) },
+      // Sem permissão de dados pessoais a busca é só por nome (evita usar o filtro como oráculo de e-mail).
+      { personId: null, ...(q ? (input.canViewPii ? { OR: [{ name: { contains: q, mode: "insensitive" } }, { email: { contains: q, mode: "insensitive" } }] } : { name: { contains: q, mode: "insensitive" } }) : {}) },
       ...(employeeUserIds.length ? [{ id: { in: employeeUserIds } }] : []),
     ],
   };
@@ -466,11 +476,13 @@ export async function previewAttachAccount(prisma: PrismaClient, input: { target
   const decision = decideAttachAccount({
     account: { id: ctx.account.id, role: ctx.account.role, personId: ctx.account.personId, employeeId: ctx.account.employeeId, isActive: ctx.account.isActive, email: ctx.account.email },
     expected: {},
-    target: { id: ctx.target.id, status: ctx.target.status, userIds: ctx.target.appUsers.map((u) => u.id) },
+    target: { id: ctx.target.id, status: ctx.target.status, userIds: ctx.target.appUsers.map((u) => u.id), employeeIds: ctx.target.employees.map((e) => e.id) },
     employee: ctx.employee ? { id: ctx.employee.id, status: ctx.employee.status, personId: ctx.employee.personId, appUserId: ctx.employee.appUser?.id ?? null, corporateEmail: ctx.employee.corporateEmail } : null,
     emailMismatch: ctx.emailMismatch,
     confirmEmailMismatch: true,
-    actor: { id: input.actor.id, role: input.actor.role ?? null, elevated: Boolean(input.actor.elevated) },
+    // Prévia é somente leitura: um SUPER_ADMIN ainda sem step-up vê o plano completo (o step-up
+    // é exigido na confirmação, onde o 403 ADMIN_ELEVATION_REQUIRED abre a confirmação de senha).
+    actor: { id: input.actor.id, role: input.actor.role ?? null, elevated: input.actor.role === "SUPER_ADMIN" ? true : Boolean(input.actor.elevated) },
   });
   const changes: string[] = [];
   if (decision.ok) {
@@ -510,11 +522,12 @@ export async function attachAccountToPerson(
   if (reason.length < 5) throw new CanonicalPersonError("REASON_REQUIRED", "Informe a justificativa (mínimo 5 caracteres).", 400);
   try {
     return await prisma.$transaction(async (tx) => {
+      await lockPersonRows(tx, [targetId], "SHARE");
       const ctx = await loadAttachContext(tx, targetId, appUserId, input.employeeId);
       const decision = decideAttachAccount({
         account: { id: ctx.account.id, role: ctx.account.role, personId: ctx.account.personId, employeeId: ctx.account.employeeId, isActive: ctx.account.isActive, email: ctx.account.email },
         expected: input.expected,
-        target: { id: ctx.target.id, status: ctx.target.status, userIds: ctx.target.appUsers.map((u) => u.id) },
+        target: { id: ctx.target.id, status: ctx.target.status, userIds: ctx.target.appUsers.map((u) => u.id), employeeIds: ctx.target.employees.map((e) => e.id) },
         employee: ctx.employee ? { id: ctx.employee.id, status: ctx.employee.status, personId: ctx.employee.personId, appUserId: ctx.employee.appUser?.id ?? null, corporateEmail: ctx.employee.corporateEmail } : null,
         emailMismatch: ctx.emailMismatch,
         confirmEmailMismatch: input.confirmEmailMismatch,

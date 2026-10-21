@@ -7,6 +7,8 @@ import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { AlertTriangle, Loader2, ShieldCheck } from "lucide-react";
 import { cn } from "@/src/lib/utils";
+import { PASSWORD_MIN_LENGTH } from "@/src/lib/auth/passwordPolicy";
+import { isAdminElevationRequired } from "@/src/lib/adminElevationClient";
 import {
   attachAccount,
   createPerson,
@@ -91,7 +93,7 @@ export function PersonFormDialog({ personId, onClose, onDone }: { personId: stri
       .then((p) => {
         if (!alive) return;
         setForm({ displayName: p.displayName, socialName: p.socialName, corporateEmail: p.corporateEmail, personalEmail: p.personalEmail, cpf: p.cpf, phone: p.phone });
-        setPiiHidden(!p.cpf && Boolean(p.cpfMasked));
+        setPiiHidden(!p.piiVisible);
         if (!p.editable) setError("Esta pessoa foi unificada em outra e não pode ser editada.");
       })
       .catch((e) => alive && setError(e instanceof Error ? e.message : "Não foi possível carregar a pessoa."))
@@ -224,12 +226,12 @@ export function EnableAccessDialog({ personId, suggestedName, suggestedEmail, ha
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <Field label="Nome de exibição"><input className={inputCls} value={name} onChange={(e) => setName(e.target.value)} data-testid="enable-access-name" /></Field>
         <Field label="E-mail de login"><input className={inputCls} type="email" value={email} onChange={(e) => setEmail(e.target.value)} data-testid="enable-access-email" /></Field>
-        <Field label="Senha inicial (temporária)"><input className={inputCls} type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" data-testid="enable-access-password" /></Field>
+        <Field label={`Senha inicial (temporária, mínimo ${PASSWORD_MIN_LENGTH} caracteres)`}><input className={inputCls} type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" data-testid="enable-access-password" /></Field>
       </div>
       <ErrorBox error={error} />
       <div className="flex justify-end gap-2">
         <button type="button" onClick={onClose} className={secondaryBtn}>Cancelar</button>
-        <button type="button" disabled={busy || !email.trim() || password.length < 8} onClick={() => void confirm()} className={primaryBtn} data-testid="enable-access-confirm">
+        <button type="button" disabled={busy || !email.trim() || password.length < PASSWORD_MIN_LENGTH} onClick={() => void confirm()} className={primaryBtn} data-testid="enable-access-confirm">
           {busy ? "Criando…" : "Criar conta"}
         </button>
       </div>
@@ -285,8 +287,14 @@ export function AttachAccountDialog({ personId, initialAccountId, runWithStepUp,
     setBusy(true);
     setError(null);
     const run = async () => {
-      await attachAccount(personId, { appUserId: selected, expected: preview.expected, confirmEmailMismatch: confirmMismatch, reason: reason.trim() });
-      onDone();
+      try {
+        await attachAccount(personId, { appUserId: selected, expected: preview.expected, confirmEmailMismatch: confirmMismatch, reason: reason.trim() });
+        onDone();
+      } catch (e) {
+        // A reexecução após o step-up roda fora deste try externo: o erro precisa aparecer no diálogo.
+        if (!isAdminElevationRequired(e)) setError(e instanceof Error ? e.message : "Não foi possível regularizar o vínculo.");
+        throw e;
+      }
     };
     try {
       if (runWithStepUp && preview.decision.ok && preview.decision.touchesSuperAdmin) {

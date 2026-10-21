@@ -19,6 +19,17 @@ import { isValidEmail, normalizeEmail, validatePasswordMin } from "@/src/lib/aut
 import { hashPassword as defaultHashPassword } from "@/src/lib/auth/appAuth.server.js";
 import { SECURITY_AUDIT_EVENTS, writeSecurityAuditLog, type SecurityAuditSource } from "@/src/lib/auth/securityAudit.server.js";
 import { PERSON_LINK_EVENT_KINDS, recordPersonLinkEvent } from "@/src/lib/people/personLinkEvents.server.js";
+import { isPersonUuid } from "@/src/lib/canonicalPerson.js";
+import { lockPersonRows } from "@/src/lib/people/personLocks.server.js";
+
+function assertPersonStatusForAccount(status: string | null | undefined, viaEmployee: boolean): void {
+  if (status === "MERGED") {
+    throw new AppUserCreationError("PERSON_MERGED", viaEmployee ? "A Pessoa deste colaborador foi unificada em outra. Corrija o vínculo do colaborador em Pessoas 360° antes de criar a conta." : "Esta pessoa foi unificada em outra. Habilite o acesso na pessoa que ficou.", 409);
+  }
+  if (status && status !== "ACTIVE") {
+    throw new AppUserCreationError("PERSON_INACTIVE", viaEmployee ? "A Pessoa deste colaborador está inativa. Reative-a (com justificativa) em Pessoas 360° antes de criar a conta." : "A pessoa está inativa. Reative a Pessoa (com justificativa) antes de habilitar o acesso.", 409);
+  }
+}
 
 export class AppUserCreationError extends Error {
   readonly code: string;
@@ -117,8 +128,13 @@ export async function createAppUserAccount(
     // E4: a conta nasce com a Pessoa canônica do colaborador (associação inequívoca).
     // Sem Pessoa no colaborador, a conta fica sem personId — nunca se cria outra Pessoa aqui.
     personIdForUser = employee.personId ?? null;
+    if (personIdForUser) {
+      const p = await prisma.person.findUnique({ where: { id: personIdForUser }, select: { status: true } });
+      assertPersonStatusForAccount(p?.status, true);
+    }
   } else {
     const personId = input.source.personId.trim();
+    if (!isPersonUuid(personId)) throw new AppUserCreationError("INVALID_PERSON_ID", "ID de pessoa inválido.", 400);
     const personRow = await prisma.person.findUnique({
       where: { id: personId },
       select: {
@@ -132,10 +148,12 @@ export async function createAppUserAccount(
       },
     });
     if (!personRow) throw new AppUserCreationError("PERSON_NOT_FOUND", "Pessoa não encontrada.", 404);
-    if (personRow.status === "MERGED") throw new AppUserCreationError("PERSON_MERGED", "Esta pessoa foi unificada em outra. Habilite o acesso na pessoa que ficou.", 409);
-    if (personRow.status !== "ACTIVE") throw new AppUserCreationError("PERSON_INACTIVE", "A pessoa está inativa. Reative a Pessoa (com justificativa) antes de habilitar o acesso.", 409);
+    assertPersonStatusForAccount(personRow.status, false);
     person = personRow;
     personIdForUser = personRow.id;
+    if (personRow.employees.length > 1) {
+      throw new AppUserCreationError("PERSON_HAS_MULTIPLE_EMPLOYEES", "A pessoa tem mais de um colaborador vinculado. Corrija os vínculos em Pessoas 360° antes de habilitar o acesso.", 409);
+    }
     const emp = personRow.employees[0] ?? null;
     if (emp) {
       // A Pessoa tem colaborador: a conta nasce ligada a ele (escopos de RH/Desempenho dependem disso).
@@ -149,17 +167,6 @@ export async function createAppUserAccount(
     }
     // Sem colaborador: conta nasce só com personId (externo/diretoria). Os módulos com escopo
     // funcional (RH, Desempenho, Competências) fecham sozinhos sem employeeId; nada é liberado.
-  }
-
-  if (personIdForUser) {
-    const holder = await prisma.appUser.findUnique({ where: { personId: personIdForUser }, select: { id: true, email: true } });
-    if (holder) {
-      throw new AppUserCreationError(
-        "PERSON_ALREADY_HAS_USER",
-        `A pessoa já tem uma conta de acesso (${holder.email}). Corrija o vínculo em Pessoas antes de criar outra.`,
-        409
-      );
-    }
   }
 
   const requestedName = typeof input.name === "string" ? input.name.trim() : "";
@@ -176,6 +183,19 @@ export async function createAppUserAccount(
     throw new AppUserCreationError("INVALID_EMAIL", "Informe um e-mail de acesso válido (pode usar o e-mail pessoal cadastrado em Pessoas / RH).", 400);
   }
 
+  if (personIdForUser) {
+    const holder = await prisma.appUser.findUnique({ where: { personId: personIdForUser }, select: { id: true, email: true } });
+    if (holder) {
+      throw new AppUserCreationError(
+        "PERSON_ALREADY_HAS_USER",
+        input.source.kind === "employee"
+          ? `A pessoa deste colaborador já tem uma conta de acesso (${holder.email}). Corrija o vínculo em Pessoas antes de criar outra.`
+          : `A pessoa já tem uma conta de acesso (${holder.email}). Corrija o vínculo em Pessoas antes de criar outra.`,
+        409
+      );
+    }
+  }
+
   const passwordHash = await hashPassword(password);
   // Senha inicial escolhida por outra pessoa. O padrão exige troca no primeiro acesso.
   // Só SUPER_ADMIN pode desligar isso enviando false.
@@ -183,6 +203,13 @@ export async function createAppUserAccount(
 
   try {
     return await prisma.$transaction(async (tx) => {
+      if (personIdForUser) {
+        // Reconfere a situação com a linha travada: unificação/inativação concorrente não deixa
+        // a conta nascer ligada a Pessoa MERGED/INACTIVE.
+        await lockPersonRows(tx, [personIdForUser], "SHARE");
+        const fresh = await tx.person.findUnique({ where: { id: personIdForUser }, select: { status: true } });
+        assertPersonStatusForAccount(fresh?.status, input.source.kind === "employee");
+      }
       const created = await tx.appUser.create({
         data: {
           name,

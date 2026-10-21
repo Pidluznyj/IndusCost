@@ -44,3 +44,10 @@ Estado em 2026-10-21 (interrompido por limite de uso; retomar daqui):
 | UI | diálogos `PersonMasterDialogs.tsx`; botões na lista e na ficha | **não verificado no navegador** |
 | Testes | unidade 52/52 (people + employeeUserLink); integração `personMaster.integration.test.ts` 12/12 em PG local | lista canônica atualizada |
 | Pendente | tsc final, build, suíte completa, E2E `part16` + seed dos 7 casos, verificação no navegador, revisão adversarial, docs de implementação/validação/runbook v2, relatório ANTES×DEPOIS, procedimento de homologação | — |
+
+### Encerramento da missão 2 (2026-10-21)
+
+- Gates no código final: tsc 0 erros novos (1362 = base); unidade 5582 (6 falhas pré-existentes); integração PG 12/12 + 8/8 + 6/6 + 6/6; build OK; E2E part16 19/19 (2×) e part15 21/21.
+- Revisão adversarial: 31 achados; 2 altos (RH alterando vínculo de conta SUPER_ADMIN; conta criada ligada a Pessoa inativa) e os demais confirmados corrigidos com teste — ver [pessoas-360-validation.md](pessoas-360-validation.md) §6.5.
+- Homologação: procedimento escrito em [pessoas-360-homologacao-cadastro-mestre.md](pessoas-360-homologacao-cadastro-mestre.md); **não executado** (sem acesso SSH ao servidor-01 desta máquina).
+- Sem push, sem merge em main, sem deploy.

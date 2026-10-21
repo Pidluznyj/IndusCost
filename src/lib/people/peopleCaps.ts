@@ -13,6 +13,8 @@ export type PeopleMasterCaps = SystemLinksViewerCaps & {
   canCreateUsers: boolean;
   /** Habilitar motorista (operations.fleet:manage + fleet.manage|fleet.drivers.manage). */
   canManageDrivers: boolean;
+  /** Regularizar conta existente: links:manage E user_link:manage (mesma régua das rotas). */
+  canAttachAccount: boolean;
   /** Unificar/reverter exige SUPER_ADMIN (com step-up no servidor). */
   canMerge: boolean;
 };
@@ -29,6 +31,7 @@ export function buildPeopleMasterCaps(input: { role?: string | null; permissions
     canManagePersonStatus: has("employees.edit") || has("users.manage"),
     canCreateUsers: has("users.manage"),
     canManageDrivers: has("fleet.manage") || has("fleet.drivers.manage"),
+    canAttachAccount: base.canManagePersonLink && (has("employees.user_link.manage") || has("employees.edit") || has("users.manage")),
     canMerge: role === "SUPER_ADMIN",
   };
 }

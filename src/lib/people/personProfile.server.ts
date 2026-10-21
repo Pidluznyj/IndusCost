@@ -107,7 +107,8 @@ export function summarizePersonRow(p: PersonRow): PeopleListRow {
   // Pessoa INACTIVE com vínculo ativo: estado contraditório do legado (ex.: colaborador ativo apontando para Pessoa inativa).
   const activeUser = p.appUsers.some((u) => u.isActive);
   const activeDriver = p.fleetDrivers.some((d) => d.status !== "INACTIVE");
-  if (p.status === "INACTIVE" && (employeeActive || activeUser || activeDriver)) flags.push("PERSON_INACTIVE_WITH_ACTIVE_LINKS");
+  const activeCommission = p.commissionPeople.some((c) => c.active);
+  if (p.status === "INACTIVE" && (employeeActive || activeUser || activeDriver || activeCommission)) flags.push("PERSON_INACTIVE_WITH_ACTIVE_LINKS");
   const totalLinks = p.employees.length + p.appUsers.length + p.fleetDrivers.length + p.commissionPeople.length;
   if (totalLinks === 0) flags.push("NO_LINKS");
   return {
@@ -318,7 +319,7 @@ export async function findPendingLinksForPerson(prisma: PrismaClient, personId: 
   return out;
 }
 
-type MasterCapsInput = SystemLinksViewerCaps & Partial<{ canEditPerson: boolean; canManagePersonStatus: boolean; canCreateUsers: boolean; canManageDrivers: boolean }>;
+type MasterCapsInput = SystemLinksViewerCaps & Partial<{ canEditPerson: boolean; canManagePersonStatus: boolean; canCreateUsers: boolean; canManageDrivers: boolean; canAttachAccount: boolean }>;
 
 export async function getPersonProfile(prisma: PrismaClient, personId: string, caps: MasterCapsInput, viewer?: { role?: string | null }) {
   if (!isPersonUuid(personId)) throw new CanonicalPersonError("INVALID_PERSON_ID", "ID de pessoa inválido.");
@@ -404,6 +405,7 @@ export async function getPersonProfile(prisma: PrismaClient, personId: string, c
       canManagePersonStatus: Boolean(caps.canManagePersonStatus),
       canCreateUsers: Boolean(caps.canCreateUsers),
       canManageDrivers: Boolean(caps.canManageDrivers),
+      canAttachAccount: Boolean(caps.canAttachAccount),
     },
   };
 }

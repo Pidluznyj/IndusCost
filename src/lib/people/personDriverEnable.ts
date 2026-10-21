@@ -44,8 +44,14 @@ export function planDriverEnable(args: {
 
   const unlinkedActive = sameCpf.find((d) => !d.personId && d.status !== "INACTIVE");
   if (unlinkedActive) return { action: "LINK", driverId: unlinkedActive.id, blockers };
-  const inactive = [...linked, ...sameCpf].find((d) => d.status === "INACTIVE");
+  const inactive = [...linked, ...sameCpf].find((d) => d.status === "INACTIVE" && (!d.personId || d.personId === args.person.id));
   if (inactive) return { action: "REACTIVATE", driverId: inactive.id, blockers };
+  // Motorista inativo com o mesmo CPF ligado a OUTRA Pessoa: nunca mover em silêncio nem duplicar.
+  const inactiveOther = sameCpf.find((d) => d.status === "INACTIVE" && d.personId && d.personId !== args.person.id);
+  if (inactiveOther) {
+    blockers.push({ code: "OTHER_PERSON_LINKED", message: "Há motorista inativo com este CPF ligado a outra Pessoa. Corrija o vínculo em Pessoas 360° antes." });
+    return { action: "CONFLICT", driverId: inactiveOther.id, blockers };
+  }
   return { action: "CREATE", driverId: null, blockers };
 }
 

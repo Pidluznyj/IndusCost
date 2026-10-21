@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { PersonFormDialog } from "@/src/components/people/PersonMasterDialogs";
 import { useAuth } from "@/src/contexts/AuthContext";
+import { canAccessFromEffectiveAccessDto } from "@/src/lib/canAccessFromEffectiveAccess";
 import { Link, useSearchParams, useNavigate } from "react-router-dom";
 import { AlertTriangle, Contact, FileText, KeyRound, Loader2, Search, Truck, UserRound, Wallet } from "lucide-react";
 import { cn } from "@/src/lib/utils";
@@ -47,7 +48,12 @@ export function LinkIndicator({ state, icon: Icon, label }: { state: PersonLinkS
 export function PeopleListPage() {
   const navigate = useNavigate();
   const auth = useAuth();
-  const canCreate = auth.authUser?.role === "SUPER_ADMIN" || auth.authUser?.role === "ADMIN" || auth.hasAnyPermission(["employees.edit"]);
+  const canCreate =
+    auth.authUser?.role === "SUPER_ADMIN" ||
+    auth.authUser?.role === "ADMIN" ||
+    (auth.effectiveAccess
+      ? canAccessFromEffectiveAccessDto(auth.effectiveAccess, "admin.employees.people", "create")
+      : auth.hasAnyPermission(["employees.edit"]));
   const [creating, setCreating] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
   const q = searchParams.get("q") ?? "";

@@ -177,7 +177,8 @@ describe("employeeUserLink.server — status e vínculo (mock)", () => {
           },
         }),
     } as never;
-    const r = await unlinkEmployeeFromAppUser(prisma, "e1", { actorUserId: "actor" });
+    // Conta SUPER_ADMIN: desvincular exige SUPER_ADMIN com step-up (guarda E2 por identidade).
+    const r = await unlinkEmployeeFromAppUser(prisma, "e1", { actorUserId: "actor", actor: { id: "actor", role: "SUPER_ADMIN", elevated: true } });
     assert.equal(r.ok, true);
     assert.equal(r.appUserId, "u1");
     assert.deepEqual(updatedData, { employeeId: null });

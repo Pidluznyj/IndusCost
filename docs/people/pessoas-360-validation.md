@@ -132,3 +132,95 @@ Resumo: 23 cenários aprovados com execução real (automatizada e/ou manual), 1
 - E1 não foi exercitado no navegador (fica atrás da flag); coberto por integração.
 - Importação de comissionáveis do Nomus com vínculo automático: não existe (sem documento na origem), portanto não testado.
 - Carga/desempenho da lista `/api/people` com dezenas de milhares de Pessoas: paginação é no banco, mas não houve teste de carga.
+
+## 6. Missão 2 — cadastro mestre (branch `feat/people-360-master-identity`, base `69ebd2d`) — resultados reais
+
+Ambiente: PostgreSQL local descartável (`perf_e2e` para navegador, `perf_empty` para integração), servidor local `http://localhost:3100`, Chrome real via DevTools Protocol. Saídas brutas em `C:/Dev/induscost-claude-deps/gates/*master*` e `e2e-p360-part16.txt`; capturas em `C:/Dev/induscost-claude-deps/e2e-p360/shots/16-*.png`. **Nada foi executado contra `teste_bi_homolog` nem contra produção** (sem acesso SSH a partir desta máquina).
+
+### 6.1 Gates
+
+| Gate | Comando | Resultado | Exit |
+|---|---|---|---|
+| TypeScript (tsconfig real) | `NODE_OPTIONS=--max-old-space-size=8192 npx tsc --noEmit -p tsconfig.json` | 1362 erros, **0 novos** vs. a base `69ebd2d`+merge (`tsc-master-3.norm` = `tsc-p360-merged.norm`) | 2 (erros pré-existentes) |
+| Suíte unitária | `node scripts/run-unit-tests.mjs` | **5582 testes, 5576 passam, 6 falham** — as mesmas 6 pré-existentes de §1.1 (nenhuma nova) | 1 |
+| Integração PG | `PEOPLE_PG_TEST_URL=… npx tsx --test src/lib/people/personMaster.integration.test.ts` | **12/12** (CRUD, acesso com/sem colaborador, L1–L7, motorista CREATE/LINK/REACTIVATE, invariância de comissões) | 0 |
+| Integração PG (regressão) | `canonicalPersonGovernance` 6/6 · `personLinkOps` 8/8 (agora com recusa explícita a editor de RH em conta SUPER_ADMIN) · `userAccessLifecycle` 6/6 | verdes | 0 |
+| Build | `npx vite build` | OK em 30 s | 0 |
+| E2E part16 | `PEOPLE_LEGACY_STATE=… node scripts/performance-e2e/part16-people-master.mjs` | **19/19 PASS**, duas execuções seguidas após reseed, no código final com as correções da revisão ([evidencias/e2e-part16-people-master-final.json](evidencias/e2e-part16-people-master-final.json)) | 0 |
+| E2E part15 (v1.1, regressão) | `node scripts/performance-e2e/part15-people-360.mjs` | **21/21 PASS** (reexecutado no código final, após as correções da revisão) | 0 |
+| Revisão adversarial (workflow, 5 dimensões × 2 céticos) | — | 31 achados; 2 altos corrigidos; demais corrigidos ou descartados com motivo (§6.5) | — |
+
+Testes novos na lista canônica: `personMaster.test.ts` (8), `personAccountLink.test.ts` (9), `personDriverEnable.test.ts` (7), `personAccessEnable.invariance.test.ts` (4), `personReviewFixes.test.ts` (11); `adminUserCreationPolicy.test.ts` e `passwordLifecycleWiring.test.ts` reapontados para o serviço extraído (mesmas garantias).
+
+### 6.5 Revisão adversarial (workflow com 5 revisores + céticos)
+
+A rodada de verificação foi interrompida pelo limite de uso (52 de 67 agentes de verificação não rodaram), então cada achado foi triado manualmente contra o código. Todos os que se confirmaram foram corrigidos e cobertos por teste (`src/lib/people/personReviewFixes.test.ts`, 11 casos, mais ajustes nos testes existentes).
+
+| # | Severidade | Achado | Correção |
+|---|---|---|---|
+| 12 | alta | `link-user`/`unlink-user` do RH alteravam o vínculo de conta SUPER_ADMIN sem SUPER_ADMIN elevado (contornava a guarda nova e, com E1 ligado, permitia desativar um SUPER_ADMIN via desligamento) | `evaluateSuperAdminAccountOperation` em `linkEmployeeToAppUser`/`unlinkEmployeeFromAppUser`; ator resolvido nas rotas |
+| 13 | média | Propagação E4 no `PUT /api/employees/:id` regravava a Pessoa de conta SUPER_ADMIN | propagação não grava sem SUPER_ADMIN elevado (`SUPER_ADMIN_ELEVATION_REQUIRED`, fica como pendência) |
+| 14/17 | alta | `POST /api/admin/users` copiava Pessoa INACTIVE/MERGED do colaborador | `PERSON_INACTIVE`/`PERSON_MERGED` 409 também no ramo colaborador |
+| 19 | média | Fluxo de RH ligava colaborador a Pessoa INACTIVE e a propagação a copiava | prévia recusa Pessoa INACTIVE diferente da atual; propagação devolve `PERSON_NOT_ACTIVE` |
+| 1–5, 22 | média/baixa | Concorrência: lost update na edição, CPF duplicado em criações simultâneas, inativar × vínculo, criar conta × unificar | `personLocks.server.ts`: `FOR UPDATE` na Pessoa (editar, situação, unificar, reverter), `FOR SHARE` em quem cria vínculo (conta, regularizar, motorista, relink) e advisory lock por CPF/e-mail |
+| 18 | média | Regularizar podia ligar colaborador a Pessoa que já tem outro colaborador (falhava só na confirmação) | `TARGET_HAS_EMPLOYEE` já na prévia |
+| 20 | média | "Habilitar motorista" movia em silêncio motorista inativo de OUTRA Pessoa | vira `CONFLICT` (correção explícita em Pessoas 360°); CAS inclui `personId`/`status` |
+| 6 | baixa | CAS de LINK/REACTIVATE incompleto | `where` inclui status/personId esperados |
+| 7/24 | baixa | P2002 do vínculo de RH sempre virava `PERSON_ALREADY_HAS_USER` | mapeamento por `meta.target` |
+| 8 | baixa | Inativar ignorava comissionável ativo | conta como vínculo ativo; flag da ficha também |
+| 9 | baixa | Pessoa com dois colaboradores: conta ligada a um arbitrário | `PERSON_HAS_MULTIPLE_EMPLOYEES` 409 |
+| 10 | baixa | id inválido em `/access` dava 500 | 400 `INVALID_PERSON_ID` |
+| 11 | baixa | Ordem de erros de `POST /api/admin/users` mudou na extração | ordem original restaurada; texto por origem |
+| 15 | baixa | Busca de candidatos por e-mail servia de oráculo sem PII | sem PII, busca só por nome |
+| 16 | baixa | Prévia de motorista aberta a qualquer visualizador da Frota | mesma guarda da ação (`driversManage`) |
+| 21 | baixa | Evento RELINKED com origem = destino | LINK sem `fromPersonId` quando a Pessoa não muda |
+| 23 | baixa | Unificação aceitava vencedora INACTIVE; reversão reativava absorvida inativa | `WINNER_INACTIVE`; reversão restaura a situação anterior (snapshot) |
+| 27 | média | Botão "Regularizar" aparecia para quem não passa na guarda | cap `canAttachAccount` = links:manage E user_link:manage |
+| 28 | baixa | Erro após o step-up sumia (só console) | erro exibido no diálogo |
+| 29 | baixa | Botão liberava senha de 8 caracteres (política exige 12) | usa `PASSWORD_MIN_LENGTH` |
+| 30 | baixa | Sem PII, salvar Pessoa sem CPF apagaria e-mails/telefone | flag `piiVisible` do servidor |
+| 31 | baixa | "Nova pessoa" visível para perfis só de leitura | régua `admin.employees.people:create` do DTO efetivo |
+| 25/26 | — | Script E2E lia `personId` inexistente no DTO e clicava no botão errado do step-up | corrigidos no roteiro antes da execução final |
+
+### 6.2 Itens do §10 da missão → evidência
+
+| Item | Evidência | Situação |
+|---|---|---|
+| Criar e editar Pessoa | part16 16.01/16.03; INT; UNIT personMaster | aprovado |
+| Impedir duplicidade | part16 16.02 (409 `DUPLICATE_CPF`); INT (CPF de Pessoa MERGED não bloqueia) | aprovado |
+| Criar usuário a partir de Pessoa | part16 16.04; INT | aprovado |
+| Criar usuário com e sem Employee | INT (com colaborador → `employeeId`; sem → só `personId`); invariância (política fail-closed) | aprovado |
+| Vincular conta legada existente | part16 16.09/16.10; INT L1/L3/L4 | aprovado |
+| Corrigir conta com `personId` vazio | part16 16.08/16.11/16.12 | aprovado |
+| Employee com Person inativa | part16 16.11 (`TARGET_INACTIVE`, reativação auditada); INT L2 | aprovado |
+| E-mails divergentes | part16 16.09 (confirmação explícita, login preservado); INT L3 | aprovado |
+| Criar e associar motorista | part16 16.06/16.07; INT (CREATE/LINK/REACTIVATE, legado intacto) | aprovado |
+| Preservar usuário, senha, perfil, autorizações | INT L4 (13 campos + 2 sessões intactos); part16 16.08/16.10 (papel SELLER/SUPER_ADMIN) | aprovado |
+| Impedir autoelevação a SUPER_ADMIN | part16 16.05 (`role` no corpo ignorado); invariância; UNIT superAdminRoleGuard | aprovado |
+| Preservar vínculos Nomus | part16 16.17; INT invariância | aprovado |
+| Invariância das comissões | INT (CommissionPerson intocado após regularizar/editar/motorista); `commissionPersonLinkInvariance` | aprovado |
+| Avaliação 180° funcional | escopos fecham sem `employeeId` (mapa de dependências); `performanceReadiness.test.ts` na suíte | aprovado por suíte; sem jornada E2E própria |
+| Reversão e falhas transacionais | INT (`STALE`, `TARGET_HAS_USER`, `NEWER_DEPENDENCIES`, P2002→409); transações únicas | aprovado |
+| Permissões de SUPER_ADMIN, ADMIN, RH e comuns | part16 16.15/16.16 (SUPER_ADMIN × RH gestor × comum); ADMIN coberto em part15 | aprovado |
+| Auditoria para cada modificação | INT (`PersonLinkEvent` + `SecurityAuditLog.USER_IDENTITY_LINKED`/`USER_CREATED`; `FleetAuditLog` mascarado); part16 (eventos com autor/motivo) | aprovado |
+
+### 6.3 ANTES × DEPOIS (reprodução local dos 7 casos; homologação pendente)
+
+Seed `scripts/performance-e2e/seedPeopleLegacy.mts` (dados fictícios); auditoria `npm run audit:people-identity -- --json`.
+
+| Indicador | ANTES | DEPOIS | Leitura |
+|---|---|---|---|
+| `USUARIO_SEM_PESSOA` | 11 | 5 | 6 contas regularizadas (L1 Paulo, L2 Eduardo após reativar, L3 Leticia, L4 Gi, L5 Maria, vendedor). Restam: L6 (Pessoa ocupada por outra conta) e L7 (CPF repetido) como **pendências explícitas**, mais 3 contas fictícias de RH do seed de Desempenho (sem colaborador, fora dos 7 casos) |
+| `USUARIO_COLABORADOR_PESSOA_INATIVA` | 1 | 0 | Eduardo: reativação explícita e auditada antes do vínculo |
+| `USUARIO_EMAIL_DIVERGE_DO_COLABORADOR` | 1 | 1 | Leticia: vinculada com confirmação; o indicador é informativo (login preservado por regra) |
+| `USUARIO_PESSOA_DIVERGE_DO_COLABORADOR` | 0 | 0 | — |
+| `COLABORADOR_SEM_PESSOA` | 1 | 0 | L5: Pessoa criada pela ficha e colaborador ligado na mesma transação |
+| `PESSOA_CPF_REPETIDO` | 2 | 2 | L7 e o caso Carla A/B do seed anterior: unificação é decisão humana (step-up), nunca automática |
+
+Em homologação os números reais só existem depois do procedimento de [pessoas-360-homologacao-cadastro-mestre.md](pessoas-360-homologacao-cadastro-mestre.md); o esperado é `USUARIO_SEM_PESSOA` 7 → 0 (ou 1, se a decisão sobre Eduardo for desligamento) e `USUARIO_PESSOA_DIVERGE_DO_COLABORADOR` 0.
+
+### 6.4 Não validado / pendente
+
+- Execução em `teste_bi_homolog` e inspeção dos 8 usuários reais (sem acesso); o procedimento está escrito, passo a passo.
+- Jornada E2E específica de Avaliação 180° com conta habilitada pela Pessoa (coberta por testes unitários de escopo, não por navegador).
+- Carga da lista `/api/people` com dezenas de milhares de Pessoas.

@@ -218,7 +218,7 @@ export function registerPeopleRoutes(
   });
 
   // ---- Habilitar motorista (guardas da Frota) ----
-  app.get("/api/people/:id/driver/preview", ...fleet.view, async (req, res) => {
+  app.get("/api/people/:id/driver/preview", ...fleet.driversManage, async (req, res) => {
     try {
       res.json(await previewDriverEnable(prisma, req.params.id));
     } catch (error) {

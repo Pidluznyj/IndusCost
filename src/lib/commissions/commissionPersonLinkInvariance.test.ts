@@ -38,6 +38,7 @@ function fakePrisma(log: Array<{ model: string; op: string; args: unknown }>) {
   const tx = new Proxy({} as Record<string, unknown>, {
     get(_t, model: string) {
       if (model === "then") return undefined;
+      if (model === "$executeRaw") return async () => 0;
       const m = models[model];
       if (!m) throw new Error(`modelo tocado indevidamente durante o vínculo: ${model}`);
       return new Proxy({}, { get: (_x, op: string) => (args: unknown) => (m[op] ?? (() => { throw new Error(`operação inesperada ${model}.${op}`); }))(args) });

@@ -27,7 +27,7 @@ export type IdentityForMerge = {
 export type MergeEvidence = "CPF_EXACT" | "EMAIL_EXACT" | "MANUAL";
 
 export type MergeBlocker = {
-  code: "CPF_DIVERGENT" | "SAME_PERSON" | "LOSER_MERGED" | "WINNER_MERGED" | "TWO_EMPLOYEES" | "TWO_ACTIVE_USERS" | "TWO_USERS";
+  code: "CPF_DIVERGENT" | "SAME_PERSON" | "LOSER_MERGED" | "WINNER_MERGED" | "WINNER_INACTIVE" | "TWO_EMPLOYEES" | "TWO_ACTIVE_USERS" | "TWO_USERS";
   message: string;
 };
 
@@ -55,6 +55,7 @@ export function planPersonMerge(winner: IdentityForMerge, loser: IdentityForMerg
   if (winner.id === loser.id) blockers.push({ code: "SAME_PERSON", message: "Escolha duas pessoas diferentes." });
   if (loser.status === "MERGED") blockers.push({ code: "LOSER_MERGED", message: "A pessoa absorvida já foi unificada." });
   if (winner.status === "MERGED") blockers.push({ code: "WINNER_MERGED", message: "A pessoa que fica já foi unificada em outra; escolha a pessoa final." });
+  if (winner.status === "INACTIVE") blockers.push({ code: "WINNER_INACTIVE", message: "A pessoa que fica está inativa. Reative-a (com justificativa) antes de unificar." });
   if (winner.cpfNormalized && loser.cpfNormalized && winner.cpfNormalized !== loser.cpfNormalized) {
     blockers.push({ code: "CPF_DIVERGENT", message: "As duas pessoas têm CPFs validados diferentes: não são a mesma pessoa física." });
   }

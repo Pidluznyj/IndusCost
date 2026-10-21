@@ -4274,6 +4274,7 @@ app.put("/api/employees/:id", requireAppAuth, requireResourceOrHrEditor(EMPLOYEE
         employeeId: id,
         personId: nextPersonId ?? null,
         previousPersonId: existingEmployee.personId ?? null,
+        actor: resolveSuperAdminGuardActor(req),
       });
       return updated;
     });
@@ -15445,6 +15446,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     requireAppAuth,
     requireResource: requireResourceOrHrEditor,
     getCurrentAppUser,
+    resolveActor: resolveSuperAdminGuardActor,
   });
 
   registerHrOrgStructureRoutes(app, {

@@ -27,6 +27,8 @@ function fakePrisma(models: Record<string, Record<string, (args: unknown) => unk
     get(_t, model: string) {
       if (model === "then") return undefined;
       if (model === "$transaction") return async (fn: (tx: unknown) => Promise<unknown>) => fn(client);
+      // Travas de linha/chave (SELECT … FOR UPDATE / advisory lock): sem efeito no fake, mas registradas.
+      if (model === "$executeRaw") return async () => { log.push({ model: "$executeRaw", op: "lock", args: null }); return 0; };
       if (!models[model]) throw new Error(`modelo tocado indevidamente: ${model}`);
       return wrap(model);
     },

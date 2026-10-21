@@ -99,6 +99,7 @@ export type PersonProfile = {
     canManagePersonStatus: boolean;
     canCreateUsers: boolean;
     canManageDrivers: boolean;
+    canAttachAccount: boolean;
   };
 };
 
@@ -160,7 +161,7 @@ export function revertMerge(winnerId: string, body: { eventId: string; reason: s
 
 // ---- Cadastro mestre (criar/editar/situação) ----
 export type PersonIdentityForm = { displayName: string; socialName: string | null; corporateEmail: string | null; personalEmail: string | null; cpf: string | null; phone: string | null };
-export type PersonIdentityEdit = PersonIdentityForm & { id: string; status: string; origin: string; cpfMasked: string | null; corporateEmailMasked: string | null; personalEmailMasked: string | null; editable: boolean };
+export type PersonIdentityEdit = PersonIdentityForm & { id: string; status: string; origin: string; cpfMasked: string | null; corporateEmailMasked: string | null; personalEmailMasked: string | null; piiVisible: boolean; editable: boolean };
 
 export function createPerson(body: PersonIdentityForm) {
   return fetchJsonOk<{ id: string; displayName: string }>("/api/people", { method: "POST", headers: json, body: JSON.stringify(body) });

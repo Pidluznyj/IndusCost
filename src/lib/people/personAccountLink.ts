@@ -11,7 +11,7 @@ export type AttachAccountInput = {
   account: { id: string; role: string; personId: string | null; employeeId: string | null; isActive: boolean; email: string | null };
   /** Estado lido na prévia (comparação-e-troca). `undefined` = não checar. */
   expected: { personId?: string | null; employeeId?: string | null };
-  target: { id: string; status: string; userIds: string[] };
+  target: { id: string; status: string; userIds: string[]; employeeIds?: string[] };
   /** Colaborador a ligar (escolhido) ou o colaborador atual da conta; null quando não há. */
   employee: { id: string; status: string; personId: string | null; appUserId: string | null; corporateEmail: string | null } | null;
   /** O e-mail de login difere do e-mail corporativo do colaborador / da Pessoa. */
@@ -72,7 +72,12 @@ export function decideAttachAccount(args: AttachAccountInput): AttachAccountDeci
       return { ok: false, code: "APPUSER_ALREADY_LINKED", status: 409, message: "A conta já está ligada a outro colaborador." };
     }
     if (!account.employeeId) setEmployeeId = employee.id;
-    if (!employee.personId) setEmployeePersonId = true;
+    if (!employee.personId) {
+      if ((target.employeeIds ?? []).some((id) => id !== employee.id)) {
+        return { ok: false, code: "TARGET_HAS_EMPLOYEE", status: 409, message: "A pessoa de destino já tem outro colaborador vinculado. Uma pessoa só pode ter um colaborador; corrija o RH antes." };
+      }
+      setEmployeePersonId = true;
+    }
   }
 
   if (account.personId === target.id && !setEmployeeId && !setEmployeePersonId) {
@@ -86,10 +91,11 @@ export function decideAttachAccount(args: AttachAccountInput): AttachAccountDeci
       message: "O e-mail de login difere do e-mail cadastrado. Confirme explicitamente que se trata da mesma pessoa (o login não será alterado).",
     };
   }
+  const relink = Boolean(account.personId && account.personId !== target.id);
   return {
     ok: true,
-    kind: account.personId ? "RELINK" : "LINK",
-    fromPersonId: account.personId,
+    kind: relink ? "RELINK" : "LINK",
+    fromPersonId: relink ? account.personId : null,
     setEmployeeId,
     setEmployeePersonId,
     evidence: args.emailMismatch ? "MANUAL" : "EMAIL_EXACT",
