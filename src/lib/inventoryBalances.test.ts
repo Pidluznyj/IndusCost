@@ -115,6 +115,18 @@ describe("inventoryBalances UI", () => {
     assert.match(read("src/components/inventory/InventoryBalancesTab.tsx"), /inventory-balances-filter-type/);
   });
 
+  it("3b. filtro multi-select de família na consulta e no relatório", () => {
+    const tab = read("src/components/inventory/InventoryBalancesTab.tsx");
+    assert.match(tab, /InventoryFamilyMultiSelect/);
+    assert.match(tab, /q\.append\("families", name\)/);
+    assert.match(tab, /\/api\/inventory\/items\/families/);
+    assert.match(tab, /reportQuery/);
+    assert.match(
+      read("src/components/inventory/InventoryFamilyMultiSelect.tsx"),
+      /inventory-balances-filter-family/
+    );
+  });
+
   it("4. filtro por almoxarifado", () => {
     assert.match(read("src/components/inventory/InventoryBalancesTab.tsx"), /inventory-balances-filter-warehouse/);
   });

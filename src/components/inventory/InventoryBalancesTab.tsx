@@ -31,6 +31,7 @@ import {
   inventoryFilterInputClass,
   inventoryTableClassName,
 } from "@/src/components/inventory/inventoryUi";
+import { InventoryFamilyMultiSelect } from "@/src/components/inventory/InventoryFamilyMultiSelect";
 import type { InventoryItemRow, InventoryWarehouseRow } from "@/src/types/inventory";
 
 type SheetState =
@@ -85,7 +86,9 @@ export function InventoryBalancesTab() {
   const [search, setSearch] = useState(() => searchParams.get("search") ?? "");
   const [itemId, setItemId] = useState(() => searchParams.get("itemId") ?? "");
   const [itemType, setItemType] = useState(() => searchParams.get("itemType") ?? "");
-  const [family, setFamily] = useState(() => searchParams.get("family") ?? "");
+  const [families, setFamilies] = useState<string[]>(() =>
+    searchParams.getAll("families").filter((name) => name.length > 0)
+  );
   const [group, setGroup] = useState(() => searchParams.get("group") ?? "");
   const [warehouseId, setWarehouseId] = useState(() => searchParams.get("warehouseId") ?? "");
   const [locationId, setLocationId] = useState(() => searchParams.get("locationId") ?? "");
@@ -103,6 +106,7 @@ export function InventoryBalancesTab() {
   );
 
   const [items, setItems] = useState<InventoryItemRow[]>([]);
+  const [familyOptions, setFamilyOptions] = useState<string[]>([]);
   const [warehouses, setWarehouses] = useState<InventoryWarehouseRow[]>([]);
   const [locations, setLocations] = useState<Array<{ id: string; code: string; name: string }>>([]);
   const [sheet, setSheet] = useState<SheetState>({ mode: "closed" });
@@ -113,7 +117,7 @@ export function InventoryBalancesTab() {
         search,
         itemId,
         itemType,
-        family,
+        families.length ? "families" : "",
         group,
         warehouseId,
         locationId,
@@ -129,7 +133,7 @@ export function InventoryBalancesTab() {
       search,
       itemId,
       itemType,
-      family,
+      families,
       group,
       warehouseId,
       locationId,
@@ -143,11 +147,12 @@ export function InventoryBalancesTab() {
     ]
   );
 
-  const filtersActive = hasAnyFilter([
+  const filtersActive =
+    families.length > 0 ||
+    hasAnyFilter([
     search,
     itemId,
     itemType,
-    family,
     group,
     warehouseId,
     locationId,
@@ -163,15 +168,18 @@ export function InventoryBalancesTab() {
   useEffect(() => {
     void (async () => {
       try {
-        const [itemsRes, whRes] = await Promise.all([
+        const [itemsRes, whRes, familyRes] = await Promise.all([
           fetchJsonOk<{ rows?: InventoryItemRow[] }>("/api/inventory/items?pageSize=200"),
           fetchJsonOk<{ rows?: InventoryWarehouseRow[] }>("/api/inventory/warehouses?pageSize=200"),
+          fetchJsonOk<{ families?: string[] }>("/api/inventory/items/families"),
         ]);
         setItems(Array.isArray(itemsRes.rows) ? itemsRes.rows : []);
         setWarehouses(Array.isArray(whRes.rows) ? whRes.rows : []);
+        setFamilyOptions(Array.isArray(familyRes.families) ? familyRes.families : []);
       } catch {
         setItems([]);
         setWarehouses([]);
+        setFamilyOptions([]);
       }
     })();
   }, []);
@@ -209,7 +217,7 @@ export function InventoryBalancesTab() {
     appendQueryIfPresent(q, "search", search);
     if (itemId) q.set("itemId", itemId);
     if (itemType) q.set("itemType", itemType);
-    appendQueryIfPresent(q, "family", family);
+    for (const name of families) q.append("families", name);
     appendQueryIfPresent(q, "group", group);
     if (warehouseId) q.set("warehouseId", warehouseId);
     if (locationId) q.set("locationId", locationId);
@@ -225,7 +233,7 @@ export function InventoryBalancesTab() {
     search,
     itemId,
     itemType,
-    family,
+    families,
     group,
     warehouseId,
     locationId,
@@ -329,7 +337,7 @@ export function InventoryBalancesTab() {
     search,
     itemId,
     itemType,
-    family,
+    families,
     group,
     warehouseId,
     locationId,
@@ -350,7 +358,7 @@ export function InventoryBalancesTab() {
     setSearch("");
     setItemId("");
     setItemType("");
-    setFamily("");
+    setFamilies([]);
     setGroup("");
     setWarehouseId("");
     setLocationId("");
@@ -490,12 +498,11 @@ export function InventoryBalancesTab() {
             ))}
           </select>
         </InventoryFilterField>
-        <InventoryFilterField label="Família" className="min-w-[140px]">
-          <input
-            className={inventoryFilterInputClass}
-            placeholder="Família"
-            value={family}
-            onChange={(e) => setFamily(e.target.value)}
+        <InventoryFilterField label="Família" className="min-w-[220px] flex-1">
+          <InventoryFamilyMultiSelect
+            options={familyOptions}
+            value={families}
+            onChange={setFamilies}
           />
         </InventoryFilterField>
         <InventoryFilterField label="Grupo" className="min-w-[140px]">

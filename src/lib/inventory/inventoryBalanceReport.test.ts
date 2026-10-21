@@ -13,6 +13,7 @@ import {
 import {
   buildCatalogZeroItemsWhere,
   buildInventoryBalancesWhere,
+  buildInventoryItemWhereFromBalanceQuery,
   canIncludeCatalogZeroItems,
   loadInventoryBalanceReport,
 } from "./inventoryBalanceReport.server.js";
@@ -25,6 +26,7 @@ import {
 import {
   parseInventoryBalanceReportQuery,
   parseInventoryBalancesListQuery,
+  parseInventoryFamilyList,
 } from "./inventoryListQuery.js";
 
 function read(path: string): string {
@@ -232,6 +234,9 @@ describe("inventory balance report — carga", () => {
     assert.match(tab, /Todos os itens, incluindo zerados/);
     assert.match(tab, /Extrair Excel/);
     assert.match(tab, /A consulta desta tela/);
+    assert.match(tab, /InventoryFamilyMultiSelect/);
+    assert.match(tab, /q\.append\("families", name\)/);
+    assert.match(tab, /\/api\/inventory\/items\/families/);
     assert.match(read("src/App.tsx"), /path="\/inventory\/balances\/report\/print"/);
   });
 
@@ -402,13 +407,24 @@ function containsInsensitive(value: string | null, clause: unknown): boolean {
   return (value ?? "").toLowerCase().includes(needle);
 }
 
+function familyMatches(value: string | null, clause: unknown): boolean {
+  if (!clause || typeof clause !== "object") return true;
+  if ("in" in clause && Array.isArray((clause as { in: unknown }).in)) {
+    const set = new Set(
+      (clause as { in: string[] }).in.map((name) => String(name).toLocaleLowerCase("pt-BR"))
+    );
+    return set.has((value ?? "").toLocaleLowerCase("pt-BR"));
+  }
+  return containsInsensitive(value, clause);
+}
+
 function itemMatchesWhere(item: CatalogItem, where: Record<string, unknown>): boolean {
   if (where.controlsStock === true && !item.controlsStock) return false;
   if (typeof where.id === "string" && item.id !== where.id) return false;
   if (where.itemType && item.itemType !== where.itemType) return false;
   if (where.status && item.status !== where.status) return false;
   if (where.defaultWarehouseId && item.defaultWarehouseId !== where.defaultWarehouseId) return false;
-  if (where.family && !containsInsensitive(item.family, where.family)) return false;
+  if (where.family && !familyMatches(item.family, where.family)) return false;
   if (where.group && !containsInsensitive(item.group, where.group)) return false;
   if (Array.isArray(where.OR)) {
     const ok = where.OR.some((entry: { code?: unknown; description?: unknown }) => {
@@ -630,6 +646,50 @@ describe("inventory balance report — catálogo sem saldo", () => {
     assert.ok(!nonzeroCodes.includes("ADM-ZERO"));
     assert.ok(!nonzeroCodes.includes("ADM-NET0"));
     assert.ok(!nonzeroCodes.includes("ADM-NEW"));
+  });
+
+  it("multi-select de famílias filtra consulta e relatório e prevalece sobre contains", async () => {
+    assert.deepEqual(parseInventoryFamilyList(["EPI", "Insumos", "epi", "  ", "Aço, carbono"]), [
+      "EPI",
+      "Insumos",
+      "Aço, carbono",
+    ]);
+    assert.deepEqual(parseInventoryFamilyList("Aço, carbono"), ["Aço, carbono"]);
+    assert.deepEqual(parseInventoryFamilyList(undefined), []);
+
+    const parsed = parseInventoryBalancesListQuery({
+      family: "Escrit",
+      families: ["EPI", "Insumos"],
+    });
+    assert.deepEqual(parsed.families, ["EPI", "Insumos"]);
+    assert.equal(parsed.family, "Escrit");
+    assert.deepEqual(buildInventoryItemWhereFromBalanceQuery(parsed).family, {
+      in: ["EPI", "Insumos"],
+      mode: "insensitive",
+    });
+    assert.deepEqual(
+      buildInventoryItemWhereFromBalanceQuery(parseInventoryBalancesListQuery({ family: "Escrit" })).family,
+      { contains: "Escrit", mode: "insensitive" }
+    );
+
+    const { db } = createReportFixtureDb();
+    const report = await loadInventoryBalanceReport(
+      db as never,
+      parseInventoryBalanceReportQuery({
+        families: ["EPI", "Insumos"],
+        zeroBalanceMode: "nonzero",
+      }),
+      GENERATED_AT
+    );
+    assert.deepEqual(
+      report.rows.map((row) => row.itemCode),
+      ["IND-ONLY", "EPI-001"]
+    );
+    assert.deepEqual(
+      report.filters.find((filter) => filter.label === "Famílias"),
+      { label: "Famílias", value: "EPI · Insumos" }
+    );
+    assert.ok(!report.filters.some((filter) => filter.label === "Família"));
   });
 
   it("respeita tipo, família e grupo no modo completo", async () => {

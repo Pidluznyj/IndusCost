@@ -31,7 +31,11 @@ export function buildInventoryItemWhereFromBalanceQuery(
   return {
     ...(q.itemType ? { itemType: q.itemType } : {}),
     ...(q.status ? { status: q.status } : {}),
-    ...(q.family ? { family: { contains: q.family, mode: "insensitive" } } : {}),
+    ...((q.families ?? []).length > 0
+      ? { family: { in: q.families, mode: "insensitive" } }
+      : q.family
+        ? { family: { contains: q.family, mode: "insensitive" } }
+        : {}),
     ...(q.group ? { group: { contains: q.group, mode: "insensitive" } } : {}),
     ...(q.search
       ? {
@@ -116,7 +120,8 @@ async function describeFilters(db: ReportDb, q: BalanceFilterQuery): Promise<Inv
   if (q.search) filters.push({ label: "Busca", value: q.search });
   if (q.itemId) filters.push({ label: "Item", value: item ? `${item.code} — ${item.description}` : q.itemId });
   if (q.itemType) filters.push({ label: "Tipo", value: INVENTORY_ITEM_TYPE_LABELS[q.itemType] });
-  if (q.family) filters.push({ label: "Família", value: q.family });
+  if ((q.families ?? []).length > 0) filters.push({ label: "Famílias", value: q.families.join(" · ") });
+  else if (q.family) filters.push({ label: "Família", value: q.family });
   if (q.group) filters.push({ label: "Grupo", value: q.group });
   if (q.warehouseId) {
     filters.push({

@@ -164,6 +164,13 @@ describe("inventoryUx", () => {
     assert.match(balances, /safetyStock/);
     assert.match(balances, /inventory-balances-report-panel/);
     assert.match(balances, /Situação do saldo/);
+    assert.match(balances, /InventoryFamilyMultiSelect/);
+    assert.match(balances, /q\.append\("families", name\)/);
+    assert.match(balances, /\/api\/inventory\/items\/families/);
+    const familySelect = read("src/components/inventory/InventoryFamilyMultiSelect.tsx");
+    assert.match(familySelect, /inventory-balances-filter-family/);
+    assert.match(familySelect, /Todas/);
+    assert.match(familySelect, /aria-multiselectable="true"/);
   });
 
   it("11. estorno autorizado no detalhe da movimentação", () => {

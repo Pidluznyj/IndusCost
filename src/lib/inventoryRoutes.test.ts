@@ -9,6 +9,7 @@ import {
 import {
   parseInventoryBalanceReportQuery,
   parseInventoryBalancesListQuery,
+  parseInventoryFamilyList,
   parseInventoryItemsListQuery,
 } from "./inventory/inventoryListQuery.js";
 import {
@@ -287,10 +288,17 @@ describe("inventoryListQuery", () => {
     assert.equal(balances.page, 1);
     assert.equal(balances.hasReservation, false);
     assert.equal(balances.negativeStock, false);
+    assert.deepEqual(balances.families, []);
 
     const report = parseInventoryBalanceReportQuery({});
     assert.equal(report.zeroBalanceMode, "legacy");
+    assert.deepEqual(report.families, []);
     assert.equal(parseInventoryBalanceReportQuery({ zeroBalanceMode: "including_zero" }).zeroBalanceMode, "including_zero");
+    assert.deepEqual(parseInventoryFamilyList(["EPI", "epi"]), ["EPI"]);
+    assert.deepEqual(
+      parseInventoryBalanceReportQuery({ families: ["EPI", "Insumos"] }).families,
+      ["EPI", "Insumos"]
+    );
   });
 });
 
