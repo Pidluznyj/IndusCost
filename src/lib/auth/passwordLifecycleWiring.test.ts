@@ -185,7 +185,10 @@ describe("server.ts — criação de usuário e login", () => {
   it("a credencial inicial nasce temporária e auditada, na mesma transação", () => {
     const inicio = server.indexOf('app.post("/api/admin/users"');
     const fim = server.indexOf('app.get("/api/admin/users/:id"', inicio);
-    const rota = server.slice(inicio, fim > inicio ? fim : inicio + 8000);
+    const rotaServer = server.slice(inicio, fim > inicio ? fim : inicio + 8000);
+    // A rota delega ao serviço único; as garantias ficam no serviço (lido do arquivo).
+    assert.match(rotaServer, /createAppUserAccount\(/);
+    const rota = read("src/lib/adminUserCreation.server.ts");
     assert.match(rota, /mustChangePassword: requirePasswordChange/);
     assert.match(rota, /passwordChangedAt: new Date\(\)/);
     assert.match(rota, /prisma\.\$transaction\(async \(tx\) => \{/);

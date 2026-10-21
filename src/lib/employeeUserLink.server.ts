@@ -3,7 +3,16 @@
  * Não cria login, não altera e-mail de login, não desativa usuário no desligamento.
  */
 
-import type { PrismaClient } from "@prisma/client";
+import { Prisma, type PrismaClient } from "@prisma/client";
+import { evaluateSuperAdminAccountOperation, superAdminGuardDenial, type SuperAdminGuardActor } from "@/src/lib/security/superAdminRoleGuard.js";
+
+/** Vincular/desvincular colaborador de uma conta SUPER_ADMIN exige SUPER_ADMIN com step-up (E2 por identidade). */
+function assertAccountIdentityChangeAllowed(actor: SuperAdminGuardActor | undefined, targetRole: string | null | undefined) {
+  const denial = superAdminGuardDenial(
+    evaluateSuperAdminAccountOperation({ actor: actor ?? { id: null, role: null, elevated: false }, targetRole })
+  );
+  if (denial) throw new EmployeeRegistrationError(denial.code, denial.message, denial.status);
+}
 import { normalizeCorporateEmail } from "@/src/lib/employeeCorporateEmail.js";
 import {
   EmployeeRegistrationError,
@@ -161,7 +170,7 @@ export async function findAppUserByLoginEmail(
 export async function linkEmployeeToAppUser(
   prisma: PrismaClient,
   employeeId: string,
-  opts?: { actorUserId?: string | null }
+  opts?: { actorUserId?: string | null; actor?: SuperAdminGuardActor }
 ): Promise<{
   appUser: { id: string; email: string; isActive: boolean; role: string; name: string };
 }> {
@@ -195,7 +204,7 @@ export async function linkEmployeeToAppUser(
     }
     const user = await tx.appUser.findFirst({
       where: { email: { equals: email, mode: "insensitive" } },
-      select: { id: true, employeeId: true, personId: true, email: true },
+      select: { id: true, employeeId: true, personId: true, email: true, role: true },
     });
     if (!user) {
       throw new EmployeeRegistrationError(
@@ -204,12 +213,24 @@ export async function linkEmployeeToAppUser(
         404
       );
     }
+    assertAccountIdentityChangeAllowed(opts?.actor, user.role);
     if (user.employeeId && user.employeeId !== employeeId) {
       throw new EmployeeRegistrationError(
         "APPUSER_ALREADY_LINKED",
         "Este usuário já está vinculado a outro colaborador.",
         409
       );
+    }
+    if (emp.personId && !user.personId) {
+      // Cadastro mestre: Pessoa inativa nunca é copiada para a conta em silêncio.
+      const person = await tx.person.findUnique({ where: { id: emp.personId }, select: { status: true } });
+      if (person && person.status !== "ACTIVE") {
+        throw new EmployeeRegistrationError(
+          "PERSON_INACTIVE",
+          "A Pessoa deste colaborador está inativa ou unificada. Resolva a identidade em Pessoas 360° antes de vincular a conta.",
+          409
+        );
+      }
     }
     if (user.personId && emp.personId && user.personId !== emp.personId) {
       throw new EmployeeRegistrationError(
@@ -219,14 +240,47 @@ export async function linkEmployeeToAppUser(
       );
     }
 
-    const updated = await tx.appUser.update({
-      where: { id: user.id },
-      data: {
-        employeeId,
-        ...(emp.personId && !user.personId ? { personId: emp.personId } : {}),
-      },
-      select: { id: true, email: true, isActive: true, role: true, name: true },
-    });
+    let updated: { id: string; email: string; isActive: boolean; role: string; name: string };
+    try {
+      updated = await tx.appUser.update({
+        where: { id: user.id },
+        data: {
+          employeeId,
+          ...(emp.personId && !user.personId ? { personId: emp.personId } : {}),
+        },
+        select: { id: true, email: true, isActive: true, role: true, name: true },
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+        const target = Array.isArray(error.meta?.target) ? error.meta.target.join(",") : String(error.meta?.target ?? "");
+        if (target.includes("employeeId")) {
+          throw new EmployeeRegistrationError("EMPLOYEE_ALREADY_HAS_USER", "Este colaborador já possui usuário vinculado (gravado ao mesmo tempo por outra operação).", 409);
+        }
+        if (target.includes("personId")) {
+          throw new EmployeeRegistrationError(
+            "PERSON_ALREADY_HAS_USER",
+            "A Pessoa deste colaborador já tem outra conta de acesso. Corrija o vínculo em Pessoas 360°.",
+            409
+          );
+        }
+      }
+      throw error;
+    }
+    if (emp.personId && !user.personId) {
+      const { recordPersonLinkEvent, PERSON_LINK_EVENT_KINDS } = await import("@/src/lib/people/personLinkEvents.server.js");
+      await recordPersonLinkEvent(tx, {
+        personId: emp.personId,
+        eventKind: PERSON_LINK_EVENT_KINDS.LINKED,
+        entityKind: "app_user",
+        entityId: user.id,
+        toPersonId: emp.personId,
+        actorUserId: opts?.actorUserId ?? null,
+        reason: "Conta vinculada ao colaborador pelo RH (e-mail corporativo igual)",
+        evidence: "EMAIL_EXACT",
+        snapshot: { employeeId, source: "HR_LINK_USER" },
+        reversible: true,
+      });
+    }
 
     console.info(
       JSON.stringify({
@@ -246,7 +300,7 @@ export async function linkEmployeeToAppUser(
 export async function unlinkEmployeeFromAppUser(
   prisma: PrismaClient,
   employeeId: string,
-  opts?: { actorUserId?: string | null }
+  opts?: { actorUserId?: string | null; actor?: SuperAdminGuardActor }
 ): Promise<{ ok: true; appUserId: string }> {
   return prisma.$transaction(async (tx) => {
     const emp = await tx.employee.findUnique({
@@ -269,6 +323,7 @@ export async function unlinkEmployeeFromAppUser(
       );
     }
 
+    assertAccountIdentityChangeAllowed(opts?.actor, emp.appUser.role);
     // Desvincular não remove SUPER_ADMIN nem desativa — apenas limpa employeeId.
     const appUserId = emp.appUser.id;
     await tx.appUser.update({

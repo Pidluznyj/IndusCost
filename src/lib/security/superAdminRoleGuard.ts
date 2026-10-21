@@ -72,6 +72,35 @@ export function evaluateSuperAdminRoleChange(args: {
   return { ok: true, touchesSuperAdmin: true };
 }
 
+/**
+ * Operação sobre a IDENTIDADE de uma conta (vincular, corrigir, desvincular, regularizar Pessoa).
+ * Quando a conta-alvo é SUPER_ADMIN, mexer no vínculo equivale a mexer em quem controla o sistema
+ * (desligamento, PII, propagação): exige SUPER_ADMIN com step-up, mesmo tendo links:manage.
+ */
+export function evaluateSuperAdminAccountOperation(args: {
+  actor: SuperAdminGuardActor;
+  targetRole: string | null | undefined;
+}): SuperAdminGuardResult {
+  if (args.targetRole !== SUPER_ADMIN_ROLE) return { ok: true, touchesSuperAdmin: false };
+  if (args.actor.role !== SUPER_ADMIN_ROLE) {
+    return {
+      ok: false,
+      code: "SUPER_ADMIN_REQUIRED",
+      status: 403,
+      message: "Só um Super Administrador pode alterar o vínculo de identidade de uma conta de Super Administrador.",
+    };
+  }
+  if (!args.actor.elevated) {
+    return {
+      ok: false,
+      code: "ADMIN_ELEVATION_REQUIRED",
+      status: 403,
+      message: "Confirme sua identidade (senha) para alterar o vínculo de uma conta de Super Administrador.",
+    };
+  }
+  return { ok: true, touchesSuperAdmin: true };
+}
+
 export type SuperAdminGuardDenial = Extract<SuperAdminGuardResult, { ok: false }>;
 
 /** Devolve a recusa (ou null) sem depender do estreitamento de união do chamador. */

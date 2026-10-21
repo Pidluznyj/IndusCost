@@ -27,7 +27,7 @@ export type IdentityForMerge = {
 export type MergeEvidence = "CPF_EXACT" | "EMAIL_EXACT" | "MANUAL";
 
 export type MergeBlocker = {
-  code: "CPF_DIVERGENT" | "SAME_PERSON" | "LOSER_MERGED" | "WINNER_MERGED" | "TWO_EMPLOYEES" | "TWO_ACTIVE_USERS" | "TWO_USERS";
+  code: "CPF_DIVERGENT" | "SAME_PERSON" | "LOSER_MERGED" | "WINNER_MERGED" | "WINNER_INACTIVE" | "TWO_EMPLOYEES" | "TWO_ACTIVE_USERS" | "TWO_USERS";
   message: string;
 };
 
@@ -55,6 +55,7 @@ export function planPersonMerge(winner: IdentityForMerge, loser: IdentityForMerg
   if (winner.id === loser.id) blockers.push({ code: "SAME_PERSON", message: "Escolha duas pessoas diferentes." });
   if (loser.status === "MERGED") blockers.push({ code: "LOSER_MERGED", message: "A pessoa absorvida já foi unificada." });
   if (winner.status === "MERGED") blockers.push({ code: "WINNER_MERGED", message: "A pessoa que fica já foi unificada em outra; escolha a pessoa final." });
+  if (winner.status === "INACTIVE") blockers.push({ code: "WINNER_INACTIVE", message: "A pessoa que fica está inativa. Reative-a (com justificativa) antes de unificar." });
   if (winner.cpfNormalized && loser.cpfNormalized && winner.cpfNormalized !== loser.cpfNormalized) {
     blockers.push({ code: "CPF_DIVERGENT", message: "As duas pessoas têm CPFs validados diferentes: não são a mesma pessoa física." });
   }
@@ -97,7 +98,7 @@ export function planPersonMerge(winner: IdentityForMerge, loser: IdentityForMerg
 
 export type RelinkDecision =
   | { ok: true; kind: "LINK" | "RELINK"; fromPersonId: string | null }
-  | { ok: false; code: "STALE" | "SAME" | "TARGET_MERGED" | "TARGET_HAS_EMPLOYEE" | "TARGET_HAS_USER" | "UNAUTHORIZED_USER_RELINK"; message: string; status: 403 | 409 };
+  | { ok: false; code: "STALE" | "SAME" | "TARGET_MERGED" | "TARGET_INACTIVE" | "TARGET_HAS_EMPLOYEE" | "TARGET_HAS_USER" | "UNAUTHORIZED_USER_RELINK"; message: string; status: 403 | 409 };
 
 /** Decisão de vínculo/correção de um registro para uma Pessoa-alvo. Puro. */
 export function decideRelink(args: {
@@ -117,6 +118,9 @@ export function decideRelink(args: {
   }
   if (args.targetStatus === "MERGED") {
     return { ok: false, code: "TARGET_MERGED", status: 409, message: "A pessoa escolhida foi unificada em outra. Selecione a pessoa final." };
+  }
+  if (args.targetStatus === "INACTIVE") {
+    return { ok: false, code: "TARGET_INACTIVE", status: 409, message: "A pessoa escolhida está inativa. Reative a Pessoa (com justificativa) antes de vincular cadastros a ela." };
   }
   if (args.entityKind === "employee" && args.targetHasEmployee) {
     return { ok: false, code: "TARGET_HAS_EMPLOYEE", status: 409, message: "Esta pessoa já tem um colaborador vinculado." };

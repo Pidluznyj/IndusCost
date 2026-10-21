@@ -14,9 +14,22 @@ import {
   type MergePlan,
 } from "@/src/lib/people/personLinkOps.js";
 import { PERSON_LINK_EVENT_KINDS, recordPersonLinkEvent, type PersonLinkEvidence } from "@/src/lib/people/personLinkEvents.server.js";
+import { evaluateSuperAdminAccountOperation, superAdminGuardDenial, type SuperAdminGuardActor } from "@/src/lib/security/superAdminRoleGuard.js";
+import { decideAttachAccount, emailsMatch } from "@/src/lib/people/personAccountLink.js";
+import { SECURITY_AUDIT_EVENTS, writeSecurityAuditLog } from "@/src/lib/auth/securityAudit.server.js";
+import { lockPersonRows } from "@/src/lib/people/personLocks.server.js";
 
 type Db = Prisma.TransactionClient;
 export type OpsActor = { id: string | null; name?: string | null };
+/** Ator com papel/elevação: operações sobre contas SUPER_ADMIN exigem SUPER_ADMIN elevado. */
+export type OpsActorWithRole = OpsActor & Partial<Pick<SuperAdminGuardActor, "role" | "elevated">>;
+
+function assertAccountOperationAllowed(actor: OpsActorWithRole | undefined, targetRole: string | null | undefined) {
+  const denial = superAdminGuardDenial(
+    evaluateSuperAdminAccountOperation({ actor: { id: actor?.id ?? null, role: actor?.role ?? null, elevated: Boolean(actor?.elevated) }, targetRole })
+  );
+  if (denial) throw new CanonicalPersonError(denial.code, denial.message, denial.status);
+}
 
 function assertUuid(value: unknown, label: string): string {
   if (!isPersonUuid(value)) throw new CanonicalPersonError("INVALID_ID", `${label} inválido.`, 400);
@@ -57,7 +70,7 @@ export async function loadIdentityForMerge(db: Db, personId: string): Promise<Id
   };
 }
 
-type EntitySnapshot = { id: string; label: string; personId: string | null; detail: string | null; cpfNormalized: string | null; email: string | null };
+type EntitySnapshot = { id: string; label: string; personId: string | null; detail: string | null; cpfNormalized: string | null; email: string | null; role?: string | null; employeeId?: string | null; isActive?: boolean };
 
 async function loadEntity(db: Db, kind: LinkEntityKind, id: string): Promise<EntitySnapshot> {
   if (kind === "employee") {
@@ -66,9 +79,9 @@ async function loadEntity(db: Db, kind: LinkEntityKind, id: string): Promise<Ent
     return { id: e.id, label: e.socialName?.trim() || e.name, personId: e.personId, detail: e.department, cpfNormalized: e.cpf ? e.cpf.replace(/\D/g, "") || null : null, email: e.corporateEmail };
   }
   if (kind === "app_user") {
-    const u = await db.appUser.findUnique({ where: { id }, select: { id: true, name: true, email: true, personId: true, role: true, employeeId: true } });
+    const u = await db.appUser.findUnique({ where: { id }, select: { id: true, name: true, email: true, personId: true, role: true, employeeId: true, isActive: true } });
     if (!u) throw new CanonicalPersonError("ENTITY_NOT_FOUND", "Usuário não encontrado.", 404);
-    return { id: u.id, label: u.name, personId: u.personId, detail: `${u.role}${u.employeeId ? " · ligado a colaborador" : ""}`, cpfNormalized: null, email: u.email };
+    return { id: u.id, label: u.name, personId: u.personId, detail: `${u.role}${u.employeeId ? " · ligado a colaborador" : ""}`, cpfNormalized: null, email: u.email, role: u.role, employeeId: u.employeeId, isActive: u.isActive };
   }
   if (kind === "fleet_driver") {
     const d = await db.fleetDriver.findUnique({ where: { id }, select: { id: true, name: true, personId: true, cpf: true, email: true, status: true } });
@@ -140,7 +153,7 @@ export async function previewRelink(prisma: PrismaClient, input: { targetPersonI
 
 export async function relinkEntity(
   prisma: PrismaClient,
-  input: { targetPersonId: string; entityKind: unknown; entityId: unknown; expectedCurrentPersonId: string | null | undefined; reason: string | null; actor: OpsActor }
+  input: { targetPersonId: string; entityKind: unknown; entityId: unknown; expectedCurrentPersonId: string | null | undefined; reason: string | null; actor: OpsActorWithRole }
 ) {
   const targetId = assertUuid(input.targetPersonId, "Pessoa");
   if (!isValidLinkEntityKind(input.entityKind)) throw new CanonicalPersonError("INVALID_ENTITY_KIND", "Tipo de cadastro inválido.", 400);
@@ -150,7 +163,9 @@ export async function relinkEntity(
   if (reason.length < 5) throw new CanonicalPersonError("REASON_REQUIRED", "Informe a justificativa (mínimo 5 caracteres).", 400);
   try {
     return await prisma.$transaction(async (tx) => {
+      await lockPersonRows(tx, [targetId], "SHARE");
       const [target, entity] = await Promise.all([loadIdentityForMerge(tx, targetId), loadEntity(tx, kind, entityId)]);
+      if (kind === "app_user") assertAccountOperationAllowed(input.actor, entity.role);
       const decision = decideRelink({
         entityKind: kind,
         currentPersonId: entity.personId,
@@ -184,7 +199,7 @@ export async function relinkEntity(
   }
 }
 
-export async function unlinkEntity(prisma: PrismaClient, input: { personId: string; entityKind: unknown; entityId: unknown; reason: string | null; actor: OpsActor }) {
+export async function unlinkEntity(prisma: PrismaClient, input: { personId: string; entityKind: unknown; entityId: unknown; reason: string | null; actor: OpsActorWithRole }) {
   const personId = assertUuid(input.personId, "Pessoa");
   if (!isValidLinkEntityKind(input.entityKind)) throw new CanonicalPersonError("INVALID_ENTITY_KIND", "Tipo de cadastro inválido.", 400);
   const kind = input.entityKind;
@@ -193,6 +208,7 @@ export async function unlinkEntity(prisma: PrismaClient, input: { personId: stri
   if (reason.length < 5) throw new CanonicalPersonError("REASON_REQUIRED", "Informe a justificativa (mínimo 5 caracteres).", 400);
   return prisma.$transaction(async (tx) => {
     const entity = await loadEntity(tx, kind, entityId);
+    if (kind === "app_user") assertAccountOperationAllowed(input.actor, entity.role);
     if (entity.personId !== personId) throw new CanonicalPersonError("STALE", "O registro não aponta mais para esta pessoa. Recarregue.", 409);
     await setEntityPerson(tx, kind, entityId, null, personId);
     const event = await recordPersonLinkEvent(tx, {
@@ -259,6 +275,7 @@ export async function executePersonMerge(
   if (reason.length < 5) throw new CanonicalPersonError("REASON_REQUIRED", "Informe a justificativa (mínimo 5 caracteres).", 400);
   try {
     return await prisma.$transaction(async (tx) => {
+      await lockPersonRows(tx, [winnerId, loserId], "UPDATE");
       const [winner, loser] = await Promise.all([loadIdentityForMerge(tx, winnerId), loadIdentityForMerge(tx, loserId)]);
       const plan = planPersonMerge(winner, loser);
       if (plan.blockers.length > 0) {
@@ -277,7 +294,7 @@ export async function executePersonMerge(
         data: { status: "MERGED", mergedIntoPersonId: winner.id, inactivatedAt: new Date() },
       });
       if (marked.count !== 1) throw new CanonicalPersonError("STALE", "A pessoa absorvida mudou durante a unificação.", 409);
-      const snapshot = { moves: plan.moves, fillFromLoser: plan.fillFromLoser, loserDisplayName: loser.displayName, winnerDisplayName: winner.displayName };
+      const snapshot = { moves: plan.moves, fillFromLoser: plan.fillFromLoser, loserDisplayName: loser.displayName, winnerDisplayName: winner.displayName, loserStatus: loser.status };
       const event = await recordPersonLinkEvent(tx, {
         personId: winner.id,
         eventKind: PERSON_LINK_EVENT_KINDS.MERGED,
@@ -320,6 +337,7 @@ export async function revertPersonMerge(prisma: PrismaClient, input: { eventId: 
   try {
     return await prisma.$transaction(async (tx) => {
       const ev = await tx.personLinkEvent.findUnique({ where: { id: eventId } });
+      if (ev?.fromPersonId && ev?.toPersonId) await lockPersonRows(tx, [ev.fromPersonId, ev.toPersonId], "UPDATE");
       if (!ev || ev.eventKind !== PERSON_LINK_EVENT_KINDS.MERGED || !ev.reversible) throw new CanonicalPersonError("EVENT_NOT_REVERSIBLE", "Este evento não pode ser revertido.", 409);
       if (ev.revertedAt) throw new CanonicalPersonError("ALREADY_REVERTED", "Esta unificação já foi revertida.", 409);
       const winnerId = ev.toPersonId!;
@@ -334,7 +352,12 @@ export async function revertPersonMerge(prisma: PrismaClient, input: { eventId: 
       if (plan.fillFromLoser.includes("cpfNormalized")) unfill.cpfNormalized = null;
       if (plan.fillFromLoser.includes("corporateEmail")) unfill.corporateEmail = null;
       if (Object.keys(unfill).length > 0) await tx.person.update({ where: { id: winnerId }, data: unfill });
-      await tx.person.update({ where: { id: loserId }, data: { status: "ACTIVE", mergedIntoPersonId: null, inactivatedAt: null } });
+      // Reversão restaura a situação que a absorvida tinha antes (INACTIVE continua inativa).
+      const loserStatusBefore = (ev.snapshot as { loserStatus?: string } | null)?.loserStatus === "INACTIVE" ? "INACTIVE" : "ACTIVE";
+      await tx.person.update({
+        where: { id: loserId },
+        data: loserStatusBefore === "INACTIVE" ? { status: "INACTIVE", mergedIntoPersonId: null } : { status: "ACTIVE", mergedIntoPersonId: null, inactivatedAt: null },
+      });
       const revert = await recordPersonLinkEvent(tx, {
         personId: loserId,
         eventKind: PERSON_LINK_EVENT_KINDS.MERGE_REVERTED,
@@ -351,6 +374,230 @@ export async function revertPersonMerge(prisma: PrismaClient, input: { eventId: 
       });
       await tx.personLinkEvent.update({ where: { id: ev.id }, data: { revertedAt: new Date(), revertedByEventId: revert.id } });
       return { eventId: revert.id, restored: plan.moves.length };
+    });
+  } catch (error) {
+    mapUnique(error);
+  }
+}
+
+
+// ---------------------------------------------------------------------------
+// Regularizar vínculo existente: conta legada (sem Pessoa, ou apontando para outra)
+// ganha personId — e employeeId quando ainda não tem — numa única transação.
+// Nunca toca id, senha, papel, permissões, perfil, sessões ou vínculo comercial.
+// ---------------------------------------------------------------------------
+
+const ACCOUNT_SELECT = {
+  id: true,
+  name: true,
+  email: true,
+  role: true,
+  isActive: true,
+  personId: true,
+  employeeId: true,
+  employee: { select: { id: true, name: true, status: true, personId: true, corporateEmail: true, appUser: { select: { id: true } } } },
+  person: { select: { id: true, displayName: true } },
+} as const;
+
+const EMPLOYEE_FOR_LINK_SELECT = { id: true, name: true, status: true, personId: true, corporateEmail: true, appUser: { select: { id: true } } } as const;
+
+async function loadAttachContext(db: Db | PrismaClient, targetPersonId: string, appUserId: string, employeeIdRaw: unknown) {
+  const [target, account] = await Promise.all([
+    db.person.findUnique({
+      where: { id: targetPersonId },
+      select: { id: true, displayName: true, status: true, corporateEmail: true, personalEmail: true, appUsers: { select: { id: true } }, employees: { select: EMPLOYEE_FOR_LINK_SELECT } },
+    }),
+    db.appUser.findUnique({ where: { id: appUserId }, select: ACCOUNT_SELECT }),
+  ]);
+  if (!target) throw new CanonicalPersonError("PERSON_NOT_FOUND", "Pessoa não encontrada.", 404);
+  if (!account) throw new CanonicalPersonError("ENTITY_NOT_FOUND", "Conta não encontrada.", 404);
+  // Colaborador: o informado, senão o da conta, senão o da Pessoa-alvo (se houver exatamente um).
+  let employee: { id: string; name: string; status: string; personId: string | null; corporateEmail: string | null; appUser: { id: string } | null } | null = null;
+  if (typeof employeeIdRaw === "string" && employeeIdRaw.trim()) {
+    const id = assertUuid(employeeIdRaw.trim(), "Colaborador");
+    employee = await db.employee.findUnique({ where: { id }, select: EMPLOYEE_FOR_LINK_SELECT });
+    if (!employee) throw new CanonicalPersonError("EMPLOYEE_NOT_FOUND", "Colaborador não encontrado.", 404);
+  } else if (account.employee) {
+    employee = account.employee;
+  } else if (target.employees.length === 1) {
+    employee = target.employees[0]!;
+  }
+  const emailMismatch = Boolean(
+    account.email && !emailsMatch(account.email, employee?.corporateEmail) && !emailsMatch(account.email, target.corporateEmail) && !emailsMatch(account.email, target.personalEmail)
+  );
+  return { target, account, employee, emailMismatch };
+}
+
+/** Contas candidatas para regularização (sem Pessoa, ou ligadas ao colaborador desta Pessoa). */
+export async function listCandidateAccounts(prisma: PrismaClient, personId: string, input: { q: string; canViewPii: boolean; limit?: number }) {
+  const targetId = assertUuid(personId, "Pessoa");
+  const target = await prisma.person.findUnique({
+    where: { id: targetId },
+    select: { id: true, corporateEmail: true, personalEmail: true, employees: { select: { id: true, corporateEmail: true, appUser: { select: { id: true } } } } },
+  });
+  if (!target) throw new CanonicalPersonError("PERSON_NOT_FOUND", "Pessoa não encontrada.", 404);
+  const q = input.q.trim();
+  const employeeUserIds = target.employees.map((e) => e.appUser?.id).filter((x): x is string => Boolean(x));
+  const where: Prisma.AppUserWhereInput = {
+    OR: [
+      // Sem permissão de dados pessoais a busca é só por nome (evita usar o filtro como oráculo de e-mail).
+      { personId: null, ...(q ? (input.canViewPii ? { OR: [{ name: { contains: q, mode: "insensitive" } }, { email: { contains: q, mode: "insensitive" } }] } : { name: { contains: q, mode: "insensitive" } }) : {}) },
+      ...(employeeUserIds.length ? [{ id: { in: employeeUserIds } }] : []),
+    ],
+  };
+  const rows = await prisma.appUser.findMany({
+    where,
+    select: { id: true, name: true, email: true, role: true, isActive: true, personId: true, employeeId: true, employee: { select: { id: true, name: true, personId: true, corporateEmail: true } } },
+    orderBy: [{ isActive: "desc" }, { name: "asc" }],
+    take: Math.min(50, Math.max(1, input.limit ?? 20)),
+  });
+  const emails = new Set([target.corporateEmail, target.personalEmail, ...target.employees.map((e) => e.corporateEmail)].filter(Boolean).map((e) => (e as string).toLowerCase()));
+  return rows.map((u) => {
+    const employeeOfThisPerson = Boolean(u.employee && (u.employee.personId === target.id || target.employees.some((e) => e.id === u.employee!.id)));
+    const emailExact = emails.has(u.email.toLowerCase());
+    return {
+      id: u.id,
+      name: u.name,
+      role: u.role,
+      isActive: u.isActive,
+      emailMasked: maskEmail(u.email),
+      email: input.canViewPii ? u.email : null,
+      personId: u.personId,
+      employee: u.employee ? { id: u.employee.id, name: u.employee.name, belongsToThisPerson: employeeOfThisPerson } : null,
+      evidence: employeeOfThisPerson ? ("EMPLOYEE_LINK" as const) : emailExact ? ("EMAIL_EXACT" as const) : ("MANUAL" as const),
+    };
+  });
+}
+
+export async function previewAttachAccount(prisma: PrismaClient, input: { targetPersonId: string; appUserId: unknown; employeeId?: unknown; actor: OpsActorWithRole }) {
+  const targetId = assertUuid(input.targetPersonId, "Pessoa");
+  const appUserId = assertUuid(input.appUserId, "Conta");
+  const ctx = await loadAttachContext(prisma, targetId, appUserId, input.employeeId);
+  const decision = decideAttachAccount({
+    account: { id: ctx.account.id, role: ctx.account.role, personId: ctx.account.personId, employeeId: ctx.account.employeeId, isActive: ctx.account.isActive, email: ctx.account.email },
+    expected: {},
+    target: { id: ctx.target.id, status: ctx.target.status, userIds: ctx.target.appUsers.map((u) => u.id), employeeIds: ctx.target.employees.map((e) => e.id) },
+    employee: ctx.employee ? { id: ctx.employee.id, status: ctx.employee.status, personId: ctx.employee.personId, appUserId: ctx.employee.appUser?.id ?? null, corporateEmail: ctx.employee.corporateEmail } : null,
+    emailMismatch: ctx.emailMismatch,
+    confirmEmailMismatch: true,
+    // Prévia é somente leitura: um SUPER_ADMIN ainda sem step-up vê o plano completo (o step-up
+    // é exigido na confirmação, onde o 403 ADMIN_ELEVATION_REQUIRED abre a confirmação de senha).
+    actor: { id: input.actor.id, role: input.actor.role ?? null, elevated: input.actor.role === "SUPER_ADMIN" ? true : Boolean(input.actor.elevated) },
+  });
+  const changes: string[] = [];
+  if (decision.ok) {
+    changes.push(`app_user.personId: ${ctx.account.personId ? ctx.account.personId.slice(0, 8) + "…" : "—"} → ${ctx.target.id.slice(0, 8)}…`);
+    if (decision.setEmployeeId) changes.push(`app_user.employeeId: — → ${decision.setEmployeeId.slice(0, 8)}…`);
+    if (decision.setEmployeePersonId && ctx.employee) changes.push(`employee.personId: — → ${ctx.target.id.slice(0, 8)}…`);
+  }
+  return {
+    account: { id: ctx.account.id, name: ctx.account.name, role: ctx.account.role, isActive: ctx.account.isActive, emailMasked: maskEmail(ctx.account.email), currentPerson: ctx.account.person, currentEmployee: ctx.account.employee ? { id: ctx.account.employee.id, name: ctx.account.employee.name } : null },
+    employee: ctx.employee ? { id: ctx.employee.id, name: ctx.employee.name, status: ctx.employee.status, personId: ctx.employee.personId, emailMasked: maskEmail(ctx.employee.corporateEmail) } : null,
+    targetPerson: { id: ctx.target.id, displayName: ctx.target.displayName, status: ctx.target.status },
+    emailMismatch: ctx.emailMismatch,
+    evidence: decision.ok ? decision.evidence : null,
+    decision,
+    changes,
+    unchanged: ["Identificador, login, senha e sessões da conta", "Papel, perfil de acesso e permissões", "Vínculo comercial (vendedor Nomus)", "Histórico e auditorias já gravados"],
+    expected: { personId: ctx.account.personId, employeeId: ctx.account.employeeId },
+  };
+}
+
+export async function attachAccountToPerson(
+  prisma: PrismaClient,
+  input: {
+    targetPersonId: string;
+    appUserId: unknown;
+    employeeId?: unknown;
+    expected: { personId?: string | null; employeeId?: string | null };
+    confirmEmailMismatch: boolean;
+    reason: string | null;
+    actor: OpsActorWithRole;
+    origin?: { ipAddress: string | null; userAgent: string | null };
+  }
+) {
+  const targetId = assertUuid(input.targetPersonId, "Pessoa");
+  const appUserId = assertUuid(input.appUserId, "Conta");
+  const reason = (input.reason ?? "").trim();
+  if (reason.length < 5) throw new CanonicalPersonError("REASON_REQUIRED", "Informe a justificativa (mínimo 5 caracteres).", 400);
+  try {
+    return await prisma.$transaction(async (tx) => {
+      await lockPersonRows(tx, [targetId], "SHARE");
+      const ctx = await loadAttachContext(tx, targetId, appUserId, input.employeeId);
+      const decision = decideAttachAccount({
+        account: { id: ctx.account.id, role: ctx.account.role, personId: ctx.account.personId, employeeId: ctx.account.employeeId, isActive: ctx.account.isActive, email: ctx.account.email },
+        expected: input.expected,
+        target: { id: ctx.target.id, status: ctx.target.status, userIds: ctx.target.appUsers.map((u) => u.id), employeeIds: ctx.target.employees.map((e) => e.id) },
+        employee: ctx.employee ? { id: ctx.employee.id, status: ctx.employee.status, personId: ctx.employee.personId, appUserId: ctx.employee.appUser?.id ?? null, corporateEmail: ctx.employee.corporateEmail } : null,
+        emailMismatch: ctx.emailMismatch,
+        confirmEmailMismatch: input.confirmEmailMismatch,
+        actor: { id: input.actor.id, role: input.actor.role ?? null, elevated: Boolean(input.actor.elevated) },
+      });
+      if ("code" in decision) throw new CanonicalPersonError(decision.code, decision.message, decision.status);
+      // CAS único na conta: só personId (+ employeeId quando a conta não tinha). Nada mais.
+      const r = await tx.appUser.updateMany({
+        where: { id: ctx.account.id, personId: ctx.account.personId, employeeId: ctx.account.employeeId },
+        data: { personId: ctx.target.id, ...(decision.setEmployeeId ? { employeeId: decision.setEmployeeId } : {}) },
+      });
+      if (r.count !== 1) throw new CanonicalPersonError("STALE", "A conta mudou desde a prévia. Recarregue e confira antes de confirmar.", 409);
+      let employeeEventId: string | null = null;
+      if (decision.setEmployeePersonId && ctx.employee) {
+        const e = await tx.employee.updateMany({ where: { id: ctx.employee.id, personId: null }, data: { personId: ctx.target.id } });
+        if (e.count !== 1) throw new CanonicalPersonError("STALE", "O colaborador mudou desde a prévia. Recarregue.", 409);
+        const ev = await recordPersonLinkEvent(tx, {
+          personId: ctx.target.id,
+          eventKind: PERSON_LINK_EVENT_KINDS.LINKED,
+          entityKind: "employee",
+          entityId: ctx.employee.id,
+          toPersonId: ctx.target.id,
+          actorUserId: input.actor.id,
+          actorName: input.actor.name ?? null,
+          reason,
+          evidence: "MANUAL",
+          snapshot: { entityLabel: ctx.employee.name, source: "PERSON_REGULARIZATION" },
+          reversible: true,
+        });
+        employeeEventId = ev.id;
+      }
+      const event = await recordPersonLinkEvent(tx, {
+        personId: ctx.target.id,
+        eventKind: decision.kind === "RELINK" ? PERSON_LINK_EVENT_KINDS.RELINKED : PERSON_LINK_EVENT_KINDS.LINKED,
+        entityKind: "app_user",
+        entityId: ctx.account.id,
+        fromPersonId: decision.fromPersonId,
+        toPersonId: ctx.target.id,
+        actorUserId: input.actor.id,
+        actorName: input.actor.name ?? null,
+        reason,
+        evidence: decision.evidence,
+        snapshot: {
+          entityLabel: ctx.account.name,
+          emailMasked: maskEmail(ctx.account.email),
+          employeeId: decision.setEmployeeId ?? ctx.account.employeeId,
+          emailMismatchConfirmed: ctx.emailMismatch,
+          touchesSuperAdmin: decision.touchesSuperAdmin,
+          source: "PERSON_REGULARIZATION",
+        },
+        reversible: true,
+      });
+      await writeSecurityAuditLog(tx, {
+        eventType: SECURITY_AUDIT_EVENTS.USER_IDENTITY_LINKED,
+        actorUserId: input.actor.id,
+        targetUserId: ctx.account.id,
+        ipAddress: input.origin?.ipAddress ?? null,
+        userAgent: input.origin?.userAgent ?? null,
+        metadata: {
+          source: "PERSON_REGULARIZATION",
+          personId: ctx.target.id,
+          fromPersonId: decision.fromPersonId,
+          employeeId: decision.setEmployeeId ?? ctx.account.employeeId,
+          evidence: decision.evidence,
+          emailMismatchConfirmed: ctx.emailMismatch,
+          touchesSuperAdmin: decision.touchesSuperAdmin,
+          personLinkEventId: event.id,
+        },
+      });
+      return { eventId: event.id, employeeEventId, kind: decision.kind, fromPersonId: decision.fromPersonId, toPersonId: ctx.target.id, employeeId: decision.setEmployeeId ?? ctx.account.employeeId };
     });
   } catch (error) {
     mapUnique(error);

@@ -95,6 +95,11 @@ export type PersonProfile = {
     canViewCommissions: boolean;
     canViewEmployees: boolean;
     canMerge: boolean;
+    canEditPerson: boolean;
+    canManagePersonStatus: boolean;
+    canCreateUsers: boolean;
+    canManageDrivers: boolean;
+    canAttachAccount: boolean;
   };
 };
 
@@ -154,6 +159,68 @@ export function revertMerge(winnerId: string, body: { eventId: string; reason: s
   return fetchJsonOk<{ eventId: string; restored: number }>(`/api/people/${encodeURIComponent(winnerId)}/merge/revert`, { method: "POST", headers: json, body: JSON.stringify(body) });
 }
 
+// ---- Cadastro mestre (criar/editar/situação) ----
+export type PersonIdentityForm = { displayName: string; socialName: string | null; corporateEmail: string | null; personalEmail: string | null; cpf: string | null; phone: string | null };
+export type PersonIdentityEdit = PersonIdentityForm & { id: string; status: string; origin: string; cpfMasked: string | null; corporateEmailMasked: string | null; personalEmailMasked: string | null; piiVisible: boolean; editable: boolean };
+
+export function createPerson(body: PersonIdentityForm) {
+  return fetchJsonOk<{ id: string; displayName: string }>("/api/people", { method: "POST", headers: json, body: JSON.stringify(body) });
+}
+export function fetchPersonIdentity(personId: string) {
+  return fetchJsonOk<PersonIdentityEdit>(`/api/people/${encodeURIComponent(personId)}/identity`);
+}
+export function updatePerson(personId: string, body: Partial<PersonIdentityForm> & { reason?: string }) {
+  return fetchJsonOk<{ id: string; changed: string[]; eventId: string | null }>(`/api/people/${encodeURIComponent(personId)}`, { method: "PATCH", headers: json, body: JSON.stringify(body) });
+}
+export function setPersonStatus(personId: string, body: { status: "ACTIVE" | "INACTIVE"; reason: string }) {
+  return fetchJsonOk<{ id: string; status: string; eventId: string }>(`/api/people/${encodeURIComponent(personId)}/status`, { method: "POST", headers: json, body: JSON.stringify(body) });
+}
+
+// ---- Habilitar acesso (criar conta) ----
+export type EnableAccessBody = { name?: string; email?: string; password: string; mustChangePassword?: boolean };
+export function enableAccess(personId: string, body: EnableAccessBody) {
+  return fetchJsonOk<{ user: { id: string; email: string; name: string; role: string; employeeId: string | null; personId: string | null } }>(`/api/people/${encodeURIComponent(personId)}/access`, { method: "POST", headers: json, body: JSON.stringify(body) });
+}
+
+// ---- Regularizar vínculo existente (conta legada) ----
+export type CandidateAccount = { id: string; name: string; role: string; isActive: boolean; emailMasked: string | null; email: string | null; personId: string | null; employee: { id: string; name: string; belongsToThisPerson: boolean } | null; evidence: "EMPLOYEE_LINK" | "EMAIL_EXACT" | "MANUAL" };
+export type AttachPreview = {
+  account: { id: string; name: string; role: string; isActive: boolean; emailMasked: string | null; currentPerson: { id: string; displayName: string } | null; currentEmployee: { id: string; name: string } | null };
+  employee: { id: string; name: string; status: string; personId: string | null; emailMasked: string | null } | null;
+  targetPerson: { id: string; displayName: string; status: string };
+  emailMismatch: boolean;
+  evidence: string | null;
+  decision: { ok: true; kind: "LINK" | "RELINK"; setEmployeeId: string | null; setEmployeePersonId: boolean; touchesSuperAdmin: boolean } | { ok: false; code: string; status: number; message: string };
+  changes: string[];
+  unchanged: string[];
+  expected: { personId: string | null; employeeId: string | null };
+};
+export function fetchCandidateAccounts(personId: string, q: string) {
+  return fetchJsonOk<{ items: CandidateAccount[] }>(`/api/people/${encodeURIComponent(personId)}/access/candidates?q=${encodeURIComponent(q)}`);
+}
+export function previewAttachAccount(personId: string, body: { appUserId: string; employeeId?: string | null }) {
+  return fetchJsonOk<AttachPreview>(`/api/people/${encodeURIComponent(personId)}/access/attach/preview`, { method: "POST", headers: json, body: JSON.stringify(body) });
+}
+export function attachAccount(personId: string, body: { appUserId: string; employeeId?: string | null; expected: { personId: string | null; employeeId: string | null }; confirmEmailMismatch: boolean; reason: string }) {
+  return fetchJsonOk<{ eventId: string; kind: string }>(`/api/people/${encodeURIComponent(personId)}/access/attach`, { method: "POST", headers: json, body: JSON.stringify(body) });
+}
+
+// ---- Habilitar motorista ----
+export type DriverEnablePreview = {
+  person: { id: string; displayName: string; status: string; cpfMasked: string | null; hasPhone: boolean; hasEmail: boolean };
+  plan: { action: "CREATE" | "LINK" | "REACTIVATE" | "ALREADY_ENABLED" | "CONFLICT" | "BLOCKED"; driverId: string | null; blockers: Array<{ code: string; message: string }> };
+  candidates: Array<{ id: string; name: string; status: string; linkedToThisPerson: boolean; linkedToOtherPerson: boolean; cpfMasked: string | null; hasCnh: boolean; createdFromPublicReservation: boolean }>;
+  fromPerson: string[];
+  fleetFields: string[];
+};
+export type DriverFleetForm = { cnhNumber: string | null; cnhCategory: string | null; cnhExpirationDate: string | null; unit: string | null; costCenter: string | null; notes: string | null };
+export function previewDriverEnable(personId: string) {
+  return fetchJsonOk<DriverEnablePreview>(`/api/people/${encodeURIComponent(personId)}/driver/preview`);
+}
+export function enableDriver(personId: string, body: DriverFleetForm & { action: string; reason: string }) {
+  return fetchJsonOk<{ action: string; driverId: string; eventId: string }>(`/api/people/${encodeURIComponent(personId)}/driver`, { method: "POST", headers: json, body: JSON.stringify(body) });
+}
+
 export async function fetchPeople(query: PeopleListQuery): Promise<PeopleListResponse> {
   const qs = new URLSearchParams();
   for (const [k, v] of Object.entries(query)) {
@@ -187,6 +254,7 @@ export const PERSON_FLAG_LABEL: Record<string, string> = {
   NEEDS_REVIEW: "Identidade em revisão",
   USER_ON_OTHER_PERSON: "Conta do colaborador aponta para outra Pessoa",
   USER_WITHOUT_PERSON: "Conta do colaborador sem Pessoa",
+  PERSON_INACTIVE_WITH_ACTIVE_LINKS: "Pessoa inativa com vínculos ativos (reative ou corrija)",
   NO_LINKS: "Sem vínculos",
 };
 
@@ -198,4 +266,7 @@ export const EVENT_KIND_LABEL: Record<string, string> = {
   MERGED: "Unificação",
   MERGE_REVERTED: "Unificação revertida",
   REVIEW_FLAGGED: "Marcada para revisão",
+  IDENTITY_UPDATED: "Dados da identidade alterados",
+  PERSON_INACTIVATED: "Pessoa inativada",
+  PERSON_REACTIVATED: "Pessoa reativada",
 };

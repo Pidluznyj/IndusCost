@@ -714,6 +714,7 @@ import {
   resolveLoginEmailForNewUser,
 } from "./src/lib/adminUserEmployeeLink.js";
 import { resolveNewUserInitialAccess } from "./src/lib/adminUserCreationPolicy.js";
+import { AppUserCreationError, createAppUserAccount } from "./src/lib/adminUserCreation.server.js";
 import { resolveAppUserSellerLinkFromBody } from "./src/lib/adminUserSellerLink.js";
 import { syncCommissionPersonFromAppUserSellerLink } from "./src/lib/commissions/commissionPersonAppUserSync.server.js";
 import { evaluateAppUserDeleteGuard } from "./src/lib/adminUserDelete.js";
@@ -2710,158 +2711,25 @@ async function startServer() {
   });
 
   app.post("/api/admin/users", requireUsersManageOrBootstrap, async (req, res) => {
+    // Criação delegada ao serviço único (src/lib/adminUserCreation.server.ts): política fail-closed
+    // (resolveNewUserInitialAccess()), senha temporária e auditoria na mesma transação.
     try {
       const employeeIdRaw = req.body?.employeeId;
-      const emailRaw = typeof req.body?.email === "string" ? req.body.email : "";
-      const password = typeof req.body?.password === "string" ? req.body.password : "";
-      // Criação fail-closed: perfil, role operacional e permissões só podem ser
-      // atribuídos depois, pelos fluxos administrativos próprios.
-      // Ignora esses campos mesmo se um cliente antigo/malicioso os enviar.
-      const {
-        role,
-        permissions,
-        accessProfileId,
-        externalSellerId,
-        externalSellerIds,
-        sellerResponsibleName,
-      } = resolveNewUserInitialAccess();
-      const isActive = req.body?.isActive !== false;
-      const sellerLink = {
-        externalSellerId,
-        externalSellerIds,
-        sellerResponsibleName,
-      };
-
-      const passwordError = validatePasswordMin(password);
-      if (passwordError) {
-        return res.status(400).json({ error: "INVALID_PASSWORD", message: passwordError });
-      }
-      const employeeId =
-        typeof employeeIdRaw === "string" ? employeeIdRaw.trim() : String(employeeIdRaw ?? "").trim();
-      const employeeRow = employeeId
-        ? await prisma.employee.findUnique({
-            where: { id: employeeId },
-            select: {
-              id: true,
-              name: true,
-              socialName: true,
-              personalEmail: true,
-              corporateEmail: true,
-              department: true,
-              status: true,
-              personId: true,
-            },
-          })
-        : null;
-      const linkedUser = employeeId
-        ? await prisma.appUser.findUnique({
-            where: { employeeId },
-            select: { id: true },
-          })
-        : null;
-
-      let employee;
-      try {
-        employee = assertEmployeeEligibleForUserLink({
-          employeeId,
-          employee: employeeRow,
-          alreadyLinkedUserId: linkedUser?.id ?? null,
-        });
-      } catch (linkError) {
-        if (linkError instanceof EmployeeUserLinkError) {
-          const status = linkError.code === "EMPLOYEE_ALREADY_LINKED" ? 409 : 400;
-          return res.status(status).json({ error: linkError.code, message: linkError.message });
+      const employeeId = typeof employeeIdRaw === "string" ? employeeIdRaw.trim() : String(employeeIdRaw ?? "").trim();
+      const user = await createAppUserAccount(
+        { prisma },
+        {
+          source: { kind: "employee", employeeId },
+          name: typeof req.body?.name === "string" ? req.body.name : null,
+          email: typeof req.body?.email === "string" ? req.body.email : null,
+          password: typeof req.body?.password === "string" ? req.body.password : "",
+          isActive: req.body?.isActive !== false,
+          mustChangePassword: req.body?.mustChangePassword === false ? false : true,
+          actor: { id: req.appAuth?.id ?? null, role: req.appAuth?.role ?? null, name: req.appAuth?.name ?? null },
+          origin: { ipAddress: resolveAuditIpAddress(req.socket?.remoteAddress), userAgent: normalizeUserAgent(req.headers["user-agent"]) },
+          creationSource: "USER_CREATION",
         }
-        throw linkError;
-      }
-
-      const name =
-        typeof req.body?.name === "string" && req.body.name.trim()
-          ? req.body.name.trim()
-          : resolveEmployeeDisplayName(employee);
-      const email = normalizeEmail(
-        resolveLoginEmailForNewUser({
-          requestedEmail: emailRaw,
-          corporateEmail: employee.corporateEmail,
-          personalEmail: employee.personalEmail,
-        })
       );
-
-      if (!name) {
-        return res.status(400).json({ error: "INVALID_NAME", message: "Informe o nome." });
-      }
-      if (!isValidEmail(email)) {
-        return res.status(400).json({
-          error: "INVALID_EMAIL",
-          message:
-            "Informe um e-mail de acesso válido (pode usar o e-mail pessoal cadastrado em Pessoas / RH).",
-        });
-      }
-
-      // VIEWER sem perfil e bag vazia permanece sem acesso até configuração explícita.
-
-      // E4: a conta nasce com a Pessoa canônica do colaborador (associação inequívoca).
-      // Sem Pessoa no colaborador, a conta fica sem personId — nunca se cria outra Pessoa aqui.
-      const personIdForUser = employee.personId ?? null;
-      if (personIdForUser) {
-        const holder = await prisma.appUser.findUnique({ where: { personId: personIdForUser }, select: { id: true, email: true } });
-        if (holder) {
-          return res.status(409).json({
-            error: "PERSON_ALREADY_HAS_USER",
-            code: "PERSON_ALREADY_HAS_USER",
-            message: `A pessoa deste colaborador já tem uma conta de acesso (${holder.email}). Corrija o vínculo em Pessoas antes de criar outra.`,
-          });
-        }
-      }
-
-      const passwordHash = await hashPassword(password);
-      const actorUserId = req.appAuth?.id ?? null;
-      // Senha inicial escolhida por outra pessoa. O padrão exige troca no
-      // primeiro acesso. Só SUPER_ADMIN pode desligar isso enviando false.
-      const requirePasswordChange = !(
-        req.appAuth?.role === "SUPER_ADMIN" && req.body?.mustChangePassword === false
-      );
-      const user = await prisma.$transaction(async (tx) => {
-        const created = await tx.appUser.create({
-          data: {
-            name,
-            email,
-            passwordHash,
-            role,
-            permissions,
-            accessProfileId,
-            employeeId: employee.id,
-            personId: personIdForUser,
-            isActive,
-            mustChangePassword: requirePasswordChange,
-            passwordChangedAt: new Date(),
-            externalSellerId: sellerLink.externalSellerId,
-            externalSellerIds: sellerLink.externalSellerIds,
-            sellerResponsibleName: sellerLink.sellerResponsibleName,
-          },
-          include: {
-            accessProfile: { select: { name: true } },
-            employee: { select: { id: true, name: true, socialName: true, department: true } },
-          },
-        });
-        await writeSecurityAuditLog(tx, {
-          eventType: SECURITY_AUDIT_EVENTS.USER_INITIAL_PASSWORD_ASSIGNED,
-          actorUserId,
-          targetUserId: created.id,
-          ipAddress: resolveAuditIpAddress(req.socket?.remoteAddress),
-          userAgent: normalizeUserAgent(req.headers["user-agent"]),
-          metadata: { source: "USER_CREATION" },
-        });
-        await writeSecurityAuditLog(tx, {
-          eventType: SECURITY_AUDIT_EVENTS.USER_CREATED,
-          actorUserId,
-          targetUserId: created.id,
-          ipAddress: resolveAuditIpAddress(req.socket?.remoteAddress),
-          userAgent: normalizeUserAgent(req.headers["user-agent"]),
-          metadata: { employeeId: employee.id, personId: personIdForUser, personCopiedFromEmployee: Boolean(personIdForUser) },
-        });
-        return created;
-      });
       return res.status(201).json({
         user: toSafeAppUser(user, {
           accessProfileName: user.accessProfile?.name ?? null,
@@ -2869,27 +2737,11 @@ async function startServer() {
         }),
       });
     } catch (error) {
+      if (error instanceof AppUserCreationError) {
+        return res.status(error.status).json({ error: error.code, code: error.code, message: error.message });
+      }
       if (error instanceof AccessProfileError) {
         return res.status(409).json({ error: error.code, message: error.message });
-      }
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
-        const target = Array.isArray(error.meta?.target)
-          ? error.meta.target.join(",")
-          : String(error.meta?.target ?? "");
-        if (target.includes("employeeId")) {
-          return res.status(409).json({
-            error: "EMPLOYEE_ALREADY_LINKED",
-            message: "Esta pessoa já possui usuário de acesso no sistema.",
-          });
-        }
-        if (target.includes("personId")) {
-          return res.status(409).json({
-            error: "PERSON_ALREADY_HAS_USER",
-            code: "PERSON_ALREADY_HAS_USER",
-            message: "A pessoa deste colaborador já tem uma conta de acesso. Corrija o vínculo em Pessoas antes de criar outra.",
-          });
-        }
-        return res.status(409).json({ error: "EMAIL_ALREADY_EXISTS", message: "E-mail já cadastrado." });
       }
       console.error("POST /api/admin/users", error);
       return res.status(500).json({ error: "Erro ao criar usuário." });
@@ -4422,6 +4274,7 @@ app.put("/api/employees/:id", requireAppAuth, requireResourceOrHrEditor(EMPLOYEE
         employeeId: id,
         personId: nextPersonId ?? null,
         previousPersonId: existingEmployee.personId ?? null,
+        actor: resolveSuperAdminGuardActor(req),
       });
       return updated;
     });
@@ -15593,6 +15446,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     requireAppAuth,
     requireResource: requireResourceOrHrEditor,
     getCurrentAppUser,
+    resolveActor: resolveSuperAdminGuardActor,
   });
 
   registerHrOrgStructureRoutes(app, {
@@ -15905,6 +15759,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     requireAnyPermission,
     getCurrentAppUser,
     resolveActor: resolveSuperAdminGuardActor,
+    requireUsersManage: requireUsersManageOrBootstrap,
   });
 
   // Metas (OKR) — docs/goal-engine-plan.md (recurso admin.goals).

@@ -13,6 +13,10 @@ export const PERSON_LINK_EVENT_KINDS = {
   MERGED: "MERGED",
   MERGE_REVERTED: "MERGE_REVERTED",
   REVIEW_FLAGGED: "REVIEW_FLAGGED",
+  /** Cadastro mestre: edição dos dados canônicos e transições de situação, sempre com ator e motivo. */
+  IDENTITY_UPDATED: "IDENTITY_UPDATED",
+  PERSON_INACTIVATED: "PERSON_INACTIVATED",
+  PERSON_REACTIVATED: "PERSON_REACTIVATED",
 } as const;
 export type PersonLinkEventKind = (typeof PERSON_LINK_EVENT_KINDS)[keyof typeof PERSON_LINK_EVENT_KINDS];
 

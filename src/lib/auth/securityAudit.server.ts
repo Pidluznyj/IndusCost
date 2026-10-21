@@ -31,6 +31,8 @@ export const SECURITY_AUDIT_EVENTS = {
   USER_REACTIVATED: "USER_REACTIVATED",
   USER_DEACTIVATED_BY_TERMINATION: "USER_DEACTIVATED_BY_TERMINATION",
   USER_DELETE_REQUEST_CONVERTED: "USER_DELETE_REQUEST_CONVERTED",
+  /** Pessoas 360° (cadastro mestre): identidade da conta vinculada/regularizada (personId/employeeId), sem tocar credenciais. */
+  USER_IDENTITY_LINKED: "USER_IDENTITY_LINKED",
   /** Emissão de cópia controlada da Política Comercial. O digest fica na tabela da cópia. */
   COMMERCIAL_POLICY_CONTROLLED_COPY: "COMMERCIAL_POLICY_CONTROLLED_COPY",
   /** SUPER_ADMIN zerou aceites da Política Comercial (o metadata guarda o que foi apagado). */
@@ -57,7 +59,9 @@ export type SecurityAuditSource =
   | "FORCED_CHANGE"
   | "ADMIN_RESET"
   | "ADMIN_FLAG"
-  | "USER_CREATION";
+  | "USER_CREATION"
+  | "PERSON_ENABLE_ACCESS"
+  | "PERSON_REGULARIZATION";
 
 /**
  * Chaves proibidas no metadata. Comparação por substring minúscula: pega

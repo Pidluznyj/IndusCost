@@ -104,6 +104,11 @@ export function summarizePersonRow(p: PersonRow): PeopleListRow {
   if (p.status === "NEEDS_REVIEW") flags.push("NEEDS_REVIEW");
   if (employeeUserOther) flags.push("USER_ON_OTHER_PERSON");
   if (employeeUserPending) flags.push("USER_WITHOUT_PERSON");
+  // Pessoa INACTIVE com vínculo ativo: estado contraditório do legado (ex.: colaborador ativo apontando para Pessoa inativa).
+  const activeUser = p.appUsers.some((u) => u.isActive);
+  const activeDriver = p.fleetDrivers.some((d) => d.status !== "INACTIVE");
+  const activeCommission = p.commissionPeople.some((c) => c.active);
+  if (p.status === "INACTIVE" && (employeeActive || activeUser || activeDriver || activeCommission)) flags.push("PERSON_INACTIVE_WITH_ACTIVE_LINKS");
   const totalLinks = p.employees.length + p.appUsers.length + p.fleetDrivers.length + p.commissionPeople.length;
   if (totalLinks === 0) flags.push("NO_LINKS");
   return {
@@ -314,7 +319,9 @@ export async function findPendingLinksForPerson(prisma: PrismaClient, personId: 
   return out;
 }
 
-export async function getPersonProfile(prisma: PrismaClient, personId: string, caps: SystemLinksViewerCaps, viewer?: { role?: string | null }) {
+type MasterCapsInput = SystemLinksViewerCaps & Partial<{ canEditPerson: boolean; canManagePersonStatus: boolean; canCreateUsers: boolean; canManageDrivers: boolean; canAttachAccount: boolean }>;
+
+export async function getPersonProfile(prisma: PrismaClient, personId: string, caps: MasterCapsInput, viewer?: { role?: string | null }) {
   if (!isPersonUuid(personId)) throw new CanonicalPersonError("INVALID_PERSON_ID", "ID de pessoa inválido.");
   const row = await prisma.person.findUnique({ where: { id: personId }, select: PERSON_LINK_SELECT });
   if (!row) throw new CanonicalPersonError("PERSON_NOT_FOUND", "Pessoa não encontrada.", 404);
@@ -393,6 +400,12 @@ export async function getPersonProfile(prisma: PrismaClient, personId: string, c
       canViewEmployees: caps.canViewEmployees,
       /** Unificar/reverter exige SUPER_ADMIN (com step-up no servidor). */
       canMerge: viewer?.role === "SUPER_ADMIN",
+      /** Cadastro mestre (a UI só mostra; a rota aplica a guarda). */
+      canEditPerson: Boolean(caps.canEditPerson),
+      canManagePersonStatus: Boolean(caps.canManagePersonStatus),
+      canCreateUsers: Boolean(caps.canCreateUsers),
+      canManageDrivers: Boolean(caps.canManageDrivers),
+      canAttachAccount: Boolean(caps.canAttachAccount),
     },
   };
 }

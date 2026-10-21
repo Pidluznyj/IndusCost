@@ -142,6 +142,8 @@ export async function findPersonIdentityHints(
     const rows = await prisma.person.findMany({
       where: {
         cpfNormalized: input.cpfNormalized,
+        // Pessoa unificada guarda o CPF para a reversão, mas não conta como duplicata.
+        status: { not: "MERGED" },
         ...(excludePersonId ? { id: { not: excludePersonId } } : {}),
       },
       select: { id: true },
@@ -154,6 +156,7 @@ export async function findPersonIdentityHints(
     const rows = await prisma.person.findMany({
       where: {
         corporateEmail: { equals: email, mode: "insensitive" },
+        status: { not: "MERGED" },
         ...(excludePersonId ? { id: { not: excludePersonId } } : {}),
       },
       select: { id: true },

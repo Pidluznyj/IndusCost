@@ -30,6 +30,8 @@ type AuthGuards = {
   getCurrentAppUser?: (
     req: express.Request
   ) => Promise<{ id?: string } | null> | { id?: string } | null;
+  /** Ator (papel + elevação): vincular/desvincular conta SUPER_ADMIN exige SUPER_ADMIN com step-up. */
+  resolveActor?: (req: express.Request) => { id: string | null; role: string | null; elevated: boolean };
 };
 
 export function registerEmployeeLookupRoutes(
@@ -364,6 +366,7 @@ export function registerEmployeeLookupRoutes(
         );
         const result = await linkEmployeeToAppUser(prisma, id, {
           actorUserId,
+          actor: guards.resolveActor?.(req),
         });
         logEmployeeHrAudit({
           event: "employee.user_link",
@@ -402,6 +405,7 @@ export function registerEmployeeLookupRoutes(
         );
         const result = await unlinkEmployeeFromAppUser(prisma, id, {
           actorUserId,
+          actor: guards.resolveActor?.(req),
         });
         logEmployeeHrAudit({
           event: "employee.user_unlink",

@@ -95,3 +95,54 @@ Documentos continuam por colaborador (`HrEmployeeDocument.employeeId`, `Restrict
 - `HrEmployeeDocument.personId` mantido como está (decisão pendente na auditoria §26).
 - Importação de comissionáveis do Nomus não vincula Pessoa (não há documento na origem).
 - E1 permanece atrás de flag até homologação com RH.
+
+## 11. Missão 2 — Pessoas 360° como cadastro mestre (branch `feat/people-360-master-identity`, base `69ebd2d`)
+
+**Veredito:** a Pessoa passou a ser criada, consultada, editada e governada na própria ficha, e dela nascem (ou a ela se ligam) a conta IndusCost e o motorista; as sete contas legadas sem Pessoa têm caminho de regularização pela interface, com prévia, justificativa e auditoria. Comissões/Nomus não mudaram. Nenhuma migration nova. Procedimento de homologação em [pessoas-360-homologacao-cadastro-mestre.md](pessoas-360-homologacao-cadastro-mestre.md); validação em [pessoas-360-validation.md](pessoas-360-validation.md) §6.
+
+### 11.1 Propriedade de campo (regra implementada)
+
+| Campo | Dono | Cópias | Comportamento |
+|---|---|---|---|
+| nome, nome social, CPF, e-mails, telefone | `Person` | `Employee` (RH), `AppUser.name/email` (login), `FleetDriver.name/cpf/phone/email`, `CommissionPerson.name/document` | Editar a Pessoa grava `IDENTITY_UPDATED` (diff mascarado) e **não reescreve** nenhuma cópia; o formulário do colaborador continua sincronizando a Pessoa com prévia de conflitos (`FIELD_CONFLICTS`), e colaborador já vinculado sem `personId` no corpo vira LINK para a Pessoa atual em vez de sobrescrita crua (`planPersonLinkFromEmployeeBody`) |
+| cargo, remuneração, gestor, jornada, documentos, EPI, avaliações | `Employee` | — | intocados |
+| login, senha, sessões, papel, perfil, permissões, vínculo Nomus | `AppUser` | — | nenhuma rota de Pessoa altera; criação de conta usa `resolveNewUserInitialAccess()` |
+| CNH, status, unidade, centro de custo, histórico | `FleetDriver` | — | "Habilitar motorista" só preenche campos da Frota; vincular/reativar escreve só `personId`/`status` |
+| vendedor Nomus, aliases, regras, registros, lotes | `CommissionPerson`/Nomus | — | intocados (teste de invariância) |
+
+### 11.2 Rotas novas (`src/lib/people/peopleRoutes.ts`)
+
+| Método | Rota | Guarda | Serviço |
+|---|---|---|---|
+| POST | `/api/people` | `admin.employees.people:update` (chave ampla `employees.edit`) | `createPersonManual` → `createPersonCore` (409 `DUPLICATE_CPF`/`DUPLICATE_PRIMARY_EMAIL`, 400 `INVALID_CPF` com checksum) + `PERSON_CREATED` |
+| GET | `/api/people/:id/identity` | `admin.employees:view` | dados para edição (PII em claro só com `canViewPii`) |
+| PATCH | `/api/people/:id` | `admin.employees.people:update` | `updatePersonIdentity` (MERGED → 409 `PERSON_MERGED`) + `IDENTITY_UPDATED` |
+| POST | `/api/people/:id/status` | `admin.employees.people:manage` (`employees.edit` ou `users.manage`) | `setPersonStatus`: INACTIVE só sem vínculos ativos (409 `PERSON_HAS_ACTIVE_LINKS`); `PERSON_INACTIVATED`/`PERSON_REACTIVATED` com motivo; CAS na situação |
+| POST | `/api/people/:id/access` | `admin.settings.security:manage` (a mesma de Usuários) | `createAppUserAccount` (origem `person`): Pessoa ACTIVE e sem conta; com colaborador ativo sem conta → `employeeId`; sem colaborador → conta só com `personId`; VIEWER, sem permissões/perfil/vendedor, senha temporária; `USER_CREATED` + `LINKED` |
+| GET | `/api/people/:id/access/candidates` | `links:manage` + `user_link:manage` | contas sem Pessoa (ou ligadas ao colaborador desta Pessoa), e-mail mascarado sem PII, evidência `EMPLOYEE_LINK`/`EMAIL_EXACT`/`MANUAL` |
+| POST | `/api/people/:id/access/attach/preview` | idem | `previewAttachAccount` (somente leitura; SUPER_ADMIN vê o plano antes do step-up) |
+| POST | `/api/people/:id/access/attach` | idem; conta SUPER_ADMIN exige SUPER_ADMIN elevado | `attachAccountToPerson`: CAS único em `{personId, employeeId}`; `employeeId` só quando a conta não tinha; `Employee.personId` preenchido quando nulo; `USER_IDENTITY_LINKED` + `LINKED/RELINKED`; e-mail divergente exige `confirmEmailMismatch` |
+| GET | `/api/people/:id/driver/preview` | cadeia da Frota (`operations.fleet:view`) | `previewDriverEnable`: CREATE/LINK/REACTIVATE/ALREADY_ENABLED/CONFLICT/BLOCKED |
+| POST | `/api/people/:id/driver` | cadeia da Frota (`driversManage`) | `enableDriverForPerson` em transação; um motorista não-INACTIVE por Pessoa; `FleetAuditLog` com CPF mascarado + `LINKED` |
+
+`POST /api/admin/users` passou a delegar ao mesmo serviço (`src/lib/adminUserCreation.server.ts`, origem `employee`), com os mesmos códigos de erro e a mesma auditoria.
+
+### 11.3 Invariantes garantidas em código
+
+- Conta nova sempre nasce com `personId` quando a Pessoa existe (origem `person`) ou com a Pessoa do colaborador (origem `employee`); nunca cria Pessoa.
+- `AppUser.personId`/`employeeId` e `Employee.personId` únicos no banco; P2002 → 409 com código (`PERSON_ALREADY_HAS_USER`, `EMPLOYEE_ALREADY_LINKED`, `UNIQUE_CONFLICT`).
+- Pessoa `MERGED` nunca recebe vínculo (`TARGET_MERGED`, `PERSON_MERGED`); Pessoa `INACTIVE` também não (`TARGET_INACTIVE`) — reativação é explícita e auditada.
+- Operações sobre contas SUPER_ADMIN (vincular, corrigir, desvincular, regularizar) exigem SUPER_ADMIN com step-up (`evaluateSuperAdminAccountOperation`), além de `links:manage`.
+- Comparação-e-troca em todas as escritas de vínculo e na situação da Pessoa; confirmações repetidas viram `SAME`/`STALE`, não eventos duplicados.
+- Inativar Pessoa não desliga colaborador nem revoga conta: é recusado enquanto houver vínculo ativo (regras separadas e explícitas).
+- E1–E4 e a flag `HR_TERMINATION_REVOKES_ACCESS` intocados; `linkEmployeeToAppUser` (RH) ganhou recusa de Pessoa inativa, P2002 → 409 e `PersonLinkEvent`.
+
+### 11.4 Auditoria e diagnóstico
+
+`scripts/auditPeopleIdentity.ts` ganhou `USUARIO_COLABORADOR_PESSOA_INATIVA` (caso Eduardo), `USUARIO_EMAIL_DIVERGE_DO_COLABORADOR` (caso Leticia) e `--only=CATEGORIA[,…]`. Eventos novos em `PersonLinkEvent`: `IDENTITY_UPDATED`, `PERSON_INACTIVATED`, `PERSON_REACTIVATED`; em `SecurityAuditLog`: `USER_IDENTITY_LINKED`.
+
+### 11.5 Limitações conhecidas
+
+- Conta criada a partir de Pessoa sem colaborador fica fora do E1 (desligamento não a revoga) e da propagação de Pessoa: revisão periódica pela lista `has=app_user&missing=employee`.
+- Importação de comissionáveis do Nomus continua sem vínculo automático (não há documento na origem).
+- Sem acesso ao servidor de homologação a partir desta máquina: o procedimento foi escrito e os casos reproduzidos localmente, não executados em `teste_bi_homolog`.

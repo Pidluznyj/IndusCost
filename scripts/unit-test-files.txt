@@ -451,3 +451,8 @@ src/lib/people/personLinkOps.test.ts
 src/lib/people/personIdentityResolve.test.ts
 src/lib/fleetDriverPersonLink.test.ts
 src/lib/commissions/commissionPersonLinkInvariance.test.ts
+src/lib/people/personMaster.test.ts
+src/lib/people/personAccountLink.test.ts
+src/lib/people/personDriverEnable.test.ts
+src/lib/people/personAccessEnable.invariance.test.ts
+src/lib/people/personReviewFixes.test.ts

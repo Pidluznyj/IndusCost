@@ -14,7 +14,9 @@ const url = process.env.PEOPLE_PG_TEST_URL ?? "";
 const isLocal = /@(127\.0\.0\.1|localhost)(:\d+)?\//.test(url);
 const skip = !url ? "PEOPLE_PG_TEST_URL não definida" : !isLocal ? "URL não é local: recusado" : false;
 const TAG = `p360-ops-${Date.now()}`;
-const actor = { id: null, name: "teste" };
+// As contas de teste são SUPER_ADMIN: mexer na identidade delas exige SUPER_ADMIN com step-up.
+const actor = { id: null, name: "teste", role: "SUPER_ADMIN", elevated: true };
+const hrEditor = { id: null, name: "editor RH", role: "VIEWER", elevated: false };
 
 describe("Pessoas 360° v1.1 — operações em PostgreSQL local", { skip }, () => {
   let prisma: PrismaClient;
@@ -70,6 +72,11 @@ describe("Pessoas 360° v1.1 — operações em PostgreSQL local", { skip }, () 
     assert.equal(preview.expectedCurrentPersonId, B.id);
     assert.equal((await prisma.appUser.findUniqueOrThrow({ where: { id: u.id } })).personId, B.id, "prévia não grava");
 
+    await assert.rejects(
+      () => relinkEntity(prisma, { targetPersonId: A.id, entityKind: "app_user", entityId: u.id, expectedCurrentPersonId: B.id, reason: "editor de RH tentando", actor: hrEditor }),
+      (err: unknown) => err instanceof CanonicalPersonError && err.code === "SUPER_ADMIN_REQUIRED"
+    );
+    assert.equal((await prisma.appUser.findUniqueOrThrow({ where: { id: u.id } })).personId, B.id, "recusa não grava");
     const done = await relinkEntity(prisma, { targetPersonId: A.id, entityKind: "app_user", entityId: u.id, expectedCurrentPersonId: B.id, reason: "Correção do caso real", actor });
     assert.equal(done!.kind, "RELINK");
     const after1 = await prisma.appUser.findUniqueOrThrow({ where: { id: u.id } });
