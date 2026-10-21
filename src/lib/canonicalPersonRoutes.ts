@@ -107,6 +107,14 @@ async function resolveSystemLinksCaps(
   );
 }
 
+/** Papel + permissões efetivas do visualizador (inclui employees.edit quando é Editor de RH). */
+export async function resolvePeopleViewerInput(
+  req: express.Request,
+  getCurrentAppUser?: (req: express.Request) => Promise<AppUserBrief | null> | AppUserBrief | null
+) {
+  return viewerCapsInput(await resolveAppUserBrief(req, getCurrentAppUser));
+}
+
 /** Capacidades do visualizador para as rotas de Pessoas (mesma régua dos vínculos do colaborador). */
 export async function resolvePeopleViewerCaps(
   req: express.Request,
@@ -442,8 +450,15 @@ export async function planPersonLinkFromEmployeeBody(
     body.createNewPerson === true ||
     (!existingEmployeeId && !hasLink && body.createNewPerson !== false);
   const { planEmployeePersonLink } = await import("@/src/lib/canonicalPersonService.server.js");
+  // Propriedade de campo: colaborador já ligado a uma Pessoa e corpo sem personId (cliente de API)
+  // vira LINK para a Pessoa atual — assim a prévia de conflitos vale, em vez de sobrescrever a Pessoa crua.
+  let personIdFromBody = typeof body.personId === "string" ? body.personId.trim() || null : null;
+  if (!personIdFromBody && !hasLink && !createNewPerson && existingEmployeeId) {
+    const current = await prisma.employee.findUnique({ where: { id: existingEmployeeId }, select: { personId: true } });
+    if (current?.personId) personIdFromBody = current.personId;
+  }
   return planEmployeePersonLink(prisma, {
-    personId: typeof body.personId === "string" ? body.personId.trim() || null : null,
+    personId: personIdFromBody,
     createNewPerson,
     sourceKind: (body.personSourceKind as PersonLinkSourceKind) ?? null,
     sourceId: typeof body.personSourceId === "string" ? body.personSourceId.trim() || null : null,

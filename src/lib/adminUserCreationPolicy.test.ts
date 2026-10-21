@@ -35,7 +35,14 @@ describe("novo usuário — acesso somente após criação", () => {
     assert.ok(start >= 0 && end > start);
     const route = source.slice(start, end);
 
-    assert.match(route, /resolveNewUserInitialAccess\(\)/);
+    // A rota delega ao serviço único de criação; a política fixa vive no serviço.
+    assert.match(route, /createAppUserAccount\(/);
+    const service = readFileSync("src/lib/adminUserCreation.server.ts", "utf8");
+    assert.match(service, /resolveNewUserInitialAccess\(\)/);
+    assert.doesNotMatch(service, /input\.role|input\.permissions|input\.accessProfileId|input\.externalSellerId/);
+    // Mesma política para a origem "person" (Habilitar acesso pela ficha da Pessoa).
+    assert.match(service, /kind: "person"; personId: string/);
+    assert.match(service, /PERSON_ENABLE_ACCESS/);
     assert.doesNotMatch(route, /parseAppUserRole\(req\.body\?\.role\)/);
     assert.doesNotMatch(route, /req\.body\?\.accessProfileId/);
     assert.doesNotMatch(route, /filterKnownPermissions\(req\.body\?\.permissions\)/);

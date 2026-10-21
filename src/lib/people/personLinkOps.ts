@@ -97,7 +97,7 @@ export function planPersonMerge(winner: IdentityForMerge, loser: IdentityForMerg
 
 export type RelinkDecision =
   | { ok: true; kind: "LINK" | "RELINK"; fromPersonId: string | null }
-  | { ok: false; code: "STALE" | "SAME" | "TARGET_MERGED" | "TARGET_HAS_EMPLOYEE" | "TARGET_HAS_USER" | "UNAUTHORIZED_USER_RELINK"; message: string; status: 403 | 409 };
+  | { ok: false; code: "STALE" | "SAME" | "TARGET_MERGED" | "TARGET_INACTIVE" | "TARGET_HAS_EMPLOYEE" | "TARGET_HAS_USER" | "UNAUTHORIZED_USER_RELINK"; message: string; status: 403 | 409 };
 
 /** Decisão de vínculo/correção de um registro para uma Pessoa-alvo. Puro. */
 export function decideRelink(args: {
@@ -117,6 +117,9 @@ export function decideRelink(args: {
   }
   if (args.targetStatus === "MERGED") {
     return { ok: false, code: "TARGET_MERGED", status: 409, message: "A pessoa escolhida foi unificada em outra. Selecione a pessoa final." };
+  }
+  if (args.targetStatus === "INACTIVE") {
+    return { ok: false, code: "TARGET_INACTIVE", status: 409, message: "A pessoa escolhida está inativa. Reative a Pessoa (com justificativa) antes de vincular cadastros a ela." };
   }
   if (args.entityKind === "employee" && args.targetHasEmployee) {
     return { ok: false, code: "TARGET_HAS_EMPLOYEE", status: 409, message: "Esta pessoa já tem um colaborador vinculado." };

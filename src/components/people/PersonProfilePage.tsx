@@ -5,6 +5,7 @@ import { cn } from "@/src/lib/utils";
 import { LinkCard } from "@/src/components/employee/EmployeeSystemLinksPanel";
 import { useAdminStepUp } from "@/src/components/settings/useAdminStepUp";
 import { MergeDialog, RelinkDialog, RevertMergeDialog, UnlinkDialog } from "@/src/components/people/PersonLinkDialogs";
+import { AttachAccountDialog, EnableAccessDialog, EnableDriverDialog, PersonFormDialog, PersonStatusDialog } from "@/src/components/people/PersonMasterDialogs";
 import type { SystemLinkCard } from "@/src/lib/employeeSystemLinks";
 import {
   EVENT_KIND_LABEL,
@@ -48,7 +49,7 @@ const ROLE_META: Record<RoleKey, { label: string; icon: React.ComponentType<{ cl
   commissionPerson: { label: "Comissionável", icon: Wallet, kinds: ["commission_person", "seller_alias"], pendingKind: "commission_person", help: "Identidade comercial do Nomus. Regras e valores de comissão não mudam por vínculo." },
 };
 
-function RoleSection({ roleKey, state, cards, pending, canView, canManage, linked, onRelink, onUnlink }: { roleKey: RoleKey; state: PersonLinkState; cards: SystemLinkCard[]; pending: PendingLink[]; canView: boolean; canManage: boolean; linked: Array<{ kind: LinkEntityKind; id: string }>; onRelink: (kind: LinkEntityKind, id: string) => void; onUnlink: (kind: LinkEntityKind, id: string, label: string) => void }) {
+function RoleSection({ roleKey, state, cards, pending, canView, canManage, linked, onRelink, onUnlink, actions }: { roleKey: RoleKey; state: PersonLinkState; cards: SystemLinkCard[]; pending: PendingLink[]; canView: boolean; canManage: boolean; linked: Array<{ kind: LinkEntityKind; id: string }>; onRelink: (kind: LinkEntityKind, id: string) => void; onUnlink: (kind: LinkEntityKind, id: string, label: string) => void; actions?: React.ReactNode }) {
   const meta = ROLE_META[roleKey];
   const Icon = meta.icon;
   return (
@@ -99,6 +100,7 @@ function RoleSection({ roleKey, state, cards, pending, canView, canManage, linke
           ))}
         </ul>
       ) : null}
+      {actions ? <div className="flex flex-wrap gap-2">{actions}</div> : null}
       {canManage && linked.length > 0 ? (
         <div className="flex flex-wrap gap-2">
           {linked.map((l) => (
@@ -123,6 +125,11 @@ export function PersonProfilePage({ personId }: { personId: string }) {
     | { type: "unlink"; kind: LinkEntityKind; id: string; label: string }
     | { type: "merge"; otherPersonId: string }
     | { type: "revert"; eventId: string }
+    | { type: "edit" }
+    | { type: "status"; next: "ACTIVE" | "INACTIVE" }
+    | { type: "enable-access" }
+    | { type: "attach-account"; accountId: string | null }
+    | { type: "enable-driver" }
     | null
   >(null);
   const stepUp = useAdminStepUp();
@@ -254,8 +261,37 @@ export function PersonProfilePage({ personId }: { personId: string }) {
           <span className="inline-flex items-center gap-1 rounded-lg border border-border px-2 py-1"><Truck className="h-3.5 w-3.5" /> {LINK_STATE_LABEL[linkStates.fleetDriver]}</span>
           <span className="inline-flex items-center gap-1 rounded-lg border border-border px-2 py-1"><Wallet className="h-3.5 w-3.5" /> {LINK_STATE_LABEL[linkStates.commissionPerson]}</span>
           <span className="inline-flex items-center gap-1 rounded-lg border border-border px-2 py-1"><FileText className="h-3.5 w-3.5" /> {data.documentsCount} doc(s)</span>
+          {person.status !== "MERGED" && (caps.canEditPerson || caps.canManagePersonStatus) ? (
+            <span className="basis-full flex flex-wrap gap-2 pt-1" data-testid="person-master-actions">
+              {caps.canEditPerson ? (
+                <button type="button" onClick={() => setDialog({ type: "edit" })} className="rounded-lg border border-border px-2 py-1 text-[11px] font-semibold hover:bg-muted" data-testid="person-edit-open">
+                  Editar dados
+                </button>
+              ) : null}
+              {caps.canManagePersonStatus && person.status === "ACTIVE" ? (
+                <button type="button" onClick={() => setDialog({ type: "status", next: "INACTIVE" })} className="rounded-lg border border-border px-2 py-1 text-[11px] font-semibold text-muted-foreground hover:bg-muted" data-testid="person-inactivate-open">
+                  Inativar identidade
+                </button>
+              ) : null}
+              {caps.canManagePersonStatus && person.status === "INACTIVE" ? (
+                <button type="button" onClick={() => setDialog({ type: "status", next: "ACTIVE" })} className="rounded-lg border border-emerald-300 bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-emerald-900 hover:bg-emerald-100" data-testid="person-reactivate-open">
+                  Reativar identidade
+                </button>
+              ) : null}
+            </span>
+          ) : null}
         </div>
       </header>
+
+      {data.flags.includes("PERSON_INACTIVE_WITH_ACTIVE_LINKS") ? (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900" data-testid="person-inactive-conflict">
+          <p className="inline-flex items-center gap-1 font-semibold"><AlertTriangle className="h-4 w-4" /> Pessoa inativa com vínculos ativos</p>
+          <p className="mt-1 text-xs">
+            Esta identidade está inativa, mas há colaborador ativo, conta ativa ou motorista ligado a ela — estado herdado do legado. Nenhum vínculo novo é aceito enquanto a Pessoa estiver inativa.
+            {caps.canManagePersonStatus ? " Se a pessoa de fato está na empresa, reative a identidade (com justificativa); se o colaborador deveria estar desligado, trate isso no RH." : ""}
+          </p>
+        </div>
+      ) : null}
 
       {personPending.length > 0 ? (
         <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-900" data-testid="person-duplicates">
@@ -283,8 +319,51 @@ export function PersonProfilePage({ personId }: { personId: string }) {
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <RoleSection roleKey="employee" state={linkStates.employee} cards={cardsFor(ROLE_META.employee.kinds)} pending={pendingFor("employee")} canView={caps.canViewEmployees} canManage={caps.canManagePersonLink} linked={data.linkedEntities.filter((l) => l.kind === "employee")} onRelink={(kind, id) => setDialog({ type: "relink", kind, id })} onUnlink={(kind, id, label) => setDialog({ type: "unlink", kind, id, label })} />
-        <RoleSection roleKey="appUser" state={linkStates.appUser} cards={cardsFor(ROLE_META.appUser.kinds)} pending={pendingFor("app_user")} canView={caps.canViewUsers} canManage={caps.canManagePersonLink} linked={data.linkedEntities.filter((l) => l.kind === "app_user")} onRelink={(kind, id) => setDialog({ type: "relink", kind, id })} onUnlink={(kind, id, label) => setDialog({ type: "unlink", kind, id, label })} />
-        <RoleSection roleKey="fleetDriver" state={linkStates.fleetDriver} cards={cardsFor(ROLE_META.fleetDriver.kinds)} pending={pendingFor("fleet_driver")} canView={caps.canViewFleet} canManage={caps.canManagePersonLink} linked={data.linkedEntities.filter((l) => l.kind === "fleet_driver")} onRelink={(kind, id) => setDialog({ type: "relink", kind, id })} onUnlink={(kind, id, label) => setDialog({ type: "unlink", kind, id, label })} />
+        <RoleSection
+          roleKey="appUser"
+          state={linkStates.appUser}
+          cards={cardsFor(ROLE_META.appUser.kinds)}
+          pending={pendingFor("app_user")}
+          canView={caps.canViewUsers}
+          canManage={caps.canManagePersonLink}
+          linked={data.linkedEntities.filter((l) => l.kind === "app_user")}
+          onRelink={(kind, id) => setDialog({ type: "relink", kind, id })}
+          onUnlink={(kind, id, label) => setDialog({ type: "unlink", kind, id, label })}
+          actions={
+            person.status === "ACTIVE" && !data.linkedEntities.some((l) => l.kind === "app_user") ? (
+              <>
+                {caps.canCreateUsers ? (
+                  <button type="button" onClick={() => setDialog({ type: "enable-access" })} className="rounded-lg bg-primary px-2.5 py-1 text-[11px] font-semibold text-primary-foreground" data-testid="person-enable-access-open">
+                    Habilitar acesso ao IndusCost
+                  </button>
+                ) : null}
+                {caps.canManagePersonLink ? (
+                  <button type="button" onClick={() => setDialog({ type: "attach-account", accountId: null })} className="rounded-lg border border-border px-2.5 py-1 text-[11px] font-semibold hover:bg-muted" data-testid="person-attach-account-open">
+                    Regularizar vínculo existente
+                  </button>
+                ) : null}
+              </>
+            ) : null
+          }
+        />
+        <RoleSection
+          roleKey="fleetDriver"
+          state={linkStates.fleetDriver}
+          cards={cardsFor(ROLE_META.fleetDriver.kinds)}
+          pending={pendingFor("fleet_driver")}
+          canView={caps.canViewFleet}
+          canManage={caps.canManagePersonLink}
+          linked={data.linkedEntities.filter((l) => l.kind === "fleet_driver")}
+          onRelink={(kind, id) => setDialog({ type: "relink", kind, id })}
+          onUnlink={(kind, id, label) => setDialog({ type: "unlink", kind, id, label })}
+          actions={
+            person.status === "ACTIVE" && caps.canManageDrivers && linkStates.fleetDriver !== "LINKED" ? (
+              <button type="button" onClick={() => setDialog({ type: "enable-driver" })} className="rounded-lg bg-primary px-2.5 py-1 text-[11px] font-semibold text-primary-foreground" data-testid="person-enable-driver-open">
+                Habilitar motorista
+              </button>
+            ) : null
+          }
+        />
         <RoleSection roleKey="commissionPerson" state={linkStates.commissionPerson} cards={cardsFor(ROLE_META.commissionPerson.kinds)} pending={pendingFor("commission_person")} canView={caps.canViewCommissions} canManage={caps.canManagePersonLink} linked={data.linkedEntities.filter((l) => l.kind === "commission_person")} onRelink={(kind, id) => setDialog({ type: "relink", kind, id })} onUnlink={(kind, id, label) => setDialog({ type: "unlink", kind, id, label })} />
       </div>
 
@@ -344,6 +423,11 @@ export function PersonProfilePage({ personId }: { personId: string }) {
       {dialog?.type === "unlink" ? <UnlinkDialog personId={person.id} entityKind={dialog.kind} entityId={dialog.id} label={dialog.label} onClose={() => setDialog(null)} onDone={() => { setDialog(null); void load(); }} /> : null}
       {dialog?.type === "merge" ? <MergeDialog personId={person.id} otherPersonId={dialog.otherPersonId} onClose={() => setDialog(null)} onDone={() => { setDialog(null); void load(); }} runWithStepUp={stepUp.run} /> : null}
       {dialog?.type === "revert" ? <RevertMergeDialog personId={person.id} eventId={dialog.eventId} onClose={() => setDialog(null)} onDone={() => { setDialog(null); void load(); }} runWithStepUp={stepUp.run} /> : null}
+      {dialog?.type === "edit" ? <PersonFormDialog personId={person.id} onClose={() => setDialog(null)} onDone={() => { setDialog(null); void load(); }} /> : null}
+      {dialog?.type === "status" ? <PersonStatusDialog personId={person.id} nextStatus={dialog.next} onClose={() => setDialog(null)} onDone={() => { setDialog(null); void load(); }} /> : null}
+      {dialog?.type === "enable-access" ? <EnableAccessDialog personId={person.id} suggestedName={person.displayName} suggestedEmail={caps.canViewPii ? person.corporateEmail : null} hasEmployee={data.linkedEntities.some((l) => l.kind === "employee")} onClose={() => setDialog(null)} onDone={() => { setDialog(null); void load(); }} /> : null}
+      {dialog?.type === "attach-account" ? <AttachAccountDialog personId={person.id} initialAccountId={dialog.accountId} runWithStepUp={stepUp.run} onClose={() => setDialog(null)} onDone={() => { setDialog(null); void load(); }} /> : null}
+      {dialog?.type === "enable-driver" ? <EnableDriverDialog personId={person.id} onClose={() => setDialog(null)} onDone={() => { setDialog(null); void load(); }} /> : null}
       {stepUp.dialog}
     </div>
   );

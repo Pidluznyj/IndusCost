@@ -3,7 +3,7 @@
  * Não cria login, não altera e-mail de login, não desativa usuário no desligamento.
  */
 
-import type { PrismaClient } from "@prisma/client";
+import { Prisma, type PrismaClient } from "@prisma/client";
 import { normalizeCorporateEmail } from "@/src/lib/employeeCorporateEmail.js";
 import {
   EmployeeRegistrationError,
@@ -211,6 +211,17 @@ export async function linkEmployeeToAppUser(
         409
       );
     }
+    if (emp.personId && !user.personId) {
+      // Cadastro mestre: Pessoa inativa nunca é copiada para a conta em silêncio.
+      const person = await tx.person.findUnique({ where: { id: emp.personId }, select: { status: true } });
+      if (person && person.status !== "ACTIVE") {
+        throw new EmployeeRegistrationError(
+          "PERSON_INACTIVE",
+          "A Pessoa deste colaborador está inativa ou unificada. Resolva a identidade em Pessoas 360° antes de vincular a conta.",
+          409
+        );
+      }
+    }
     if (user.personId && emp.personId && user.personId !== emp.personId) {
       throw new EmployeeRegistrationError(
         "PERSON_MISMATCH",
@@ -219,14 +230,41 @@ export async function linkEmployeeToAppUser(
       );
     }
 
-    const updated = await tx.appUser.update({
-      where: { id: user.id },
-      data: {
-        employeeId,
-        ...(emp.personId && !user.personId ? { personId: emp.personId } : {}),
-      },
-      select: { id: true, email: true, isActive: true, role: true, name: true },
-    });
+    let updated: { id: string; email: string; isActive: boolean; role: string; name: string };
+    try {
+      updated = await tx.appUser.update({
+        where: { id: user.id },
+        data: {
+          employeeId,
+          ...(emp.personId && !user.personId ? { personId: emp.personId } : {}),
+        },
+        select: { id: true, email: true, isActive: true, role: true, name: true },
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+        throw new EmployeeRegistrationError(
+          "PERSON_ALREADY_HAS_USER",
+          "A Pessoa deste colaborador já tem outra conta de acesso. Corrija o vínculo em Pessoas 360°.",
+          409
+        );
+      }
+      throw error;
+    }
+    if (emp.personId && !user.personId) {
+      const { recordPersonLinkEvent, PERSON_LINK_EVENT_KINDS } = await import("@/src/lib/people/personLinkEvents.server.js");
+      await recordPersonLinkEvent(tx, {
+        personId: emp.personId,
+        eventKind: PERSON_LINK_EVENT_KINDS.LINKED,
+        entityKind: "app_user",
+        entityId: user.id,
+        toPersonId: emp.personId,
+        actorUserId: opts?.actorUserId ?? null,
+        reason: "Conta vinculada ao colaborador pelo RH (e-mail corporativo igual)",
+        evidence: "EMAIL_EXACT",
+        snapshot: { employeeId, source: "HR_LINK_USER" },
+        reversible: true,
+      });
+    }
 
     console.info(
       JSON.stringify({

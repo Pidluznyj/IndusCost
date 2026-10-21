@@ -25,6 +25,9 @@ import { classifyCustomerDocument, maskCpf, normalizeEmailLoose } from "../src/l
 const args = process.argv.slice(2);
 const asJson = args.includes("--json");
 const asCsv = args.includes("--csv");
+/** --only=CATEGORIA[,CATEGORIA] restringe a saída (o resumo continua completo). */
+const onlyArg = args.find((a) => a.startsWith("--only="));
+const onlyCategories = onlyArg ? new Set(onlyArg.slice("--only=".length).split(",").map((c) => c.trim()).filter(Boolean)) : null;
 
 type Finding = {
   categoria:
@@ -33,6 +36,8 @@ type Finding = {
     | "USUARIO_SEM_PESSOA"
     | "USUARIO_SEM_COLABORADOR"
     | "USUARIO_PESSOA_DIVERGE_DO_COLABORADOR"
+    | "USUARIO_COLABORADOR_PESSOA_INATIVA"
+    | "USUARIO_EMAIL_DIVERGE_DO_COLABORADOR"
     | "COLABORADOR_SEM_PESSOA"
     | "COMISSIONADO_SEM_PESSOA"
     | "MOTORISTA_SEM_PESSOA"
@@ -138,6 +143,29 @@ async function main() {
         }
       } else {
         const emp = employeeById.get(u.employeeId);
+        if (emp && emp.personId) {
+          const empPerson = personById.get(emp.personId);
+          if (empPerson && !isActive(empPerson.status)) {
+            findings.push({
+              categoria: "USUARIO_COLABORADOR_PESSOA_INATIVA",
+              quem: who,
+              detalhe: `colaborador ${emp.name} (${String(emp.status)}) aponta para Pessoa "${empPerson.displayName}" com situação ${empPerson.status} — reativar a Pessoa antes de regularizar a conta`,
+              ids: `${short(u.id)}→${short(emp.personId)}`,
+            });
+          }
+        }
+        if (emp) {
+          const loginEmail = normalizeEmailLoose(u.email);
+          const corpEmail = normalizeEmailLoose(emp.corporateEmail);
+          if (loginEmail && corpEmail && loginEmail !== corpEmail) {
+            findings.push({
+              categoria: "USUARIO_EMAIL_DIVERGE_DO_COLABORADOR",
+              quem: who,
+              detalhe: `e-mail de login difere do e-mail corporativo do colaborador ${emp.name} (vínculo por employeeId continua válido; confirmar ao regularizar)`,
+              ids: `${short(u.id)}→${short(emp.id)}`,
+            });
+          }
+        }
         if (emp && u.personId && emp.personId && emp.personId !== u.personId) {
           findings.push({
             categoria: "USUARIO_PESSOA_DIVERGE_DO_COLABORADOR",
@@ -185,12 +213,20 @@ async function main() {
       USUARIO_SEM_COLABORADOR: count("USUARIO_SEM_COLABORADOR"),
       VINCULO_USUARIO_COLABORADOR_PENDENTE: count("VINCULO_USUARIO_COLABORADOR_PENDENTE"),
       USUARIO_PESSOA_DIVERGE_DO_COLABORADOR: count("USUARIO_PESSOA_DIVERGE_DO_COLABORADOR"),
+      USUARIO_COLABORADOR_PESSOA_INATIVA: count("USUARIO_COLABORADOR_PESSOA_INATIVA"),
+      USUARIO_EMAIL_DIVERGE_DO_COLABORADOR: count("USUARIO_EMAIL_DIVERGE_DO_COLABORADOR"),
       COLABORADOR_SEM_PESSOA: count("COLABORADOR_SEM_PESSOA"),
       COMISSIONADO_SEM_PESSOA: count("COMISSIONADO_SEM_PESSOA"),
       MOTORISTA_SEM_PESSOA: count("MOTORISTA_SEM_PESSOA"),
       CLIENTE_PF_SEM_PESSOA: count("CLIENTE_PF_SEM_PESSOA"),
       PESSOA_SEM_PAPEL: count("PESSOA_SEM_PAPEL"),
     };
+
+    if (onlyCategories) {
+      const kept = findings.filter((f) => onlyCategories.has(f.categoria));
+      findings.length = 0;
+      findings.push(...kept);
+    }
 
     if (asCsv) {
       const cell = (v: unknown) => {
