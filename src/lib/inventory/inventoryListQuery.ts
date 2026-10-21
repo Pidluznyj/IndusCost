@@ -48,6 +48,8 @@ export type InventoryBalancesListQuery = {
   itemType: InventoryItemType | null;
   status: "ACTIVE" | "INACTIVE" | null;
   family: string | null;
+  /** Famílias exatas (OR). Vazio = todas; prevalece sobre `family`. */
+  families: string[];
   group: string | null;
   belowMinimum: boolean;
   belowReorderPoint: boolean;
@@ -127,6 +129,22 @@ function parseItemStatus(value: unknown): "ACTIVE" | "INACTIVE" | null {
 function optTrim(value: unknown): string | null {
   const t = safeTrim(value);
   return t.length ? t : null;
+}
+
+/** `families=A&families=B` ou um único valor. Não parte nomes por vírgula. */
+export function parseInventoryFamilyList(value: unknown): string[] {
+  const parts = Array.isArray(value) ? value : value == null ? [] : [value];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const part of parts) {
+    const t = safeTrim(part);
+    if (!t) continue;
+    const key = t.toLocaleUpperCase("pt-BR");
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(t);
+  }
+  return out;
 }
 
 function parseDate(value: unknown): Date | null {
@@ -217,6 +235,7 @@ export function parseInventoryBalancesListQuery(
     itemType: parseItemType(query.itemType),
     status: parseItemStatus(query.status),
     family: optTrim(query.family),
+    families: parseInventoryFamilyList(query.families),
     group: optTrim(query.group),
     belowMinimum: parseBool(query.belowMinimum),
     belowReorderPoint: parseBool(query.belowReorderPoint),
@@ -246,6 +265,7 @@ export function parseInventoryBalanceReportQuery(
     itemType: parsed.itemType,
     status: parsed.status,
     family: parsed.family,
+    families: parsed.families,
     group: parsed.group,
     belowMinimum: parsed.belowMinimum,
     belowReorderPoint: parsed.belowReorderPoint,

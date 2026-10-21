@@ -162,6 +162,15 @@ describe("inventoryUx", () => {
     assert.match(balances, /Segurança/);
     assert.match(balances, /inventory-balances-alerts/);
     assert.match(balances, /safetyStock/);
+    assert.match(balances, /inventory-balances-report-panel/);
+    assert.match(balances, /Situação do saldo/);
+    assert.match(balances, /InventoryFamilyMultiSelect/);
+    assert.match(balances, /q\.append\("families", name\)/);
+    assert.match(balances, /\/api\/inventory\/items\/families/);
+    const familySelect = read("src/components/inventory/InventoryFamilyMultiSelect.tsx");
+    assert.match(familySelect, /inventory-balances-filter-family/);
+    assert.match(familySelect, /Todas/);
+    assert.match(familySelect, /aria-multiselectable="true"/);
   });
 
   it("11. estorno autorizado no detalhe da movimentação", () => {
@@ -173,8 +182,11 @@ describe("inventoryUx", () => {
 
   it("12. dashboard KPIs fazem drill-down", () => {
     const dash = read("src/components/inventory/InventoryDashboardTab.tsx");
-    assert.match(dash, /\/inventory\/balances\?belowMinimum=1/);
-    assert.match(dash, /\/inventory\/reservations/);
-    assert.match(dash, /inventory-kpi-below-minimum/);
+    assert.match(dash, /to="\/inventory\/balances"/);
+    assert.match(dash, /to="\/inventory\/items"/);
+    assert.match(dash, /to="\/inventory\/movements"/);
+    assert.match(dash, /inventory-kpi-sales-potential/);
+    assert.match(dash, /inventory-kpi-industrial-cost/);
+    assert.match(dash, /inventory-kpi-items/);
   });
 });
