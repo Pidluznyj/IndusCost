@@ -139,13 +139,7 @@ async function seedQuodCache(store: ReturnType<typeof createMemoryQuodStore>, no
     requestedByRole: "SUPER_ADMIN",
     authorizedCostCents: 699,
     now,
-    monthlyLimitCents: 20000,
-    monthStart: new Date(now.getFullYear(), now.getMonth(), 1),
-    monthEnd: new Date(now.getFullYear(), now.getMonth() + 1, 1),
-    maxPerCnpj: 5,
-    intervalStart: new Date(0),
     forceRefresh: true,
-    cacheTtlMs: 7 * 24 * 60 * 60 * 1000,
   });
   if (reserved.ok === false) throw new Error("seed quod");
   await store.complete(reserved.row.id, {
@@ -167,13 +161,7 @@ async function seedIeptbCache(store: ReturnType<typeof createMemoryIeptbStore>, 
     requestedByRole: "SUPER_ADMIN",
     authorizedCostCents: 350,
     now,
-    monthlyLimitCents: 20000,
-    monthStart: new Date(now.getFullYear(), now.getMonth(), 1),
-    monthEnd: new Date(now.getFullYear(), now.getMonth() + 1, 1),
-    maxPerCnpj: 5,
-    intervalStart: new Date(0),
     forceRefresh: true,
-    cacheTtlMs: 7 * 24 * 60 * 60 * 1000,
   });
   if (reserved.ok === false) throw new Error("seed ieptb");
   await store.complete(reserved.row.id, {
@@ -337,24 +325,62 @@ describe("execução do pacote", () => {
     assert.equal(outcome.charged, false);
   });
 
-  it("orçamento global compartilhado bloqueia o pacote de 10,49", async () => {
+  it("não impõe teto mensal próprio: env de limite é ignorado", async () => {
     const quodStore = createMemoryQuodStore();
     const ieptbStore = createMemoryIeptbStore();
     const outcome = await executeCreditIntelligencePackage({
       quodStore,
       ieptbStore,
-      config: config({ ...enabledEnv, CREDIT_INTELLIGENCE_MONTHLY_LIMIT_CENTS: "699" }),
+      config: config({
+        ...enabledEnv,
+        CREDIT_INTELLIGENCE_MONTHLY_LIMIT_CENTS: "0",
+        QUOD_DOSSIER_MONTHLY_LIMIT_CENTS: "0",
+        IEPTB_ONLINE_MONTHLY_LIMIT_CENTS: "0",
+      }),
       customerId: CUSTOMER,
       companyName: "Duarte",
       cnpj: CNPJ,
       consent: true,
-      idempotencyKey: "pkg-budget",
+      idempotencyKey: "pkg-no-budget",
       userId: "admin",
       role: "SUPER_ADMIN",
-      fetchImpl: fetchMock(() => quodBody()),
+      fetchImpl: (async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes("ProtestosOnline")) return new Response(JSON.stringify(ieptbBody(false)), { status: 200 });
+        return new Response(JSON.stringify(quodBody()), { status: 200 });
+      }) as typeof fetch,
     });
-    assert.equal(outcome.code, "BUDGET");
+    assert.equal(outcome.code, "OK");
+    assert.equal(outcome.charged, true);
+  });
+
+  it("saldo insuficiente da Direct Data não cobra e explica o erro", async () => {
+    const quodStore = createMemoryQuodStore();
+    const ieptbStore = createMemoryIeptbStore();
+    const outcome = await executeCreditIntelligencePackage({
+      quodStore,
+      ieptbStore,
+      config: config(),
+      customerId: CUSTOMER,
+      companyName: "Duarte",
+      cnpj: CNPJ,
+      consent: true,
+      idempotencyKey: "pkg-saldo",
+      userId: "admin",
+      role: "SUPER_ADMIN",
+      fetchImpl: (async () =>
+        new Response(
+          JSON.stringify({
+            metaDados: { resultado: "SaldoInsuficiente", mensagem: "Saldo insuficiente." },
+          }),
+          { status: 200 }
+        )) as typeof fetch,
+    });
+    assert.equal(outcome.code, "INSUFFICIENT_BALANCE");
     assert.equal(outcome.charged, false);
+    assert.match(outcome.message, /Saldo insuficiente na Direct Data/);
+    assert.equal(quodStore.rows[0]?.billingStatus, "NOT_SENT");
+    assert.equal(quodStore.rows[0]?.status, "FAILED");
   });
 
   it("timeout do IEPTB não reenvia o QUOD já gravado", async () => {

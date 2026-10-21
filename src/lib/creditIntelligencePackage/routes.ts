@@ -8,6 +8,10 @@ import type { IeptbStore } from "@/src/lib/ieptbOnline/store.js";
 import { publicQuodStatus } from "@/src/lib/quodDossier/query.js";
 import { createPrismaQuodStore } from "@/src/lib/quodDossier/store.server.js";
 import type { QuodStore } from "@/src/lib/quodDossier/store.js";
+import {
+  paidConsultationHttpStatus,
+  paidConsultationMessage,
+} from "@/src/lib/directData/paidConsultationMessages.js";
 import { composePackageQuote, type PackageSourceState } from "./compose.js";
 import { formatPackagePrice, readCreditIntelligencePackageConfig } from "./config.js";
 import { executeCreditIntelligencePackage, packagePriceSummary } from "./execute.js";
@@ -207,7 +211,8 @@ export function registerCreditIntelligencePackageRoutes(
         performedBy: userId,
         newValue: JSON.stringify({ code: "CONSENT_REQUIRED", charged: false }),
       });
-      res.status(422).json({ code: "CONSENT_REQUIRED", charged: false, complete: false });
+      const message = paidConsultationMessage("CONSENT_REQUIRED");
+      res.status(422).json({ code: "CONSENT_REQUIRED", error: message, message, charged: false, complete: false });
       return;
     }
     const outcome = await executeCreditIntelligencePackage({
@@ -238,21 +243,12 @@ export function registerCreditIntelligencePackageRoutes(
         ieptbCharged: outcome.quote.ieptb.action === "QUERY",
       }),
     });
-    const status =
-      outcome.code === "OK"
-        ? 200
-        : outcome.code === "CONSENT_REQUIRED"
-          ? 422
-          : outcome.code === "BUDGET" ||
-              outcome.code === "IN_FLIGHT" ||
-              outcome.code === "UNKNOWN_BILLING" ||
-              outcome.code === "DISABLED"
-            ? 409
-            : outcome.code === "PARTIAL"
-              ? 207
-              : 400;
+    const message = outcome.message || paidConsultationMessage(outcome.code);
+    const status = paidConsultationHttpStatus(outcome.code);
     res.status(status).json({
       code: outcome.code,
+      error: outcome.code === "OK" ? undefined : message,
+      message,
       charged: outcome.charged,
       complete: outcome.complete,
       quote: outcome.quote,

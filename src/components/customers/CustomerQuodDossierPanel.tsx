@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { fetchJsonOk } from "@/src/lib/http";
+import { paidConsultationMessage } from "@/src/lib/directData/paidConsultationMessages";
+import { fetchJsonOk, HttpError } from "@/src/lib/http";
 import { formatCreditDateTime } from "@/src/lib/commercial/commercialCreditIntelligenceView";
 import type { IeptbSections } from "@/src/lib/ieptbOnline/parse";
 import { generateIdempotencyKey, SecureRandomUnavailableError } from "@/src/lib/quodDossier/idempotencyKey";
@@ -133,7 +134,15 @@ export function CustomerQuodDossierPanel({
       setShowIeptb(true);
       await load();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "A análise completa não foi concluída.");
+      if (error instanceof HttpError) {
+        const mapped = error.code ? paidConsultationMessage(error.code) : "";
+        const raw = error.message.trim();
+        setMessage(
+          raw && !/^Erro HTTP \d+/.test(raw) ? raw : mapped || "A análise completa não foi concluída."
+        );
+      } else {
+        setMessage(error instanceof Error ? error.message : "A análise completa não foi concluída.");
+      }
     } finally {
       setSubmitting(false);
     }

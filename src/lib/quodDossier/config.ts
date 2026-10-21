@@ -1,6 +1,6 @@
 /**
  * Configuração do Dossiê QUOD Completo (Direct Data API v3).
- * Credencial só no processo. Preço e teto não ficam fixos no código de negócio.
+ * Credencial só no processo. O saldo financeiro é controlado pela Direct Data.
  */
 
 export const QUOD_DOSSIER_PRODUCT = "Dossiê QUOD Completo";
@@ -19,9 +19,6 @@ export type QuodDossierConfig = {
   unitPriceCents: number;
   timeoutMs: number;
   cacheTtlMs: number;
-  monthlyLimitCents: number;
-  maxPerCnpj: number;
-  cnpjIntervalMs: number;
   rateLimitPerMinute: number;
 };
 
@@ -47,51 +44,12 @@ export function readQuodDossierConfig(env: NodeJS.ProcessEnv = process.env): Quo
     unitPriceCents: positiveInt(env.QUOD_DOSSIER_UNIT_PRICE_CENTS, 699),
     timeoutMs: Math.max(1000, positiveInt(env.QUOD_DOSSIER_TIMEOUT_MS, 20000)),
     cacheTtlMs,
-    monthlyLimitCents: positiveInt(env.QUOD_DOSSIER_MONTHLY_LIMIT_CENTS, 0),
-    maxPerCnpj: Math.max(1, positiveInt(env.QUOD_DOSSIER_MAX_PER_CNPJ, 1)),
-    cnpjIntervalMs: positiveInt(env.QUOD_DOSSIER_CNPJ_INTERVAL_MS, cacheTtlMs) || cacheTtlMs,
     rateLimitPerMinute: Math.max(1, positiveInt(env.QUOD_DOSSIER_RATE_LIMIT_PER_MINUTE, 5)),
   };
 }
 
 export function formatQuodPrice(cents: number): string {
   return (cents / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-}
-
-export function quodBudgetMonthWindow(now: Date): { start: Date; end: Date } {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/Sao_Paulo",
-    year: "numeric",
-    month: "2-digit",
-  }).format(now);
-  const [yearText, monthText] = parts.split("-");
-  const year = Number(yearText);
-  const month = Number(monthText);
-  const start = civilInstant(year, month, 1);
-  const end = month === 12 ? civilInstant(year + 1, 1, 1) : civilInstant(year, month + 1, 1);
-  return { start, end };
-}
-
-function civilInstant(year: number, month: number, day: number): Date {
-  let utc = Date.UTC(year, month - 1, day, 3, 0, 0);
-  for (let attempt = 0; attempt < 4; attempt += 1) {
-    const parts = new Intl.DateTimeFormat("en-US", {
-      timeZone: "America/Sao_Paulo",
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      hourCycle: "h23",
-    }).formatToParts(new Date(utc));
-    const read = (type: string) => Number(parts.find((part) => part.type === type)?.value);
-    const dayDelta = Date.UTC(year, month - 1, day) - Date.UTC(read("year"), read("month") - 1, read("day"));
-    const minuteDelta = -1 * (read("hour") * 60 + read("minute"));
-    const next = utc + dayDelta + minuteDelta * 60_000;
-    if (next === utc) break;
-    utc = next;
-  }
-  return new Date(utc);
 }
 
 /** Só SUPER_ADMIN dispara consulta paga QUOD/IEPTB. A leitura do resultado é autenticada. */

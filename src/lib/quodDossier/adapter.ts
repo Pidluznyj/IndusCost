@@ -1,16 +1,15 @@
+import {
+  classifyDirectDataHttpResponse,
+  classifyDirectDataNetworkError,
+  type ClassifiedDirectDataResponse,
+} from "@/src/lib/directData/classifyProviderResponse.js";
 import { QUOD_DOSSIER_PATH, type QuodDossierConfig } from "./config.js";
 
-export type QuodProviderResult =
-  | { outcome: "SUCCESS"; status: number; body: unknown }
-  | { outcome: "AUTH"; status: number }
-  | { outcome: "RATE_LIMIT"; status: number }
-  | { outcome: "HTTP_ERROR"; status: number }
-  | { outcome: "TIMEOUT" }
-  | { outcome: "NETWORK" };
+export type QuodProviderResult = ClassifiedDirectDataResponse;
 
 /**
- * Uma chamada. Sem retry: timeout e 5xx podem já ter sido cobrados pelo provedor.
- * O contrato vigente da Direct Data é GET com Authorization Bearer. O token não vai na URL.
+ * Uma chamada. Sem retry: timeout local e 5xx sem resultado oficial podem já ter sido cobrados.
+ * Contrato Direct Data: GET com Authorization Bearer. O token não vai na URL.
  */
 export async function fetchQuodDossier(input: {
   cnpj: string;
@@ -28,16 +27,10 @@ export async function fetchQuodDossier(input: {
       headers: { Authorization: `Bearer ${input.config.token}`, Accept: "application/json" },
       signal: controller.signal,
     });
-    if (response.status === 401 || response.status === 403) return { outcome: "AUTH", status: response.status };
-    if (response.status === 429) return { outcome: "RATE_LIMIT", status: response.status };
-    if (response.status >= 500) return { outcome: "HTTP_ERROR", status: response.status };
-    if (!response.ok) return { outcome: "HTTP_ERROR", status: response.status };
     const body: unknown = await response.json().catch(() => null);
-    return { outcome: "SUCCESS", status: response.status, body };
+    return classifyDirectDataHttpResponse(response.status, body);
   } catch (error) {
-    const name = error instanceof Error ? error.name : "";
-    if (name === "AbortError") return { outcome: "TIMEOUT" };
-    return { outcome: "NETWORK" };
+    return classifyDirectDataNetworkError(error);
   } finally {
     clearTimeout(timer);
   }

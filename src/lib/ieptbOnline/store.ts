@@ -34,14 +34,13 @@ export type IeptbConsultationRecord = {
 export type IeptbReserveResult =
   | { ok: true; row: IeptbConsultationRecord }
   | { ok: false; code: "IDEMPOTENT"; row: IeptbConsultationRecord }
-  | { ok: false; code: "IN_FLIGHT" | "UNKNOWN_BILLING" | "BUDGET" | "INTERVAL" | "CACHE_VALID" };
+  | { ok: false; code: "IN_FLIGHT" | "UNKNOWN_BILLING" | "CACHE_VALID" };
 
 export type IeptbStore = {
   findByIdempotency(key: string): Promise<IeptbConsultationRecord | null>;
   findLatestSucceeded(customerId: string): Promise<IeptbConsultationRecord | null>;
   findById(id: string): Promise<IeptbConsultationRecord | null>;
   listByCustomer(customerId: string): Promise<IeptbConsultationRecord[]>;
-  monthSpend(monthStart: Date, monthEnd: Date): Promise<number>;
   reserve(input: {
     customerId: string;
     companyName: string;
@@ -51,13 +50,7 @@ export type IeptbStore = {
     requestedByRole: string;
     authorizedCostCents: number;
     now: Date;
-    monthlyLimitCents: number;
-    monthStart: Date;
-    monthEnd: Date;
-    maxPerCnpj: number;
-    intervalStart: Date;
     forceRefresh: boolean;
-    cacheTtlMs: number;
   }): Promise<IeptbReserveResult>;
   markSent(id: string): Promise<void>;
   complete(

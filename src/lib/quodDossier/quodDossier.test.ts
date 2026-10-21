@@ -183,10 +183,11 @@ describe("dossiê QUOD", () => {
     const first = await post(server.base, { consent: true, idempotencyKey: "chave-primeira" }, server.base);
     assert.equal(first.status, 200);
     const cached = await post(server.base, { consent: true, idempotencyKey: "chave-segunda" }, server.base);
-    assert.equal(cached.status, 409);
-    const cachedBody = await cached.json() as { code: string; charged: boolean };
+    assert.equal(cached.status, 200);
+    const cachedBody = await cached.json() as { code: string; charged: boolean; message: string };
     assert.equal(cachedBody.code, "CACHE_VALID");
     assert.equal(cachedBody.charged, false);
+    assert.match(cachedBody.message, /cache ainda é válida/);
     assert.equal(calls, 1);
     const view = await fetch(`${server.base}/api/customers/${CUSTOMER}/quod-dossier`, { headers: { origin: server.base } });
     assert.equal(view.status, 200);
@@ -198,9 +199,62 @@ describe("dossiê QUOD", () => {
     await server.close();
   });
 
-  it("estoura orçamento, duplica concorrência, timeout sem retry, 401, 429 e 5xx", async () => {
+  it("teto mensal 0 e maxPerCnpj não bloqueiam; reconsulta antecipada cobra de novo", async () => {
     resetQuodDossierRateLimit();
-    const budgetEnv = { ...enabledEnv, QUOD_DOSSIER_MONTHLY_LIMIT_CENTS: "699", QUOD_DOSSIER_MAX_PER_CNPJ: "5" };
+    let calls = 0;
+    const fetchImpl: typeof fetch = async () => {
+      calls += 1;
+      return new Response(JSON.stringify(dossier(100, false)), { status: 200 });
+    };
+    const env = {
+      ...enabledEnv,
+      QUOD_DOSSIER_MONTHLY_LIMIT_CENTS: "0",
+      QUOD_DOSSIER_MAX_PER_CNPJ: "1",
+      QUOD_DOSSIER_CNPJ_INTERVAL_MS: "604800000",
+    };
+    const { app } = appFor("SUPER_ADMIN", { fetchImpl, env, now: () => new Date("2026-10-20T12:00:00.000Z") });
+    const server = await listen(app);
+    const first = await post(server.base, { consent: true, idempotencyKey: "limite-1" }, server.base);
+    assert.equal(first.status, 200);
+    const again = await post(
+      server.base,
+      { consent: true, idempotencyKey: "limite-2", forceRefresh: true },
+      server.base
+    );
+    const againBody = await again.json() as { code: string; charged: boolean };
+    assert.equal(again.status, 200);
+    assert.equal(againBody.code, "OK");
+    assert.equal(againBody.charged, true);
+    assert.equal(calls, 2);
+    await server.close();
+  });
+
+  it("saldo insuficiente da Direct Data não cobra e devolve mensagem específica", async () => {
+    resetQuodDossierRateLimit();
+    const fetchImpl: typeof fetch = async () =>
+      new Response(
+        JSON.stringify({ metaDados: { resultado: "SaldoInsuficiente", mensagem: "Saldo insuficiente." } }),
+        { status: 200 }
+      );
+    const { app, store } = appFor("SUPER_ADMIN", { fetchImpl, env: { ...enabledEnv, QUOD_DOSSIER_MONTHLY_LIMIT_CENTS: "0" } });
+    const server = await listen(app);
+    try {
+      const response = await post(server.base, { consent: true, idempotencyKey: "saldo-insuficiente-1" }, server.base);
+      const body = await response.json() as { code: string; message: string; charged: boolean };
+      assert.equal(response.status, 402);
+      assert.equal(body.code, "INSUFFICIENT_BALANCE");
+      assert.equal(body.charged, false);
+      assert.match(body.message, /Saldo insuficiente na Direct Data/);
+      assert.doesNotMatch(body.message, /Erro HTTP 409/);
+      assert.equal(store.rows[0]?.billingStatus, "NOT_SENT");
+      assert.equal(store.rows[0]?.status, "FAILED");
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("duplica concorrência, timeout sem retry, 401, 429 e 5xx", async () => {
+    resetQuodDossierRateLimit();
     let mode = "ok";
     let calls = 0;
     const fetchImpl: typeof fetch = async (_input, init) => {
@@ -219,16 +273,6 @@ describe("dossiê QUOD", () => {
       if (mode === "500") return new Response("{}", { status: 500 });
       return new Response(JSON.stringify(dossier(100, false)), { status: 200 });
     };
-    const budget = appFor("SUPER_ADMIN", { fetchImpl, env: budgetEnv, now: () => new Date("2026-10-20T12:00:00.000Z") });
-    const budgetServer = await listen(budget.app);
-    assert.equal((await post(budgetServer.base, { consent: true, idempotencyKey: "orcamento-1" }, budgetServer.base)).status, 200);
-    const stored = budget.store.rows[0];
-    if (stored) stored.validUntil = "2020-01-01T00:00:00.000Z";
-    const blocked = await post(budgetServer.base, { consent: true, idempotencyKey: "orcamento-2" }, budgetServer.base);
-    assert.equal((await blocked.json() as { code: string }).code, "BUDGET");
-    assert.equal(calls, 1);
-    await budgetServer.close();
-
     calls = 0;
     const concurrentStore = createMemoryQuodStore();
     const concurrent = appFor("SUPER_ADMIN", { fetchImpl, env: enabledEnv, store: concurrentStore });

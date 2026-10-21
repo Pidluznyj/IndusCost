@@ -99,5 +99,7 @@ describe("confirmação do dossiê QUOD", () => {
     assert.match(panel, /submitting/);
     assert.equal(panel.includes("if (!isSuperAdmin || !customerId)"), false);
     assert.match(panel, /canConsult=\{isSuperAdmin\}/);
+    assert.match(panel, /paidConsultationMessage/);
+    assert.doesNotMatch(panel, /Erro HTTP 409/);
   });
 });

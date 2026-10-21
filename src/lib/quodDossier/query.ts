@@ -1,5 +1,6 @@
+import { paidQueryCodeFromProvider } from "@/src/lib/directData/classifyProviderResponse.js";
 import { fetchQuodDossier, type QuodProviderResult } from "./adapter.js";
-import { quodBudgetMonthWindow, type QuodDossierConfig } from "./config.js";
+import type { QuodDossierConfig } from "./config.js";
 import { parseQuodDossier, quodPartnerPreview } from "./parse.js";
 import type { QuodConsultationRecord, QuodStore } from "./store.js";
 
@@ -9,12 +10,13 @@ export type QuodQueryCode =
   | "CONSENT_REQUIRED"
   | "INVALID_CNPJ"
   | "CACHE_VALID"
-  | "BUDGET"
-  | "INTERVAL"
   | "IN_FLIGHT"
   | "UNKNOWN_BILLING"
+  | "INSUFFICIENT_BALANCE"
   | "AUTH"
+  | "UNAVAILABLE"
   | "RATE_LIMIT"
+  | "INVALID_INPUT"
   | "HTTP_ERROR"
   | "TIMEOUT"
   | "NETWORK"
@@ -26,6 +28,7 @@ export type QuodQueryOutcome = {
   code: QuodQueryCode;
   charged: boolean;
   row: QuodConsultationRecord | null;
+  message?: string | null;
 };
 
 export async function executePaidQuodConsultation(input: {
@@ -47,7 +50,6 @@ export async function executePaidQuodConsultation(input: {
   if (!input.config.token) return { code: "TOKEN_MISSING", charged: false, row: null };
   if (input.consent !== true) return { code: "CONSENT_REQUIRED", charged: false, row: null };
   if (!/^\d{14}$/.test(input.cnpj)) return { code: "INVALID_CNPJ", charged: false, row: null };
-  const month = quodBudgetMonthWindow(now);
   const reserved = await input.store.reserve({
     customerId: input.customerId,
     companyName: input.companyName,
@@ -57,13 +59,7 @@ export async function executePaidQuodConsultation(input: {
     requestedByRole: input.role,
     authorizedCostCents: input.config.unitPriceCents,
     now,
-    monthlyLimitCents: input.config.monthlyLimitCents,
-    monthStart: month.start,
-    monthEnd: month.end,
-    maxPerCnpj: input.config.maxPerCnpj,
-    intervalStart: new Date(now.getTime() - input.config.cnpjIntervalMs),
     forceRefresh: input.forceRefresh === true,
-    cacheTtlMs: input.config.cacheTtlMs,
   });
   if (reserved.ok === false) {
     if (reserved.code === "IDEMPOTENT") return { code: "OK", charged: false, row: reserved.row };
@@ -71,6 +67,7 @@ export async function executePaidQuodConsultation(input: {
       code: reserved.code,
       charged: false,
       row: reserved.code === "CACHE_VALID" ? await input.store.findLatestSucceeded(input.customerId) : null,
+      message: reserved.code === "CACHE_VALID" ? null : undefined,
     };
   }
   await input.store.markSent(reserved.row.id);
@@ -85,19 +82,20 @@ async function finishProviderCall(
   now: Date,
   cacheTtlMs: number
 ): Promise<QuodQueryOutcome> {
-  if (provider.outcome === "AUTH") {
-    await store.complete(row.id, { status: "FAILED", billingStatus: "NOT_SENT", providerHttpStatus: provider.status, failureCode: "AUTH" });
-    return { code: "AUTH", charged: false, row: await store.findById(row.id) };
-  }
-  if (provider.outcome !== "SUCCESS") {
-    const code = provider.outcome === "TIMEOUT" ? "TIMEOUT" : provider.outcome === "RATE_LIMIT" ? "RATE_LIMIT" : provider.outcome === "NETWORK" ? "NETWORK" : "HTTP_ERROR";
+  const mapped = paidQueryCodeFromProvider(provider);
+  if (mapped.persist !== "success") {
     await store.complete(row.id, {
-      status: "UNKNOWN_BILLING",
-      billingStatus: "UNKNOWN",
-      providerHttpStatus: "status" in provider ? provider.status : null,
-      failureCode: code,
+      status: mapped.persist === "failed_not_sent" ? "FAILED" : "UNKNOWN_BILLING",
+      billingStatus: mapped.persist === "failed_not_sent" ? "NOT_SENT" : "UNKNOWN",
+      providerHttpStatus: provider.status,
+      failureCode: mapped.code,
     });
-    return { code, charged: false, row: await store.findById(row.id) };
+    return {
+      code: mapped.code,
+      charged: false,
+      row: await store.findById(row.id),
+      message: provider.mensagem,
+    };
   }
   const parsed = parseQuodDossier(provider.body);
   if (parsed.partial || parsed.insufficient) {
@@ -113,13 +111,14 @@ async function finishProviderCall(
     } catch {
       return { code: "PERSISTENCE_FAILED", charged: false, row };
     }
-    return { code: "PARTIAL", charged: false, row: await store.findById(row.id) };
+    return { code: "PARTIAL", charged: false, row: await store.findById(row.id), message: provider.mensagem };
   }
+  const billed = provider.charge === "yes";
   try {
     await store.complete(row.id, {
       status: "SUCCEEDED",
-      billingStatus: "ESTIMATED",
-      chargedCostCents: row.authorizedCostCents,
+      billingStatus: billed ? "ESTIMATED" : "NOT_SENT",
+      chargedCostCents: billed ? row.authorizedCostCents : 0,
       providerHttpStatus: provider.status,
       providerQueryId: parsed.sections.providerQueryId,
       score: parsed.score,
@@ -139,12 +138,23 @@ async function finishProviderCall(
     }
     return { code: "PERSISTENCE_FAILED", charged: false, row: await store.findById(row.id) };
   }
-  return { code: "OK", charged: true, row: await store.findById(row.id) };
+  return { code: "OK", charged: billed, row: await store.findById(row.id) };
 }
 
 export function publicQuodStatus(row: QuodConsultationRecord | null, now: Date) {
   if (!row || row.status !== "SUCCEEDED") {
-    return { state: row?.status === "SENT" || row?.status === "RESERVED" ? "IN_PROGRESS" : row?.status === "PARTIAL" ? "PARTIAL" : row?.status === "FAILED" || row?.status === "UNKNOWN_BILLING" ? "FAILED" : "NOT_CONSULTED" } as const;
+    return {
+      state:
+        row?.status === "SENT" || row?.status === "RESERVED"
+          ? "IN_PROGRESS"
+          : row?.status === "PARTIAL"
+            ? "PARTIAL"
+            : row?.status === "UNKNOWN_BILLING"
+              ? "UNKNOWN_BILLING"
+              : row?.status === "FAILED"
+                ? "FAILED"
+                : "NOT_CONSULTED",
+    } as const;
   }
   const fresh = row.validUntil != null && Date.parse(row.validUntil) > now.getTime();
   return { state: fresh ? "VALID" : "STALE" } as const;

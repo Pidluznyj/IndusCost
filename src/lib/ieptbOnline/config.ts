@@ -19,9 +19,6 @@ export type IeptbOnlineConfig = {
   unitPriceCents: number;
   timeoutMs: number;
   cacheTtlMs: number;
-  monthlyLimitCents: number;
-  maxPerCnpj: number;
-  cnpjIntervalMs: number;
   rateLimitPerMinute: number;
 };
 
@@ -51,9 +48,6 @@ export function readIeptbOnlineConfig(env: NodeJS.ProcessEnv = process.env): Iep
     unitPriceCents: positiveInt(env.IEPTB_ONLINE_UNIT_PRICE_CENTS, 350),
     timeoutMs: Math.max(1000, positiveInt(env.IEPTB_ONLINE_TIMEOUT_MS, 20000)),
     cacheTtlMs,
-    monthlyLimitCents: positiveInt(env.IEPTB_ONLINE_MONTHLY_LIMIT_CENTS, 0),
-    maxPerCnpj: Math.max(1, positiveInt(env.IEPTB_ONLINE_MAX_PER_CNPJ, 1)),
-    cnpjIntervalMs: positiveInt(env.IEPTB_ONLINE_CNPJ_INTERVAL_MS, cacheTtlMs) || cacheTtlMs,
     rateLimitPerMinute: Math.max(1, positiveInt(env.IEPTB_ONLINE_RATE_LIMIT_PER_MINUTE, 5)),
   };
 }

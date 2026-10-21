@@ -1,7 +1,7 @@
+import { paidQueryCodeFromProvider } from "@/src/lib/directData/classifyProviderResponse.js";
 import { fetchIeptbOnline, type IeptbProviderResult } from "./adapter.js";
 import { IEPTB_COVERAGE_NOTE, type IeptbOnlineConfig } from "./config.js";
 import { parseIeptbOnline } from "./parse.js";
-import { quodBudgetMonthWindow } from "@/src/lib/quodDossier/config.js";
 import type { IeptbConsultationRecord, IeptbStore } from "./store.js";
 
 export type IeptbQueryCode =
@@ -10,12 +10,13 @@ export type IeptbQueryCode =
   | "CONSENT_REQUIRED"
   | "INVALID_CNPJ"
   | "CACHE_VALID"
-  | "BUDGET"
-  | "INTERVAL"
   | "IN_FLIGHT"
   | "UNKNOWN_BILLING"
+  | "INSUFFICIENT_BALANCE"
   | "AUTH"
+  | "UNAVAILABLE"
   | "RATE_LIMIT"
+  | "INVALID_INPUT"
   | "HTTP_ERROR"
   | "TIMEOUT"
   | "NETWORK"
@@ -27,6 +28,7 @@ export type IeptbQueryOutcome = {
   code: IeptbQueryCode;
   charged: boolean;
   row: IeptbConsultationRecord | null;
+  message?: string | null;
 };
 
 export async function executePaidIeptbConsultation(input: {
@@ -48,7 +50,6 @@ export async function executePaidIeptbConsultation(input: {
   if (!input.config.token) return { code: "TOKEN_MISSING", charged: false, row: null };
   if (input.consent !== true) return { code: "CONSENT_REQUIRED", charged: false, row: null };
   if (!/^\d{14}$/.test(input.cnpj)) return { code: "INVALID_CNPJ", charged: false, row: null };
-  const month = quodBudgetMonthWindow(now);
   const reserved = await input.store.reserve({
     customerId: input.customerId,
     companyName: input.companyName,
@@ -58,17 +59,15 @@ export async function executePaidIeptbConsultation(input: {
     requestedByRole: input.role,
     authorizedCostCents: input.config.unitPriceCents,
     now,
-    monthlyLimitCents: input.config.monthlyLimitCents,
-    monthStart: month.start,
-    monthEnd: month.end,
-    maxPerCnpj: input.config.maxPerCnpj,
-    intervalStart: new Date(now.getTime() - input.config.cnpjIntervalMs),
     forceRefresh: input.forceRefresh === true,
-    cacheTtlMs: input.config.cacheTtlMs,
   });
   if (reserved.ok === false) {
     if (reserved.code === "IDEMPOTENT") return { code: "OK", charged: false, row: reserved.row };
-    return { code: reserved.code, charged: false, row: reserved.code === "CACHE_VALID" ? await input.store.findLatestSucceeded(input.customerId) : null };
+    return {
+      code: reserved.code,
+      charged: false,
+      row: reserved.code === "CACHE_VALID" ? await input.store.findLatestSucceeded(input.customerId) : null,
+    };
   }
   await input.store.markSent(reserved.row.id);
   const provider = await fetchIeptbOnline({ cnpj: input.cnpj, config: input.config, fetchImpl: input.fetchImpl });
@@ -82,31 +81,20 @@ async function finishProviderCall(
   now: Date,
   cacheTtlMs: number
 ): Promise<IeptbQueryOutcome> {
-  if (provider.outcome === "AUTH") {
+  const mapped = paidQueryCodeFromProvider(provider);
+  if (mapped.persist !== "success") {
     await store.complete(row.id, {
-      status: "FAILED",
-      billingStatus: "NOT_SENT",
+      status: mapped.persist === "failed_not_sent" ? "FAILED" : "UNKNOWN_BILLING",
+      billingStatus: mapped.persist === "failed_not_sent" ? "NOT_SENT" : "UNKNOWN",
       providerHttpStatus: provider.status,
-      failureCode: "AUTH",
+      failureCode: mapped.code,
     });
-    return { code: "AUTH", charged: false, row: await store.findById(row.id) };
-  }
-  if (provider.outcome !== "SUCCESS") {
-    const code =
-      provider.outcome === "TIMEOUT"
-        ? "TIMEOUT"
-        : provider.outcome === "RATE_LIMIT"
-          ? "RATE_LIMIT"
-          : provider.outcome === "NETWORK"
-            ? "NETWORK"
-            : "HTTP_ERROR";
-    await store.complete(row.id, {
-      status: "UNKNOWN_BILLING",
-      billingStatus: "UNKNOWN",
-      providerHttpStatus: "status" in provider ? provider.status : null,
-      failureCode: code,
-    });
-    return { code, charged: false, row: await store.findById(row.id) };
+    return {
+      code: mapped.code,
+      charged: false,
+      row: await store.findById(row.id),
+      message: provider.mensagem,
+    };
   }
   const parsed = parseIeptbOnline(provider.body);
   if (parsed.partial || parsed.insufficient) {
@@ -124,13 +112,14 @@ async function finishProviderCall(
     } catch {
       return { code: "PERSISTENCE_FAILED", charged: false, row };
     }
-    return { code: "PARTIAL", charged: false, row: await store.findById(row.id) };
+    return { code: "PARTIAL", charged: false, row: await store.findById(row.id), message: provider.mensagem };
   }
+  const billed = provider.charge === "yes";
   try {
     await store.complete(row.id, {
       status: "SUCCEEDED",
-      billingStatus: "ESTIMATED",
-      chargedCostCents: row.authorizedCostCents,
+      billingStatus: billed ? "ESTIMATED" : "NOT_SENT",
+      chargedCostCents: billed ? row.authorizedCostCents : 0,
       providerHttpStatus: provider.status,
       providerQueryId: parsed.sections.providerQueryId,
       confirmedProtest: parsed.confirmedProtest,
@@ -156,7 +145,7 @@ async function finishProviderCall(
     }
     return { code: "PERSISTENCE_FAILED", charged: false, row: await store.findById(row.id) };
   }
-  return { code: "OK", charged: true, row: await store.findById(row.id) };
+  return { code: "OK", charged: billed, row: await store.findById(row.id) };
 }
 
 export function publicIeptbStatus(row: IeptbConsultationRecord | null, now: Date) {

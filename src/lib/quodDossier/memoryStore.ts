@@ -19,14 +19,6 @@ export function createMemoryQuodStore(): QuodStore & { rows: QuodConsultationRec
     async listByCustomer(customerId) {
       return rows.filter((row) => row.customerId === customerId);
     },
-    async monthSpend(monthStart, monthEnd) {
-      return rows
-        .filter((row) => {
-          const created = Date.parse(row.createdAt);
-          return created >= monthStart.getTime() && created < monthEnd.getTime() && row.billingStatus !== "NOT_SENT";
-        })
-        .reduce((sum, row) => sum + row.authorizedCostCents, 0);
-    },
     async reserve(input) {
       const previous = locks.get(input.cnpj) ?? Promise.resolve();
       let release: () => void = () => undefined;
@@ -48,15 +40,6 @@ export function createMemoryQuodStore(): QuodStore & { rows: QuodConsultationRec
         if (!input.forceRefresh && latest?.validUntil && Date.parse(latest.validUntil) > input.now.getTime()) {
           return { ok: false, code: "CACHE_VALID" };
         }
-        const spent = rows
-          .filter((row) => {
-            const created = Date.parse(row.createdAt);
-            return created >= input.monthStart.getTime() && created < input.monthEnd.getTime() && row.billingStatus !== "NOT_SENT";
-          })
-          .reduce((sum, row) => sum + row.authorizedCostCents, 0);
-        if (spent + input.authorizedCostCents > input.monthlyLimitCents) return { ok: false, code: "BUDGET" };
-        const recent = rows.filter((row) => row.cnpj === input.cnpj && Date.parse(row.createdAt) >= input.intervalStart.getTime() && row.status !== "FAILED").length;
-        if (recent >= input.maxPerCnpj) return { ok: false, code: "INTERVAL" };
         const row: QuodConsultationRecord = {
           id: randomUUID(),
           customerId: input.customerId,

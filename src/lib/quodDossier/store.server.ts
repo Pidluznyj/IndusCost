@@ -89,13 +89,6 @@ export function createPrismaQuodStore(prisma: PrismaClient): QuodStore {
       const rows = await db.findMany({ where: { customerId }, orderBy: { createdAt: "asc" } });
       return rows.map(toRecord);
     },
-    async monthSpend(monthStart, monthEnd) {
-      const spent = await db.aggregate({
-        where: { createdAt: { gte: monthStart, lt: monthEnd }, billingStatus: { not: "NOT_SENT" } },
-        _sum: { authorizedCostCents: true },
-      });
-      return spent._sum.authorizedCostCents ?? 0;
-    },
     async reserve(input): Promise<QuodReserveResult> {
       try {
         return await prisma.$transaction(async (tx) => {
@@ -116,20 +109,6 @@ export function createPrismaQuodStore(prisma: PrismaClient): QuodStore {
           if (!input.forceRefresh && latest?.validUntil && latest.validUntil.getTime() > input.now.getTime()) {
             return { ok: false, code: "CACHE_VALID" };
           }
-          const spent = await tx.quodDossierConsultation.aggregate({
-            where: {
-              createdAt: { gte: input.monthStart, lt: input.monthEnd },
-              billingStatus: { not: "NOT_SENT" },
-            },
-            _sum: { authorizedCostCents: true },
-          });
-          if ((spent._sum.authorizedCostCents ?? 0) + input.authorizedCostCents > input.monthlyLimitCents) {
-            return { ok: false, code: "BUDGET" };
-          }
-          const recent = await tx.quodDossierConsultation.count({
-            where: { cnpj: input.cnpj, createdAt: { gte: input.intervalStart }, status: { not: "FAILED" } },
-          });
-          if (recent >= input.maxPerCnpj) return { ok: false, code: "INTERVAL" };
           const created = await tx.quodDossierConsultation.create({
             data: {
               customerId: input.customerId,

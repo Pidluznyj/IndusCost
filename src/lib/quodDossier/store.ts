@@ -32,14 +32,13 @@ export type QuodConsultationRecord = {
 export type QuodReserveResult =
   | { ok: true; row: QuodConsultationRecord }
   | { ok: false; code: "IDEMPOTENT"; row: QuodConsultationRecord }
-  | { ok: false; code: "IN_FLIGHT" | "UNKNOWN_BILLING" | "BUDGET" | "INTERVAL" | "CACHE_VALID" };
+  | { ok: false; code: "IN_FLIGHT" | "UNKNOWN_BILLING" | "CACHE_VALID" };
 
 export type QuodStore = {
   findByIdempotency(key: string): Promise<QuodConsultationRecord | null>;
   findLatestSucceeded(customerId: string): Promise<QuodConsultationRecord | null>;
   findById(id: string): Promise<QuodConsultationRecord | null>;
   listByCustomer(customerId: string): Promise<QuodConsultationRecord[]>;
-  monthSpend(monthStart: Date, monthEnd: Date): Promise<number>;
   reserve(input: {
     customerId: string;
     companyName: string;
@@ -49,13 +48,7 @@ export type QuodStore = {
     requestedByRole: string;
     authorizedCostCents: number;
     now: Date;
-    monthlyLimitCents: number;
-    monthStart: Date;
-    monthEnd: Date;
-    maxPerCnpj: number;
-    intervalStart: Date;
     forceRefresh: boolean;
-    cacheTtlMs: number;
   }): Promise<QuodReserveResult>;
   markSent(id: string): Promise<void>;
   complete(id: string, patch: Partial<QuodConsultationRecord> & { status: QuodConsultationStatus; billingStatus: QuodBillingStatus }): Promise<void>;

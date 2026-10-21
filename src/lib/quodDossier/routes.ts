@@ -1,5 +1,9 @@
 import type { PrismaClient } from "@prisma/client";
 import express, { type RequestHandler } from "express";
+import {
+  paidConsultationHttpStatus,
+  paidConsultationMessage,
+} from "@/src/lib/directData/paidConsultationMessages.js";
 import { canAccessQuodDossier, formatQuodPrice, QUOD_DOSSIER_PRODUCT, QUOD_DOSSIER_PROVIDER, readQuodDossierConfig } from "./config.js";
 import { executePaidQuodConsultation, publicQuodStatus } from "./query.js";
 import { createPrismaQuodStore } from "./store.server.js";
@@ -165,7 +169,7 @@ export function registerQuodDossierRoutes(
       res.status(404).json({ error: "Cliente não encontrado." });
       return;
     }
-    const body = (req.body ?? {}) as { consent?: unknown; idempotencyKey?: unknown };
+    const body = (req.body ?? {}) as { consent?: unknown; idempotencyKey?: unknown; forceRefresh?: unknown };
     if (body.consent !== true || typeof body.idempotencyKey !== "string" || body.idempotencyKey.trim().length < 8) {
       await deps.audit?.({
         entityId: customerId,
@@ -173,7 +177,8 @@ export function registerQuodDossierRoutes(
         performedBy: userId,
         newValue: JSON.stringify({ code: "CONSENT_REQUIRED", charged: false }),
       });
-      res.status(422).json({ code: "CONSENT_REQUIRED", charged: false, consultation: null });
+      const message = paidConsultationMessage("CONSENT_REQUIRED");
+      res.status(422).json({ code: "CONSENT_REQUIRED", error: message, message, charged: false, consultation: null });
       return;
     }
     const outcome = await executePaidQuodConsultation({
@@ -186,6 +191,7 @@ export function registerQuodDossierRoutes(
       idempotencyKey: typeof body.idempotencyKey === "string" ? body.idempotencyKey : "",
       userId,
       role: user.role ?? "",
+      forceRefresh: body.forceRefresh === true,
       now: now(),
       fetchImpl: deps.fetchImpl,
     });
@@ -204,9 +210,12 @@ export function registerQuodDossierRoutes(
         creditEffect: outcome.row?.confirmedRestriction ? "EM_ANALISE" : "UNCHANGED_BY_SCORE",
       }),
     });
-    const status = outcome.code === "OK" ? 200 : outcome.code === "CONSENT_REQUIRED" ? 422 : outcome.code === "BUDGET" || outcome.code === "INTERVAL" || outcome.code === "CACHE_VALID" || outcome.code === "IN_FLIGHT" || outcome.code === "UNKNOWN_BILLING" || outcome.code === "DISABLED" ? 409 : outcome.code === "AUTH" || outcome.code === "RATE_LIMIT" || outcome.code === "TIMEOUT" || outcome.code === "HTTP_ERROR" || outcome.code === "NETWORK" || outcome.code === "PARTIAL" || outcome.code === "PERSISTENCE_FAILED" ? 502 : 400;
+    const message = paidConsultationMessage(outcome.code, outcome.message);
+    const status = paidConsultationHttpStatus(outcome.code);
     res.status(status).json({
       code: outcome.code,
+      error: outcome.code === "OK" || outcome.code === "CACHE_VALID" ? undefined : message,
+      message,
       charged: outcome.charged,
       priceLabel: formatQuodPrice(config().unitPriceCents),
       consultation: outcome.row && outcome.row.status === "SUCCEEDED" ? reportOf(outcome.row) : null,

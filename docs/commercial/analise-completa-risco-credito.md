@@ -15,17 +15,13 @@ O token **não** vai na URL. CPF não é enviado na consulta de CNPJ. Uma chamad
 
 ## Orçamento
 
-- Limite por produto: `QUOD_DOSSIER_MONTHLY_LIMIT_CENTS`, `IEPTB_ONLINE_MONTHLY_LIMIT_CENTS`.
-- Limite global opcional: `CREDIT_INTELLIGENCE_MONTHLY_LIMIT_CENTS` (0 = sem teto global).
-- Produção hoje tem teto QUOD de R$ 6,99. **Não subir automaticamente** para R$ 10,49.
-- Antes de ativar o IEPTB, o operador precisa autorizar:
-  1. `IEPTB_ONLINE_ENABLED=true`
-  2. `IEPTB_ONLINE_MONTHLY_LIMIT_CENTS` compatível com o contrato
-  3. `CREDIT_INTELLIGENCE_MONTHLY_LIMIT_CENTS` cobrindo QUOD + IEPTB, se houver teto único
+O saldo disponível é controlado pela Direct Data. O IndusCost não impõe teto mensal próprio, máximo por CNPJ nem intervalo obrigatório. `monthlyLimitCents=0` não bloqueia consulta.
+
+Antes de ativar o IEPTB, o operador precisa autorizar `IEPTB_ONLINE_ENABLED=true` e o produto no contrato da Direct Data.
 
 ## Cache
 
-TTL padrão 7 dias. Pacote reutiliza consulta válida. Reconsulta antecipada exige checkbox + `forceRefresh` e respeita intervalo mínimo.
+TTL padrão 7 dias. Pacote reutiliza consulta válida. Reconsulta antecipada exige checkbox + `forceRefresh` e consentimento explícito.
 
 GET autenticado lê o resultado armazenado. Só `SUPER_ADMIN` dispara POST/consulta paga; o botão fica oculto para os demais.
 
@@ -35,7 +31,7 @@ GET autenticado lê o resultado armazenado. Só `SUPER_ADMIN` dispara POST/consu
 2. Aplicar migration `20261026120000_ieptb_online_package` (aditiva).
 3. Manter `IEPTB_ONLINE_ENABLED=false` no deploy inicial.
 4. Validar GET do pacote (sem POST pago).
-5. Ajustar tetos.
+5. Confirmar saldo na Direct Data.
 6. Ligar a flag só após aprovação.
 
 ## Rollback

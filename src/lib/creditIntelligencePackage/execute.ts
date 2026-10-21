@@ -3,11 +3,8 @@ import type { IeptbConsultationRecord, IeptbStore } from "@/src/lib/ieptbOnline/
 import { executePaidQuodConsultation, publicQuodStatus } from "@/src/lib/quodDossier/query.js";
 import type { QuodConsultationRecord, QuodStore } from "@/src/lib/quodDossier/store.js";
 import { hintProtestOverlap } from "@/src/lib/ieptbOnline/parse.js";
-import {
-  formatPackagePrice,
-  quodBudgetMonthWindow,
-  type CreditIntelligencePackageConfig,
-} from "./config.js";
+import { paidConsultationMessage } from "@/src/lib/directData/paidConsultationMessages.js";
+import { formatPackagePrice, type CreditIntelligencePackageConfig } from "./config.js";
 import { composePackageQuote, type PackageQuote, type PackageSourceState } from "./compose.js";
 
 export type PackageExecuteCode =
@@ -15,7 +12,14 @@ export type PackageExecuteCode =
   | "INVALID_CNPJ"
   | "IN_FLIGHT"
   | "UNKNOWN_BILLING"
-  | "BUDGET"
+  | "INSUFFICIENT_BALANCE"
+  | "AUTH"
+  | "UNAVAILABLE"
+  | "TIMEOUT"
+  | "RATE_LIMIT"
+  | "HTTP_ERROR"
+  | "NETWORK"
+  | "INVALID_INPUT"
   | "PARTIAL"
   | "OK"
   | "DISABLED";
@@ -29,6 +33,7 @@ export type PackageExecuteOutcome = {
   ieptb: IeptbConsultationRecord | null;
   overlaps: ReturnType<typeof hintProtestOverlap>;
   complete: boolean;
+  message: string;
 };
 
 function asState(value: string): PackageSourceState {
@@ -101,6 +106,7 @@ export async function executeCreditIntelligencePackage(input: {
     ieptb: ieptbRow,
     overlaps: overlapFrom(quodRow, ieptbRow),
     complete: quote.complete,
+    message: paidConsultationMessage(code),
   });
 
   if (input.consent !== true) return empty("CONSENT_REQUIRED");
@@ -117,15 +123,8 @@ export async function executeCreditIntelligencePackage(input: {
       ieptb: ieptbRow,
       overlaps: overlapFrom(quodRow, ieptbRow),
       complete: quote.complete,
+      message: paidConsultationMessage("OK"),
     };
-  }
-
-  const month = quodBudgetMonthWindow(now);
-  if (input.config.monthlyLimitCents > 0) {
-    const spent =
-      (await input.quodStore.monthSpend(month.start, month.end)) +
-      (await input.ieptbStore.monthSpend(month.start, month.end));
-    if (spent + quote.totalCents > input.config.monthlyLimitCents) return empty("BUDGET");
   }
 
   let quod = quodRow;
@@ -154,7 +153,13 @@ export async function executeCreditIntelligencePackage(input: {
     charged = charged || outcome.charged;
   }
 
-  if (quote.ieptb.action === "QUERY") {
+  if (
+    quote.ieptb.action === "QUERY" &&
+    quodCode !== "INSUFFICIENT_BALANCE" &&
+    quodCode !== "AUTH" &&
+    quodCode !== "DISABLED" &&
+    quodCode !== "TOKEN_MISSING"
+  ) {
     const outcome = await executePaidIeptbConsultation({
       store: input.ieptbStore,
       config: input.config.ieptb,
@@ -182,12 +187,30 @@ export async function executeCreditIntelligencePackage(input: {
     quodState: asState(publicQuodStatus(quod, now).state),
     ieptbState: asState(publicIeptbStatus(ieptb, now).state),
   });
-  const failed =
-    (quote.quod.action === "QUERY" && quodCode && quodCode !== "OK" && quodCode !== "CACHE_VALID" && quodCode !== "IDEMPOTENT") ||
-    (quote.ieptb.action === "QUERY" && ieptbCode && ieptbCode !== "OK" && ieptbCode !== "CACHE_VALID" && ieptbCode !== "IDEMPOTENT");
-  const budgetFail = quodCode === "BUDGET" || ieptbCode === "BUDGET";
+  const queriedFailed = (action: "QUERY" | "CACHE" | "SKIP", code: string | null) =>
+    action === "QUERY" && code != null && code !== "OK" && code !== "CACHE_VALID" && code !== "IDEMPOTENT";
+  const quodFailed = queriedFailed(quote.quod.action, quodCode);
+  const ieptbFailed = queriedFailed(quote.ieptb.action, ieptbCode);
+  const firstFailure = quodFailed ? quodCode : ieptbFailed ? ieptbCode : null;
+  let code: PackageExecuteCode = "OK";
+  if (!quodFailed && !ieptbFailed) {
+    code = nextQuote.complete ? "OK" : "PARTIAL";
+  } else if (quodFailed && ieptbFailed) {
+    code = isPackageExecuteCode(firstFailure) ? firstFailure : "PARTIAL";
+  } else if (
+    quote.quod.action === "QUERY" &&
+    quote.ieptb.action === "QUERY" &&
+    quodCode !== "INSUFFICIENT_BALANCE" &&
+    quodCode !== "AUTH" &&
+    quodCode !== "DISABLED" &&
+    quodCode !== "TOKEN_MISSING"
+  ) {
+    code = "PARTIAL";
+  } else {
+    code = isPackageExecuteCode(firstFailure) ? firstFailure : "PARTIAL";
+  }
   return {
-    code: budgetFail ? "BUDGET" : failed || !nextQuote.complete ? "PARTIAL" : "OK",
+    code,
     charged,
     authorizedCostCents: quote.totalCents,
     quote: nextQuote,
@@ -195,7 +218,28 @@ export async function executeCreditIntelligencePackage(input: {
     ieptb,
     overlaps: overlapFrom(quod, ieptb),
     complete: nextQuote.complete,
+    message: paidConsultationMessage(code),
   };
+}
+
+function isPackageExecuteCode(code: string | null): code is PackageExecuteCode {
+  return (
+    code === "CONSENT_REQUIRED" ||
+    code === "INVALID_CNPJ" ||
+    code === "IN_FLIGHT" ||
+    code === "UNKNOWN_BILLING" ||
+    code === "INSUFFICIENT_BALANCE" ||
+    code === "AUTH" ||
+    code === "UNAVAILABLE" ||
+    code === "TIMEOUT" ||
+    code === "RATE_LIMIT" ||
+    code === "HTTP_ERROR" ||
+    code === "NETWORK" ||
+    code === "INVALID_INPUT" ||
+    code === "PARTIAL" ||
+    code === "OK" ||
+    code === "DISABLED"
+  );
 }
 
 export function packagePriceSummary(quote: PackageQuote): {
