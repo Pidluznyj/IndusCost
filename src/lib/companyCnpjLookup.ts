@@ -18,6 +18,7 @@ import {
   type CustomerCompareResult,
 } from "./companyCnpjCompare.js";
 import { writeCommercialAuditLog } from "./commercialAuditLog.js";
+import { recordCorporateMembershipsFromLookup } from "./commercial/corporateRelation.server.js";
 import { CompanyIntelligenceError } from "./companyCnpjErrors.js";
 import { fetchPublicCnpj } from "./companyCnpjPublicaWs.js";
 import {
@@ -218,6 +219,16 @@ export async function buildCompanyIntelligencePayload(input: {
         fetchedByUserId: input.userId ?? null,
       },
     });
+
+    try {
+      await recordCorporateMembershipsFromLookup(prisma as never, {
+        customerId: input.customerId ?? row.customerId ?? null,
+        rawJson: rawEnvelope,
+        consultedAt: now,
+      });
+    } catch (error) {
+      console.error("corporate-membership-record", error instanceof Error ? error.name : "error");
+    }
 
     await writeCommercialAuditLog({
       entityType: input.customerId ? "Customer" : "CustomerCnpjLookup",

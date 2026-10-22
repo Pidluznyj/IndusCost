@@ -152,8 +152,9 @@ const MESSAGES: Record<string, string> = {
   EXTERNAL_PROTEST_REVIEW:
     "Protesto externo exige revisão: consulta indisponível, desatualizada, cancelada ou não confirmada. Isso não significa ausência de protesto.",
   RELATED_PARTY_DELINQUENT:
-    "Crédito em análise: vínculo societário com empresa inadimplente. A dívida não foi transferida.",
-  RELATED_PARTY_UNVERIFIED: "Crédito em análise: vínculo societário sem verificação financeira.",
+    "Crédito bloqueado: empresa relacionada com inadimplência ou protesto vigente. A dívida não foi transferida ao CNPJ consultado.",
+  RELATED_PARTY_UNVERIFIED:
+    "Crédito em análise: há vínculo pendente ou sem verificação financeira. Isso não confirma o grupo.",
   FINANCIAL_UNVERIFIED:
     "Crédito não verificado: dados financeiros indisponíveis ou desatualizados. Exige análise antes da liberação.",
   QUOD_EXTERNAL_RESTRICTION:
@@ -312,8 +313,13 @@ function customerHolds(input: {
   customerId: string;
   delinquency: CommercialDelinquencyAnalysis;
   externalProtest: CommercialExternalProtestStatus;
-  relatedParties: ReadonlyArray<{ customerId: string; delinquency: CommercialDelinquencyAnalysis }>;
+  relatedParties: ReadonlyArray<{
+    customerId: string;
+    delinquency: CommercialDelinquencyAnalysis;
+    confirmedProtest?: boolean;
+  }>;
   relatedPartyOverflow: boolean;
+  pendingRelatedPartyCount?: number;
   confirmedPendingProtest?: boolean;
   suppressedProtestTitleIds?: readonly number[];
   externalProtestReview?: ExternalProtestReviewKind;
@@ -343,13 +349,17 @@ function customerHolds(input: {
   }
   for (const related of input.relatedParties) {
     if (related.customerId === input.customerId) continue;
-    if (related.delinquency.status === "OVERDUE" || related.delinquency.status === "PROTESTED") {
-      pushHold(holds, { status: "EM_ANALISE", reason: "RELATED_PARTY_DELINQUENT", scope: "RELATED_PARTY" });
+    const restricted =
+      related.delinquency.status === "OVERDUE" ||
+      related.delinquency.status === "PROTESTED" ||
+      related.confirmedProtest === true;
+    if (restricted) {
+      pushHold(holds, { status: "BLOQUEADO", reason: "RELATED_PARTY_DELINQUENT", scope: "RELATED_PARTY" });
     } else if (related.delinquency.status === "UNKNOWN") {
       pushHold(holds, { status: "EM_ANALISE", reason: "RELATED_PARTY_UNVERIFIED", scope: "RELATED_PARTY" });
     }
   }
-  if (input.relatedPartyOverflow) {
+  if (input.relatedPartyOverflow || (input.pendingRelatedPartyCount ?? 0) > 0) {
     pushHold(holds, { status: "EM_ANALISE", reason: "RELATED_PARTY_UNVERIFIED", scope: "RELATED_PARTY" });
   }
   const quod = input.quod;
@@ -391,8 +401,13 @@ export function decideCommercialCredit(input: {
   paymentTerms: string | null | undefined;
   delinquency: CommercialDelinquencyAnalysis;
   externalProtest?: CommercialExternalProtestStatus;
-  relatedParties?: ReadonlyArray<{ customerId: string; delinquency: CommercialDelinquencyAnalysis }>;
+  relatedParties?: ReadonlyArray<{
+    customerId: string;
+    delinquency: CommercialDelinquencyAnalysis;
+    confirmedProtest?: boolean;
+  }>;
   relatedPartyOverflow?: boolean;
+  pendingRelatedPartyCount?: number;
   exceptions?: readonly CommercialCreditExceptionFact[];
   /** Protesto confirmado ainda não regularizado, inclusive depois da baixa do título. */
   confirmedPendingProtest?: boolean;
@@ -413,6 +428,7 @@ export function decideCommercialCredit(input: {
     externalProtest,
     relatedParties,
     relatedPartyOverflow: input.relatedPartyOverflow === true,
+    pendingRelatedPartyCount: input.pendingRelatedPartyCount,
     confirmedPendingProtest: input.confirmedPendingProtest,
     suppressedProtestTitleIds: input.suppressedProtestTitleIds,
     externalProtestReview: input.externalProtestReview,

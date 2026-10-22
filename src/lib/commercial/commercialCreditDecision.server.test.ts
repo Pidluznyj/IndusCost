@@ -304,7 +304,7 @@ describe("assertCommercialCreditAllows — stage Nomus", () => {
         }),
       (error: unknown) => {
         assert.ok(error instanceof CommercialCreditDeniedError);
-        assert.equal(error.status, "EM_ANALISE");
+        assert.equal(error.status, "BLOQUEADO");
         assert.equal(error.reason, "RELATED_PARTY_DELINQUENT");
         return true;
       }

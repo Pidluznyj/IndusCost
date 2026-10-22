@@ -122,14 +122,16 @@ const CREDIT_REASON_CATALOG: Record<string, Omit<CreditDecisionReason, "code">> 
     severity: "MEDIUM",
   },
   RELATED_PARTY_DELINQUENT: {
-    label: "Vínculo societário inadimplente",
-    description: "Vínculo societário com empresa inadimplente. A dívida não foi transferida.",
-    origin: "Vínculo societário",
-    severity: "MEDIUM",
+    label: "Risco em empresa relacionada",
+    description:
+      "Empresa relacionada com vínculo confirmado tem inadimplência ou protesto vigente. A dívida não foi transferida ao CNPJ consultado.",
+    origin: "Vínculo societário confirmado",
+    severity: "HIGH",
   },
   RELATED_PARTY_UNVERIFIED: {
-    label: "Vínculo societário sem verificação",
-    description: "Vínculo societário sem verificação financeira.",
+    label: "Vínculo pendente de validação",
+    description:
+      "Há vínculo pendente ou sem verificação financeira. Isso não confirma o grupo e não significa ausência de restrição.",
     origin: "Vínculo societário",
     severity: "MEDIUM",
   },
@@ -264,6 +266,11 @@ export type CommercialCreditIntelligenceView = {
   quodConfirmedRestriction: boolean;
   ieptbState: CommercialIeptbEvidence["state"];
   ieptbConfirmedProtest: boolean;
+  ieptbSituationLabel: string;
+  ownCustomerStatus: CommercialCreditDecisionStatus | null;
+  ownDecisionTitle: string;
+  relatedRiskNote: string | null;
+  pendingCorporateRelations: CorporateRelationView[];
   situationLabel: string;
   reason: string | null;
   cadastralAuthorizesCredit: false;
@@ -377,6 +384,19 @@ function syncLabel(iso: string | null, consulted: boolean, unavailable: boolean)
   return { label: date.toLocaleString("pt-BR"), state: "CLEAR" };
 }
 
+export function ieptbSituationLabel(
+  state: CommercialIeptbEvidence["state"],
+  confirmedProtest: boolean
+): string {
+  if (state === "NOT_CONSULTED") return "Não consultado";
+  if (state === "STALE" && confirmedProtest) return "Ocorrência confirmada em consulta vencida";
+  if (state === "STALE") return "Consulta vencida";
+  if (confirmedProtest) return "Consulta concluída com ocorrência confirmada";
+  if (state === "PARTIAL") return "Consulta insuficiente";
+  if (state === "VALID") return "Consulta concluída sem ocorrência";
+  return "Não consultado";
+}
+
 function internalProtestState(
   delinquency: CommercialDelinquencyAnalysis | null,
   decision: { reason: string; reasons: readonly string[] } | null
@@ -443,6 +463,10 @@ export function notConsultedCommercialCreditView(): CommercialCreditIntelligence
     quodConfirmedRestriction: false,
     ieptbState: "NOT_CONSULTED",
     ieptbConfirmedProtest: false,
+    ieptbSituationLabel: "Não consultado",
+    ownCustomerStatus: null,
+    ownDecisionTitle: CREDIT_DECISION_PRESENTATION.NAO_DETERMINADO.title,
+    relatedRiskNote: null,
     situationLabel: INTELLIGENCE_FACT_LABEL.NOT_CONSULTED,
     reason: null,
     cadastralAuthorizesCredit: false,
@@ -466,6 +490,7 @@ export function notConsultedCommercialCreditView(): CommercialCreditIntelligence
     evidenceOrigin: EVIDENCE_ORIGIN,
     occurrenceLines: [],
     corporateRelations: [],
+    pendingCorporateRelations: [],
     cadastralScoreLabel: INTELLIGENCE_FACT_LABEL.NOT_CONSULTED,
     cadastralVerdict: null,
     authorizedExceptions: [],
@@ -480,6 +505,8 @@ export function buildCommercialCreditIntelligenceView(input: {
   occurrenceLines?: readonly string[];
   externalProtestConsultation?: ExternalProtestCreditFact | null;
   corporateRelations?: readonly CorporateRelationView[];
+  pendingCorporateRelations?: readonly CorporateRelationView[];
+  ownCustomerStatus?: CommercialCreditDecisionStatus | null;
   authorizedExceptions?: readonly string[];
 }): CommercialCreditIntelligenceView {
   const status = input.decision.customerStatus;
@@ -492,6 +519,12 @@ export function buildCommercialCreditIntelligenceView(input: {
   const reason = commercialCreditReasonMessage(input.decision.reason);
   const decisionState = creditDecisionState(status);
   const presentation = CREDIT_DECISION_PRESENTATION[decisionState];
+  const ownStatus = input.ownCustomerStatus ?? status;
+  const ownPresentation = CREDIT_DECISION_PRESENTATION[creditDecisionState(ownStatus)];
+  const relatedRiskNote =
+    ownStatus !== status
+      ? "A decisão individual deste CNPJ difere da decisão consolidada. Dívida de empresa relacionada não é dívida deste CNPJ."
+      : null;
   return {
     consulted: true,
     customerStatus: status,
@@ -506,6 +539,13 @@ export function buildCommercialCreditIntelligenceView(input: {
     quodConfirmedRestriction: input.decision.evidence.quodConfirmedRestriction === true,
     ieptbState: input.decision.evidence.ieptbState,
     ieptbConfirmedProtest: input.decision.evidence.ieptbConfirmedProtest === true,
+    ieptbSituationLabel: ieptbSituationLabel(
+      input.decision.evidence.ieptbState,
+      input.decision.evidence.ieptbConfirmedProtest === true
+    ),
+    ownCustomerStatus: ownStatus,
+    ownDecisionTitle: ownPresentation.title,
+    relatedRiskNote,
     situationLabel: unavailable && status === "EM_ANALISE" ? "Não verificado" : situationLabel(status),
     reason,
     cadastralAuthorizesCredit: false,
@@ -529,6 +569,7 @@ export function buildCommercialCreditIntelligenceView(input: {
     evidenceOrigin: EVIDENCE_ORIGIN,
     occurrenceLines: [...(input.occurrenceLines ?? [])],
     corporateRelations: [...(input.corporateRelations ?? [])],
+    pendingCorporateRelations: [...(input.pendingCorporateRelations ?? [])],
     cadastralScoreLabel:
       input.decision.evidence.cadastralScore == null
         ? INTELLIGENCE_FACT_LABEL.NOT_CONSULTED

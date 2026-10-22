@@ -30,7 +30,8 @@ import {
 } from "./commercialCreditOccurrence.js";
 import {
   creditStatusLabel,
-  loadCorporateRelations,
+  loadCorporateRelationAssessment,
+  presentCorporateCandidate,
   presentCorporateRelation,
   type CorporateRelationView,
 } from "./corporateRelation.server.js";
@@ -158,6 +159,63 @@ export async function loadIeptbCreditEvidence(
   }
 }
 
+async function loadRelatedConfirmedProtests(
+  db: object,
+  customerIds: readonly string[],
+  now: Date
+): Promise<Set<string>> {
+  const found = new Set<string>();
+  if (customerIds.length === 0) return found;
+  const allowed = new Set(customerIds);
+  const external = (db as {
+    commercialExternalProtest?: {
+      findMany(args: unknown): Promise<
+        Array<{ customerId?: string; status: string; effectiveFrom: Date; effectiveUntil: Date | null }>
+      >;
+    };
+  }).commercialExternalProtest;
+  if (external?.findMany) {
+    try {
+      const rows = await external.findMany({
+        where: { customerId: { in: [...customerIds] } },
+        select: { customerId: true, status: true, effectiveFrom: true, effectiveUntil: true },
+      });
+      for (const row of rows) {
+        if (!row.customerId || !allowed.has(row.customerId)) continue;
+        if (resolveStoredExternalProtest([row], now) === "CONFIRMED_CURRENT") found.add(row.customerId);
+      }
+    } catch (error) {
+      console.error("related-external-protest", error instanceof Error ? error.name : "error");
+    }
+  }
+  const ieptb = (db as {
+    ieptbOnlineConsultation?: {
+      findMany(args: unknown): Promise<
+        Array<{ customerId: string; confirmedProtest: boolean; validUntil: Date | null }>
+      >;
+    };
+  }).ieptbOnlineConsultation;
+  if (ieptb?.findMany) {
+    try {
+      const rows = await ieptb.findMany({
+        where: { customerId: { in: [...customerIds] }, status: "SUCCEEDED" },
+        orderBy: { consultedAt: "desc" },
+        select: { customerId: true, confirmedProtest: true, validUntil: true },
+      });
+      const seen = new Set<string>();
+      for (const row of rows) {
+        if (!allowed.has(row.customerId) || seen.has(row.customerId)) continue;
+        seen.add(row.customerId);
+        const fresh = row.validUntil != null && row.validUntil.getTime() > now.getTime();
+        if (fresh && row.confirmedProtest === true) found.add(row.customerId);
+      }
+    } catch (error) {
+      console.error("related-ieptb", error instanceof Error ? error.name : "error");
+    }
+  }
+  return found;
+}
+
 function decisionAuditValue(decision: CommercialCreditDecision): string {
   return JSON.stringify({
     status: decision.status,
@@ -215,6 +273,8 @@ export async function readCommercialCreditDecision(
   externalProtestConsultation: ExternalProtestCreditFact;
   occurrenceLines: string[];
   corporateRelations: CorporateRelationView[];
+  pendingCorporateRelations: CorporateRelationView[];
+  ownCustomerStatus: CommercialCreditDecision["customerStatus"];
   activeExceptions: Array<{ id: string; scope: string; expiresAt: Date; grantedByPermission: string | null }>;
   confirmedPendingProtest: boolean;
 }> {
@@ -251,7 +311,7 @@ export async function readCommercialCreditDecision(
     }),
   ]);
 
-  const qsaRelations = await loadCorporateRelations(db as never, {
+  const qsa = await loadCorporateRelationAssessment(db as never, {
     customerId: input.customerId,
     cnpj: delinquency.evidence.cnpj,
     now,
@@ -259,21 +319,31 @@ export async function readCommercialCreditDecision(
   const relatedIds = [
     ...new Set([
       ...links.map((link) => link.relatedCustomerId),
-      ...qsaRelations.map((relation) => relation.relatedCustomerId),
+      ...qsa.relations.map((relation) => relation.relatedCustomerId),
     ]),
   ].filter((id) => id !== input.customerId);
   const relatedPartyOverflow = relatedIds.length > COMMERCIAL_CREDIT_RELATED_PARTY_LIMIT;
   const relatedSlice = relatedIds.slice(0, COMMERCIAL_CREDIT_RELATED_PARTY_LIMIT);
+  const relatedProtests = await loadRelatedConfirmedProtests(db, relatedSlice, now);
   const relatedParties = await Promise.all(
     relatedSlice.map(async (relatedCustomerId) => ({
       customerId: relatedCustomerId,
       delinquency: await analyzeCustomerDelinquency(db, relatedCustomerId, now),
+      confirmedProtest: relatedProtests.has(relatedCustomerId),
     }))
   );
-  const statusByCustomer = new Map(relatedParties.map((party) => [party.customerId, creditStatusLabel(party.delinquency.status)]));
-  const corporateRelations = qsaRelations
+  const statusByCustomer = new Map(
+    relatedParties.map((party) => [
+      party.customerId,
+      party.confirmedProtest && party.delinquency.status !== "OVERDUE" && party.delinquency.status !== "PROTESTED"
+        ? "Protesto confirmado"
+        : creditStatusLabel(party.delinquency.status),
+    ])
+  );
+  const corporateRelations = qsa.relations
     .filter((relation) => relatedSlice.includes(relation.relatedCustomerId))
     .map((relation) => presentCorporateRelation(relation, statusByCustomer.get(relation.relatedCustomerId) ?? "Não consultado"));
+  const pendingCorporateRelations = qsa.candidates.map((candidate) => presentCorporateCandidate(candidate));
   const storedExternalProtest = resolveStoredExternalProtest(protests, now);
   const externalProtestConsultation = await resolveExternalProtestForDecision({
     cnpj: delinquency.evidence.cnpj,
@@ -294,19 +364,19 @@ export async function readCommercialCreditDecision(
     settledProtestedTitleIds: delinquency.evidence.settledProtestedTitleIds ?? [],
   });
   const occurrenceLines = occurrences.map((row) => occurrenceHistoryLine(presentCommercialCreditOccurrence(row)));
-  const decision = decideCommercialCredit({
-    customerId: input.customerId,
-    enforcement: input.enforcement,
-    paymentTerms: typeof input.paymentTerms === "number" && Number.isFinite(input.paymentTerms)
+  const paymentTerms =
+    typeof input.paymentTerms === "number" && Number.isFinite(input.paymentTerms)
       ? String(input.paymentTerms)
       : typeof input.paymentTerms === "string"
         ? input.paymentTerms
-        : null,
+        : null;
+  const decisionInput = {
+    customerId: input.customerId,
+    enforcement: input.enforcement,
+    paymentTerms,
     delinquency,
     externalProtest: mergedExternalProtest.externalProtest,
     externalProtestReview: mergedExternalProtest.review,
-    relatedParties,
-    relatedPartyOverflow,
     exceptions,
     confirmedPendingProtest: formalProtest.confirmedPending,
     suppressedProtestTitleIds: formalProtest.suppressedTitleIds,
@@ -315,6 +385,18 @@ export async function readCommercialCreditDecision(
     quod,
     ieptb,
     now,
+  };
+  const decision = decideCommercialCredit({
+    ...decisionInput,
+    relatedParties,
+    relatedPartyOverflow,
+    pendingRelatedPartyCount: pendingCorporateRelations.length,
+  });
+  const ownDecision = decideCommercialCredit({
+    ...decisionInput,
+    relatedParties: [],
+    relatedPartyOverflow: false,
+    pendingRelatedPartyCount: 0,
   });
   return {
     decision,
@@ -323,6 +405,8 @@ export async function readCommercialCreditDecision(
     externalProtestConsultation,
     occurrenceLines,
     corporateRelations,
+    pendingCorporateRelations,
+    ownCustomerStatus: ownDecision.customerStatus,
     activeExceptions: exceptions
       .filter((row) => row.revokedAt == null && row.expiresAt.getTime() > now.getTime())
       .map((row) => ({
@@ -531,6 +615,8 @@ export async function loadCustomerCommercialCreditIntelligence(
     revealFinancial: options.revealFinancial,
     occurrenceLines: read.occurrenceLines,
     corporateRelations: read.corporateRelations,
+    pendingCorporateRelations: read.pendingCorporateRelations,
+    ownCustomerStatus: read.ownCustomerStatus,
     authorizedExceptions: read.activeExceptions.map((row) =>
       formatCommercialCreditException({
         scope: row.scope,

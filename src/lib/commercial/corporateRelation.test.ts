@@ -1,5 +1,6 @@
 /**
- * QSA liga CNPJ completo. Nome, CPF e documento mascarado não ligam.
+ * QSA liga CNPJ completo e CPF válido pelo hash.
+ * Nome igual fica pendente. Documento mascarado e CPF inválido não ligam.
  * Não abre banco e não grava título.
  */
 import assert from "node:assert/strict";
@@ -11,6 +12,7 @@ import { readCommercialCreditDecision } from "./commercialCreditDecision.server.
 import {
   analyzeCorporateRelations,
   classifyCorporateRole,
+  corporateIdentityKey,
   extractBrasilApiMemberships,
   extractMembershipsFromLookup,
   extractPublicaMemberships,
@@ -45,6 +47,7 @@ function row(partial: Partial<CorporateMembershipDraft> & Pick<CorporateMembersh
     reliability: partial.memberCnpj ? "HIGH" : "INSUFFICIENT",
     evidenceRef: `${partial.subjectCnpj}:${partial.memberCnpj ?? "none"}:${partial.source ?? "brasilapi"}`,
     nameKey: null,
+    identityKey: null,
     ...partial,
   };
 }
@@ -152,7 +155,77 @@ describe("vínculos societários", () => {
     );
     assert.equal(cpf[0]?.documentKind, "CPF_WITHHELD");
     assert.equal(cpf[0]?.memberCnpj, null);
+    assert.equal(corporateIdentityKey("11111111111"), null);
+    assert.ok(cpf[0]?.identityKey?.startsWith("cpf:"));
     assert.equal(JSON.stringify(cpf).includes("12345678909"), false);
+  });
+
+  it("CPF válido liga pelo hash e não grava o documento", () => {
+    const digits = "52998224725";
+    const key = corporateIdentityKey(digits);
+    assert.ok(key?.startsWith("cpf:"));
+    assert.equal(key?.includes(digits), false);
+    const left = extractBrasilApiMemberships(
+      { cnpj: CNPJ_A, qsa: [{ nome_socio: "PESSOA OCULTA", qualificacao_socio: "Administrador", cnpj_cpf_do_socio: digits }] },
+      FRESH
+    );
+    const right = extractBrasilApiMemberships(
+      { cnpj: CNPJ_B, qsa: [{ nome_socio: "PESSOA OCULTA", qualificacao_socio: "Administrador", cnpj_cpf_do_socio: digits }] },
+      FRESH
+    );
+    assert.equal(JSON.stringify([...left, ...right]).includes(digits), false);
+    assert.equal(left[0]?.identityKey, right[0]?.identityKey);
+    const report = analyzeCorporateRelations({
+      now: NOW,
+      parties: [party(A, CNPJ_A, "Alpha"), party(B, CNPJ_B, "Beta")],
+      memberships: [...left, ...right],
+    });
+    const fromA = report.relations.filter((relation) => relation.subjectCustomerId === A);
+    assert.equal(fromA.length, 1);
+    assert.equal(fromA[0]?.basis, "SHARED_CPF");
+    assert.equal(fromA[0]?.relatedCustomerId, B);
+    assert.equal(JSON.stringify(fromA).includes(digits), false);
+    assert.equal(report.candidates.length, 0);
+  });
+
+  it("nome igual fica pendente e não puxa o grupo confirmado da outra ponta", () => {
+    const report = analyzeCorporateRelations({
+      now: NOW,
+      parties: [party(A, CNPJ_A, "Alpha"), party(B, CNPJ_B, "Beta"), party(C, CNPJ_C, "Gama")],
+      memberships: [
+        row({ subjectCnpj: CNPJ_A, memberCnpj: null, reliability: "INSUFFICIENT", documentKind: "MASKED", nameKey: "JOAO DA SILVA" }),
+        row({ subjectCnpj: CNPJ_B, memberCnpj: null, reliability: "INSUFFICIENT", documentKind: "MASKED", nameKey: "JOAO DA SILVA" }),
+        row({ subjectCnpj: CNPJ_B, memberCnpj: "00000000000191" }),
+        row({ subjectCnpj: CNPJ_C, memberCnpj: "00000000000191" }),
+      ],
+    });
+    const confirmedFromA = report.relations.filter((relation) => relation.subjectCustomerId === A);
+    assert.equal(confirmedFromA.length, 0);
+    const pendingFromA = report.candidates.filter((candidate) => candidate.subjectCustomerId === A);
+    assert.equal(pendingFromA.length, 1);
+    assert.equal(pendingFromA[0]?.status, "PENDING_REVIEW");
+    assert.equal(pendingFromA[0]?.relatedCustomerId, B);
+    assert.equal(JSON.stringify(pendingFromA).includes("JOAO"), false);
+    const confirmedFromB = report.relations.filter((relation) => relation.subjectCustomerId === B && relation.basis === "SHARED_CNPJ");
+    assert.equal(confirmedFromB[0]?.relatedCustomerId, C);
+  });
+
+  it("cadeia confirmada de três empresas alcança a ponta indireta", () => {
+    const report = analyzeCorporateRelations({
+      now: NOW,
+      parties: [party(A, CNPJ_A, "Alpha"), party(B, CNPJ_B, "Beta"), party(C, CNPJ_C, "Gama")],
+      memberships: [
+        row({ subjectCnpj: CNPJ_A, memberCnpj: "11111111000191" }),
+        row({ subjectCnpj: CNPJ_B, memberCnpj: "11111111000191" }),
+        row({ subjectCnpj: CNPJ_B, memberCnpj: "22222222000191" }),
+        row({ subjectCnpj: CNPJ_C, memberCnpj: "22222222000191" }),
+      ],
+    });
+    const fromA = report.relations.filter((relation) => relation.subjectCustomerId === A);
+    const related = fromA.map((relation) => relation.relatedCustomerId).sort();
+    assert.deepEqual(related, [B, C].sort());
+    assert.equal(fromA.find((relation) => relation.relatedCustomerId === C)?.basis, "TRANSITIVE");
+    assert.equal(fromA.find((relation) => relation.relatedCustomerId === B)?.basis, "SHARED_CNPJ");
   });
 
   it("inclui a consulta uma vez e não apaga o histórico", async () => {
@@ -185,13 +258,13 @@ describe("vínculos societários", () => {
   it("gera análise pelo vínculo e mantém bloqueio crítico só na restrição própria", async () => {
     const customers = [
       { id: A, taxId: CNPJ_A, companyName: "Alpha", nomusExternalPersonId: 100, status: "ACTIVE" },
-      { id: B, taxId: CNPJ_B, companyName: "Beta", nomusExternalPersonId: 200, status: "LEAD" },
+      { id: B, taxId: CNPJ_C, companyName: "Beta", nomusExternalPersonId: 200, status: "LEAD" },
     ];
     const titles = [
       { externalId: 1, personId: 100, personCnpj: CNPJ_A, dueDate: new Date(2026, 9, 25), amountReceivable: 100, amountReceived: 0, balanceReceivable: 100, syncedAt: SYNCED },
-      { externalId: 2, personId: 200, personCnpj: CNPJ_B, dueDate: new Date(2026, 9, 10), amountReceivable: 400, amountReceived: 0, balanceReceivable: 400, syncedAt: SYNCED },
+      { externalId: 2, personId: 200, personCnpj: CNPJ_C, dueDate: new Date(2026, 9, 10), amountReceivable: 400, amountReceived: 0, balanceReceivable: 400, syncedAt: SYNCED },
     ];
-    const memberships = [row({ subjectCnpj: CNPJ_A, memberCnpj: CNPJ_B })];
+    const memberships = [row({ subjectCnpj: CNPJ_A, memberCnpj: CNPJ_C })];
     const occurrences: Array<Record<string, unknown>> = [];
     const db = {
       customer: {
@@ -240,7 +313,7 @@ describe("vínculos societários", () => {
       paymentTerms: "30",
       now: NOW,
     });
-    assert.equal(related.decision.customerStatus, "EM_ANALISE");
+    assert.equal(related.decision.customerStatus, "BLOQUEADO");
     assert.equal(related.decision.reason, "RELATED_PARTY_DELINQUENT");
     assert.notEqual(related.decision.customerStatus, "BLOQUEIO_CRITICO");
     assert.equal(related.corporateRelations.length, 1);

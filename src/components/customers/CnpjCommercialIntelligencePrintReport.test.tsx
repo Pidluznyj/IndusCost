@@ -213,6 +213,11 @@ describe("CnpjCommercialIntelligencePrintReport", () => {
     const css = readFileSync(join(__dirname, "../../cnpj-intelligence-print.css"), "utf8");
     assert.match(html, /Score cadastral: 91\/100/);
     assert.match(html, /CRÉDITO BLOQUEADO/);
+    assert.equal(credit.decisionTitle, "CRÉDITO BLOQUEADO");
+    assert.match(html, new RegExp(credit.decisionTitle));
+    assert.match(html, /Protesto nacional IEPTB/);
+    assert.match(html, /Não consultado/);
+    assert.match(html, /Dívida de empresa relacionada não é dívida deste CNPJ/);
     assert.match(html, /Não autoriza crédito nem venda a prazo/);
     assert.match(html, /Nenhuma consulta ao Banco Central foi realizada/);
     assert.match(html, /cnpj-intelligence-print-kv-table/);

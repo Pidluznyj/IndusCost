@@ -117,6 +117,10 @@ export function CnpjCommercialIntelligencePrintReport({ data }: Props) {
                 <td>{data.credit.externalProtestLabel}</td>
               </tr>
               <tr>
+                <th>Protesto nacional IEPTB</th>
+                <td colSpan={3}>{data.credit.ieptbSituationLabel}</td>
+              </tr>
+              <tr>
                 <th>Banco Central</th>
                 <td colSpan={3}>{data.credit.bcbDetail}</td>
               </tr>
@@ -128,20 +132,42 @@ export function CnpjCommercialIntelligencePrintReport({ data }: Props) {
                 <th>Origem</th>
                 <td colSpan={3}>{data.credit.evidenceOrigin}</td>
               </tr>
-              {data.credit.corporateRelations.length > 0 ? (
-                <tr>
-                  <th>Vínculos</th>
-                  <td colSpan={3}>
-                    {data.credit.corporateRelations.map((relation) => (
-                      <p key={`${relation.kindLabel}-${relation.relatedCompany}`}>
-                        {formatCnpjPrintText(
-                          `${relation.kindLabel} · ${relation.relatedCompany} · ${relation.creditStatusLabel}. ${relation.evidence}`
-                        )}
-                      </p>
-                    ))}
-                  </td>
-                </tr>
-              ) : null}
+              <tr>
+                <th>Análise consolidada</th>
+                <td colSpan={3}>
+                  <p>
+                    Decisão individual: {data.credit.ownDecisionTitle}. Decisão consolidada: {data.credit.decisionTitle}.
+                  </p>
+                  <p>
+                    Dívida de empresa relacionada não é dívida deste CNPJ. O score cadastral não autoriza crédito.
+                  </p>
+                  {data.credit.relatedRiskNote ? <p>{formatCnpjPrintText(data.credit.relatedRiskNote)}</p> : null}
+                  {data.credit.corporateRelations.length === 0 && data.credit.pendingCorporateRelations.length === 0 ? (
+                    <p>Nenhuma empresa relacionada confirmada.</p>
+                  ) : null}
+                  {data.credit.corporateRelations.map((relation) => (
+                    <p key={`${relation.kindLabel}-${relation.relatedCompany}`}>
+                      {formatCnpjPrintText(
+                        `Confirmada · ${relation.kindLabel} · ${relation.relatedCompany} · ${relation.creditStatusLabel}. ${relation.evidence}`
+                      )}
+                    </p>
+                  ))}
+                  {data.credit.pendingCorporateRelations.map((relation) => (
+                    <p key={`pending-${relation.relatedCompany}`}>
+                      {formatCnpjPrintText(
+                        `Pendente · ${relation.relatedCompany} · ${relation.creditStatusLabel}. ${relation.evidence}`
+                      )}
+                    </p>
+                  ))}
+                  {data.credit.authorizedExceptions.length > 0 ? (
+                    <p>
+                      {formatCnpjPrintText(
+                        `Autorização excepcional: ${data.credit.authorizedExceptions.join(" · ")}. Os motivos de risco permanecem visíveis.`
+                      )}
+                    </p>
+                  ) : null}
+                </td>
+              </tr>
               {data.credit.occurrenceLines.length > 0 ? (
                 <tr>
                   <th>Ocorrências</th>
