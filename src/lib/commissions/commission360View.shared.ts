@@ -246,18 +246,87 @@ export type Commission360DiagnosticColumn = {
 // Payload
 // ---------------------------------------------------------------------------
 
+/**
+ * Mês da série principal. A série histórica oficial (pago, realizado) só existe a partir do
+ * cutover (10/2026); antes dele o valor é null (não zero): o mês só aparece por causa da
+ * previsão, que começa no marco da Previsão (09/2026). Legado e ajustes retroativos nunca
+ * entram aqui — ficam em `legacySection`.
+ */
 export type Commission360Month = {
   month: string;
   label: string;
   kind: "past" | "current" | "future";
-  /** CONFIRMADO: pago em lote PAID, pela data do pagamento. */
-  paidConfirmed: number;
-  /** LEGADO: contemplado em relatório Nomus (competência do relatório). */
-  legacyUnconfirmed: number;
-  /** REALIZADO: comissão dos recebimentos do mês (data do recebimento). */
-  realized: number;
+  /** Mês com fechamento oficial no IndusCost (≥ cutover). */
+  official: boolean;
+  /** CONFIRMADO: lote PAID de competência oficial, pela data do pagamento. null antes do cutover. */
+  paidConfirmed: number | null;
+  /** REALIZADO: comissão dos recebimentos oficiais do mês (receiptDate ≥ cutover, sem cobertura Nomus). */
+  realized: number | null;
   /** PREVISTO: comissão sobre o saldo aberto dos CRs com vencimento no mês. */
   forecast: number;
+};
+
+export type Commission360SeriesInfo = {
+  /** Primeiro mês da série histórica oficial (cutover do fechamento IndusCost). */
+  officialStartMonth: string;
+  /** Primeiro mês da previsão (marco da Previsão; antes dele vale o relatório do Nomus). */
+  forecastStartMonth: string;
+  note: string;
+};
+
+export const COMMISSION_360_LEGACY_SECTION_TITLE = "Histórico legado / Ajustes retroativos";
+
+export const COMMISSION_360_LEGACY_SECTION_NOTE =
+  "Valores que NÃO integram a série principal: histórico do Nomus (espelho técnico até 30/09/2026), " +
+  "recebimentos com competência natural anterior a 10/2026, linhas de ajuste retroativo dos fechamentos " +
+  "(LEGACY_CARRYOVER e ajustes manuais), lotes de competência anterior ao corte e previsão de títulos " +
+  "vencidos antes de 09/2026. Um valor legado pago depois do corte continua legado.";
+
+export type Commission360LegacyTotals = {
+  /** Comissão contemplada em relatório do Nomus (NOMUS_LEGACY), sem confirmação de desembolso. */
+  nomusLegacyCovered: number;
+  nomusLegacyCoveredCount: number;
+  /** Comissão realizada de recebimentos legados (receiptDate < cutover ou cobertos pelo Nomus). */
+  legacyRealized: number;
+  /** Parte desses recebimentos legados ainda sem cobertura de fechamento (pendência antiga). */
+  legacyAwaitingClosing: number;
+  /** Liberado em fechamento oficial como ajuste retroativo (LEGACY_CARRYOVER, MANUAL_ADJUSTMENT). */
+  retroactiveReleased: number;
+  /** Ajuste retroativo liberado e não pago (só quando o pagamento do fechamento é atribuível). */
+  retroactiveNotPaid: number;
+  /** Lotes PAID de competência anterior ao corte ou que atravessam o corte. */
+  legacyPayments: number;
+  legacyPaymentsCount: number;
+  /** Comissão prevista de títulos em aberto vencidos antes do marco da Previsão. */
+  forecastBeforeStart: number;
+  forecastBeforeStartCount: number;
+};
+
+export type Commission360LegacySection = {
+  title: string;
+  note: string;
+  totals: Commission360LegacyTotals;
+  /** Por competência natural (mês do recebimento / do relatório Nomus / natural da linha retroativa). */
+  byMonth: Array<{ month: string; label: string; nomusLegacyCovered: number; legacyRealized: number; retroactiveReleased: number }>;
+  bySeller: Array<{
+    key: string;
+    sellerName: string;
+    nomusLegacyCovered: number;
+    legacyRealized: number;
+    legacyAwaitingClosing: number;
+    retroactiveReleased: number;
+    legacyPayments: number;
+  }>;
+  /** Lotes pagos fora da série (competência anterior ao corte ou atravessando o corte). */
+  payments: Array<Commission360PaymentRow & { reason: string }>;
+  /** Linhas retroativas dos fechamentos oficiais, agregadas por fechamento × natural × vendedor × tipo. */
+  retroactiveLines: Array<{
+    competence: string;
+    naturalMonth: string | null;
+    sellerName: string;
+    inclusionType: string;
+    released: number;
+  }>;
 };
 
 export type Commission360Cards = {
@@ -282,7 +351,6 @@ export type Commission360SellerRow = {
   canonicalSellerId: string | null;
   sellerName: string;
   paidConfirmed: number;
-  legacyUnconfirmed: number;
   realizedAwaitingClosing: number;
   releasedNotPaid: number;
   forecast: number;
@@ -332,6 +400,12 @@ export type Commission360ReleasedRow = {
   sellerName: string;
   closingId: string;
   released: number;
+  /** Parte operacional do liberado (NORMAL / LATE_CARRYOVER com competência natural ≥ cutover). */
+  releasedOperational: number;
+  /** Parte de ajuste retroativo (LEGACY_CARRYOVER, MANUAL_ADJUSTMENT ou natural < cutover). */
+  releasedAdjustment: number;
+  /** Ajuste retroativo liberado e não pago (fica na seção legado/ajustes, fora do card). */
+  adjustmentNotPaid: number;
   /** Pago com vínculo por linha (mesmo CommissionRecord do item do lote e da linha do fechamento). */
   paidByLine: number;
   /** Pago por lote do vendedor com período inteiro na competência (único fechamento do mês). */
@@ -486,6 +560,8 @@ export type Commission360Payload = {
     potential?: Commission360PotentialOrderRow[];
     receivables?: Commission360CrRow[];
   };
+  series: Commission360SeriesInfo;
+  legacySection: Commission360LegacySection;
   sources: Array<{ indicator: string; nature: Commission360Nature; source: string; rule: string; limitation: string | null }>;
   limitations: string[];
 };
@@ -496,21 +572,25 @@ export const COMMISSION_360_SOURCES: Commission360Payload["sources"] = [
     indicator: "Pago efetivamente",
     nature: "CONFIRMADO",
     source: "CommissionPaymentBatch PAID + CommissionPaymentBatchItem PAID",
-    rule: "Soma de amountPaid dos itens pagos, no mês de paymentDate do lote.",
+    rule:
+      "Soma de amountPaid dos itens pagos, no mês de paymentDate do lote, só de lotes com competência (período) " +
+      "inteiramente a partir de 10/2026. Lote de competência legada pago depois do corte fica no legado.",
     limitation: "Não há estorno registrado no schema; lote PAID sem data de pagamento aparece como divergência.",
   },
   {
-    indicator: "Histórico legado Nomus",
+    indicator: "Histórico legado Nomus (seção separada)",
     nature: "LEGADO",
     source: "CommissionReceiptCoverage NOMUS_LEGACY COVERED",
-    rule: "Comissão contemplada no relatório do Nomus importado, pela competência do relatório.",
+    rule: "Comissão contemplada no relatório do Nomus importado, pela competência do relatório. Nunca entra na série principal.",
     limitation: "O relatório não traz a data do desembolso: não é tratado como pagamento confirmado.",
   },
   {
     indicator: "Realizada aguardando fechamento",
     nature: "REALIZADO",
     source: "Motor da Previsão (NomusReceivableReceipt × CommissionReceivableSchedule × CommissionReceiptCoverage)",
-    rule: "Comissão de eventos de recebimento ainda sem cobertura de fechamento.",
+    rule:
+      "Comissão de eventos de recebimento ainda sem cobertura de fechamento, com receiptDate a partir de 01/10/2026 " +
+      "(competência natural). Recebimentos legados sem cobertura são pendência antiga, na seção legado.",
     limitation: "Saldo atual; a posição de meses passados não é reconstruída.",
   },
   {
@@ -519,14 +599,18 @@ export const COMMISSION_360_SOURCES: Commission360Payload["sources"] = [
     source: "CommissionReceiptLedgerLine de fechamentos CLOSED (competência ≥ 10/2026) − lotes PAID do vendedor",
     rule:
       "Liberado no fechamento oficial menos pagamentos com evidência: mesmo CommissionRecord (linha) ou lote do vendedor " +
-      "com período inteiro na competência. Lote sem evidência não abate nada e a liberada vira 'não conciliada'.",
+      "com período inteiro na competência. Lote sem evidência não abate nada e a liberada vira 'não conciliada'. " +
+      "Só linhas operacionais (NORMAL/LATE_CARRYOVER com competência natural ≥ 10/2026); LEGACY_CARRYOVER e ajustes " +
+      "manuais são ajustes retroativos, na seção legado.",
     limitation: "Linhas de fechamento vindas de schedule não têm CommissionRecord: sem lote mensal exato não há como provar o pagamento.",
   },
   {
     indicator: "Prevista sobre CRs",
     nature: "PREVISTO",
     source: "Motor oficial da Previsão (commissionPortfolioOutlook)",
-    rule: "min(comissão alocada × saldo aberto / nominal, alocada − realizada), por mês de vencimento.",
+    rule:
+      "min(comissão alocada × saldo aberto / nominal, alocada − realizada), por mês de vencimento, a partir de 09/2026 " +
+      "(marco da Previsão). Títulos em aberto vencidos antes disso ficam na seção legado.",
     limitation: "Só títulos com schedule vigente. Títulos sem schedule aparecem na conciliação, nunca na previsão.",
   },
   {

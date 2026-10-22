@@ -232,6 +232,9 @@ async function loadClosedLedgerLines(scope: CommissionAccessScope): Promise<Comm
       rawSellerName: true,
       releasedCommissionAmount: true,
       commissionRecordId: true,
+      inclusionType: true,
+      naturalYear: true,
+      naturalMonth: true,
       closing: { select: { status: true } },
     },
   });
@@ -248,6 +251,9 @@ async function loadClosedLedgerLines(scope: CommissionAccessScope): Promise<Comm
       sellerName: row.canonicalSellerName ?? row.rawSellerName ?? "Sem vendedor",
       releasedCommissionAmount: decimalToNumber(row.releasedCommissionAmount),
       commissionRecordId: row.commissionRecordId,
+      inclusionType: row.inclusionType,
+      naturalYear: row.naturalYear,
+      naturalMonth: row.naturalMonth,
     }));
 }
 

@@ -37,6 +37,7 @@ import { COMMISSIONS_SECTION_PATHS } from "@/src/lib/commissionsNavigation";
 import {
   COMMISSION_360_CR_STATUS_META,
   COMMISSION_360_DESCRIPTION,
+  COMMISSION_360_LEGACY_SECTION_TITLE,
   COMMISSION_360_NATURE_LABELS,
   COMMISSION_360_POTENTIAL_STATUS_LABELS,
   COMMISSION_360_RELEASED_STATUS_LABELS,
@@ -81,16 +82,19 @@ const COMPACT_BRL = new Intl.NumberFormat("pt-BR", { notation: "compact", maximu
 
 const CHART_COLORS = {
   paid: "#059669",
-  legacy: "#94A3B8",
   realized: "#2563EB",
   forecast: "#D97706",
 };
 
+/**
+ * Série principal: só o motor oficial. Pago/realizado são null antes de 10/2026 (sem barra, e o
+ * tooltip mostra "fora da série"); o legado nunca é desenhado aqui — ver LegacySection.
+ */
 function Commission360Chart({ months }: { months: Commission360Payload["months"] }) {
   const data = months.map((row) => ({
     label: row.label,
+    official: row.official,
     "Pago (confirmado)": row.paidConfirmed,
-    "Legado Nomus (sem confirmação)": row.legacyUnconfirmed,
     "Realizado (recebimentos)": row.realized,
     "Previsto sobre CRs": row.forecast,
   }));
@@ -101,11 +105,14 @@ function Commission360Chart({ months }: { months: Commission360Payload["months"]
           <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" />
           <XAxis dataKey="label" tick={{ fontSize: 11 }} />
           <YAxis tick={{ fontSize: 11 }} width={72} tickFormatter={(value: number) => COMPACT_BRL.format(value)} />
-          <Tooltip formatter={(value: number) => formatFinanceCurrency(value)} />
+          <Tooltip
+            formatter={(value: number | null, name: string) =>
+              value == null ? ["fora da série oficial (antes de 10/2026)", name] : [formatFinanceCurrency(value), name]
+            }
+          />
           <Legend wrapperStyle={{ fontSize: 12 }} />
           {/* Histórico: barras sólidas. Estimativa: linha tracejada. Nunca empilhados. */}
           <Bar dataKey="Pago (confirmado)" fill={CHART_COLORS.paid} isAnimationActive={false} />
-          <Bar dataKey="Legado Nomus (sem confirmação)" fill={CHART_COLORS.legacy} fillOpacity={0.6} isAnimationActive={false} />
           <Bar dataKey="Realizado (recebimentos)" fill={CHART_COLORS.realized} isAnimationActive={false} />
           <Line
             type="linear"
@@ -119,6 +126,132 @@ function Commission360Chart({ months }: { months: Commission360Payload["months"]
         </ComposedChart>
       </ResponsiveContainer>
     </div>
+  );
+}
+
+/** Histórico legado / Ajustes retroativos: nada daqui integra a série principal. */
+function LegacySection({ legacy }: { legacy: Commission360Payload["legacySection"] }) {
+  const totals = legacy.totals;
+  const rows: Array<[string, string]> = [
+    [`Relatórios do Nomus (${totals.nomusLegacyCoveredCount} recebimento(s)) — sem confirmação de desembolso`, money(totals.nomusLegacyCovered)],
+    ["Comissão de recebimentos legados (competência natural antes de 10/2026 ou cobertos pelo Nomus)", money(totals.legacyRealized)],
+    ["Recebimentos legados ainda sem cobertura (pendência de competência antiga)", money(totals.legacyAwaitingClosing)],
+    ["Ajustes retroativos liberados em fechamentos oficiais (LEGACY_CARRYOVER, ajuste manual)", money(totals.retroactiveReleased)],
+    ["Ajustes retroativos liberados e não pagos", money(totals.retroactiveNotPaid)],
+    [`Lotes pagos de competência legada ou atravessando o corte (${totals.legacyPaymentsCount})`, money(totals.legacyPayments)],
+    [`Previsão de títulos vencidos antes de 09/2026 (${totals.forecastBeforeStartCount})`, money(totals.forecastBeforeStart)],
+  ];
+  return (
+    <details className="rounded-xl border border-dashed border-border px-4 py-3" data-testid="commissions-360-legacy">
+      <summary className="cursor-pointer text-sm font-semibold text-foreground">
+        {legacy.title} — não integra a série principal
+      </summary>
+      <p className="mt-2 text-xs text-slate-500">{legacy.note}</p>
+      <ul className="mt-2 space-y-1 text-sm text-slate-700" data-testid="commissions-360-legacy-totals">
+        {rows.map(([label, value]) => (
+          <li key={label} className="flex justify-between gap-4">
+            <span>{label}</span>
+            <span className="tabular-nums">{value}</span>
+          </li>
+        ))}
+      </ul>
+      {legacy.byMonth.length > 0 ? (
+        <CommissionsTableScroll testId="commissions-360-legacy-months">
+          <thead>
+            <tr>
+              <th className={TH}>Competência natural</th>
+              <th className={TH_RIGHT}>Relatório Nomus</th>
+              <th className={TH_RIGHT}>Recebimentos legados</th>
+              <th className={TH_RIGHT}>Ajuste retroativo liberado</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border">
+            {legacy.byMonth.map((row) => (
+              <tr key={row.month}>
+                <td className={TD}>{row.label}</td>
+                <td className={TD_RIGHT}>{money(row.nomusLegacyCovered)}</td>
+                <td className={TD_RIGHT}>{money(row.legacyRealized)}</td>
+                <td className={TD_RIGHT}>{money(row.retroactiveReleased)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </CommissionsTableScroll>
+      ) : null}
+      {legacy.bySeller.length > 0 ? (
+        <CommissionsTableScroll testId="commissions-360-legacy-sellers">
+          <thead>
+            <tr>
+              <th className={TH}>Vendedor</th>
+              <th className={TH_RIGHT}>Relatório Nomus</th>
+              <th className={TH_RIGHT}>Recebimentos legados</th>
+              <th className={TH_RIGHT}>Pendência antiga</th>
+              <th className={TH_RIGHT}>Ajuste retroativo</th>
+              <th className={TH_RIGHT}>Lotes legados pagos</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border">
+            {legacy.bySeller.map((row) => (
+              <tr key={row.key}>
+                <td className={TD}>{row.sellerName}</td>
+                <td className={TD_RIGHT}>{money(row.nomusLegacyCovered)}</td>
+                <td className={TD_RIGHT}>{money(row.legacyRealized)}</td>
+                <td className={TD_RIGHT}>{money(row.legacyAwaitingClosing)}</td>
+                <td className={TD_RIGHT}>{money(row.retroactiveReleased)}</td>
+                <td className={TD_RIGHT}>{money(row.legacyPayments)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </CommissionsTableScroll>
+      ) : null}
+      {legacy.payments.length > 0 ? (
+        <CommissionsTableScroll testId="commissions-360-legacy-payments">
+          <thead>
+            <tr>
+              <th className={TH}>Data do pagamento</th>
+              <th className={TH}>Vendedor</th>
+              <th className={TH}>Lote</th>
+              <th className={TH_RIGHT}>Pago</th>
+              <th className={TH}>Por que fica fora</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border">
+            {legacy.payments.map((row) => (
+              <tr key={`${row.batchId}|${row.reason}`}>
+                <td className={TD}>{row.paymentDate ?? "—"}</td>
+                <td className={TD}>{row.sellerName}</td>
+                <td className={`${TD} font-mono text-xs`}>{row.batchId}</td>
+                <td className={TD_RIGHT}>{money(row.amountPaid)}</td>
+                <td className={`${TD} text-xs`}>{row.reason}</td>
+              </tr>
+            ))}
+          </tbody>
+        </CommissionsTableScroll>
+      ) : null}
+      {legacy.retroactiveLines.length > 0 ? (
+        <CommissionsTableScroll testId="commissions-360-legacy-retroactive">
+          <thead>
+            <tr>
+              <th className={TH}>Fechamento</th>
+              <th className={TH}>Competência natural</th>
+              <th className={TH}>Vendedor</th>
+              <th className={TH}>Tipo</th>
+              <th className={TH_RIGHT}>Liberado</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border">
+            {legacy.retroactiveLines.map((row) => (
+              <tr key={`${row.competence}|${row.naturalMonth}|${row.sellerName}|${row.inclusionType}`}>
+                <td className={TD}>{row.competence}</td>
+                <td className={TD}>{row.naturalMonth ?? "—"}</td>
+                <td className={TD}>{row.sellerName}</td>
+                <td className={TD}>{row.inclusionType}</td>
+                <td className={TD_RIGHT}>{money(row.released)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </CommissionsTableScroll>
+      ) : null}
+    </details>
   );
 }
 
@@ -254,7 +387,10 @@ function DetailSection({
             ))}
           </tbody>
         </CommissionsTableScroll>
-        <p className="text-xs text-slate-500">{COMMISSION_360_NATURE_LABELS.LEGADO}: relatórios do Nomus importados.</p>
+        <p className="text-xs text-slate-500">
+          {COMMISSION_360_NATURE_LABELS.LEGADO}: relatórios do Nomus importados — fora da série principal (ver{" "}
+          {COMMISSION_360_LEGACY_SECTION_TITLE}).
+        </p>
         <CommissionsTableScroll testId="commissions-360-legacy-table">
           <thead>
             <tr>
@@ -339,7 +475,8 @@ function DetailSection({
               <th className={TH}>Competência</th>
               <th className={TH}>Vendedor</th>
               <th className={TH}>Fechamento</th>
-              <th className={TH_RIGHT}>Liberada</th>
+              <th className={TH_RIGHT}>Liberada operacional</th>
+              <th className={TH_RIGHT}>Ajuste retroativo</th>
               <th className={TH_RIGHT}>Paga com vínculo</th>
               <th className={TH_RIGHT}>Não paga</th>
               <th className={TH_RIGHT}>Não conciliada</th>
@@ -352,7 +489,8 @@ function DetailSection({
                 <td className={TD}>{row.competence}</td>
                 <td className={TD}>{row.sellerName}</td>
                 <td className={`${TD} font-mono text-xs`}>{row.closingId}</td>
-                <td className={TD_RIGHT}>{money(row.released)}</td>
+                <td className={TD_RIGHT}>{money(row.releasedOperational)}</td>
+                <td className={`${TD_RIGHT} text-slate-500`}>{money(row.releasedAdjustment)}</td>
                 <td className={TD_RIGHT}>{money(row.paid)}</td>
                 <td className={TD_RIGHT}>{money(row.releasedNotPaid)}</td>
                 <td className={TD_RIGHT}>{money(row.unreconciledAmount)}</td>
@@ -771,7 +909,7 @@ export function Commissions360ViewPage() {
               amountFormat="currency"
               tone="success"
               subtitle={`${cards?.paidConfirmedCount ?? 0} lote(s) pago(s) no período`}
-              helperText={`Só lotes com status pago, pela data do pagamento. ${COMMISSION_360_NATURE_LABELS.LEGADO}: ${money(cards?.legacyUnconfirmed ?? 0)} (não somado).`}
+              helperText="Só lotes pagos de competência a partir de 10/2026, pela data do pagamento. Pagamentos de competência legada ficam em Histórico legado / Ajustes retroativos."
               testId="commissions-360-card-paid"
             />
             <SystemTotalizerCard
@@ -826,7 +964,10 @@ export function Commissions360ViewPage() {
           </CommissionsKpiSection>
 
           <section className="space-y-2">
-            <h3 className="text-sm font-semibold text-foreground">Evolução mensal</h3>
+            <h3 className="text-sm font-semibold text-foreground">Evolução mensal — motor oficial</h3>
+            <p className="text-xs text-slate-500" data-testid="commissions-360-series-note">
+              {data.series.note}
+            </p>
             <Commission360Chart months={data.months} />
           </section>
 
@@ -850,7 +991,6 @@ export function Commissions360ViewPage() {
                 <tr>
                   <th className={TH}>Vendedor</th>
                   <th className={TH_RIGHT}>Pago</th>
-                  <th className={TH_RIGHT}>Legado sem confirmação</th>
                   <th className={TH_RIGHT}>Aguardando fechamento</th>
                   <th className={TH_RIGHT}>Liberada não paga</th>
                   <th className={TH_RIGHT}>Prevista</th>
@@ -860,7 +1000,7 @@ export function Commissions360ViewPage() {
               <tbody className="divide-y divide-border">
                 {data.bySeller.length === 0 ? (
                   <tr>
-                    <td className={TD} colSpan={7}>
+                    <td className={TD} colSpan={6}>
                       Nenhum vendedor no filtro.
                     </td>
                   </tr>
@@ -869,7 +1009,6 @@ export function Commissions360ViewPage() {
                     <tr key={row.key}>
                       <td className={TD}>{row.sellerName}</td>
                       <td className={TD_RIGHT}>{money(row.paidConfirmed)}</td>
-                      <td className={`${TD_RIGHT} text-slate-500`}>{money(row.legacyUnconfirmed)}</td>
                       <td className={TD_RIGHT}>{money(row.realizedAwaitingClosing)}</td>
                       <td className={TD_RIGHT}>{money(row.releasedNotPaid)}</td>
                       <td className={TD_RIGHT}>{money(row.forecast)}</td>
@@ -880,6 +1019,8 @@ export function Commissions360ViewPage() {
               </tbody>
             </CommissionsTableScroll>
           </section>
+
+          <LegacySection legacy={data.legacySection} />
 
           <section className="space-y-2">
             <div className="flex flex-wrap gap-2" role="tablist" aria-label="Detalhe da Visão 360°">

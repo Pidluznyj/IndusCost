@@ -19,10 +19,16 @@ import {
 import {
   COMMISSION_OFFICIAL_CUTOVER_YEAR_MONTH,
   formatCommissionYearMonthKey,
+  isCompetenceOfficialInIndusCost,
+  resolveReceiptCutoverPeriod,
 } from "./commissionCoverageCutover.js";
 import { CommissionQueryParseError } from "./commissionQuery.js";
 import type { CommissionAccessScope } from "./commissionAccessScope.js";
-import type { OutlookLine } from "./commissionPortfolioOutlook.js";
+import {
+  COMMISSION_PORTFOLIO_OUTLOOK_FIRST_MONTH,
+  type OutlookLine,
+  type OutlookReceiptEvent,
+} from "./commissionPortfolioOutlook.js";
 import { buildCommissionReceivableScheduleDrafts } from "./commissionReceivableScheduler.js";
 import { resolveUniqueSalesOrderFromNfeLinkCandidates } from "./commissionSalesOrderNfeLinkResolution.js";
 import { isCommissionSnapshotActive } from "./commissionScheduleVigency.js";
@@ -54,7 +60,66 @@ import {
   type Commission360Section,
   type Commission360SellerRow,
   type Commission360UnmatchedPaymentRow,
+  type Commission360LegacySection,
+  type Commission360SeriesInfo,
+  COMMISSION_360_LEGACY_SECTION_NOTE,
+  COMMISSION_360_LEGACY_SECTION_TITLE,
 } from "./commission360View.shared.js";
+
+// ---------------------------------------------------------------------------
+// Corte temporal oficial (regras de commissionCoverageCutover, reaproveitadas)
+// ---------------------------------------------------------------------------
+
+/**
+ * Série principal = só comissão do motor oficial IndusCost:
+ * - histórico oficial (pago, realizado, liberado) a partir do cutover 10/2026;
+ * - previsão a partir do marco da Previsão 09/2026 (vencimento dos CRs em aberto).
+ * Até 30/09/2026 o Nomus é a fonte (espelho técnico): nada disso entra na série.
+ */
+export const COMMISSION_360_SERIES: Commission360SeriesInfo = {
+  officialStartMonth: formatCommissionYearMonthKey(COMMISSION_OFFICIAL_CUTOVER_YEAR_MONTH),
+  forecastStartMonth: COMMISSION_PORTFOLIO_OUTLOOK_FIRST_MONTH,
+  note:
+    "A série principal mostra só o motor oficial do IndusCost: realizado e pago a partir de 10/2026 " +
+    "(competência natural = data do recebimento) e previsão a partir de 09/2026 (vencimento). " +
+    "Histórico do Nomus e ajustes retroativos ficam em Histórico legado / Ajustes retroativos.",
+};
+
+export type Commission360ReceiptSeriesClass = "OFICIAL" | "LEGADO_NOMUS" | "LEGADO_PRE_CORTE" | "AJUSTE_MANUAL";
+
+/**
+ * Recebimento na série oficial? A competência é a NATURAL (receiptDate); a data do fechamento,
+ * do pagamento ou a baixa (settlementDate) nunca deslocam o valor de mês.
+ * - coberto por relatório Nomus (NOMUS_LEGACY) → legado, mesmo que a data seja pós-corte;
+ * - receiptDate antes de 01/10/2026 (resolveReceiptCutoverPeriod) → legado, mesmo que fechado
+ *   depois no IndusCost (LEGACY_CARRYOVER);
+ * - coberto por ajuste manual → ajuste, fora da série operacional;
+ * - demais → oficial, no mês do receiptDate.
+ */
+export function classifyCommission360Receipt(
+  receipt: Pick<OutlookReceiptEvent, "receiptDate" | "coverageSource">
+): Commission360ReceiptSeriesClass {
+  if (receipt.coverageSource === "NOMUS_LEGACY") return "LEGADO_NOMUS";
+  if (resolveReceiptCutoverPeriod(receipt.receiptDate) !== "POST_CUTOVER") return "LEGADO_PRE_CORTE";
+  if (receipt.coverageSource === "MANUAL_ADJUSTMENT") return "AJUSTE_MANUAL";
+  return "OFICIAL";
+}
+
+/**
+ * Lote pago na série oficial só quando sua competência (período do lote) é inteiramente
+ * oficial. Lote de competência legada pago depois do corte continua legado; lote cujo período
+ * atravessa o corte não é dividido (sem vínculo para isso).
+ */
+export function classifyCommission360BatchCompetence(
+  batch: Pick<Commission360BatchInput, "periodStart" | "periodEnd">
+): { official: boolean; reason: string | null } {
+  const start = batch.periodStart.slice(0, 7);
+  const end = batch.periodEnd.slice(0, 7);
+  const cutover = COMMISSION_360_SERIES.officialStartMonth;
+  if (start >= cutover) return { official: true, reason: null };
+  if (end < cutover) return { official: false, reason: "Lote de competência anterior ao fechamento oficial (até 09/2026)." };
+  return { official: false, reason: "Período do lote atravessa o corte de 01/10/2026: não é dividido entre legado e oficial." };
+}
 
 const CUTOVER_MONTH = formatCommissionYearMonthKey(COMMISSION_OFFICIAL_CUTOVER_YEAR_MONTH);
 const MAX_RANGE_MONTHS = 36;
@@ -318,14 +383,39 @@ export type Commission360LedgerLineInput = {
   releasedCommissionAmount: number;
   /** CommissionRecord da linha (só no caminho legado do motor; nulo nas linhas vindas de schedule). */
   commissionRecordId: string | null;
+  /** NORMAL | LATE_CARRYOVER | LEGACY_CARRYOVER | MANUAL_ADJUSTMENT (ausente = NORMAL). */
+  inclusionType?: string | null;
+  /** Competência natural (mês do receiptDate); ausente = competência do fechamento. */
+  naturalYear?: number | null;
+  naturalMonth?: number | null;
 };
+
+/** Quanto de cada lote PAID pagou comissão operacional, ajuste retroativo ou não é atribuível. */
+export type Commission360BatchAttribution = { operational: number; adjustment: number; unattributed: number };
 
 export type Commission360ReleasedResult = {
   rows: Commission360ReleasedRow[];
   unmatchedPayments: Commission360UnmatchedPaymentRow[];
+  batchAttribution: Map<string, Commission360BatchAttribution>;
 };
 
 const MONEY_TOLERANCE = 0.01;
+
+/**
+ * Linha de fechamento oficial que integra a série operacional: incluída como NORMAL ou
+ * LATE_CARRYOVER (recebimento pós-cutover fechado depois) e com competência natural no período
+ * oficial. LEGACY_CARRYOVER (natural < 10/2026), MANUAL_ADJUSTMENT e qualquer natural anterior
+ * ao cutover são ajustes retroativos: ficam fora da série, sem alterar o fechamento.
+ */
+export function isCommission360OperationalLedgerLine(
+  line: Pick<Commission360LedgerLineInput, "year" | "month" | "inclusionType" | "naturalYear" | "naturalMonth">
+): boolean {
+  const inclusion = line.inclusionType ?? "NORMAL";
+  if (inclusion !== "NORMAL" && inclusion !== "LATE_CARRYOVER") return false;
+  const naturalYear = line.naturalYear ?? line.year;
+  const naturalMonth = line.naturalMonth ?? line.month;
+  return isCompetenceOfficialInIndusCost(naturalYear, naturalMonth);
+}
 
 /**
  * Liberada (fechamento CLOSED a partir do cutover) × pagamentos em lote.
@@ -346,8 +436,9 @@ export function buildCommission360ReleasedNotPaid(input: {
   batches: readonly Commission360BatchInput[];
 }): Commission360ReleasedResult {
   const rows = new Map<string, Commission360ReleasedRow>();
-  const rowByRecord = new Map<string, Commission360ReleasedRow>();
+  const rowByRecord = new Map<string, { row: Commission360ReleasedRow; operational: boolean }>();
   const closingsOfRow = new Map<Commission360ReleasedRow, Set<string>>();
+  const paidByLineKind = new Map<Commission360ReleasedRow, { operational: number; adjustment: number }>();
   const seenLines = new Set<string>();
   for (const line of input.ledgerLines) {
     if (line.closingStatus !== "CLOSED" || seenLines.has(line.lineId)) continue;
@@ -364,6 +455,9 @@ export function buildCommission360ReleasedNotPaid(input: {
       sellerName: line.sellerName,
       closingId: line.closingId,
       released: 0,
+      releasedOperational: 0,
+      releasedAdjustment: 0,
+      adjustmentNotPaid: 0,
       paidByLine: 0,
       paidByCompetence: 0,
       paid: 0,
@@ -374,19 +468,35 @@ export function buildCommission360ReleasedNotPaid(input: {
       matchedBatchIds: [],
       candidateBatchIds: [],
     };
-    row.released = roundMoney(row.released + Math.max(0, line.releasedCommissionAmount));
+    const amount = Math.max(0, line.releasedCommissionAmount);
+    const operational = isCommission360OperationalLedgerLine(line);
+    row.released = roundMoney(row.released + amount);
+    if (operational) row.releasedOperational = roundMoney(row.releasedOperational + amount);
+    else row.releasedAdjustment = roundMoney(row.releasedAdjustment + amount);
     rows.set(key, row);
     closingsOfRow.set(row, (closingsOfRow.get(row) ?? new Set<string>()).add(line.closingId));
-    if (line.commissionRecordId) rowByRecord.set(line.commissionRecordId, row);
+    if (line.commissionRecordId) rowByRecord.set(line.commissionRecordId, { row, operational });
   }
   const ordered = [...rows.values()].sort((a, b) => (a.competence < b.competence ? -1 : a.competence > b.competence ? 1 : 0));
 
   const unmatchedPayments: Commission360UnmatchedPaymentRow[] = [];
   const seenBatches = new Set<string>();
   const seenItems = new Set<string>();
+  // Rastreio por lote para separar depois o que ele pagou de operacional × ajuste retroativo.
+  const traces: Array<{
+    batchId: string;
+    lineOperational: number;
+    lineAdjustment: number;
+    remaining: number;
+    target: Commission360ReleasedRow | null;
+    candidates: Commission360ReleasedRow[];
+  }> = [];
+  const competenceBatches = new Map<Commission360ReleasedRow, string[]>();
   for (const batch of input.batches) {
     if (batch.status !== "PAID" || seenBatches.has(batch.batchId)) continue;
     seenBatches.add(batch.batchId);
+    const trace = { batchId: batch.batchId, lineOperational: 0, lineAdjustment: 0, remaining: 0, target: null as Commission360ReleasedRow | null, candidates: [] as Commission360ReleasedRow[] };
+    traces.push(trace);
     let remaining = 0;
     for (const item of batch.items) {
       if (item.status !== "PAID" || seenItems.has(item.itemId)) continue;
@@ -394,12 +504,19 @@ export function buildCommission360ReleasedNotPaid(input: {
       const amount = roundMoney(Math.max(0, item.amountPaid));
       const linked = item.commissionRecordId ? rowByRecord.get(item.commissionRecordId) : undefined;
       if (linked) {
-        linked.paidByLine = roundMoney(linked.paidByLine + amount);
-        if (!linked.matchedBatchIds.includes(batch.batchId)) linked.matchedBatchIds.push(batch.batchId);
+        linked.row.paidByLine = roundMoney(linked.row.paidByLine + amount);
+        const kinds = paidByLineKind.get(linked.row) ?? { operational: 0, adjustment: 0 };
+        if (linked.operational) kinds.operational = roundMoney(kinds.operational + amount);
+        else kinds.adjustment = roundMoney(kinds.adjustment + amount);
+        paidByLineKind.set(linked.row, kinds);
+        if (linked.operational) trace.lineOperational = roundMoney(trace.lineOperational + amount);
+        else trace.lineAdjustment = roundMoney(trace.lineAdjustment + amount);
+        if (!linked.row.matchedBatchIds.includes(batch.batchId)) linked.row.matchedBatchIds.push(batch.batchId);
       } else {
         remaining = roundMoney(remaining + amount);
       }
     }
+    trace.remaining = remaining;
     if (remaining <= 0) continue;
     const startMonth = batch.periodStart.slice(0, 7);
     const endMonth = batch.periodEnd.slice(0, 7);
@@ -409,8 +526,11 @@ export function buildCommission360ReleasedNotPaid(input: {
     if (exact.length === 1 && closingsOfRow.get(exact[0]!)!.size === 1) {
       exact[0]!.paidByCompetence = roundMoney(exact[0]!.paidByCompetence + remaining);
       exact[0]!.matchedBatchIds.push(batch.batchId);
+      trace.target = exact[0]!;
+      competenceBatches.set(exact[0]!, [...(competenceBatches.get(exact[0]!) ?? []), batch.batchId]);
       continue;
     }
+    trace.candidates = sameSeller.filter((row) => row.competence >= startMonth && row.competence <= endMonth);
     const reason =
       startMonth !== endMonth
         ? `Período do lote (${batch.periodStart} a ${batch.periodEnd}) cobre mais de uma competência: não há vínculo para dividir o pagamento.`
@@ -445,10 +565,83 @@ export function buildCommission360ReleasedNotPaid(input: {
     else if (row.candidateBatchIds.length > 0) row.status = "NAO_CONCILIADO";
     else if (row.paid > 0) row.status = "PAGO_PARCIAL";
     else row.status = "NAO_PAGO";
-    row.releasedNotPaid = row.status === "NAO_PAGO" || row.status === "PAGO_PARCIAL" ? unpaid : 0;
     row.unreconciledAmount = row.status === "NAO_CONCILIADO" ? unpaid : 0;
+    row.releasedNotPaid = 0;
+    row.adjustmentNotPaid = 0;
+    if (row.status !== "NAO_PAGO" && row.status !== "PAGO_PARCIAL") continue;
+    // Não paga: separar operacional × ajuste retroativo só quando o pagamento é atribuível.
+    const byLine = paidByLineKind.get(row) ?? { operational: 0, adjustment: 0 };
+    const unattributedPaid = roundMoney(row.paid - byLine.operational - byLine.adjustment);
+    const opUnpaid = roundMoney(Math.max(0, row.releasedOperational - byLine.operational));
+    const adjUnpaid = roundMoney(Math.max(0, row.releasedAdjustment - byLine.adjustment));
+    if (unattributedPaid <= MONEY_TOLERANCE || adjUnpaid <= MONEY_TOLERANCE || opUnpaid <= MONEY_TOLERANCE) {
+      // Sem pagamento por competência, ou só uma das partes ainda em aberto: atribuição sem ambiguidade.
+      const remainingPaid = Math.max(0, unattributedPaid);
+      row.releasedNotPaid = adjUnpaid <= MONEY_TOLERANCE ? roundMoney(Math.max(0, opUnpaid - remainingPaid)) : opUnpaid;
+      row.adjustmentNotPaid = opUnpaid <= MONEY_TOLERANCE ? roundMoney(Math.max(0, adjUnpaid - remainingPaid)) : adjUnpaid;
+    } else {
+      // Pagamento parcial por competência sobre liberada operacional + ajuste: não há como saber
+      // qual parte foi paga. Não é atribuído a nenhuma das duas.
+      row.unreconciledAmount = unpaid;
+    }
   }
-  return { rows: ordered, unmatchedPayments };
+
+  // O que cada lote pagou. Só há divisão com evidência exata; lote que paga fechamento com
+  // parte operacional E ajuste retroativo, sem como separar, fica inteiro "não atribuível".
+  const batchAttribution = new Map<string, Commission360BatchAttribution>();
+  // Saldo de cada fechamento ainda não explicado por pagamento por linha; consumido lote a lote.
+  const capacity = new Map<Commission360ReleasedRow, { operational: number; adjustment: number }>();
+  for (const trace of traces) {
+    const result = { operational: trace.lineOperational, adjustment: trace.lineAdjustment, unattributed: 0 };
+    const remaining = trace.remaining;
+    if (remaining > 0) {
+      const row = trace.target;
+      if (row) {
+        if (!capacity.has(row)) {
+          const byLine = paidByLineKind.get(row) ?? { operational: 0, adjustment: 0 };
+          capacity.set(row, {
+            operational: Math.max(0, row.releasedOperational - byLine.operational),
+            adjustment: Math.max(0, row.releasedAdjustment - byLine.adjustment),
+          });
+        }
+        const open = capacity.get(row)!;
+        const opOpen = open.operational;
+        const adjOpen = open.adjustment;
+        const soleCompetenceBatch = (competenceBatches.get(row) ?? []).length === 1;
+        if (adjOpen <= MONEY_TOLERANCE) {
+          const used = Math.min(remaining, opOpen);
+          result.operational += used;
+          result.unattributed += Math.max(0, remaining - used);
+          open.operational -= used;
+        } else if (opOpen <= MONEY_TOLERANCE) {
+          const used = Math.min(remaining, adjOpen);
+          result.adjustment += used;
+          result.unattributed += Math.max(0, remaining - used);
+          open.adjustment -= used;
+        } else if (soleCompetenceBatch && remaining + MONEY_TOLERANCE >= opOpen + adjOpen) {
+          // Um único lote quita o fechamento inteiro: cada parte foi paga integralmente.
+          result.operational += opOpen;
+          result.adjustment += adjOpen;
+          result.unattributed += Math.max(0, remaining - opOpen - adjOpen);
+          open.operational = 0;
+          open.adjustment = 0;
+        } else {
+          result.unattributed += remaining;
+        }
+      } else if (trace.candidates.some((row) => row.releasedAdjustment > MONEY_TOLERANCE)) {
+        result.unattributed += remaining;
+      } else {
+        // Sem fechamento casado e sem ajuste retroativo nas competências do lote: pagamento da competência do lote.
+        result.operational += remaining;
+      }
+    }
+    batchAttribution.set(trace.batchId, {
+      operational: roundMoney(result.operational),
+      adjustment: roundMoney(result.adjustment),
+      unattributed: roundMoney(result.unattributed),
+    });
+  }
+  return { rows: ordered, unmatchedPayments, batchAttribution };
 }
 
 // ---------------------------------------------------------------------------
@@ -1066,8 +1259,127 @@ export function buildCommission360View(facts: Commission360Facts, query: Commiss
     batches,
   });
   const released = releasedResult.rows;
-  const realizedRows = buildCommission360RealizedRows(lines);
-  const forecastRows = buildCommission360ForecastRows(lines, query);
+  const series = COMMISSION_360_SERIES;
+
+  // Recebimentos por competência NATURAL (receiptDate): oficial × legado/ajuste.
+  const realizedRows: Commission360RealizedRow[] = [];
+  const officialRealizedByMonth = new Map<string, number>();
+  const legacyByMonth = new Map<string, { nomusLegacyCovered: number; legacyRealized: number; retroactiveReleased: number }>();
+  const legacySellers = new Map<string, Commission360LegacySection["bySeller"][number]>();
+  const legacyMonth = (month: string) => {
+    const found = legacyByMonth.get(month) ?? { nomusLegacyCovered: 0, legacyRealized: 0, retroactiveReleased: 0 };
+    legacyByMonth.set(month, found);
+    return found;
+  };
+  const legacySeller = (key: string, sellerName: string) => {
+    const found = legacySellers.get(key) ?? {
+      key,
+      sellerName,
+      nomusLegacyCovered: 0,
+      legacyRealized: 0,
+      legacyAwaitingClosing: 0,
+      retroactiveReleased: 0,
+      legacyPayments: 0,
+    };
+    legacySellers.set(key, found);
+    return found;
+  };
+  let legacyRealizedTotal = 0;
+  let legacyAwaitingTotal = 0;
+  for (const line of lines) {
+    let opRealized = 0;
+    let opAwaiting = 0;
+    let legRealized = 0;
+    let legAwaiting = 0;
+    let lastOfficialReceipt: string | null = null;
+    for (const receipt of line.receipts) {
+      if (receipt.realizedCommission <= 0) continue;
+      const awaiting = receipt.coverageSource == null ? receipt.realizedCommission : 0;
+      if (classifyCommission360Receipt(receipt) === "OFICIAL") {
+        opRealized = roundMoney(opRealized + receipt.realizedCommission);
+        opAwaiting = roundMoney(opAwaiting + awaiting);
+        lastOfficialReceipt = receipt.receiptDate;
+        if (inRange(receipt.month, query)) {
+          officialRealizedByMonth.set(receipt.month, roundMoney((officialRealizedByMonth.get(receipt.month) ?? 0) + receipt.realizedCommission));
+        }
+      } else {
+        legAwaiting = roundMoney(legAwaiting + awaiting);
+        if (!inRange(receipt.month, query)) continue;
+        legRealized = roundMoney(legRealized + receipt.realizedCommission);
+        const bucket = legacyMonth(receipt.month);
+        bucket.legacyRealized = roundMoney(bucket.legacyRealized + receipt.realizedCommission);
+      }
+    }
+    // O saldo aguardando do motor (line.awaitingClosing) é o teto: lote antigo sem cobertura reduz o pendente.
+    opAwaiting = roundMoney(Math.min(opAwaiting, line.awaitingClosing));
+    legAwaiting = roundMoney(Math.min(legAwaiting, Math.max(0, line.awaitingClosing - opAwaiting)));
+    if (opAwaiting > 0) {
+      realizedRows.push({
+        scheduleId: line.scheduleId,
+        receivableId: line.receivableId,
+        installmentNumber: line.installmentNumber,
+        orderCode: line.orderCode,
+        customerName: line.customerName,
+        canonicalSellerId: line.canonicalSellerId,
+        sellerName: lineSellerName(line),
+        realizedCommission: opRealized,
+        awaitingClosing: opAwaiting,
+        lastReceiptDate: lastOfficialReceipt,
+      });
+    }
+    if (legRealized > 0 || legAwaiting > 0) {
+      const s = legacySeller(sellerKeyOf(line.canonicalSellerId, line.rawSellerId), lineSellerName(line));
+      s.legacyRealized = roundMoney(s.legacyRealized + legRealized);
+      s.legacyAwaitingClosing = roundMoney(s.legacyAwaitingClosing + legAwaiting);
+      legacyRealizedTotal = roundMoney(legacyRealizedTotal + legRealized);
+      legacyAwaitingTotal = roundMoney(legacyAwaitingTotal + legAwaiting);
+    }
+  }
+
+  // Previsão: vencimento dos CRs em aberto, a partir do marco da Previsão (09/2026).
+  const allForecastRows = buildCommission360ForecastRows(lines, query);
+  const forecastRows = allForecastRows.filter((row) => row.dueMonth != null && row.dueMonth >= series.forecastStartMonth);
+  const forecastBefore = allForecastRows.filter((row) => row.forecastCommission > 0 && !(row.dueMonth != null && row.dueMonth >= series.forecastStartMonth));
+
+  // Lotes pagos: só competência oficial entra na série; o restante é legado.
+  const batchById = new Map(batches.map((batch) => [batch.batchId, batch]));
+  const officialPayments: Commission360PaymentRow[] = [];
+  const legacyPayments: Commission360LegacySection["payments"] = [];
+  for (const row of paid.payments) {
+    const batch = batchById.get(row.batchId);
+    const competence = batch ? classifyCommission360BatchCompetence(batch) : { official: false, reason: "Lote sem período." };
+    if (!competence.official || (row.month != null && row.month < series.officialStartMonth)) {
+      legacyPayments.push({ ...row, reason: competence.reason ?? "Data de pagamento anterior ao corte de 01/10/2026." });
+      continue;
+    }
+    // Lote de competência oficial: na série só a parte comprovadamente operacional.
+    const split = releasedResult.batchAttribution.get(row.batchId) ?? { operational: row.amountPaid, adjustment: 0, unattributed: 0 };
+    const operational = roundMoney(Math.min(row.amountPaid, split.operational));
+    const adjustment = roundMoney(Math.min(row.amountPaid - operational, split.adjustment));
+    const unattributed = roundMoney(row.amountPaid - operational - adjustment);
+    if (operational > MONEY_TOLERANCE) {
+      officialPayments.push({
+        ...row,
+        amountPaid: operational,
+        notes:
+          operational < row.amountPaid - MONEY_TOLERANCE
+            ? [row.notes, `Lote de ${row.amountPaid.toFixed(2)}: só ${operational.toFixed(2)} é comissão operacional; o resto está no histórico legado / ajustes.`]
+                .filter(Boolean)
+                .join(" ")
+            : row.notes,
+      });
+    }
+    if (adjustment > MONEY_TOLERANCE) {
+      legacyPayments.push({ ...row, amountPaid: adjustment, reason: "Parte do lote que paga ajuste retroativo do fechamento (LEGACY_CARRYOVER / ajuste manual)." });
+    }
+    if (unattributed > MONEY_TOLERANCE) {
+      legacyPayments.push({
+        ...row,
+        amountPaid: unattributed,
+        reason: "Valor misto: o lote paga fechamento com parte operacional e ajuste retroativo sem vínculo para separar (ou acima do liberado). Fora da série operacional.",
+      });
+    }
+  }
   const potentialRows = buildCommission360Potential(
     facts.potentialOrders.filter(
       (order) =>
@@ -1082,44 +1394,46 @@ export function buildCommission360View(facts: Commission360Facts, query: Commiss
   const crAll = filterCommission360ReceivableRows(facts.receivables.map(classifyCommission360Receivable), inputs, query);
   const crInRange = crAll.filter((row) => inRange(row.dueMonth, query));
 
-  // Evolução mensal: naturezas em séries separadas, nunca somadas.
+  // Série principal: só o motor oficial. Eixo a partir do marco da Previsão (09/2026); pago e
+  // realizado só existem a partir do cutover (10/2026) — antes disso são null, não zero.
   const monthMap = new Map<string, Commission360Month>();
+  const seriesStart = query.fromMonth > series.forecastStartMonth ? query.fromMonth : series.forecastStartMonth;
   const touch = (month: string) => {
     const found = monthMap.get(month);
     if (found) return found;
+    const official = month >= series.officialStartMonth;
     const created: Commission360Month = {
       month,
       label: commission360MonthLabel(month),
       kind: monthKind(month, todayMonth),
-      paidConfirmed: 0,
-      legacyUnconfirmed: 0,
-      realized: 0,
+      official,
+      paidConfirmed: official ? 0 : null,
+      realized: official ? 0 : null,
       forecast: 0,
     };
     monthMap.set(month, created);
     return created;
   };
-  for (let month = query.fromMonth; month <= query.toMonth; month = addCommission360Months(month, 1)) touch(month);
+  for (let month = seriesStart; month <= query.toMonth; month = addCommission360Months(month, 1)) touch(month);
   let paidConfirmed = 0;
   let paidConfirmedCount = 0;
-  for (const [month, value] of paid.confirmedByMonth) {
-    if (!inRange(month, query)) continue;
-    touch(month).paidConfirmed = value.amount;
-    paidConfirmed = roundMoney(paidConfirmed + value.amount);
-    paidConfirmedCount += value.count;
+  for (const row of officialPayments) {
+    if (!row.month || !inRange(row.month, query)) continue;
+    const bucket = touch(row.month);
+    bucket.paidConfirmed = roundMoney((bucket.paidConfirmed ?? 0) + row.amountPaid);
+    paidConfirmed = roundMoney(paidConfirmed + row.amountPaid);
+    paidConfirmedCount += 1;
   }
   let legacyUnconfirmed = 0;
   for (const [month, value] of paid.legacyByMonth) {
     if (!inRange(month, query)) continue;
-    touch(month).legacyUnconfirmed = value;
     legacyUnconfirmed = roundMoney(legacyUnconfirmed + value);
+    const bucket = legacyMonth(month);
+    bucket.nomusLegacyCovered = roundMoney(bucket.nomusLegacyCovered + value);
   }
-  for (const line of lines) {
-    for (const receipt of line.receipts) {
-      if (!inRange(receipt.month, query) || receipt.realizedCommission <= 0) continue;
-      const bucket = touch(receipt.month);
-      bucket.realized = roundMoney(bucket.realized + receipt.realizedCommission);
-    }
+  for (const [month, value] of officialRealizedByMonth) {
+    const bucket = touch(month);
+    bucket.realized = roundMoney((bucket.realized ?? 0) + value);
   }
   let forecastTotal = 0;
   for (const row of forecastRows) {
@@ -1161,7 +1475,6 @@ export function buildCommission360View(facts: Commission360Facts, query: Commiss
       canonicalSellerId,
       sellerName: name,
       paidConfirmed: 0,
-      legacyUnconfirmed: 0,
       realizedAwaitingClosing: 0,
       releasedNotPaid: 0,
       forecast: 0,
@@ -1170,15 +1483,42 @@ export function buildCommission360View(facts: Commission360Facts, query: Commiss
     sellers.set(key, created);
     return created;
   };
-  for (const row of paid.payments) {
+  for (const row of officialPayments) {
     if (!inRange(row.month, query)) continue;
     const s = seller(row.sellerKey, row.sellerName, row.sellerKey);
     s.paidConfirmed = roundMoney(s.paidConfirmed + row.amountPaid);
   }
+  // Legado / ajustes por vendedor (seção separada, nunca na tabela principal).
   for (const row of paid.legacy) {
     if (row.supersededByConfirmedPayment || row.coveredCommissionAmount == null || !inRange(row.competence, query)) continue;
-    const s = seller(row.sellerKey, row.sellerName, row.sellerKey.startsWith("raw:") || row.sellerKey === "sem-vendedor" ? null : row.sellerKey);
-    s.legacyUnconfirmed = roundMoney(s.legacyUnconfirmed + row.coveredCommissionAmount);
+    const s = legacySeller(row.sellerKey, row.sellerName);
+    s.nomusLegacyCovered = roundMoney(s.nomusLegacyCovered + row.coveredCommissionAmount);
+  }
+  for (const row of legacyPayments) {
+    if (row.month != null && !inRange(row.month, query)) continue;
+    const s = legacySeller(row.sellerKey, row.sellerName);
+    s.legacyPayments = roundMoney(s.legacyPayments + row.amountPaid);
+  }
+  const retroactive = new Map<string, Commission360LegacySection["retroactiveLines"][number]>();
+  let retroactiveReleasedTotal = 0;
+  for (const line of facts.ledgerLines) {
+    if (line.closingStatus !== "CLOSED" || (sellerFilter && line.canonicalSellerId !== sellerFilter)) continue;
+    const competence = `${line.year}-${String(line.month).padStart(2, "0")}`;
+    if (competence < series.officialStartMonth || !inRange(competence, query)) continue;
+    if (isCommission360OperationalLedgerLine(line)) continue;
+    const naturalMonth =
+      line.naturalYear != null && line.naturalMonth != null ? `${line.naturalYear}-${String(line.naturalMonth).padStart(2, "0")}` : null;
+    const inclusionType = line.inclusionType ?? "NORMAL";
+    const key = `${competence}|${naturalMonth}|${line.sellerName}|${inclusionType}`;
+    const row = retroactive.get(key) ?? { competence, naturalMonth, sellerName: line.sellerName, inclusionType, released: 0 };
+    const amount = Math.max(0, line.releasedCommissionAmount);
+    row.released = roundMoney(row.released + amount);
+    retroactive.set(key, row);
+    retroactiveReleasedTotal = roundMoney(retroactiveReleasedTotal + amount);
+    const bucket = legacyMonth(naturalMonth ?? competence);
+    bucket.retroactiveReleased = roundMoney(bucket.retroactiveReleased + amount);
+    const s = legacySeller(sellerKeyOf(line.canonicalSellerId, line.rawSellerId), line.sellerName);
+    s.retroactiveReleased = roundMoney(s.retroactiveReleased + amount);
   }
   for (const row of realizedRows) {
     const s = seller(sellerKeyOf(row.canonicalSellerId, null), row.sellerName, row.canonicalSellerId);
@@ -1204,7 +1544,7 @@ export function buildCommission360View(facts: Commission360Facts, query: Commiss
     totalRows: 0,
   };
   if (query.section === "paid") {
-    const payments = paid.payments
+    const payments = officialPayments
       .filter((row) => row.month == null || inRange(row.month, query))
       .sort((a, b) => ((a.paymentDate ?? "") < (b.paymentDate ?? "") ? 1 : -1));
     const legacy = paid.legacy.filter((row) => inRange(row.competence, query));
@@ -1233,7 +1573,36 @@ export function buildCommission360View(facts: Commission360Facts, query: Commiss
     detail.receivables = paginate(rows, query.page, query.pageSize);
   }
 
+  const legacyPaymentsInRange = legacyPayments.filter((row) => row.month == null || inRange(row.month, query));
+  const legacySection: Commission360LegacySection = {
+    title: COMMISSION_360_LEGACY_SECTION_TITLE,
+    note: COMMISSION_360_LEGACY_SECTION_NOTE,
+    totals: {
+      nomusLegacyCovered: legacyUnconfirmed,
+      nomusLegacyCoveredCount: paid.legacy.filter(
+        (row) => !row.supersededByConfirmedPayment && row.coveredCommissionAmount != null && inRange(row.competence, query)
+      ).length,
+      legacyRealized: legacyRealizedTotal,
+      legacyAwaitingClosing: legacyAwaitingTotal,
+      retroactiveReleased: retroactiveReleasedTotal,
+      retroactiveNotPaid: roundMoney(released.reduce((sum, row) => sum + row.adjustmentNotPaid, 0)),
+      legacyPayments: roundMoney(legacyPaymentsInRange.reduce((sum, row) => sum + row.amountPaid, 0)),
+      legacyPaymentsCount: legacyPaymentsInRange.length,
+      forecastBeforeStart: roundMoney(forecastBefore.reduce((sum, row) => sum + row.forecastCommission, 0)),
+      forecastBeforeStartCount: forecastBefore.length,
+    },
+    byMonth: [...legacyByMonth.entries()]
+      .map(([month, value]) => ({ month, label: commission360MonthLabel(month), ...value }))
+      .sort((a, b) => (a.month < b.month ? -1 : 1)),
+    bySeller: [...legacySellers.values()].sort((a, b) => a.sellerName.localeCompare(b.sellerName, "pt-BR")),
+    payments: legacyPaymentsInRange,
+    retroactiveLines: [...retroactive.values()].sort((a, b) =>
+      a.competence < b.competence ? -1 : a.competence > b.competence ? 1 : a.sellerName.localeCompare(b.sellerName, "pt-BR")
+    ),
+  };
+
   const limitations = [
+    `Série principal: realizado e pago a partir de ${series.officialStartMonth}, previsão a partir de ${series.forecastStartMonth}. Legado e ajustes retroativos ficam fora (seção própria).`,
     "Saldos de 'Realizada aguardando fechamento' e 'Liberada e ainda não paga' são a posição atual; meses passados não são reconstruídos.",
     "Pagamentos em lote não têm cliente nem pedido: os filtros de cliente e pedido não se aplicam ao indicador de pagamentos.",
     "O histórico do Nomus não informa a data do desembolso ao vendedor; aparece separado como legado sem confirmação.",
@@ -1262,6 +1631,8 @@ export function buildCommission360View(facts: Commission360Facts, query: Commiss
     funnel: buildCommission360Funnel(crInRange),
     diagnostic: buildCommission360Diagnostic(crAll),
     detail,
+    series,
+    legacySection,
     sources: COMMISSION_360_SOURCES,
     limitations,
   };

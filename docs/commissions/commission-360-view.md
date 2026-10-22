@@ -342,3 +342,30 @@ rm -rf ~/induscost-audit-r1-20261022 ~/r1-audit-teste_bi_homolog-20261022 /tmp/i
 
 Se o papel opcional foi criado, o DBA o remove com `DROP ROLE induscost_audit_ro;`. A aplicação de
 homologação não muda em nenhum momento (nenhum arquivo dela é tocado, nenhum serviço reiniciado).
+
+## 9. Corte temporal oficial da série principal (correção de 22/10/2026)
+
+Regra de negócio: até 30/09/2026 o Nomus é a fonte (espelho técnico); a partir de 01/10/2026 vale o
+fechamento oficial do IndusCost; 09/2026 é o marco da **previsão**, não dos fechamentos. A série
+principal (gráfico, cards, tabela por vendedor e detalhe) mostra **só o motor oficial**; o resto vai
+para a seção **Histórico legado / Ajustes retroativos** (`legacySection` no payload).
+
+Regras reaproveitadas de `commissionCoverageCutover.ts`: `resolveReceiptCutoverPeriod`,
+`isCompetenceOfficialInIndusCost`, `COMMISSION_OFFICIAL_CUTOVER_YEAR_MONTH` e o primeiro mês da
+Previsão (`COMMISSION_PORTFOLIO_OUTLOOK_FIRST_MONTH`). Nada no motor, no fechamento ou nos registros
+foi alterado: o corte é aplicado só na composição dos indicadores.
+
+| Série / indicador | Entra na série principal | Vai para legado / ajustes |
+|---|---|---|
+| Realizado | recebimento com `receiptDate` ≥ 01/10/2026 e sem cobertura `NOMUS_LEGACY`/ajuste manual, no mês do `receiptDate` | `receiptDate` < 01/10/2026 (inclusive fechado depois como `LEGACY_CARRYOVER`) ou coberto pelo Nomus |
+| Aguardando fechamento | parte não coberta dos recebimentos oficiais | recebimentos legados sem cobertura (pendência antiga) |
+| Pago | parte **operacional** de lote PAID com período inteiro ≥ 10/2026, no mês do `paymentDate` | lote de competência ≤ 09/2026 ou que atravessa o corte, mesmo pago depois; parte do lote que paga ajuste retroativo; valor misto sem vínculo para separar |
+| Liberada não paga | linhas `NORMAL`/`LATE_CARRYOVER` com competência natural ≥ 10/2026 | `LEGACY_CARRYOVER`, `MANUAL_ADJUSTMENT` ou natural < 10/2026 (pagamento parcial sobre as duas partes = não conciliado) |
+| Previsto | vencimento ≥ 09/2026 | títulos em aberto vencidos antes de 09/2026 |
+| Histórico Nomus | nunca | sempre (competência do relatório) |
+
+Lote com valor misto: só é dividido com evidência exata (mesmo `CommissionRecord` da linha; fechamento sem ajuste retroativo; ou um único lote quitando o fechamento inteiro). Pagamento parcial, vários lotes no mesmo fechamento misto ou lote de vários meses com ajuste retroativo ficam inteiros fora da série ("valor misto"), na seção legado.
+
+O eixo do gráfico começa em max(início do filtro, 09/2026); pago e realizado são `null` antes de
+10/2026 (sem barra; o tooltip diz "fora da série oficial"). `settlementDate` nunca desloca valores.
+Testes: `src/lib/commissions/commission360OfficialCutover.test.ts`.

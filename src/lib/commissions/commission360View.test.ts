@@ -424,8 +424,9 @@ describe("Visão 360° — pagamentos, liberação e legado (A/B)", () => {
     );
     assert.equal(view.cards.legacyUnconfirmed, 40);
     assert.equal(view.cards.paidConfirmed, 0);
-    assert.equal(view.months.find((m) => m.month === "2026-08")!.legacyUnconfirmed, 40);
-    assert.equal(view.months.find((m) => m.month === "2026-08")!.paidConfirmed, 0);
+    assert.equal(view.months.find((m) => m.month === "2026-08"), undefined, "legado não entra no gráfico principal");
+    assert.equal(view.legacySection.totals.nomusLegacyCovered, 40);
+    assert.deepEqual(view.legacySection.byMonth.map((m) => [m.month, m.nomusLegacyCovered]), [["2026-08", 40]]);
   });
 
   it("T16: o mesmo pagamento em duas fontes (lote + relatório Nomus, item repetido) conta uma vez", () => {
@@ -625,8 +626,13 @@ describe("Visão 360° — pagamentos, liberação e legado (A/B)", () => {
       })
     );
     const view = buildCommission360View(facts({ outlookLines: official }), query(), TODAY);
-    assert.equal(view.months.find((m) => m.month === "2026-08")!.realized, 9);
-    assert.equal(view.months.find((m) => m.month === "2026-09")!.realized, 6);
+    // Agosto e setembro são competência natural do Nomus: ficam no legado, cada um no seu mês.
+    assert.equal(view.months.find((m) => m.month === "2026-08"), undefined);
+    assert.equal(view.months.find((m) => m.month === "2026-09")!.realized, null);
+    assert.deepEqual(view.legacySection.byMonth.map((m) => [m.month, m.legacyRealized]), [
+      ["2026-08", 9],
+      ["2026-09", 6],
+    ]);
     assert.equal(view.months.find((m) => m.month === "2026-11")!.forecast, 15);
   });
 });
@@ -821,8 +827,9 @@ describe("Visão 360° — escopo, filtros e conciliação", () => {
     const view = buildCommission360View(facts({ batches: [batch()], outlookLines: lines(fact()) }), query(), TODAY);
     const oct = view.months.find((m) => m.month === "2026-10")!;
     const nov = view.months.find((m) => m.month === "2026-11")!;
-    assert.deepEqual([oct.paidConfirmed, oct.realized, oct.forecast, oct.legacyUnconfirmed], [100, 0, 0, 0]);
-    assert.deepEqual([nov.paidConfirmed, nov.realized, nov.forecast, nov.legacyUnconfirmed], [0, 0, 30, 0]);
-    assert.equal(view.months.length, 12);
+    assert.deepEqual([oct.paidConfirmed, oct.realized, oct.forecast, oct.official], [100, 0, 0, true]);
+    assert.deepEqual([nov.paidConfirmed, nov.realized, nov.forecast, nov.official], [0, 0, 30, true]);
+    // Eixo começa no marco da Previsão (09/2026), não em janeiro: 09, 10, 11, 12.
+    assert.deepEqual(view.months.map((m) => m.month), ["2026-09", "2026-10", "2026-11", "2026-12"]);
   });
 });
