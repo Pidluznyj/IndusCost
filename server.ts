@@ -74,6 +74,7 @@ import {
   buildProposalListOrderBy,
   parseProposalListNetValueParam,
 } from "./src/lib/proposalListQuery.js";
+import { loadProposalConversionYtd } from "./src/lib/proposalConversionYtd.server.js";
 import {
   applyProductionCostsToProposalDetail,
   enrichProposalsWithOfficialProductionMargins,
@@ -16283,6 +16284,11 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
       totalPages: Math.max(1, Math.ceil(total / pageSize)),
       summary,
     });
+  });
+
+  app.get("/api/proposals/conversion-ytd", requireAppAuth, requireResource("commercial.proposals", "view"), async (_req, res) => {
+    const payload = await loadProposalConversionYtd(prisma);
+    res.json(payload);
   });
 
   app.get("/api/proposals/responsibles", requireAppAuth, requireResource("commercial.proposals", "view"), async (req, res) => {

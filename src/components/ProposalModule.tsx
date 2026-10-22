@@ -60,10 +60,12 @@ import {
 } from "@/src/lib/proposalCommercialMarginDisplay";
 import { parseProposalCommercialPricingSnapshot } from "@/src/lib/proposalCommercialMarginSnapshot";
 import { ProposalCommercialMarginTooltip } from "@/src/components/proposal/ProposalCommercialMarginTooltip";
+import { ProposalConversionYtdChart } from "@/src/components/proposal/ProposalConversionYtdChart";
 import {
   ProposalListSummaryCards,
   type ProposalListSummary,
 } from "@/src/components/proposal/ProposalListSummaryCards";
+import { currentMonthProposalListRange } from "@/src/lib/proposalConversionYtd";
 import "@/src/components/proposal/proposal-commercial-margin.css";
 import { GuidedTour } from "@/src/components/tour/GuidedTour";
 import { TourHelpButton } from "@/src/components/tour/TourHelpButton";
@@ -680,8 +682,8 @@ export const ProposalModule = () => {
   const [listResponsibleFilter, setListResponsibleFilter] = useState("");
   const [responsibleOptions, setResponsibleOptions] = useState<string[]>([]);
   const [listCustomerIdFilter, setListCustomerIdFilter] = useState("");
-  const [listStartDate, setListStartDate] = useState("");
-  const [listEndDate, setListEndDate] = useState("");
+  const [listStartDate, setListStartDate] = useState(() => currentMonthProposalListRange().startDate);
+  const [listEndDate, setListEndDate] = useState(() => currentMonthProposalListRange().endDate);
   const [listMinValue, setListMinValue] = useState("");
   const [listMaxValue, setListMaxValue] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
@@ -1869,12 +1871,13 @@ export const ProposalModule = () => {
   }, [totalProposals, currentPage, pagedProposals.length]);
 
   const clearListFilters = () => {
+    const period = currentMonthProposalListRange();
     setSearchTerm("");
     setListStatusFilter("");
     setListResponsibleFilter("");
     setListCustomerIdFilter("");
-    setListStartDate("");
-    setListEndDate("");
+    setListStartDate(period.startDate);
+    setListEndDate(period.endDate);
     setListMinValue("");
     setListMaxValue("");
   };
@@ -2781,6 +2784,8 @@ export const ProposalModule = () => {
                 className="rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none"
                 value={listStartDate}
                 onChange={(e) => setListStartDate(e.target.value)}
+                aria-label="Período inicial"
+                data-testid="proposals-filter-start-date"
               />
               <span className="text-xs text-muted-foreground">até</span>
               <input
@@ -2788,6 +2793,8 @@ export const ProposalModule = () => {
                 className="rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none"
                 value={listEndDate}
                 onChange={(e) => setListEndDate(e.target.value)}
+                aria-label="Período final"
+                data-testid="proposals-filter-end-date"
               />
             </div>
 
@@ -2857,8 +2864,8 @@ export const ProposalModule = () => {
                 !listStatusFilter &&
                 !listResponsibleFilter.trim() &&
                 !listCustomerIdFilter &&
-                !listStartDate &&
-                !listEndDate &&
+                listStartDate === currentMonthProposalListRange().startDate &&
+                listEndDate === currentMonthProposalListRange().endDate &&
                 !listMinValue.trim() &&
                 !listMaxValue.trim()
               }
@@ -2884,6 +2891,8 @@ export const ProposalModule = () => {
       </div>
 
       <ProposalListSummaryCards summary={summary} loading={loading} />
+
+      <ProposalConversionYtdChart />
 
       {/* Proposals List */}
       <div

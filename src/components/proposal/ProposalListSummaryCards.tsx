@@ -13,8 +13,7 @@ import {
   SystemTotalizerCard,
 } from "@/src/components/ui/SystemTotalizerCard";
 import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
-import { formatCompactCurrency } from "@/src/lib/formatFinancialMetric";
-import { formatSalesOrderMarginPercent } from "@/src/lib/salesOrderMarginDisplay";
+import { formatCompactCurrency, formatFullCurrency } from "@/src/lib/formatFinancialMetric";
 
 export type ProposalListSummary = {
   totalProposals: number;
@@ -49,18 +48,28 @@ export const ProposalListSummaryCards = memo(function ProposalListSummaryCards({
 
   const openSubtitle =
     openProposalsAmount > 0
-      ? `R$ ${formatCompactCurrency(openProposalsAmount)} em aberto`
+      ? `${formatCompactCurrency(openProposalsAmount)} em aberto`
       : "Sem valor em aberto";
-
-  const convertedSubtitle =
-    conversionRate != null
-      ? `${formatSalesOrderMarginPercent(conversionRate)} de conversão (R$ ${formatCompactCurrency(convertedProposalsAmount)})`
-      : undefined;
 
   const pipelineSubtitle =
     averageNetValue != null
-      ? `Ticket Médio: R$ ${formatCompactCurrency(averageNetValue)}`
+      ? `Ticket médio: ${formatCompactCurrency(averageNetValue)}`
       : undefined;
+
+  const convertedDetail =
+    conversionRate != null ? (
+      <div
+        className="space-y-0.5 text-[11px] leading-snug text-[#64748b]"
+        data-testid="proposal-converted-indicator-detail"
+      >
+        <div>{convertedProposalsCount.toLocaleString("pt-BR")} propostas</div>
+        <div title={formatFullCurrency(convertedProposalsAmount)}>
+          {formatCompactCurrency(convertedProposalsAmount)}
+        </div>
+      </div>
+    ) : (
+      <div className="text-[11px] leading-snug text-[#64748b]">Nenhuma proposta no filtro</div>
+    );
 
   return (
     <div className="my-4" data-testid="proposal-list-summary-cards">
@@ -113,14 +122,15 @@ export const ProposalListSummaryCards = memo(function ProposalListSummaryCards({
           loading={loading}
         />
         <SystemTotalizerCard
+          testId="proposal-converted-indicator"
           className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
-          label="Convertidas em PV"
-          amount={loading ? null : convertedProposalsCount}
-          amountFormat="number"
-          subtitle={loading ? undefined : convertedSubtitle}
-          tone="positive"
+          label="Conversão em PV"
+          amount={loading ? null : conversionRate}
+          amountFormat="percent"
+          footer={loading ? undefined : convertedDetail}
+          tone="success"
           icon={CheckCircle2}
-          helperText="Propostas convertidas em Pedido de Venda ou aprovadas comercialmente."
+          helperText="Taxa do filtro atual: propostas com pedido de venda ou aprovadas, divididas pelo total de propostas. A quantidade e o valor líquido convertido ficam abaixo do percentual."
           loading={loading}
         />
         <SystemTotalizerCard
