@@ -1355,6 +1355,8 @@ export type PermissionsApi = {
     | "closings"
     | "customerExclusions"
     | "orderProvision"
+    | "portfolioOutlook"
+    | "view360"
     | "reports"
     | "reprocess"
   >;

@@ -382,6 +382,12 @@ src/lib/nomus/nomusReceivableReceiptCoverage.test.ts
 src/lib/commissions/commissionPortfolioOutlook.test.ts
 src/lib/commissions/commissionPortfolioOutlookOpenBalance.test.ts
 src/lib/commissionPortfolioOutlookUi.test.tsx
+src/lib/commissions/commission360View.test.ts
+src/lib/commissions/commission360View.server.test.ts
+src/lib/commissions/commission360MultiNfeDuplication.test.ts
+src/lib/commissions/commission360ReadOnlyGuard.test.ts
+src/lib/commissions/commissionR1Audit.test.ts
+src/lib/commission360ViewUi.test.tsx
 src/lib/inventory/inventoryManagerialValuation.test.ts
 src/lib/inventory/inventoryPositionReport.test.ts
 src/lib/inventory/inventoryBalanceReport.test.ts

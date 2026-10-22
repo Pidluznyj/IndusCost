@@ -1,5 +1,5 @@
 /**
- * Módulo Comissões — Fechamento do mês + Exceções por cliente + Relatórios + Previsão.
+ * Módulo Comissões — Fechamento do mês + Exceções por cliente + Relatórios + Previsão + Visão 360°.
  *
  * A previsão antiga e a Auditoria Visual permanecem ocultas.
  * A previsão nova fica em /commissions/fluxo e só lê os dados já materializados.
@@ -27,6 +27,7 @@ import { CommissionsCustomerExclusionsPage } from "@/src/components/commissions/
 import { CommissionsReportsPage } from "@/src/components/commissions/pages/CommissionsReportsPage";
 import { CommissionsOrderProvisionPage } from "@/src/components/commissions/pages/CommissionsOrderProvisionPage";
 import { CommissionsPortfolioOutlookPage } from "@/src/components/commissions/pages/CommissionsPortfolioOutlookPage";
+import { Commissions360ViewPage } from "@/src/components/commissions/pages/Commissions360ViewPage";
 import { CommissionsReprocessPage } from "@/src/components/commissions/pages/CommissionsReprocessPage";
 
 function CommissionsHomeRedirect({ path }: { path: string }) {
@@ -162,6 +163,7 @@ export function CommissionsModule() {
           path="fluxo"
           element={guard("portfolioOutlook", <CommissionsPortfolioOutlookPage />)}
         />
+        <Route path="visao-360" element={guard("view360", <Commissions360ViewPage />)} />
         <Route path="relatorios" element={guard("reports", <CommissionsReportsPage />)} />
         <Route path="reprocessar" element={guard("reprocess", <CommissionsReprocessPage />)} />
         {Object.keys(COMMISSIONS_LEGACY_PATH_REDIRECTS).map((legacy) => (

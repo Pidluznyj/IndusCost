@@ -182,6 +182,10 @@ import {
 } from "@/src/lib/commissions/commissionOrderProvision.server.js";
 import { getCommissionPortfolioOutlook } from "@/src/lib/commissions/commissionPortfolioOutlook.server.js";
 import {
+  exportCommission360ReceivablesCsv,
+  getCommission360View,
+} from "@/src/lib/commissions/commission360View.server.js";
+import {
   buildCommissionClosingSellerXlsx,
   buildCommissionClosingSellerXlsxFilename,
   getCommissionClosingDetail,
@@ -533,6 +537,41 @@ export function registerCommissionsRoutes(app: express.Express, auth: AuthGuards
       } catch {
         console.error("GET /api/commissions/portfolio-outlook", error);
         return res.status(500).json({ error: "Erro ao carregar a previsão de comissões." });
+      }
+    }
+  });
+
+  // Visão 360°: somente leitura (mesmo guard e mesmo escopo de vendedor da Previsão).
+  app.get("/api/commissions/visao-360", ...reportsGuard, async (req, res) => {
+    try {
+      const ctx = await resolveScopeOrRespond(req, res, getCurrentAppUser);
+      if (!ctx) return;
+      const payload = await getCommission360View(req.query as Record<string, unknown>, ctx.scope);
+      return res.json(payload);
+    } catch (error) {
+      try {
+        return handleQueryError(res, error);
+      } catch {
+        console.error("GET /api/commissions/visao-360", error);
+        return res.status(500).json({ error: "Erro ao carregar a Visão 360° de comissões." });
+      }
+    }
+  });
+
+  app.get("/api/commissions/visao-360/conciliacao.csv", ...reportsGuard, async (req, res) => {
+    try {
+      const ctx = await resolveScopeOrRespond(req, res, getCurrentAppUser);
+      if (!ctx) return;
+      const { csv, filename } = await exportCommission360ReceivablesCsv(req.query as Record<string, unknown>, ctx.scope);
+      res.setHeader("Content-Type", "text/csv; charset=utf-8");
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+      return res.send(csv);
+    } catch (error) {
+      try {
+        return handleQueryError(res, error);
+      } catch {
+        console.error("GET /api/commissions/visao-360/conciliacao.csv", error);
+        return res.status(500).json({ error: "Erro ao exportar a conciliação de CRs." });
       }
     }
   });

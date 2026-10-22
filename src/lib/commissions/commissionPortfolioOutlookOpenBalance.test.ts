@@ -405,7 +405,15 @@ describe("cards, timeline, filtros e período da previsão", () => {
 
 describe("a previsão não toca no fechamento oficial", () => {
   it("nenhum módulo de fechamento, ledger, cobertura ou pagamento importa a previsão", () => {
-    const outlookFiles = new Set(["commissionPortfolioOutlook.ts", "commissionPortfolioOutlook.server.ts", "commissionPortfolioOutlookAudit.ts"]);
+    // A Visão 360° e a auditoria R1 só leem (consumidoras como a auditoria); o inverso é protegido em commission360View.server.test.ts.
+    const outlookFiles = new Set([
+      "commissionPortfolioOutlook.ts",
+      "commissionPortfolioOutlook.server.ts",
+      "commissionPortfolioOutlookAudit.ts",
+      "commission360View.ts",
+      "commission360View.server.ts",
+      "commissionR1Audit.server.ts",
+    ]);
     const offenders = readdirSync(HERE)
       .filter((name) => /\.(ts|tsx)$/.test(name) && !name.includes(".test.") && !outlookFiles.has(name))
       .filter((name) => /from\s+["'][^"']*commissionPortfolioOutlook/.test(readFileSync(path.join(HERE, name), "utf8")));
