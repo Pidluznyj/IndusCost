@@ -42,16 +42,25 @@ export function CustomerCnpjRiskTag({
 }) {
   if (confidence) {
     const title = `Score de Confiança ${confidence.label}\nCadastro ${confidence.cadastral.contribution}/${confidence.cadastral.maxContribution} · QUOD ${confidence.quod.status} · IEPTB ${confidence.ieptb.status}\nTeto ${confidence.maximumPossibleScore} · ${confidence.policyVersion}\nEsta pontuação não autoriza venda a prazo.`;
+    const bandTone =
+      confidence.band === "Excelente"
+        ? "text-emerald-700"
+        : confidence.band === "Bom"
+          ? "text-sky-700"
+          : confidence.band === "Regular"
+            ? "text-amber-700"
+            : "text-rose-700";
     return (
       <span
-        className={cn(BASE_CLASS, TONE_CLASS.unknown, risk?.expired && "opacity-70", className)}
+        className={cn("inline-flex max-w-full items-baseline gap-1 whitespace-nowrap", risk?.expired && "opacity-70", className)}
         title={title}
         data-testid="customer-cnpj-risk-tag"
         data-tone="unknown"
         data-expired={risk?.expired ? "true" : "false"}
       >
-        <ShieldCheck className="h-3 w-3 shrink-0" aria-hidden />
-        <span className="truncate">{confidence.label}</span>
+        <span className="text-sm font-semibold tabular-nums text-foreground">{confidence.score}</span>
+        <span className="text-[10px] text-muted-foreground">/100</span>
+        <span className={cn("max-w-[4.5rem] truncate text-[11px] font-medium", bandTone)}>{confidence.band}</span>
       </span>
     );
   }

@@ -185,6 +185,8 @@ describe("grid de Clientes — contrato", () => {
     assert.match(module, /<CustomerCnpjRiskTag/);
     assert.match(module, /confidence=\{c\.portfolioCredit\?\.confidence\}/);
     assert.match(module, /CustomerCreditPostureBadge/);
+    assert.match(module, /appearance="signal"/);
+    assert.match(module, /CustomerCreditSignalLegend/);
     assert.doesNotMatch(module, /whitespace-nowrap">\{c\.taxId\}<\/td>/);
   });
 

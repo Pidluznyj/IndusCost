@@ -48,7 +48,7 @@ import { CustomerCnpjIntelligencePanel } from "./customers/CustomerCnpjIntellige
 import { CustomerCreditOccurrenceHistory } from "./customers/CustomerCreditOccurrenceHistory";
 import { CustomerListReportPrintDocument } from "./customers/CustomerListReportPrintDocument";
 import { CustomerCnpjRiskTag } from "./customers/CustomerCnpjRiskTag";
-import { CustomerCreditPostureBadge } from "./customers/CustomerCreditPostureBadge";
+import { CustomerCreditPostureBadge, CustomerCreditSignalLegend } from "./customers/CustomerCreditPostureBadge";
 import {
   CustomerCadastralStatusBadge,
   CustomerNewQuoteButton,
@@ -378,19 +378,15 @@ export const CustomerModule = () => {
   const listRows = customers;
 
   return (
-    <div className="space-y-6" data-tour="customers-root">
-      {/* Header Actions */}
-      <div
-        className="flex flex-col sm:flex-row sm:items-center justify-between gap-4"
-        data-tour="customers-toolbar"
-      >
-        <div className="flex flex-1 flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
-          <div className="relative flex-1 min-w-[220px]">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+    <div className="space-y-3" data-tour="customers-root">
+      <div className="space-y-2" data-tour="customers-toolbar">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative min-w-[220px] flex-1">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <input
               type="text"
               placeholder="Buscar por razão social, nome fantasia ou CNPJ..."
-              className="w-full pl-10 pr-4 py-2 rounded-lg border border-border bg-card focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
+              className="h-9 w-full rounded-lg border border-border bg-card pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
@@ -398,7 +394,7 @@ export const CustomerModule = () => {
           <select
             aria-label="Filtrar por estado"
             data-testid="customers-filter-state"
-            className="w-full sm:w-52 shrink-0 py-2 px-3 rounded-lg border border-border bg-card text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+            className="h-9 w-[9.5rem] shrink-0 rounded-lg border border-border bg-card px-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
             value={stateFilter}
             onChange={(e) => {
               const next = e.target.value;
@@ -417,7 +413,7 @@ export const CustomerModule = () => {
           <select
             aria-label="Filtrar por cidade"
             data-testid="customers-filter-city"
-            className="w-full sm:w-52 shrink-0 py-2 px-3 rounded-lg border border-border bg-card text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+            className="h-9 w-[11rem] shrink-0 rounded-lg border border-border bg-card px-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
             value={cityFilter}
             onChange={(e) => {
               setCityFilter(e.target.value);
@@ -433,7 +429,7 @@ export const CustomerModule = () => {
           </select>
           <select
             aria-label="Filtrar por responsável comercial"
-            className="w-full sm:w-56 shrink-0 py-2 px-3 rounded-lg border border-border bg-card text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+            className="h-9 w-[12.5rem] shrink-0 rounded-lg border border-border bg-card px-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
             value={ownerFilter}
             onChange={(e) => {
               setOwnerFilter(e.target.value);
@@ -449,7 +445,7 @@ export const CustomerModule = () => {
             ))}
           </select>
         </div>
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex flex-wrap items-center justify-end gap-1.5">
           <TourHelpButton onClick={() => setTourOpen(true)} />
           {allowExportReport ? (
             <>
@@ -459,7 +455,7 @@ export const CustomerModule = () => {
             disabled={exportingXlsx || exportingPdf}
             onClick={() => void handleExportXlsx()}
             title="Exportar Excel da grade com o filtro atual"
-            className="flex items-center gap-2 bg-accent text-accent-foreground px-4 py-2 rounded-lg font-medium hover:opacity-90 transition-opacity text-sm disabled:opacity-60"
+            className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-card px-2.5 text-xs font-medium text-foreground hover:bg-accent disabled:opacity-60"
           >
             {exportingXlsx ? (
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -474,7 +470,7 @@ export const CustomerModule = () => {
             disabled={exportingXlsx || exportingPdf}
             onClick={() => void handleExportPdf()}
             title="Relatório institucional em PDF (logo, empresa, cópia controlada)"
-            className="flex items-center gap-2 bg-accent text-accent-foreground px-4 py-2 rounded-lg font-medium hover:opacity-90 transition-opacity text-sm disabled:opacity-60"
+            className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-card px-2.5 text-xs font-medium text-foreground hover:bg-accent disabled:opacity-60"
           >
             {exportingPdf ? (
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -488,23 +484,25 @@ export const CustomerModule = () => {
           <button
             type="button"
             onClick={() => openCnpjLookup()}
-            className="flex items-center gap-2 bg-accent text-accent-foreground px-4 py-2 rounded-lg font-medium hover:opacity-90 transition-opacity text-sm"
+            title="Consultar CNPJ"
+            className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-card px-2.5 text-xs font-medium text-foreground hover:bg-accent"
           >
-            <SearchCheck className="h-4 w-4" />
-            Consultar CNPJ
+            <SearchCheck className="h-3.5 w-3.5" />
+            CNPJ
           </button>
           <button
             type="button"
             onClick={() => setRadarOpen(true)}
-            className="flex items-center gap-2 bg-accent text-accent-foreground px-4 py-2 rounded-lg font-medium hover:opacity-90 transition-opacity text-sm"
+            className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-card px-2.5 text-xs font-medium text-foreground hover:bg-accent"
+            title="Radar de relacionamentos"
             data-testid="corporate-radar-open"
           >
-            Radar de relacionamentos
+            Radar
           </button>
           {allowImport ? (
           <button 
             onClick={() => setIsImportOpen(true)}
-            className="flex items-center gap-2 bg-accent text-accent-foreground px-4 py-2 rounded-lg font-medium hover:opacity-90 transition-opacity text-sm"
+            className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-card px-2.5 text-xs font-medium text-foreground hover:bg-accent"
           >
             <Download className="h-4 w-4" />
             Importar
@@ -513,7 +511,7 @@ export const CustomerModule = () => {
           {allowCreate ? (
           <button 
             onClick={() => handleOpenModal()}
-            className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg font-medium hover:opacity-90 transition-opacity text-sm"
+            className="inline-flex h-8 items-center gap-1.5 rounded-md bg-primary px-2.5 text-xs font-medium text-primary-foreground hover:opacity-90"
           >
             <Plus className="h-4 w-4" />
             Novo Cliente
@@ -568,12 +566,15 @@ export const CustomerModule = () => {
         className="bg-card rounded-xl border border-border overflow-hidden shadow-sm flex flex-col"
         data-tour="customers-table"
       >
+        <div className="flex items-center justify-between gap-3 border-b border-border px-3 py-1.5">
+          <CustomerCreditSignalLegend />
+        </div>
         <div className="overflow-x-hidden overflow-y-auto max-h-[min(70vh,640px)]">
           <table className="w-full table-fixed text-left border-collapse">
             {/* Larguras fixas: sem quebra de linha e sem rolagem horizontal — textos longos truncam com reticências. */}
             <colgroup>
               <col />
-              <col className="w-[190px]" />
+              <col className="w-[156px]" />
               <col className="w-[20%]" />
               <col className="w-[92px]" />
               <col className="w-[15%]" />
@@ -612,31 +613,29 @@ export const CustomerModule = () => {
                   const creditBlocked =
                     c.portfolioCredit?.decision.customerStatus === "BLOQUEADO" ||
                     c.portfolioCredit?.decision.customerStatus === "BLOQUEIO_CRITICO";
-                  const saleBlocked = c.salesBlock?.blocked === true || creditBlocked;
+                  const boletoBlocked = c.salesBlock?.blocked === true;
+                  const saleBlocked = boletoBlocked || creditBlocked;
                   return (
                   <tr
                     key={c.id}
                     data-testid={saleBlocked ? "customer-row-sale-blocked" : undefined}
                     className={cn(
                       "transition-colors group",
-                      saleBlocked ? "bg-red-50 hover:bg-red-100/80" : "hover:bg-accent/30"
+                      boletoBlocked ? "bg-red-50 hover:bg-red-100/80" : "hover:bg-accent/30"
                     )}
                   >
                     <td className="px-3 py-1.5">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <div className="h-7 w-7 shrink-0 rounded-md bg-primary/10 flex items-center justify-center text-primary">
-                          <Building2 className="h-3.5 w-3.5" />
-                        </div>
-                        <div className="min-w-0">
-                          <p className="font-medium text-xs truncate" title={c.companyName}>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <p className="min-w-0 truncate text-sm font-medium" title={c.companyName}>
                             {c.companyName}
                           </p>
-                          <p className="text-[11px] text-muted-foreground truncate" title={c.tradeName ?? undefined}>
-                            {c.tradeName || "—"}
-                          </p>
-                          <CustomerCreditPostureBadge decision={c.portfolioCredit?.decision} className="mt-1 max-w-full" />
-                          <CustomerSalesBlockBadge salesBlock={c.salesBlock} className="mt-1 max-w-full" />
+                          <CustomerCreditPostureBadge appearance="signal" decision={c.portfolioCredit?.decision} />
+                          <CustomerSalesBlockBadge appearance="signal" salesBlock={c.salesBlock} />
                         </div>
+                        <p className="truncate text-[11px] text-muted-foreground" title={c.tradeName ?? undefined}>
+                          {c.tradeName || "—"}
+                        </p>
                       </div>
                     </td>
                     <td className="px-3 py-1.5 whitespace-nowrap">
@@ -706,7 +705,7 @@ export const CustomerModule = () => {
                     <td
                       className={cn(
                         "px-2 py-1.5 text-right whitespace-nowrap",
-                        saleBlocked
+                        saleBlocked && boletoBlocked
                           ? "sticky right-0 z-10 bg-red-50 group-hover:bg-red-100/80 shadow-[-6px_0_8px_-6px_rgba(0,0,0,0.12)]"
                           : STICKY_ACTIONS
                       )}

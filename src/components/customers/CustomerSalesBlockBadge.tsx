@@ -47,15 +47,31 @@ export function CustomerCadastralStatusBadge({
  */
 export function CustomerSalesBlockBadge({
   salesBlock,
+  appearance = "badge",
   className,
 }: {
   salesBlock: CustomerSalesBlockPublic | null | undefined;
+  appearance?: "badge" | "signal";
   className?: string;
 }) {
   if (!salesBlock?.blocked) return null;
   const includeFinancial = customerHasFinancialSalesBlockDetails(salesBlock);
   const title = customerSalesBlockTooltip(salesBlock, includeFinancial);
   const reason = salesBlock.reason ?? "OVERDUE_BOLETO";
+  if (appearance === "signal") {
+    return (
+      <span
+        className={cn("inline-flex shrink-0", className)}
+        title={title}
+        role="img"
+        aria-label={title}
+        data-testid="customer-sales-block-badge"
+        data-reason={reason}
+      >
+        <Lock className="h-3 w-3 text-red-700" aria-hidden />
+      </span>
+    );
+  }
   return (
     <div
       className={cn(
