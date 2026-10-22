@@ -1,13 +1,20 @@
 /**
  * Vínculos societários a partir do QSA já consultado.
- * CNPJ completo liga empresas. Nome parecido, CPF e documento mascarado não ligam.
- * Não transfere dívida e não gera bloqueio crítico.
+ * CNPJ completo e CPF válido (só o hash) ligam empresas.
+ * Nome igual fica pendente: não confirma identidade e não entra no grupo.
+ * Documento mascarado não liga. A dívida da relacionada não é transferida.
+ *
+ * Transitividade: só arestas confirmadas (CNPJ direto, CNPJ em comum, CPF conferido).
+ * O componente conexo, limitado a CORPORATE_RELATION_COMPONENT_LIMIT, propaga o risco.
+ * Candidato por nome não puxa as relacionadas confirmadas da outra ponta.
  */
 
 import { createHash } from "node:crypto";
 import { isValidCnpj, normalizeCnpj } from "@/src/lib/companyCnpjFormat.js";
+import { isValidCpf } from "@/src/lib/fleetCpfUtils.js";
 
 export const CORPORATE_MEMBERSHIP_MAX_AGE_DAYS = 90;
+export const CORPORATE_RELATION_COMPONENT_LIMIT = 20;
 
 export const CORPORATE_MEMBER_KINDS = ["PARTNER", "ADMINISTRATOR", "REPRESENTATIVE", "UNKNOWN"] as const;
 export type CorporateMemberKind = (typeof CORPORATE_MEMBER_KINDS)[number];
@@ -21,7 +28,7 @@ export const CORPORATE_MEMBER_KIND_LABEL: Record<CorporateMemberKind, string> = 
 
 export type CorporateDocumentKind = "CNPJ" | "MASKED" | "ABSENT" | "CPF_WITHHELD";
 export type CorporateReliability = "HIGH" | "INSUFFICIENT";
-export type CorporateRelationBasis = "DIRECT_CNPJ" | "SHARED_CNPJ";
+export type CorporateRelationBasis = "DIRECT_CNPJ" | "SHARED_CNPJ" | "SHARED_CPF" | "TRANSITIVE";
 
 export type CorporateMembershipDraft = {
   subjectCnpj: string;
@@ -34,7 +41,9 @@ export type CorporateMembershipDraft = {
   memberCnpj: string | null;
   reliability: CorporateReliability;
   evidenceRef: string;
-  /** Só para detectar homônimo. Não é gravado nem exibido. */
+  /** Hash irreversível de CPF válido. O CPF não é gravado nem exibido. */
+  identityKey: string | null;
+  /** Só para detectar homônimo nesta análise. Não é gravado nem exibido. */
   nameKey: string | null;
 };
 
@@ -59,8 +68,20 @@ export type CorporateRelation = {
   partnerCnpj: string;
 };
 
+export type CorporateCandidate = {
+  subjectCustomerId: string;
+  relatedCustomerId: string;
+  relatedCompanyName: string;
+  relatedCnpj: string;
+  registryKind: "CUSTOMER" | "LEAD";
+  basis: "SHARED_NAME";
+  status: "PENDING_REVIEW";
+  consultedAt: string;
+};
+
 export type CorporateRelationReport = {
   relations: CorporateRelation[];
+  candidates: CorporateCandidate[];
   insufficient: number;
   stale: number;
   homonymIgnored: number;
@@ -139,6 +160,14 @@ function evidenceRef(parts: Record<string, string | null>): string {
   return createHash("sha256").update(JSON.stringify(parts)).digest("hex");
 }
 
+/** CPF válido vira hash. CPF inválido, mascarado ou ausente não vira chave. */
+export function corporateIdentityKey(documentRaw: string | null): string | null {
+  if (!documentRaw || documentRaw.includes("*")) return null;
+  const digits = documentRaw.replace(/\D/g, "");
+  if (!isValidCpf(digits)) return null;
+  return `cpf:${createHash("sha256").update(digits).digest("hex")}`;
+}
+
 function membership(input: {
   subjectCnpj: string;
   source: string;
@@ -150,6 +179,7 @@ function membership(input: {
   name: string | null;
 }): CorporateMembershipDraft {
   const document = classifyCorporateDocument(input.documentRaw);
+  const identityKey = corporateIdentityKey(input.documentRaw);
   return {
     subjectCnpj: input.subjectCnpj,
     source: input.source,
@@ -159,7 +189,8 @@ function membership(input: {
     personKind: input.personKind,
     documentKind: document.documentKind,
     memberCnpj: document.memberCnpj,
-    reliability: document.documentKind === "CNPJ" ? "HIGH" : "INSUFFICIENT",
+    reliability: document.memberCnpj || identityKey ? "HIGH" : "INSUFFICIENT",
+    identityKey,
     nameKey: corporateNameKey(input.name),
     evidenceRef: evidenceRef({
       subjectCnpj: input.subjectCnpj,
@@ -169,6 +200,7 @@ function membership(input: {
       memberCnpj: document.memberCnpj,
       documentKind: document.documentKind,
       roleText: input.roleText,
+      ...(identityKey ? { identityKey } : {}),
     }),
   };
 }
@@ -275,7 +307,7 @@ export function analyzeCorporateRelations(input: {
     (row) => row.reliability === "HIGH" && row.memberCnpj && isFresh(row, input.now, maxAgeDays)
   );
   const stale = input.memberships.filter(
-    (row) => row.reliability === "HIGH" && row.memberCnpj && !isFresh(row, input.now, maxAgeDays)
+    (row) => row.reliability === "HIGH" && (row.memberCnpj || row.identityKey) && !isFresh(row, input.now, maxAgeDays)
   ).length;
   const insufficient = input.memberships.filter((row) => row.reliability !== "HIGH").length;
   const subjects = new Set(
@@ -351,8 +383,133 @@ export function analyzeCorporateRelations(input: {
     }
   }
 
+  const freshIdentity = input.memberships.filter(
+    (row) => row.identityKey && row.reliability === "HIGH" && isFresh(row, input.now, maxAgeDays)
+  );
+  const byIdentity = new Map<string, CorporateMembershipDraft[]>();
+  for (const row of freshIdentity) {
+    if (!row.identityKey) continue;
+    const bucket = byIdentity.get(row.identityKey) ?? [];
+    bucket.push(row);
+    byIdentity.set(row.identityKey, bucket);
+  }
+  for (const rows of byIdentity.values()) {
+    const subjectsInGroup = [...new Map(rows.map((row) => [row.subjectCnpj, row])).values()];
+    for (const left of subjectsInGroup) {
+      for (const right of subjectsInGroup) {
+        if (left.subjectCnpj === right.subjectCnpj) continue;
+        const subject = partiesByCnpj.get(left.subjectCnpj);
+        const related = partiesByCnpj.get(right.subjectCnpj);
+        if (!subject || !related) continue;
+        add({
+          subjectCustomerId: subject.customerId,
+          relatedCustomerId: related.customerId,
+          relatedCompanyName: related.companyName,
+          relatedCnpj: related.cnpj,
+          registryKind: related.registryKind,
+          memberKind: left.memberKind,
+          basis: "SHARED_CPF",
+          source: left.source,
+          consultedAt: left.consultedAt.toISOString(),
+          evidenceRef: left.evidenceRef,
+          partnerCnpj: "",
+        });
+      }
+    }
+  }
+
+  const partiesById = new Map<string, RegisteredCorporateParty>();
+  for (const party of partiesByCnpj.values()) partiesById.set(party.customerId, party);
+  const confirmedPairs = new Set(
+    [...relations.values()].map((relation) => `${relation.subjectCustomerId}:${relation.relatedCustomerId}`)
+  );
+  const graph = new Map<string, Set<string>>();
+  const connect = (left: string, right: string) => {
+    const bucket = graph.get(left) ?? new Set<string>();
+    bucket.add(right);
+    graph.set(left, bucket);
+  };
+  for (const relation of relations.values()) {
+    if (relation.basis === "DIRECT_CNPJ" || relation.basis === "SHARED_CNPJ" || relation.basis === "SHARED_CPF") {
+      connect(relation.subjectCustomerId, relation.relatedCustomerId);
+    }
+  }
+  for (const start of graph.keys()) {
+    const seen = new Set<string>([start]);
+    const queue = [start];
+    while (queue.length > 0 && seen.size < CORPORATE_RELATION_COMPONENT_LIMIT) {
+      const current = queue.shift()!;
+      for (const next of graph.get(current) ?? []) {
+        if (seen.has(next) || seen.size >= CORPORATE_RELATION_COMPONENT_LIMIT) continue;
+        seen.add(next);
+        queue.push(next);
+      }
+    }
+    for (const reached of seen) {
+      if (reached === start || confirmedPairs.has(`${start}:${reached}`)) continue;
+      const related = partiesById.get(reached);
+      const sample = [...relations.values()].find(
+        (relation) => relation.subjectCustomerId === reached || relation.relatedCustomerId === reached
+      );
+      if (!related || !sample) continue;
+      add({
+        subjectCustomerId: start,
+        relatedCustomerId: reached,
+        relatedCompanyName: related.companyName,
+        relatedCnpj: related.cnpj,
+        registryKind: related.registryKind,
+        memberKind: "UNKNOWN",
+        basis: "TRANSITIVE",
+        source: sample.source,
+        consultedAt: sample.consultedAt,
+        evidenceRef: sample.evidenceRef,
+        partnerCnpj: "",
+      });
+    }
+  }
+
+  const candidates: CorporateCandidate[] = [];
+  const candidateKeys = new Set<string>();
+  const freshNames = input.memberships.filter(
+    (row) => row.nameKey && row.reliability !== "HIGH" && isFresh(row, input.now, maxAgeDays)
+  );
+  const byName = new Map<string, CorporateMembershipDraft[]>();
+  for (const row of freshNames) {
+    if (!row.nameKey) continue;
+    const bucket = byName.get(row.nameKey) ?? [];
+    bucket.push(row);
+    byName.set(row.nameKey, bucket);
+  }
+  for (const rows of byName.values()) {
+    const subjectsInGroup = [...new Map(rows.map((row) => [row.subjectCnpj, row])).values()];
+    if (subjectsInGroup.length < 2) continue;
+    for (const left of subjectsInGroup) {
+      for (const right of subjectsInGroup) {
+        if (left.subjectCnpj === right.subjectCnpj) continue;
+        const subject = partiesByCnpj.get(left.subjectCnpj);
+        const related = partiesByCnpj.get(right.subjectCnpj);
+        if (!subject || !related) continue;
+        if (confirmedPairs.has(`${subject.customerId}:${related.customerId}`)) continue;
+        const key = `${subject.customerId}:${related.customerId}`;
+        if (candidateKeys.has(key)) continue;
+        candidateKeys.add(key);
+        candidates.push({
+          subjectCustomerId: subject.customerId,
+          relatedCustomerId: related.customerId,
+          relatedCompanyName: related.companyName,
+          relatedCnpj: related.cnpj,
+          registryKind: related.registryKind,
+          basis: "SHARED_NAME",
+          status: "PENDING_REVIEW",
+          consultedAt: left.consultedAt.toISOString(),
+        });
+      }
+    }
+  }
+
   return {
     relations: [...relations.values()],
+    candidates,
     insufficient,
     stale,
     homonymIgnored,

@@ -333,6 +333,7 @@ export function CustomerCnpjCreditSections({ credit, loading, error, sources = [
             <div>
               <Fact label="Protesto externo" value={credit?.externalProtestLabel ?? (error ? INTELLIGENCE_FACT_LABEL.UNAVAILABLE : INTELLIGENCE_FACT_LABEL.NOT_CONSULTED)} />
               {credit?.externalProtestDetail ? <p className="text-xs text-slate-600">{credit.externalProtestDetail}</p> : null}
+              <Fact label="Protesto nacional IEPTB" value={credit?.ieptbSituationLabel ?? INTELLIGENCE_FACT_LABEL.NOT_CONSULTED} />
             </div>
           </div>
           {sourceFacts.length > 0 ? (
@@ -349,12 +350,14 @@ export function CustomerCnpjCreditSections({ credit, loading, error, sources = [
 
       {credit ? (
         <div className="min-w-0 rounded-lg border p-3 text-sm" data-testid="cnpj-credit-relations">
-          <h4 className="mb-2 font-semibold">Vínculos societários</h4>
+          <h4 className="mb-2 font-semibold">Risco de crédito e empresas relacionadas</h4>
           <p className="mb-2 text-xs text-slate-600">
-            Alerta de análise. Não transfere dívida e não gera bloqueio crítico por si só.
+            Decisão individual: {credit.ownDecisionTitle}. Decisão consolidada: {credit.decisionTitle}. Dívida de
+            empresa relacionada não é dívida deste CNPJ.
           </p>
+          {credit.relatedRiskNote ? <p className="mb-2 text-xs text-amber-900">{credit.relatedRiskNote}</p> : null}
           {credit.corporateRelations.length === 0 ? (
-            <p>Nenhum vínculo societário comprovado entre CNPJs cadastrados.</p>
+            <p>Nenhum vínculo societário confirmado entre CNPJs cadastrados.</p>
           ) : (
             <ul className="space-y-2">
               {credit.corporateRelations.map((relation) => (
@@ -368,6 +371,19 @@ export function CustomerCnpjCreditSections({ credit, loading, error, sources = [
               ))}
             </ul>
           )}
+          {credit.pendingCorporateRelations.length > 0 ? (
+            <div className="mt-3">
+              <p className="mb-1 text-xs font-semibold text-slate-700">Pendentes de validação</p>
+              <ul className="space-y-2">
+                {credit.pendingCorporateRelations.map((relation) => (
+                  <li key={`pending-${relation.relatedCompany}`} className="break-words">
+                    <p className="font-medium">{relation.relatedCompany}</p>
+                    <p className="text-xs text-slate-600">{relation.evidence}</p>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
         </div>
       ) : null}
 

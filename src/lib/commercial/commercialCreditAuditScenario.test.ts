@@ -299,7 +299,8 @@ describe("auditoria — demais situações sintéticas", () => {
       relatedParties: [{ customerId: "22222222-2222-4222-8222-222222222222", delinquency: partial }],
       now: TODAY,
     });
-    assert.equal(related.customerStatus, "EM_ANALISE");
+    assert.equal(related.customerStatus, "BLOQUEADO");
+    assert.equal(related.reason, "RELATED_PARTY_DELINQUENT");
     assert.notEqual(related.customerStatus, "BLOQUEIO_CRITICO");
 
     const homonym = analyzeCorporateRelations({
@@ -393,6 +394,7 @@ function membership(subjectCnpj: string, memberCnpj: string | null, nameKey: str
     memberCnpj,
     reliability: memberCnpj ? "HIGH" : "INSUFFICIENT",
     evidenceRef: `${subjectCnpj}:${memberCnpj ?? nameKey}`,
+    identityKey: null,
     nameKey,
   };
 }

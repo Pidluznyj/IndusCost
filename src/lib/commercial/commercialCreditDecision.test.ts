@@ -239,7 +239,7 @@ describe("decideCommercialCredit", () => {
     assert.equal(lifted.reason, "EXCEPTION_APPLIED");
   });
 
-  it("vínculo com inadimplente retém para análise e não transfere o saldo", () => {
+  it("vínculo confirmado com inadimplente bloqueia o prazo e não transfere o saldo", () => {
     const decision = credit({
       relatedParties: [
         {
@@ -253,11 +253,98 @@ describe("decideCommercialCredit", () => {
         },
       ],
     });
-    assert.equal(decision.status, "EM_ANALISE");
+    assert.equal(decision.status, "BLOQUEADO");
+    assert.equal(decision.customerStatus, "BLOQUEADO");
+    assert.equal(decision.allowed, false);
     assert.equal(decision.reason, "RELATED_PARTY_DELINQUENT");
     assert.deepEqual(decision.evidence.relatedParties, [{ customerId: RELATED, status: "OVERDUE" }]);
     assert.equal(JSON.stringify(decision).includes("987654"), false);
     assert.equal(decision.evidence.relatedParties[0] && "overdueAmount" in decision.evidence.relatedParties[0], false);
+    assert.match(decision.reason, /RELATED_PARTY_DELINQUENT/);
+  });
+
+  it("protesto vigente da relacionada bloqueia mesmo sem saldo vencido", () => {
+    const decision = credit({
+      relatedParties: [
+        {
+          customerId: RELATED,
+          confirmedProtest: true,
+          delinquency: analysis({ status: "REGULAR", overdueTitleCount: 0, overdueAmount: 0 }),
+        },
+      ],
+    });
+    assert.equal(decision.customerStatus, "BLOQUEADO");
+    assert.equal(decision.reason, "RELATED_PARTY_DELINQUENT");
+    assert.equal(decision.allowed, false);
+  });
+
+  it("vínculo só pendente não confirma o grupo e segura a liberação", () => {
+    const decision = credit({ pendingRelatedPartyCount: 1 });
+    assert.equal(decision.customerStatus, "EM_ANALISE");
+    assert.equal(decision.reason, "RELATED_PARTY_UNVERIFIED");
+    assert.equal(decision.allowed, false);
+    assert.deepEqual(decision.evidence.relatedParties, []);
+  });
+
+  it("à vista não é impedida pelo risco da relacionada", () => {
+    const decision = credit({
+      paymentTerms: "À vista",
+      relatedParties: [
+        {
+          customerId: RELATED,
+          delinquency: analysis({ status: "OVERDUE", overdueTitleCount: 2, overdueAmount: 6560 }),
+        },
+      ],
+    });
+    assert.equal(decision.saleKind, "CASH");
+    assert.equal(decision.allowed, true);
+    assert.equal(decision.reason, "CASH_NOT_CREDIT");
+    assert.equal(decision.customerStatus, "BLOQUEADO");
+  });
+
+  it("exceção do escopo de vínculo libera o prazo e some quando vence", () => {
+    const blocked = credit({
+      relatedParties: [
+        {
+          customerId: RELATED,
+          delinquency: analysis({ status: "OVERDUE", overdueTitleCount: 2, overdueAmount: 6560, maxDaysOverdue: 169 }),
+        },
+      ],
+    });
+    assert.equal(blocked.customerStatus, "BLOQUEADO");
+    const lifted = credit({
+      relatedParties: blocked.evidence.relatedParties.length
+        ? [
+            {
+              customerId: RELATED,
+              delinquency: analysis({ status: "OVERDUE", overdueTitleCount: 2, overdueAmount: 6560, maxDaysOverdue: 169 }),
+            },
+          ]
+        : [],
+      exceptions: [liveException("RELATED_PARTY")],
+    });
+    assert.equal(lifted.customerStatus, "LIBERADO");
+    assert.equal(lifted.reason, "EXCEPTION_APPLIED");
+    const expired = credit({
+      relatedParties: [
+        {
+          customerId: RELATED,
+          delinquency: analysis({ status: "OVERDUE", overdueTitleCount: 2, overdueAmount: 6560, maxDaysOverdue: 169 }),
+        },
+      ],
+      exceptions: [{ ...liveException("RELATED_PARTY"), expiresAt: new Date(2026, 9, 1) }],
+    });
+    assert.equal(expired.customerStatus, "BLOQUEADO");
+    assert.equal(expired.reason, "RELATED_PARTY_DELINQUENT");
+    assert.equal(JSON.stringify(expired).includes("6560"), false);
+  });
+
+  it("consulta IEPTB ausente não vira ausência de protesto", () => {
+    const decision = credit();
+    assert.equal(decision.evidence.ieptbState, "NOT_CONSULTED");
+    assert.equal(decision.evidence.ieptbConfirmedProtest, false);
+    assert.equal(decision.reasons.includes("IEPTB_NATIONAL_PROTEST"), false);
+    assert.equal(decision.customerStatus, "LIBERADO");
   });
 
   it("dado financeiro indisponível fica não verificado e não libera prazo", () => {

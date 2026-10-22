@@ -3479,7 +3479,7 @@ model CommercialExternalProtestConsultation {
   @@index([customerId, consultedAt])
 }
 
-/// QSA normalizado. Histórico: uma consulta nova não apaga a anterior. CPF não é gravado.
+/// QSA normalizado. Histórico: uma consulta nova não apaga a anterior. CPF em claro não é gravado.
 model CommercialCorporateMembership {
   id                String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   subjectCnpj       String
@@ -3491,6 +3491,8 @@ model CommercialCorporateMembership {
   personKind        String
   documentKind      String
   memberCnpj        String?
+  /// Hash irreversível de CPF válido. Não guarda o documento.
+  memberIdentityKey String?
   reliability       String
   evidenceRef       String    @unique
   createdAt         DateTime  @default(now()) @db.Timestamptz(6)
@@ -3498,6 +3500,7 @@ model CommercialCorporateMembership {
 
   @@index([subjectCnpj, consultedAt])
   @@index([memberCnpj])
+  @@index([memberIdentityKey])
   @@index([subjectCustomerId, consultedAt])
 }
 

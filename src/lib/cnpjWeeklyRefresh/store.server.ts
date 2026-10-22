@@ -1,5 +1,6 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
 import { writeCommercialAuditLog } from "@/src/lib/commercialAuditLog.js";
+import { recordCorporateMembershipsFromLookup } from "@/src/lib/commercial/corporateRelation.server.js";
 import { normalizeCnpj } from "@/src/lib/companyCnpjFormat.js";
 import type { NormalizedCnpjSummary } from "@/src/lib/companyCnpjNormalize.js";
 import type { CnpjRefreshPartyDocument } from "./eligibility.js";
@@ -164,6 +165,15 @@ export function createPrismaCnpjRefreshStore(prisma: PrismaClient): CnpjRefreshS
           fetchedByUserId: input.fetchedByUserId,
         },
       });
+      try {
+        await recordCorporateMembershipsFromLookup(prisma as never, {
+          customerId: input.customerId,
+          rawJson: input.rawJson,
+          consultedAt: input.fetchedAt,
+        });
+      } catch (error) {
+        console.error("corporate-membership-record", error instanceof Error ? error.name : "error");
+      }
       return {
         id: row.id,
         cnpj: row.cnpj,
