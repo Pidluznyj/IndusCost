@@ -1,5 +1,6 @@
 import type { Prisma } from "@prisma/client";
-import { brazilUfMatchValues, parseBrazilUfFilter } from "./customerIndicators.js";
+import { normalizeCityKey } from "./commercial/customerActivityMap/customerActivityMap.js";
+import { brazilUfMatchValues, normalizeBrazilUf, parseBrazilUfFilter } from "./customerIndicators.js";
 
 export const CUSTOMER_LIST_DEFAULT_LIMIT = 20;
 export const CUSTOMER_LIST_MAX_LIMIT = 100;
@@ -15,6 +16,13 @@ export type CustomerListQuery = {
   commercialOwner: string;
   /** Sigla UF, ou vazio (todos os estados). */
   state: string;
+  /** Chave de cidade (sem acento e sem caixa), ou vazio (todas). */
+  city: string;
+};
+
+export type CustomerCityOption = {
+  key: string;
+  label: string;
 };
 
 export type CustomerListMeta = {
@@ -49,7 +57,18 @@ export function parseCustomerListQuery(query: Record<string, unknown>): Customer
     search: String(query.search ?? "").trim(),
     commercialOwner: String(query.commercialOwner ?? "").trim(),
     state: parseBrazilUfFilter(query.state),
+    city: parseCustomerCityFilter(query.city),
   };
+}
+
+/** Cidade da grade: mesma chave do mapa (caixa, acento e pontuação não separam). */
+export function parseCustomerCityFilter(raw: unknown): string {
+  const text = typeof raw === "string" ? raw.trim() : "";
+  if (!text) return "";
+  const split = splitCityTrailingUf(text);
+  const key = normalizeCityKey(split.uf ? split.city : text);
+  if (key.length < 2 || key.length > 80) return "";
+  return key;
 }
 
 export function customerListMeta(total: number, page: number, limit: number): CustomerListMeta {
@@ -76,6 +95,7 @@ export function shouldUseCustomerPagination(query: Record<string, unknown>): boo
     query.search != null ||
     query.commercialOwner != null ||
     query.state != null ||
+    query.city != null ||
     String(query.paginated ?? "").trim() === "true"
   );
 }
@@ -123,12 +143,89 @@ export function buildCustomerStateWhere(uf: string): Prisma.CustomerWhereInput |
   };
 }
 
+/** "Curitiba - PR" / "Curitiba/PB" → cidade e UF do sufixo, quando a UF é válida. */
+function splitCityTrailingUf(city: string): { city: string; uf: string | null } {
+  const match = /^(.*?)[\s]*[-/–(,][\s]*([A-Za-z]{2})\)?\s*$/.exec(city.trim());
+  if (!match?.[1]?.trim()) return { city: city.trim(), uf: null };
+  const uf = normalizeBrazilUf(match[2]);
+  if (uf === "—" || uf === "OUTROS") return { city: city.trim(), uf: null };
+  return { city: match[1].trim(), uf };
+}
+
+function knownUf(raw: string | null | undefined): string {
+  const uf = normalizeBrazilUf(raw);
+  return uf === "—" || uf === "OUTROS" ? "" : uf;
+}
+
+function preferCityLabel(current: string, candidate: string): string {
+  const score = (value: string) => {
+    let points = 0;
+    if (value !== value.toUpperCase()) points += 2;
+    if (/[À-ÿ]/.test(value)) points += 2;
+    return points;
+  };
+  return score(candidate) > score(current) ? candidate : current;
+}
+
+export function resolveCustomerCityFilter(
+  rows: Array<{ city: string | null; state: string | null }>,
+  stateUf: string,
+  cityKey: string
+): { options: CustomerCityOption[]; cityWhere: Prisma.CustomerWhereInput | undefined } {
+  const scopedUf = parseBrazilUfFilter(stateUf);
+  const requested = parseCustomerCityFilter(cityKey);
+  const grouped = new Map<string, { label: string; raws: string[] }>();
+
+  for (const row of rows) {
+    const stored = row.city ?? "";
+    const trimmed = stored.trim();
+    if (!trimmed) continue;
+
+    let uf = knownUf(row.state);
+    const split = splitCityTrailingUf(trimmed);
+    let label = trimmed;
+    if (uf && split.uf === uf) label = split.city;
+    else if (!uf && split.uf) {
+      uf = split.uf;
+      label = split.city;
+    }
+    if (scopedUf && uf !== scopedUf) continue;
+
+    const key = normalizeCityKey(label);
+    if (key.length < 2 || key.length > 80) continue;
+    const current = grouped.get(key);
+    if (!current) {
+      grouped.set(key, { label, raws: [stored] });
+      continue;
+    }
+    current.label = preferCityLabel(current.label, label);
+    if (!current.raws.includes(stored)) current.raws.push(stored);
+  }
+
+  const options = [...grouped.entries()]
+    .map(([key, value]) => ({ key, label: value.label }))
+    .sort((a, b) => a.label.localeCompare(b.label, "pt-BR"));
+
+  if (!requested) return { options, cityWhere: undefined };
+  const match = grouped.get(requested);
+  if (!match || match.raws.length === 0) return { options, cityWhere: { id: { in: [] } } };
+  return {
+    options,
+    cityWhere: {
+      OR: match.raws.map((value) => ({
+        city: { equals: value, mode: "insensitive" as const },
+      })),
+    },
+  };
+}
+
 export function buildCustomerListWhere(
   search: string,
   ownerWhere?: Prisma.CustomerWhereInput,
-  stateWhere?: Prisma.CustomerWhereInput
+  stateWhere?: Prisma.CustomerWhereInput,
+  cityWhere?: Prisma.CustomerWhereInput
 ): Prisma.CustomerWhereInput | undefined {
-  const parts = [buildCustomerSearchWhere(search), ownerWhere, stateWhere].filter(
+  const parts = [buildCustomerSearchWhere(search), ownerWhere, stateWhere, cityWhere].filter(
     (part): part is Prisma.CustomerWhereInput => part != null
   );
   if (parts.length === 0) return undefined;

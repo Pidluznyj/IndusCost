@@ -629,6 +629,7 @@ import {
   buildCustomerStateWhere,
   customerListMeta,
   parseCustomerListQuery,
+  resolveCustomerCityFilter,
   shouldUseCustomerPagination,
 } from "./src/lib/customerListQuery.js";
 import { attachCustomerCnpjRisk } from "./src/lib/customerCnpjRiskSummary.server.js";
@@ -14255,10 +14256,18 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
 
       const list = parseCustomerListQuery(query);
       const ownerFilter = await prepareCommercialOwnerCustomerListFilter(list.commercialOwner);
+      const stateWhere = buildCustomerStateWhere(list.state);
+      const cityRows = await prisma.customer.findMany({
+        where: stateWhere,
+        select: { city: true, state: true },
+        distinct: ["city", "state"],
+      });
+      const cityFilter = resolveCustomerCityFilter(cityRows, list.state, list.city);
       const where = buildCustomerListWhere(
         list.search,
         ownerFilter.ownerWhere,
-        buildCustomerStateWhere(list.state)
+        stateWhere,
+        cityFilter.cityWhere
       );
       const commercialOwnerOptions = ownerFilter.options;
       const [total, items] = await Promise.all([
@@ -14282,6 +14291,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
           meta
         ),
         commercialOwnerOptions,
+        cityOptions: cityFilter.options,
       });
     } catch (error) {
       console.error("GET /api/customers", error);

@@ -94,7 +94,7 @@ describe("responsável comercial na listagem de clientes", () => {
     assert.match(service, /customerId: \{ in: customerIds \}, isActive: true/);
     assert.match(server, /attachCustomerCommercialOwnerListFields\(withRisk\)/);
     assert.match(server, /prepareCommercialOwnerCustomerListFilter\(list\.commercialOwner\)/);
-    assert.match(server, /buildCustomerListWhere\(list\.search, ownerFilter\.ownerWhere\)/);
+    assert.match(server, /buildCustomerListWhere\(\s*list\.search,\s*ownerFilter\.ownerWhere,/);
     assert.match(server, /commercialOwnerOptions = ownerFilter\.options/);
     assert.match(mod, /aria-label="Filtrar por responsável comercial"/);
     assert.match(mod, /q\.set\("commercialOwner", ownerFilter\)/);

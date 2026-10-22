@@ -28,6 +28,7 @@ export const CUSTOMER_LIST_PDF_MAX_ROWS = 40;
 export const CUSTOMER_LIST_EXPORT_OWNER_EMPTY_LABEL = "Sem responsável";
 export const CUSTOMER_LIST_EXPORT_OWNER_ALL_LABEL = "Todos os responsáveis";
 export const CUSTOMER_LIST_EXPORT_SEARCH_ALL_LABEL = "Todos";
+export const CUSTOMER_LIST_EXPORT_CITY_ALL_LABEL = "Todas as cidades";
 export const CUSTOMER_LIST_EXPORT_NO_SEGMENT_LABEL = "Sem segmento";
 
 export type CustomerListReportExportRow = {
@@ -106,7 +107,10 @@ export function buildCustomerListReportAppliedFilters(input: {
   ownerKey: string;
   ownerOptions: Array<{ key: string; name: string }>;
   stateUf?: string;
+  cityKey?: string;
+  cityLabel?: string;
 }): Array<{ label: string; value: string }> {
+  const city = input.cityLabel?.trim() || input.cityKey?.trim() || "";
   return [
     { label: "Busca", value: input.search.trim() || CUSTOMER_LIST_EXPORT_SEARCH_ALL_LABEL },
     {
@@ -117,6 +121,7 @@ export function buildCustomerListReportAppliedFilters(input: {
       }),
     },
     { label: "Estado", value: formatBrazilStateLabel(input.stateUf) },
+    { label: "Cidade", value: city || CUSTOMER_LIST_EXPORT_CITY_ALL_LABEL },
   ];
 }
 

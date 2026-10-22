@@ -1,6 +1,6 @@
 /**
  * Carrega a população filtrada da tela Comercial > Clientes para exportação.
- * Mesmos filtros da grade (busca + responsável comercial), sem paginação de 20.
+ * Mesmos filtros da grade (busca, responsável, estado e cidade), sem paginação de 20.
  */
 import type { PrismaClient } from "@prisma/client";
 import { createHash } from "node:crypto";
@@ -15,6 +15,7 @@ import {
   buildCustomerListWhere,
   buildCustomerStateWhere,
   parseCustomerListQuery,
+  resolveCustomerCityFilter,
 } from "./customerListQuery.js";
 import {
   CUSTOMER_LIST_EXPORT_MAX,
@@ -53,10 +54,18 @@ export async function loadCustomerListReportExportPayload(
 ): Promise<CustomerListReportExportPayload> {
   const list = parseCustomerListQuery(query);
   const ownerFilter = await prepareCommercialOwnerCustomerListFilter(list.commercialOwner);
+  const stateWhere = buildCustomerStateWhere(list.state);
+  const cityRows = await prisma.customer.findMany({
+    where: stateWhere,
+    select: { city: true, state: true },
+    distinct: ["city", "state"],
+  });
+  const cityFilter = resolveCustomerCityFilter(cityRows, list.state, list.city);
   const where = buildCustomerListWhere(
     list.search,
     ownerFilter.ownerWhere,
-    buildCustomerStateWhere(list.state)
+    stateWhere,
+    cityFilter.cityWhere
   );
 
   const totalMatched = await prisma.customer.count({ where });
@@ -97,6 +106,8 @@ export async function loadCustomerListReportExportPayload(
     ownerKey: list.commercialOwner,
     ownerOptions: ownerFilter.options,
     stateUf: list.state,
+    cityKey: list.city,
+    cityLabel: cityFilter.options.find((option) => option.key === list.city)?.label,
   });
   const emitterName = options.emitterName?.trim() || "—";
   const emitterEmail = options.emitterEmail?.trim() || "—";

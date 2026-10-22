@@ -11,6 +11,7 @@ import {
   customerListMeta,
   formatCustomerListRange,
   parseCustomerListQuery,
+  resolveCustomerCityFilter,
   shouldUseCustomerPagination,
 } from "./customerListQuery.js";
 
@@ -57,6 +58,7 @@ describe("customerListQuery", () => {
     assert.equal(shouldUseCustomerPagination({ search: "x" }), true);
     assert.equal(shouldUseCustomerPagination({ commercialOwner: "none" }), true);
     assert.equal(shouldUseCustomerPagination({ state: "SP" }), true);
+    assert.equal(shouldUseCustomerPagination({ city: "Campina Grande" }), true);
   });
 
   it("vazio não restringe e none marca cliente sem responsável ativo", () => {
@@ -91,5 +93,48 @@ describe("customerListQuery", () => {
 
     const all = buildCustomerListWhere("acme", buildCustomerOwnerWhere(CUSTOMER_LIST_OWNER_NONE), where);
     assert.ok(all && Array.isArray(all.AND) && all.AND.length === 3);
+  });
+
+  it("junta grafias da mesma cidade e restringe à UF escolhida", () => {
+    assert.equal(parseCustomerListQuery({ city: " campina grande " }).city, "CAMPINA GRANDE");
+    assert.equal(parseCustomerListQuery({ city: "x" }).city, "");
+
+    const rows = [
+      { city: "CAMPINA GRANDE", state: "PB" },
+      { city: "Campina Grande", state: "Paraíba" },
+      { city: "Esperança", state: "PB" },
+      { city: "ESPERANCA", state: "pb" },
+      { city: "Curitiba - PR", state: "PR" },
+      { city: "Curitiba", state: "Paraná" },
+      { city: "Joinville", state: "SC" },
+      { city: "  ", state: "PB" },
+    ];
+
+    const paraiba = resolveCustomerCityFilter(rows, "PB", "");
+    assert.deepEqual(
+      paraiba.options.map((option) => option.label),
+      ["Campina Grande", "Esperança"]
+    );
+    assert.equal(paraiba.cityWhere, undefined);
+
+    const campina = resolveCustomerCityFilter(rows, "PB", "Campina Grande");
+    assert.equal(campina.options.length, 2);
+    assert.ok(campina.cityWhere && "OR" in campina.cityWhere && Array.isArray(campina.cityWhere.OR));
+    const cities = campina.cityWhere && "OR" in campina.cityWhere ? campina.cityWhere.OR : [];
+    assert.deepEqual(cities, [
+      { city: { equals: "CAMPINA GRANDE", mode: "insensitive" } },
+      { city: { equals: "Campina Grande", mode: "insensitive" } },
+    ]);
+
+    const curitiba = resolveCustomerCityFilter(rows, "", "Curitiba - PR");
+    assert.equal(curitiba.options.find((option) => option.key === "CURITIBA")?.label, "Curitiba");
+    const curitibaOr = curitiba.cityWhere && "OR" in curitiba.cityWhere ? curitiba.cityWhere.OR : [];
+    assert.equal(curitibaOr.length, 2);
+
+    const missing = resolveCustomerCityFilter(rows, "PB", "Recife");
+    assert.deepEqual(missing.cityWhere, { id: { in: [] } });
+
+    const filtered = buildCustomerListWhere("", undefined, buildCustomerStateWhere("PB"), campina.cityWhere);
+    assert.ok(filtered && Array.isArray(filtered.AND) && filtered.AND.length === 2);
   });
 });

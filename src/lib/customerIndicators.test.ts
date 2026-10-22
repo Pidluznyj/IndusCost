@@ -34,6 +34,9 @@ describe("customerIndicators", () => {
     );
     assert.match(page, /data-testid="customers-filter-state"/);
     assert.match(page, /q\.set\("state", stateFilter\)/);
+    assert.match(page, /data-testid="customers-filter-city"/);
+    assert.match(page, /q\.set\("city", cityFilter\)/);
+    assert.match(page, /city: cityFilter/);
     assert.match(map, /onStateClick\?\.\(uf, name \|\| uf\)/);
     assert.match(section, /CustomerStateCustomersOverlay/);
   });

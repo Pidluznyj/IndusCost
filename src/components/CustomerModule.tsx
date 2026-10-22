@@ -56,7 +56,7 @@ import {
 import { GuidedTour } from "@/src/components/tour/GuidedTour";
 import { TourHelpButton } from "@/src/components/tour/TourHelpButton";
 import { CUSTOMER_TOUR_STEPS } from "@/src/tours/customerTourSteps";
-import { formatCustomerListRange } from "@/src/lib/customerListQuery";
+import { formatCustomerListRange, type CustomerCityOption } from "@/src/lib/customerListQuery";
 import { BRAZIL_STATES } from "@/src/lib/customerIndicators";
 import { formatCustomerLastPurchaseDay, formatCustomerLastPurchaseMonth } from "@/src/lib/commercial/customerLastPurchase";
 import { canAssignCustomerCommercialOwnerAccess } from "@/src/lib/customerCommercialOwnerAssignAccess";
@@ -108,6 +108,8 @@ export const CustomerModule = () => {
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [ownerFilter, setOwnerFilter] = useState("");
   const [stateFilter, setStateFilter] = useState("");
+  const [cityFilter, setCityFilter] = useState("");
+  const [cityOptions, setCityOptions] = useState<CustomerCityOption[]>([]);
   const [ownerOptions, setOwnerOptions] = useState<CommercialOwnerFilterOption[]>([]);
   const [page, setPage] = useState(1);
   const [pagination, setPagination] = useState<CustomerListMeta | null>(null);
@@ -156,6 +158,7 @@ export const CustomerModule = () => {
       if (debouncedSearch) q.set("search", debouncedSearch);
       if (ownerFilter) q.set("commercialOwner", ownerFilter);
       if (stateFilter) q.set("state", stateFilter);
+      if (cityFilter) q.set("city", cityFilter);
       const data = await fetchJsonOk<{
         items?: Customer[];
         customers?: Customer[];
@@ -164,6 +167,7 @@ export const CustomerModule = () => {
         total?: number;
         totalPages?: number;
         commercialOwnerOptions?: CommercialOwnerFilterOption[];
+        cityOptions?: CustomerCityOption[];
       }>(`/api/customers?${q}`);
       const items = Array.isArray(data.items)
         ? data.items
@@ -174,6 +178,7 @@ export const CustomerModule = () => {
       if (Array.isArray(data.commercialOwnerOptions)) {
         setOwnerOptions(data.commercialOwnerOptions);
       }
+      setCityOptions(Array.isArray(data.cityOptions) ? data.cityOptions : []);
       setPagination({
         page: data.page ?? page,
         limit: data.limit ?? CUSTOMER_PAGE_SIZE,
@@ -186,7 +191,7 @@ export const CustomerModule = () => {
     } finally {
       setLoading(false);
     }
-  }, [page, debouncedSearch, ownerFilter, stateFilter]);
+  }, [page, debouncedSearch, ownerFilter, stateFilter, cityFilter]);
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedSearch(searchTerm.trim()), 300);
@@ -297,6 +302,7 @@ export const CustomerModule = () => {
     search: debouncedSearch,
     commercialOwner: ownerFilter,
     state: stateFilter,
+    city: cityFilter,
   });
 
   const handleExportXlsx = async () => {
@@ -375,8 +381,8 @@ export const CustomerModule = () => {
         className="flex flex-col sm:flex-row sm:items-center justify-between gap-4"
         data-tour="customers-toolbar"
       >
-        <div className="flex flex-1 flex-col gap-3 sm:flex-row sm:items-center max-w-5xl">
-          <div className="relative flex-1 min-w-0">
+        <div className="flex flex-1 flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+          <div className="relative flex-1 min-w-[220px]">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <input
               type="text"
@@ -392,7 +398,9 @@ export const CustomerModule = () => {
             className="w-full sm:w-52 shrink-0 py-2 px-3 rounded-lg border border-border bg-card text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
             value={stateFilter}
             onChange={(e) => {
-              setStateFilter(e.target.value);
+              const next = e.target.value;
+              setStateFilter(next);
+              if (next !== stateFilter) setCityFilter("");
               setPage(1);
             }}
           >
@@ -400,6 +408,23 @@ export const CustomerModule = () => {
             {BRAZIL_STATES.map((state) => (
               <option key={state.uf} value={state.uf}>
                 {state.uf} — {state.name}
+              </option>
+            ))}
+          </select>
+          <select
+            aria-label="Filtrar por cidade"
+            data-testid="customers-filter-city"
+            className="w-full sm:w-52 shrink-0 py-2 px-3 rounded-lg border border-border bg-card text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+            value={cityFilter}
+            onChange={(e) => {
+              setCityFilter(e.target.value);
+              setPage(1);
+            }}
+          >
+            <option value="">Todas as cidades</option>
+            {cityOptions.map((city) => (
+              <option key={city.key} value={city.key}>
+                {city.label}
               </option>
             ))}
           </select>

@@ -146,6 +146,7 @@ describe("customerListReportExport", () => {
       { label: "Busca", value: "acme" },
       { label: "Responsável comercial", value: "GISLENE LIMA" },
       { label: "Estado", value: "Todos os estados" },
+      { label: "Cidade", value: "Todas as cidades" },
     ]);
     const empty = buildCustomerListReportAppliedFilters({
       search: "",
@@ -156,6 +157,16 @@ describe("customerListReportExport", () => {
     assert.equal(empty[0]?.value, "Todos");
     assert.equal(empty[1]?.value, "Todos os responsáveis");
     assert.equal(empty[2]?.value, "PR — Paraná");
+    assert.equal(empty[3]?.value, "Todas as cidades");
+    const city = buildCustomerListReportAppliedFilters({
+      search: "",
+      ownerKey: "",
+      ownerOptions: [],
+      stateUf: "PB",
+      cityKey: "CAMPINA GRANDE",
+      cityLabel: "Campina Grande",
+    });
+    assert.equal(city[3]?.value, "Campina Grande");
   });
 
   it("Excel tem Resumo, Clientes, Filtros e Confidencialidade", () => {
@@ -222,8 +233,13 @@ describe("customerListReportExport", () => {
     });
     assert.equal(query, "search=acme&commercialOwner=none");
     assert.equal(
-      buildCustomerListExportQuery({ search: "acme", commercialOwner: "none", state: "SC" }),
-      "search=acme&commercialOwner=none&state=SC"
+      buildCustomerListExportQuery({
+        search: "acme",
+        commercialOwner: "none",
+        state: "SC",
+        city: "JOINVILLE",
+      }),
+      "search=acme&commercialOwner=none&state=SC&city=JOINVILLE"
     );
     assert.doesNotMatch(query, /page=/);
     assert.doesNotMatch(query, /limit=/);
@@ -241,6 +257,7 @@ describe("customerListReportExport", () => {
     assert.match(server, /parseCustomerListQuery/);
     assert.match(server, /prepareCommercialOwnerCustomerListFilter/);
     assert.match(server, /buildCustomerListWhere/);
+    assert.match(server, /resolveCustomerCityFilter/);
     assert.match(server, /CUSTOMER_LIST_EXPORT_MAX/);
     assert.doesNotMatch(server, /list\.skip/);
     assert.doesNotMatch(server, /list\.limit/);
