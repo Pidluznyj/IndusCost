@@ -35,6 +35,7 @@ import type { MapFocusRequest, MapViewInfo } from "./CustomerActivityLeafletMap"
 import { CustomerActivityMapErrorBoundary } from "./CustomerActivityMapErrorBoundary";
 import { CustomerActivityMapRanking } from "./CustomerActivityMapRanking";
 import { CustomerActivityMapUnresolvedOverlay } from "./CustomerActivityMapUnresolvedOverlay";
+import { CustomerStateCustomersOverlay } from "./CustomerStateCustomersOverlay";
 
 // Leaflet fica fora do bundle principal: só carrega quando o mapa aparece.
 const CustomerActivityLeafletMap = React.lazy(() => import("./CustomerActivityLeafletMap"));
@@ -66,6 +67,7 @@ export function CustomerActivityMapSection() {
   const [focus, setFocus] = useState<MapFocusRequest | null>(null);
   const [view, setView] = useState<MapViewInfo | null>(null);
   const [unresolvedOpen, setUnresolvedOpen] = useState(false);
+  const [stateList, setStateList] = useState<{ uf: string; name: string } | null>(null);
   const focusNonce = useRef(0);
 
   useEffect(() => {
@@ -133,7 +135,7 @@ export function CustomerActivityMapSection() {
             Mapa de Atuação
           </h4>
           <p className="mt-1 text-xs text-muted-foreground">
-            Distribuição geográfica da carteira de clientes e atividade comercial.
+            Distribuição geográfica da carteira. Clique em um estado para ver os clientes daquela UF.
           </p>
         </div>
 
@@ -301,6 +303,7 @@ export function CustomerActivityMapSection() {
                     focus={focus}
                     onOpenCustomer={openCustomer}
                     onViewChange={setView}
+                    onStateClick={(uf, name) => setStateList({ uf, name })}
                   />
                 </Suspense>
               </CustomerActivityMapErrorBoundary>
@@ -365,11 +368,20 @@ export function CustomerActivityMapSection() {
             </div>
             <p className="max-w-xl text-[11px] leading-snug">
               {overview.semantics.locationRule} Aproxime para passar de concentração a municípios e
-              a clientes; clique no mapa para usar o zoom pela roda do mouse.
+              a clientes. Clique em um estado para abrir a lista de clientes dessa UF.
             </p>
           </div>
         </>
       )}
+
+      {stateList ? (
+        <CustomerStateCustomersOverlay
+          uf={stateList.uf}
+          name={stateList.name}
+          onClose={() => setStateList(null)}
+          onOpenCustomer={openCustomer}
+        />
+      ) : null}
 
       {unresolvedOpen && overview ? (
         <CustomerActivityMapUnresolvedOverlay

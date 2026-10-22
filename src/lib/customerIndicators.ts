@@ -124,6 +124,66 @@ export function normalizeBrazilUf(raw: string | null | undefined): string {
   return "OUTROS";
 }
 
+/** Estados do Brasil, na ordem do filtro da lista e do mapa. */
+export const BRAZIL_STATES: ReadonlyArray<{ uf: string; name: string }> = [
+  { uf: "AC", name: "Acre" },
+  { uf: "AL", name: "Alagoas" },
+  { uf: "AP", name: "Amapá" },
+  { uf: "AM", name: "Amazonas" },
+  { uf: "BA", name: "Bahia" },
+  { uf: "CE", name: "Ceará" },
+  { uf: "DF", name: "Distrito Federal" },
+  { uf: "ES", name: "Espírito Santo" },
+  { uf: "GO", name: "Goiás" },
+  { uf: "MA", name: "Maranhão" },
+  { uf: "MT", name: "Mato Grosso" },
+  { uf: "MS", name: "Mato Grosso do Sul" },
+  { uf: "MG", name: "Minas Gerais" },
+  { uf: "PA", name: "Pará" },
+  { uf: "PB", name: "Paraíba" },
+  { uf: "PR", name: "Paraná" },
+  { uf: "PE", name: "Pernambuco" },
+  { uf: "PI", name: "Piauí" },
+  { uf: "RJ", name: "Rio de Janeiro" },
+  { uf: "RN", name: "Rio Grande do Norte" },
+  { uf: "RS", name: "Rio Grande do Sul" },
+  { uf: "RO", name: "Rondônia" },
+  { uf: "RR", name: "Roraima" },
+  { uf: "SC", name: "Santa Catarina" },
+  { uf: "SP", name: "São Paulo" },
+  { uf: "SE", name: "Sergipe" },
+  { uf: "TO", name: "Tocantins" },
+];
+
+/** Sigla válida para filtro, ou vazio quando o texto não é uma UF. */
+export function parseBrazilUfFilter(raw: unknown): string {
+  const text = String(raw ?? "").trim();
+  if (!text) return "";
+  const uf = normalizeBrazilUf(text);
+  return BRAZIL_STATES.some((state) => state.uf === uf) ? uf : "";
+}
+
+/**
+ * Grafias que a listagem trata como a mesma UF do indicador:
+ * sigla, nome oficial e nome sem acento.
+ */
+export function brazilUfMatchValues(raw: string): string[] {
+  const uf = parseBrazilUfFilter(raw);
+  const state = BRAZIL_STATES.find((item) => item.uf === uf);
+  if (!state) return [];
+  const plain = slugNoAccent(state.name);
+  const values = new Set<string>([state.uf, state.name]);
+  if (plain !== state.name.toLowerCase()) values.add(plain);
+  return [...values];
+}
+
+export function formatBrazilStateLabel(raw: string | null | undefined): string {
+  const uf = parseBrazilUfFilter(raw);
+  const state = BRAZIL_STATES.find((item) => item.uf === uf);
+  if (!state) return "Todos os estados";
+  return `${state.uf} — ${state.name}`;
+}
+
 function labelForStateKey(key: string): string {
   if (key === "—") return "Não informado";
   if (key === "OUTROS") return "Outros (texto não reconhecido como UF)";

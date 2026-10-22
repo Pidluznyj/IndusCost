@@ -7,6 +7,7 @@ import {
   buildCustomerListResponse,
   buildCustomerListWhere,
   buildCustomerOwnerWhere,
+  buildCustomerStateWhere,
   customerListMeta,
   formatCustomerListRange,
   parseCustomerListQuery,
@@ -55,6 +56,7 @@ describe("customerListQuery", () => {
     assert.equal(shouldUseCustomerPagination({ page: "1" }), true);
     assert.equal(shouldUseCustomerPagination({ search: "x" }), true);
     assert.equal(shouldUseCustomerPagination({ commercialOwner: "none" }), true);
+    assert.equal(shouldUseCustomerPagination({ state: "SP" }), true);
   });
 
   it("vazio não restringe e none marca cliente sem responsável ativo", () => {
@@ -69,5 +71,25 @@ describe("customerListQuery", () => {
     const combined = buildCustomerListWhere("acme", noneWhere);
     assert.ok(combined && Array.isArray(combined.AND) && combined.AND.length === 2);
     assert.equal(buildCustomerListWhere("", undefined), undefined);
+  });
+
+  it("filtra pela mesma UF do indicador, inclusive nome com e sem acento", () => {
+    assert.equal(parseCustomerListQuery({}).state, "");
+    assert.equal(parseCustomerListQuery({ state: " sp " }).state, "SP");
+    assert.equal(parseCustomerListQuery({ state: "São Paulo" }).state, "SP");
+    assert.equal(parseCustomerListQuery({ state: "Marte" }).state, "");
+
+    const where = buildCustomerStateWhere("SP");
+    assert.ok(where && Array.isArray(where.OR));
+    const equals = where.OR.map((item) => ("state" in item ? item.state : null));
+    assert.deepEqual(equals, [
+      { equals: "SP", mode: "insensitive" },
+      { equals: "São Paulo", mode: "insensitive" },
+      { equals: "sao paulo", mode: "insensitive" },
+    ]);
+    assert.equal(buildCustomerStateWhere("OUTROS"), undefined);
+
+    const all = buildCustomerListWhere("acme", buildCustomerOwnerWhere(CUSTOMER_LIST_OWNER_NONE), where);
+    assert.ok(all && Array.isArray(all.AND) && all.AND.length === 3);
   });
 });

@@ -145,14 +145,17 @@ describe("customerListReportExport", () => {
     assert.deepEqual(filters, [
       { label: "Busca", value: "acme" },
       { label: "Responsável comercial", value: "GISLENE LIMA" },
+      { label: "Estado", value: "Todos os estados" },
     ]);
     const empty = buildCustomerListReportAppliedFilters({
       search: "",
       ownerKey: "",
       ownerOptions: [],
+      stateUf: "PR",
     });
     assert.equal(empty[0]?.value, "Todos");
     assert.equal(empty[1]?.value, "Todos os responsáveis");
+    assert.equal(empty[2]?.value, "PR — Paraná");
   });
 
   it("Excel tem Resumo, Clientes, Filtros e Confidencialidade", () => {
@@ -218,6 +221,10 @@ describe("customerListReportExport", () => {
       commercialOwner: "none",
     });
     assert.equal(query, "search=acme&commercialOwner=none");
+    assert.equal(
+      buildCustomerListExportQuery({ search: "acme", commercialOwner: "none", state: "SC" }),
+      "search=acme&commercialOwner=none&state=SC"
+    );
     assert.doesNotMatch(query, /page=/);
     assert.doesNotMatch(query, /limit=/);
     assert.equal(buildCustomerListExportQuery({}), "");

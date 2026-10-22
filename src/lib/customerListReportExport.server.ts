@@ -11,7 +11,11 @@ import {
 } from "./crmCustomerCommercialOwner.js";
 import { attachCustomerSalesBlocks } from "./commercial/customerSalesBlock.server.js";
 import { attachCustomerLastPurchase } from "./commercial/customerLastPurchase.server.js";
-import { buildCustomerListWhere, parseCustomerListQuery } from "./customerListQuery.js";
+import {
+  buildCustomerListWhere,
+  buildCustomerStateWhere,
+  parseCustomerListQuery,
+} from "./customerListQuery.js";
 import {
   CUSTOMER_LIST_EXPORT_MAX,
   buildCustomerListReportAppliedFilters,
@@ -49,7 +53,11 @@ export async function loadCustomerListReportExportPayload(
 ): Promise<CustomerListReportExportPayload> {
   const list = parseCustomerListQuery(query);
   const ownerFilter = await prepareCommercialOwnerCustomerListFilter(list.commercialOwner);
-  const where = buildCustomerListWhere(list.search, ownerFilter.ownerWhere);
+  const where = buildCustomerListWhere(
+    list.search,
+    ownerFilter.ownerWhere,
+    buildCustomerStateWhere(list.state)
+  );
 
   const totalMatched = await prisma.customer.count({ where });
   const items = await prisma.customer.findMany({
@@ -88,6 +96,7 @@ export async function loadCustomerListReportExportPayload(
     search: list.search,
     ownerKey: list.commercialOwner,
     ownerOptions: ownerFilter.options,
+    stateUf: list.state,
   });
   const emitterName = options.emitterName?.trim() || "—";
   const emitterEmail = options.emitterEmail?.trim() || "—";

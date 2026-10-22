@@ -62,6 +62,8 @@ type Props = {
   focus: MapFocusRequest | null;
   onOpenCustomer: (customerId: string) => void;
   onViewChange: (info: MapViewInfo) => void;
+  /** Clique na UF: além do zoom, abre a lista de clientes daquele estado. */
+  onStateClick?: (uf: string, name: string) => void;
 };
 
 const BRAZIL_BOUNDS: [[number, number], [number, number]] = [
@@ -509,9 +511,12 @@ export function CustomerActivityLeafletMap(props: Props) {
 
         const statesLayer = L.geoJSON(BRAZIL_STATES_GEOJSON as never, {
           style: { color: "#ffffff", weight: 1, fillColor: MAP_EMPTY_FILL, fillOpacity: 0.6 },
-          onEachFeature: (_feature, layer) => {
+          onEachFeature: (feature, layer) => {
             layer.on("click", () => {
               map.fitBounds((layer as Leaflet.Polygon).getBounds(), { padding: [20, 20] });
+              const uf = String(feature?.properties?.uf ?? "").trim();
+              const name = String(feature?.properties?.name ?? uf).trim();
+              if (uf) propsRef.current.onStateClick?.(uf, name || uf);
             });
             layer.on("mouseover", () => (layer as Leaflet.Path).setStyle({ weight: 2.2, color: "#1d4ed8" }));
             layer.on("mouseout", () => api.current.drawStates());

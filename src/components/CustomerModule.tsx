@@ -57,6 +57,7 @@ import { GuidedTour } from "@/src/components/tour/GuidedTour";
 import { TourHelpButton } from "@/src/components/tour/TourHelpButton";
 import { CUSTOMER_TOUR_STEPS } from "@/src/tours/customerTourSteps";
 import { formatCustomerListRange } from "@/src/lib/customerListQuery";
+import { BRAZIL_STATES } from "@/src/lib/customerIndicators";
 import { formatCustomerLastPurchaseDay, formatCustomerLastPurchaseMonth } from "@/src/lib/commercial/customerLastPurchase";
 import { canAssignCustomerCommercialOwnerAccess } from "@/src/lib/customerCommercialOwnerAssignAccess";
 import { canExportCustomerListReport } from "@/src/lib/customerListReportExportAccess";
@@ -106,6 +107,7 @@ export const CustomerModule = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [ownerFilter, setOwnerFilter] = useState("");
+  const [stateFilter, setStateFilter] = useState("");
   const [ownerOptions, setOwnerOptions] = useState<CommercialOwnerFilterOption[]>([]);
   const [page, setPage] = useState(1);
   const [pagination, setPagination] = useState<CustomerListMeta | null>(null);
@@ -153,6 +155,7 @@ export const CustomerModule = () => {
       q.set("limit", String(CUSTOMER_PAGE_SIZE));
       if (debouncedSearch) q.set("search", debouncedSearch);
       if (ownerFilter) q.set("commercialOwner", ownerFilter);
+      if (stateFilter) q.set("state", stateFilter);
       const data = await fetchJsonOk<{
         items?: Customer[];
         customers?: Customer[];
@@ -183,7 +186,7 @@ export const CustomerModule = () => {
     } finally {
       setLoading(false);
     }
-  }, [page, debouncedSearch, ownerFilter]);
+  }, [page, debouncedSearch, ownerFilter, stateFilter]);
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedSearch(searchTerm.trim()), 300);
@@ -293,6 +296,7 @@ export const CustomerModule = () => {
   const listExportQuery = buildCustomerListExportQuery({
     search: debouncedSearch,
     commercialOwner: ownerFilter,
+    state: stateFilter,
   });
 
   const handleExportXlsx = async () => {
@@ -371,7 +375,7 @@ export const CustomerModule = () => {
         className="flex flex-col sm:flex-row sm:items-center justify-between gap-4"
         data-tour="customers-toolbar"
       >
-        <div className="flex flex-1 flex-col gap-3 sm:flex-row sm:items-center max-w-3xl">
+        <div className="flex flex-1 flex-col gap-3 sm:flex-row sm:items-center max-w-5xl">
           <div className="relative flex-1 min-w-0">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <input
@@ -382,6 +386,23 @@ export const CustomerModule = () => {
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
+          <select
+            aria-label="Filtrar por estado"
+            data-testid="customers-filter-state"
+            className="w-full sm:w-52 shrink-0 py-2 px-3 rounded-lg border border-border bg-card text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+            value={stateFilter}
+            onChange={(e) => {
+              setStateFilter(e.target.value);
+              setPage(1);
+            }}
+          >
+            <option value="">Todos os estados</option>
+            {BRAZIL_STATES.map((state) => (
+              <option key={state.uf} value={state.uf}>
+                {state.uf} — {state.name}
+              </option>
+            ))}
+          </select>
           <select
             aria-label="Filtrar por responsável comercial"
             className="w-full sm:w-56 shrink-0 py-2 px-3 rounded-lg border border-border bg-card text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"

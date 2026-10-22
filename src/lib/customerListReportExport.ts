@@ -4,6 +4,7 @@
 import * as XLSX from "xlsx";
 import { buildMinimalPdfDocument } from "./minimalPdfWriter.js";
 import { formatCustomerLastPurchaseMonth, type CustomerLastPurchaseStatus } from "./commercial/customerLastPurchase.js";
+import { formatBrazilStateLabel } from "./customerIndicators.js";
 import {
   CUSTOMER_CNPJ_RISK_NO_LOOKUP_LABEL,
   formatCustomerCnpjRiskTagLabel,
@@ -104,6 +105,7 @@ export function buildCustomerListReportAppliedFilters(input: {
   search: string;
   ownerKey: string;
   ownerOptions: Array<{ key: string; name: string }>;
+  stateUf?: string;
 }): Array<{ label: string; value: string }> {
   return [
     { label: "Busca", value: input.search.trim() || CUSTOMER_LIST_EXPORT_SEARCH_ALL_LABEL },
@@ -114,6 +116,7 @@ export function buildCustomerListReportAppliedFilters(input: {
         options: input.ownerOptions,
       }),
     },
+    { label: "Estado", value: formatBrazilStateLabel(input.stateUf) },
   ];
 }
 

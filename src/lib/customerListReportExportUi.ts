@@ -7,12 +7,15 @@ export const CUSTOMER_LIST_EXPORT_PAYLOAD_PATH = "/api/customers/export-report";
 export function buildCustomerListExportQuery(input: {
   search?: string;
   commercialOwner?: string;
+  state?: string;
 }): string {
   const params = new URLSearchParams();
   const search = input.search?.trim() ?? "";
   const owner = input.commercialOwner?.trim() ?? "";
+  const state = input.state?.trim() ?? "";
   if (search) params.set("search", search);
   if (owner) params.set("commercialOwner", owner);
+  if (state) params.set("state", state);
   return params.toString();
 }
 
