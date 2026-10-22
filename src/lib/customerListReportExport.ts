@@ -116,9 +116,18 @@ export function buildCustomerListReportAppliedFilters(input: {
   cityLabel?: string;
   creditStatus?: CustomerCreditListFilter | "";
   creditStatusCapped?: boolean;
+  linkStatus?: "any" | "pending" | "confirmed" | "";
 }): Array<{ label: string; value: string }> {
   const city = input.cityLabel?.trim() || input.cityKey?.trim() || "";
   const credit = customerCreditListFilterLabel(input.creditStatus ?? "");
+  const linkLabel =
+    input.linkStatus === "confirmed"
+      ? "Confirmados"
+      : input.linkStatus === "pending"
+        ? "Pendentes"
+        : input.linkStatus === "any"
+          ? "Com vínculo"
+          : "Todos";
   return [
     { label: "Busca", value: input.search.trim() || CUSTOMER_LIST_EXPORT_SEARCH_ALL_LABEL },
     {
@@ -136,6 +145,7 @@ export function buildCustomerListReportAppliedFilters(input: {
         ? `${credit} (leitura limitada aos primeiros ${CUSTOMER_LIST_EXPORT_MAX.toLocaleString("pt-BR")} do recorte)`
         : credit,
     },
+    { label: "Radar", value: linkLabel },
   ];
 }
 

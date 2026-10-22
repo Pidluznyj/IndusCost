@@ -334,7 +334,7 @@ describe("auditoria — demais situações sintéticas", () => {
       externalProtestReview: "UNAVAILABLE",
       now: TODAY,
     });
-    assert.equal(unavailableDecision.customerStatus, "EM_ANALISE");
+    assert.equal(unavailableDecision.customerStatus, "BLOQUEADO");
 
     const stale = book([title({ syncedAt: new Date(2026, 9, 17) })], { status: "SUCCESS", payloadComplete: true });
     assert.equal(stale.status, "UNKNOWN");
@@ -345,7 +345,7 @@ describe("auditoria — demais situações sintéticas", () => {
       delinquency: stale,
       now: TODAY,
     });
-    assert.equal(staleDecision.customerStatus, "EM_ANALISE");
+    assert.equal(staleDecision.customerStatus, "BLOQUEADO");
     assert.notEqual(staleDecision.status, "LIBERADO");
 
     const seller = resolveCommercialCreditExceptionPermission({ role: "SELLER", assignedPermissions: [] });

@@ -9,6 +9,7 @@ import { analyzeCustomerDelinquency, type CustomerDelinquencyDb } from "./custom
 import {
   applyExternalProtestConsultation,
   COMMERCIAL_CREDIT_RELATED_PARTY_LIMIT,
+  confirmedRelatedExposure,
   CommercialCreditDeniedError,
   CommercialCreditExceptionError,
   decideCommercialCredit,
@@ -418,11 +419,25 @@ export async function readCommercialCreditDecision(
   const relatedSlice = relatedIds.slice(0, COMMERCIAL_CREDIT_RELATED_PARTY_LIMIT);
   const relatedProtests = await loadRelatedConfirmedProtests(db, relatedSlice, now);
   const relatedParties = await Promise.all(
-    relatedSlice.map(async (relatedCustomerId) => ({
-      customerId: relatedCustomerId,
-      delinquency: await analyzeCustomerDelinquency(db, relatedCustomerId, now),
-      confirmedProtest: relatedProtests.has(relatedCustomerId),
-    }))
+    relatedSlice.map(async (relatedCustomerId) => {
+      const [delinquency, quod, ieptb] = await Promise.all([
+        analyzeCustomerDelinquency(db, relatedCustomerId, now),
+        loadQuodCreditEvidence(db, relatedCustomerId, now),
+        loadIeptbCreditEvidence(db, relatedCustomerId, now),
+      ]);
+      const exposure = confirmedRelatedExposure({
+        quod,
+        ieptb,
+        externalProtest: relatedProtests.has(relatedCustomerId) ? "CONFIRMED_CURRENT" : "ABSENT",
+      });
+      return {
+        customerId: relatedCustomerId,
+        delinquency,
+        confirmedProtest: relatedProtests.has(relatedCustomerId),
+        owesMarket: exposure.owesMarket,
+        incomplete: exposure.incomplete,
+      };
+    })
   );
   const statusByCustomer = new Map(
     relatedParties.map((party) => [

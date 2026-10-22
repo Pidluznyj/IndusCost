@@ -60,6 +60,7 @@ import { TourHelpButton } from "@/src/components/tour/TourHelpButton";
 import { CUSTOMER_TOUR_STEPS } from "@/src/tours/customerTourSteps";
 import { formatCustomerListRange, type CustomerCityOption } from "@/src/lib/customerListQuery";
 import type { CustomerCreditListFilter } from "@/src/lib/commercial/customerCreditListFilter";
+import type { CustomerLinkListFilter } from "@/src/lib/customerListQuery";
 import { BRAZIL_STATES } from "@/src/lib/customerIndicators";
 import { formatCustomerLastPurchaseDay, formatCustomerLastPurchaseMonth } from "@/src/lib/commercial/customerLastPurchase";
 import { canAssignCustomerCommercialOwnerAccess } from "@/src/lib/customerCommercialOwnerAssignAccess";
@@ -91,6 +92,17 @@ const CUSTOMER_CREDIT_FILTER_OPTIONS: Array<{
   { id: "review", label: "Em análise", dot: "bg-amber-400", active: "border-amber-300 bg-amber-50 text-amber-950" },
   { id: "blocked", label: "Bloqueado", dot: "bg-red-500", active: "border-red-300 bg-red-50 text-red-900" },
   { id: "unread", label: "Sem leitura", dot: "bg-slate-400", active: "border-slate-300 bg-slate-100 text-slate-800" },
+];
+
+const CUSTOMER_LINK_FILTER_OPTIONS: Array<{
+  id: CustomerLinkListFilter | "";
+  label: string;
+  active: string;
+}> = [
+  { id: "", label: "Todos", active: "border-slate-400 bg-slate-100 text-slate-900" },
+  { id: "any", label: "Com vínculo", active: "border-sky-300 bg-sky-50 text-sky-950" },
+  { id: "pending", label: "Pendentes", active: "border-amber-300 bg-amber-50 text-amber-950" },
+  { id: "confirmed", label: "Confirmados", active: "border-emerald-300 bg-emerald-50 text-emerald-950" },
 ];
 
 const COMMERCIAL_OWNER_EMPTY_LABEL = "Sem responsável";
@@ -127,6 +139,7 @@ export const CustomerModule = () => {
   const [stateFilter, setStateFilter] = useState("");
   const [cityFilter, setCityFilter] = useState("");
   const [creditFilter, setCreditFilter] = useState<CustomerCreditListFilter | "">("");
+  const [linkFilter, setLinkFilter] = useState<CustomerLinkListFilter | "">("");
   const [creditFilterCapped, setCreditFilterCapped] = useState(false);
   const [cityOptions, setCityOptions] = useState<CustomerCityOption[]>([]);
   const [ownerOptions, setOwnerOptions] = useState<CommercialOwnerFilterOption[]>([]);
@@ -180,6 +193,7 @@ export const CustomerModule = () => {
       if (stateFilter) q.set("state", stateFilter);
       if (cityFilter) q.set("city", cityFilter);
       if (creditFilter) q.set("creditStatus", creditFilter);
+      if (linkFilter) q.set("linkStatus", linkFilter);
       const data = await fetchJsonOk<{
         items?: Customer[];
         customers?: Customer[];
@@ -214,7 +228,7 @@ export const CustomerModule = () => {
     } finally {
       setLoading(false);
     }
-  }, [page, debouncedSearch, ownerFilter, stateFilter, cityFilter, creditFilter]);
+  }, [page, debouncedSearch, ownerFilter, stateFilter, cityFilter, creditFilter, linkFilter]);
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedSearch(searchTerm.trim()), 300);
@@ -327,6 +341,7 @@ export const CustomerModule = () => {
     state: stateFilter,
     city: cityFilter,
     creditStatus: creditFilter,
+    linkStatus: linkFilter,
   });
 
   const handleExportXlsx = async () => {
@@ -491,6 +506,35 @@ export const CustomerModule = () => {
                 )}
               >
                 {option.dot ? <span className={cn("h-2 w-2 rounded-full", option.dot)} aria-hidden /> : null}
+                {option.label}
+              </button>
+            );
+          })}
+        </div>
+        <div
+          className="flex flex-wrap items-center gap-1.5"
+          role="group"
+          aria-label="Filtrar por vínculo do radar"
+          data-testid="customers-filter-radar"
+        >
+          <span className="mr-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Radar</span>
+          {CUSTOMER_LINK_FILTER_OPTIONS.map((option) => {
+            const selected = linkFilter === option.id;
+            return (
+              <button
+                key={option.id || "all-links"}
+                type="button"
+                aria-pressed={selected}
+                data-link-filter={option.id || "all"}
+                onClick={() => {
+                  setLinkFilter(option.id);
+                  setPage(1);
+                }}
+                className={cn(
+                  "inline-flex h-8 items-center rounded-full border px-2.5 text-xs font-medium transition-colors",
+                  selected ? option.active : "border-border bg-card text-muted-foreground hover:bg-accent"
+                )}
+              >
                 {option.label}
               </button>
             );

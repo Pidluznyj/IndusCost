@@ -625,6 +625,7 @@ import { buildCustomerIndicatorsPayload, normalizeBrazilUf } from "./src/lib/cus
 import { registerCustomerActivityMapRoutes } from "./src/lib/commercial/customerActivityMap/customerActivityMapRoutes.js";
 import {
   buildCustomerListResponse,
+  buildCustomerLinkWhere,
   buildCustomerListWhere,
   buildCustomerStateWhere,
   customerListMeta,
@@ -14272,7 +14273,8 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
         list.search,
         ownerFilter.ownerWhere,
         stateWhere,
-        cityFilter.cityWhere
+        cityFilter.cityWhere,
+        buildCustomerLinkWhere(list.linkStatus)
       );
       const commercialOwnerOptions = ownerFilter.options;
       const evaluatedAt = new Date();

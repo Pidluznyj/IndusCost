@@ -221,6 +221,8 @@ const REASON_PRIORITY = [
   "FINANCIAL_UNVERIFIED",
   "EXTERNAL_PROTEST_REVIEW",
   "RELATED_PARTY_DELINQUENT",
+  "RELATED_PARTY_MARKET",
+  "RELATED_PARTY_INCOMPLETE",
   "RELATED_PARTY_UNVERIFIED",
   "QUOD_EXTERNAL_RESTRICTION",
   "QUOD_INSUFFICIENT",
@@ -239,18 +241,22 @@ const MESSAGES: Record<string, string> = {
     "Protesto externo exige revisão: consulta indisponível, desatualizada, cancelada ou não confirmada. Isso não significa ausência de protesto.",
   RELATED_PARTY_DELINQUENT:
     "Crédito bloqueado: empresa relacionada com inadimplência ou protesto vigente. A dívida não foi transferida ao CNPJ consultado.",
+  RELATED_PARTY_MARKET:
+    "Crédito bloqueado: empresa relacionada com restrição de mercado. A dívida não foi transferida ao CNPJ consultado.",
+  RELATED_PARTY_INCOMPLETE:
+    "Crédito bloqueado: empresa relacionada com cadastro ou evidência incompleta. A dívida não foi transferida ao CNPJ consultado.",
   RELATED_PARTY_UNVERIFIED:
-    "Crédito em análise: há vínculo pendente ou sem verificação financeira. Isso não confirma o grupo.",
+    "Crédito em análise: há vínculo pendente. Isso não confirma o grupo.",
   FINANCIAL_UNVERIFIED:
-    "Crédito não verificado: dados financeiros indisponíveis ou desatualizados. Exige análise antes da liberação.",
+    "Crédito bloqueado: cadastro financeiro incompleto ou indisponível. Não libera prazo.",
   QUOD_EXTERNAL_RESTRICTION:
-    "Crédito em análise: evidência externa do dossiê exige decisão administrativa. O score externo não libera o cliente e não detalha o relatório.",
+    "Crédito bloqueado: restrição confirmada no mercado. O score externo não libera o cliente e não detalha o relatório.",
   QUOD_INSUFFICIENT:
-    "Crédito em análise: a consulta externa não trouxe informação suficiente. Isso não significa cliente regular.",
+    "Crédito bloqueado: a consulta de mercado não trouxe informação suficiente. Isso não significa cliente regular.",
   IEPTB_NATIONAL_PROTEST:
     "Crédito bloqueado quando o protesto nacional está confirmado e vigente. Consulta vencida permanece em análise. O score cadastral não autoriza o prazo.",
   IEPTB_INSUFFICIENT:
-    "Crédito em análise: a consulta nacional de protestos não trouxe informação suficiente. Isso não significa ausência de protesto.",
+    "Crédito bloqueado: a consulta nacional de protestos não trouxe informação suficiente. Isso não significa ausência de protesto.",
   ADVANCE_NOT_CONFIRMED: "Pagamento antecipado só segue quando estiver aprovado e confirmado.",
   CASH_NOT_CREDIT: "À vista não é venda a prazo.",
   ADVANCE_CONFIRMED: "Pagamento antecipado aprovado e confirmado.",
@@ -258,6 +264,39 @@ const MESSAGES: Record<string, string> = {
 
 export function commercialCreditReasonMessage(reason: string): string {
   return MESSAGES[reason] ?? "Decisão registrada pelo motor de crédito.";
+}
+
+/** Restrição de mercado ou evidência incompleta de uma empresa já confirmada no grupo. Consulta ausente não bloqueia. */
+export function confirmedRelatedExposure(input: {
+  quod?: CommercialQuodEvidence | null;
+  ieptb?: CommercialIeptbEvidence | null;
+  externalProtest?: CommercialExternalProtestStatus | null;
+}): { owesMarket: boolean; incomplete: boolean } {
+  const quod = input.quod;
+  const ieptb = input.ieptb;
+  const owesMarket =
+    quod?.confirmedRestriction === true ||
+    (ieptb?.state === "VALID" && ieptb.confirmedProtest === true) ||
+    input.externalProtest === "CONFIRMED_CURRENT";
+  const quodIncomplete = Boolean(
+    quod &&
+      quod.state !== "NOT_CONSULTED" &&
+      (quod.readFailed ||
+        quod.state === "UNAVAILABLE" ||
+        quod.state === "FAILED" ||
+        quod.state === "IN_PROGRESS" ||
+        (quod.state === "VALID" && quod.insufficient && quod.confirmedRestriction !== true))
+  );
+  const ieptbIncomplete = Boolean(
+    ieptb &&
+      ieptb.state !== "NOT_CONSULTED" &&
+      !(ieptb.state === "VALID" && ieptb.confirmedProtest) &&
+      !(ieptb.state === "VALID" && !ieptb.insufficient)
+  );
+  return {
+    owesMarket,
+    incomplete: quodIncomplete || ieptbIncomplete || input.externalProtest === "UNREADABLE",
+  };
 }
 
 export class CommercialCreditDeniedError extends Error {
@@ -403,6 +442,10 @@ function customerHolds(input: {
     customerId: string;
     delinquency: CommercialDelinquencyAnalysis;
     confirmedProtest?: boolean;
+    /** Restrição confirmada no mercado: QUOD, protesto nacional vigente ou protesto externo vigente. */
+    owesMarket?: boolean;
+    /** Evidência financeira ou de mercado incompleta. Consulta ausente não entra aqui. */
+    incomplete?: boolean;
   }>;
   relatedPartyOverflow: boolean;
   pendingRelatedPartyCount?: number;
@@ -415,7 +458,7 @@ function customerHolds(input: {
   const holds: Hold[] = [];
   const delinquency = input.delinquency;
   if (delinquency.status === "UNKNOWN") {
-    pushHold(holds, { status: "EM_ANALISE", reason: "FINANCIAL_UNVERIFIED", scope: "UNVERIFIED" });
+    pushHold(holds, { status: "BLOQUEADO", reason: "FINANCIAL_UNVERIFIED", scope: "UNVERIFIED" });
   }
   const suppressed = new Set(input.suppressedProtestTitleIds ?? []);
   const openProtested = delinquency.evidence.protestedTitleIds.filter((id) => !suppressed.has(id));
@@ -428,21 +471,23 @@ function customerHolds(input: {
   if (input.externalProtest === "CONFIRMED_CURRENT") {
     pushHold(holds, { status: "BLOQUEADO", reason: "EXTERNAL_PROTEST", scope: "EXTERNAL_PROTEST" });
   } else if (input.externalProtest === "UNREADABLE") {
-    pushHold(holds, { status: "EM_ANALISE", reason: "FINANCIAL_UNVERIFIED", scope: "UNVERIFIED" });
+    pushHold(holds, { status: "BLOQUEADO", reason: "FINANCIAL_UNVERIFIED", scope: "UNVERIFIED" });
   }
   if (input.externalProtestReview && input.externalProtestReview !== "NONE") {
-    pushHold(holds, { status: "EM_ANALISE", reason: "EXTERNAL_PROTEST_REVIEW", scope: "UNVERIFIED" });
+    pushHold(holds, { status: "BLOQUEADO", reason: "EXTERNAL_PROTEST_REVIEW", scope: "UNVERIFIED" });
   }
   for (const related of input.relatedParties) {
     if (related.customerId === input.customerId) continue;
-    const restricted =
+    const owesUs =
       related.delinquency.status === "OVERDUE" ||
       related.delinquency.status === "PROTESTED" ||
       related.confirmedProtest === true;
-    if (restricted) {
+    if (owesUs) {
       pushHold(holds, { status: "BLOQUEADO", reason: "RELATED_PARTY_DELINQUENT", scope: "RELATED_PARTY" });
-    } else if (related.delinquency.status === "UNKNOWN") {
-      pushHold(holds, { status: "EM_ANALISE", reason: "RELATED_PARTY_UNVERIFIED", scope: "RELATED_PARTY" });
+    } else if (related.owesMarket === true) {
+      pushHold(holds, { status: "BLOQUEADO", reason: "RELATED_PARTY_MARKET", scope: "RELATED_PARTY" });
+    } else if (related.delinquency.status === "UNKNOWN" || related.incomplete === true) {
+      pushHold(holds, { status: "BLOQUEADO", reason: "RELATED_PARTY_INCOMPLETE", scope: "RELATED_PARTY" });
     }
   }
   if (input.relatedPartyOverflow || (input.pendingRelatedPartyCount ?? 0) > 0) {
@@ -450,12 +495,12 @@ function customerHolds(input: {
   }
   const quod = input.quod;
   if (quod && (quod.readFailed || quod.state === "UNAVAILABLE" || quod.state === "FAILED" || quod.state === "IN_PROGRESS")) {
-    pushHold(holds, { status: "EM_ANALISE", reason: "QUOD_INSUFFICIENT", scope: "QUOD_REVIEW" });
+    pushHold(holds, { status: "BLOQUEADO", reason: "QUOD_INSUFFICIENT", scope: "QUOD_REVIEW" });
   } else if (quod && (quod.state === "VALID" || quod.state === "STALE" || quod.state === "PARTIAL")) {
     if (quod.confirmedRestriction) {
-      pushHold(holds, { status: "EM_ANALISE", reason: "QUOD_EXTERNAL_RESTRICTION", scope: "QUOD_REVIEW" });
+      pushHold(holds, { status: "BLOQUEADO", reason: "QUOD_EXTERNAL_RESTRICTION", scope: "QUOD_REVIEW" });
     } else if (quod.state === "VALID" && quod.insufficient) {
-      pushHold(holds, { status: "EM_ANALISE", reason: "QUOD_INSUFFICIENT", scope: "QUOD_REVIEW" });
+      pushHold(holds, { status: "BLOQUEADO", reason: "QUOD_INSUFFICIENT", scope: "QUOD_REVIEW" });
     }
   }
   const ieptb = input.ieptb;
@@ -463,11 +508,11 @@ function customerHolds(input: {
     if (ieptb.confirmedProtest && ieptb.state === "VALID") {
       pushHold(holds, { status: "BLOQUEADO", reason: "IEPTB_NATIONAL_PROTEST", scope: "IEPTB_REVIEW" });
     } else if (ieptb.confirmedProtest) {
-      pushHold(holds, { status: "EM_ANALISE", reason: "IEPTB_NATIONAL_PROTEST", scope: "IEPTB_REVIEW" });
+      pushHold(holds, { status: "BLOQUEADO", reason: "IEPTB_NATIONAL_PROTEST", scope: "IEPTB_REVIEW" });
     } else if (ieptb.state === "VALID" && !ieptb.insufficient) {
       // Negativa confirmada e vigente. Não é o mesmo que consulta ausente.
     } else {
-      pushHold(holds, { status: "EM_ANALISE", reason: "IEPTB_INSUFFICIENT", scope: "IEPTB_REVIEW" });
+      pushHold(holds, { status: "BLOQUEADO", reason: "IEPTB_INSUFFICIENT", scope: "IEPTB_REVIEW" });
     }
   }
   return holds;
@@ -497,6 +542,8 @@ export function decideCommercialCredit(input: {
     customerId: string;
     delinquency: CommercialDelinquencyAnalysis;
     confirmedProtest?: boolean;
+    owesMarket?: boolean;
+    incomplete?: boolean;
   }>;
   relatedPartyOverflow?: boolean;
   pendingRelatedPartyCount?: number;

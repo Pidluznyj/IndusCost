@@ -312,7 +312,7 @@ describe("decisão financeira e protesto", () => {
       delinquency: analysis("UNKNOWN"),
       now: NOW,
     });
-    assert.equal(decision.customerStatus, "EM_ANALISE");
+    assert.equal(decision.customerStatus, "BLOQUEADO");
     assert.equal(decision.reason, "FINANCIAL_UNVERIFIED");
     assert.equal(decision.allowed, false);
   });
@@ -356,7 +356,7 @@ describe("decisão financeira e protesto", () => {
       ieptb: { state: "STALE", confirmedProtest: true, insufficient: false },
       now: NOW,
     });
-    assert.equal(stale.customerStatus, "EM_ANALISE");
+    assert.equal(stale.customerStatus, "BLOQUEADO");
   });
 
   it("T31 à vista segue permitida e T32 exceção não apaga o motivo financeiro do outro CNPJ", () => {
@@ -691,7 +691,7 @@ describe("caso sintético de carteira e protestos", () => {
       ieptb: unavailable,
       now: NOW,
     });
-    assert.equal(unknown.customerStatus, "EM_ANALISE");
+    assert.equal(unknown.customerStatus, "BLOQUEADO");
     assert.equal(unknown.reason, "IEPTB_INSUFFICIENT");
     assert.equal(ieptbSituationLabel("NOT_CONSULTED", false), "Não consultado");
   });

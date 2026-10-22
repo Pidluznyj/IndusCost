@@ -144,7 +144,7 @@ describe("paridade do Score de Confiança e da decisão", () => {
       now: NOW,
     });
     const portfolio = presentPortfolioCredit(decision, NOW);
-    assert.equal(decision.customerStatus, "EM_ANALISE");
+    assert.equal(decision.customerStatus, "BLOQUEADO");
     assert.equal(portfolio.confidence.quod.status, "FALHA");
     assert.notEqual(portfolio.confidence.quod.status, "AUSENTE");
     assert.equal(portfolio.confidence.score, 80);

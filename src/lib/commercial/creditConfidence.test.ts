@@ -142,7 +142,7 @@ describe("Score de Confiança V1", () => {
       quod: { state: "VALID", confirmedRestriction: true, insufficient: false },
       now: NOW,
     });
-    assert.equal(quodHold.customerStatus, "EM_ANALISE");
+    assert.equal(quodHold.customerStatus, "BLOQUEADO");
     assert.equal(confidence(100, { cadastralScore: 100, quod: { state: "VALID", confirmedRestriction: true } }).quod.contribution, 0);
 
     const low = decideCommercialCredit({

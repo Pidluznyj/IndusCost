@@ -162,11 +162,11 @@ describe("cabeçalho executivo de decisão de crédito", () => {
     assert.ok(view.decisionReasons.some((r) => r.code === "INTERNAL_PROTEST" && r.severity === "CRITICAL"));
   });
 
-  it("mapeia crédito em análise (dados financeiros não verificados)", () => {
+  it("mapeia crédito bloqueado quando o financeiro não foi verificado", () => {
     const view = decisionFor({ status: "UNKNOWN", unknownReason: "SYNC_FAILED" });
-    assert.equal(view.decisionState, "EM_ANALISE");
-    assert.equal(view.decisionTitle, "CRÉDITO EM ANÁLISE");
-    assert.equal(view.decisionTone, "review");
+    assert.equal(view.decisionState, "BLOQUEADO");
+    assert.equal(view.decisionTitle, "CRÉDITO BLOQUEADO");
+    assert.equal(view.decisionTone, "blocked");
   });
 
   it("mapeia crédito liberado somente quando o motor libera", () => {
@@ -187,7 +187,7 @@ describe("cabeçalho executivo de decisão de crédito", () => {
 
   it("QUOD com restrição confirmada leva a EM_ANÁLISE sem converter o score externo", () => {
     const view = decisionFor({}, { state: "VALID", confirmedRestriction: true, insufficient: false });
-    assert.equal(view.decisionState, "EM_ANALISE");
+    assert.equal(view.decisionState, "BLOQUEADO");
     assert.equal(view.quodState, "VALID");
     assert.equal(view.quodConfirmedRestriction, true);
     assert.ok(view.decisionReasons.some((r) => r.code === "QUOD_EXTERNAL_RESTRICTION" && r.origin === "Dossiê QUOD — Direct Data"));
@@ -198,7 +198,7 @@ describe("cabeçalho executivo de decisão de crédito", () => {
   it("QUOD com atrasos mas pendências zero não é tratado como cliente regular", () => {
     // pendências zero + score insuficiente marca análise, não liberação
     const view = decisionFor({}, { state: "VALID", confirmedRestriction: false, insufficient: true });
-    assert.equal(view.decisionState, "EM_ANALISE");
+    assert.equal(view.decisionState, "BLOQUEADO");
     assert.ok(view.decisionReasons.some((r) => r.code === "QUOD_INSUFFICIENT"));
   });
 });

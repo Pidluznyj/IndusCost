@@ -24,7 +24,39 @@ export type CustomerListQuery = {
   city: string;
   /** Situação oficial de crédito, ou vazio (todas). */
   creditStatus: CustomerCreditListFilter | "";
+  /** Recorte do Radar: qualquer vínculo, pendente, confirmado, ou vazio. */
+  linkStatus: CustomerLinkListFilter | "";
 };
+
+export const CUSTOMER_LINK_LIST_FILTERS = ["any", "pending", "confirmed"] as const;
+export type CustomerLinkListFilter = (typeof CUSTOMER_LINK_LIST_FILTERS)[number];
+
+export function parseCustomerLinkListFilter(raw: unknown): CustomerLinkListFilter | "" {
+  const value = typeof raw === "string" ? raw.trim().toLowerCase() : "";
+  return (CUSTOMER_LINK_LIST_FILTERS as readonly string[]).includes(value) ? (value as CustomerLinkListFilter) : "";
+}
+
+const CONFIRMED_LINK_WHERE: Prisma.CustomerWhereInput = {
+  OR: [
+    { corporateLinks: { some: { closedAt: null, status: { notIn: ["REJECTED", "CLOSED"] } } } },
+    { corporateLinksIncoming: { some: { closedAt: null, status: { notIn: ["REJECTED", "CLOSED"] } } } },
+  ],
+};
+
+const PENDING_LINK_WHERE: Prisma.CustomerWhereInput = {
+  OR: [
+    { corporateRadarSignals: { some: { status: "OPEN" } } },
+    { corporateRadarSignalsIncoming: { some: { status: "OPEN" } } },
+  ],
+};
+
+/** Vínculo confirmado entra no crédito. Pendente é coincidência ainda não confirmada. */
+export function buildCustomerLinkWhere(filter: CustomerLinkListFilter | ""): Prisma.CustomerWhereInput | undefined {
+  if (filter === "confirmed") return CONFIRMED_LINK_WHERE;
+  if (filter === "pending") return PENDING_LINK_WHERE;
+  if (filter === "any") return { OR: [CONFIRMED_LINK_WHERE, PENDING_LINK_WHERE] };
+  return undefined;
+}
 
 export type CustomerCityOption = {
   key: string;
@@ -65,6 +97,7 @@ export function parseCustomerListQuery(query: Record<string, unknown>): Customer
     state: parseBrazilUfFilter(query.state),
     city: parseCustomerCityFilter(query.city),
     creditStatus: parseCustomerCreditListFilter(query.creditStatus),
+    linkStatus: parseCustomerLinkListFilter(query.linkStatus),
   };
 }
 
@@ -104,6 +137,7 @@ export function shouldUseCustomerPagination(query: Record<string, unknown>): boo
     query.state != null ||
     query.city != null ||
     query.creditStatus != null ||
+    query.linkStatus != null ||
     String(query.paginated ?? "").trim() === "true"
   );
 }
@@ -231,9 +265,10 @@ export function buildCustomerListWhere(
   search: string,
   ownerWhere?: Prisma.CustomerWhereInput,
   stateWhere?: Prisma.CustomerWhereInput,
-  cityWhere?: Prisma.CustomerWhereInput
+  cityWhere?: Prisma.CustomerWhereInput,
+  linkWhere?: Prisma.CustomerWhereInput
 ): Prisma.CustomerWhereInput | undefined {
-  const parts = [buildCustomerSearchWhere(search), ownerWhere, stateWhere, cityWhere].filter(
+  const parts = [buildCustomerSearchWhere(search), ownerWhere, stateWhere, cityWhere, linkWhere].filter(
     (part): part is Prisma.CustomerWhereInput => part != null
   );
   if (parts.length === 0) return undefined;

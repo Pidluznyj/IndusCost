@@ -367,7 +367,7 @@ describe("protesto externo — motor de crédito", () => {
         externalProtestReview: review,
         now: NOW,
       });
-      assert.equal(decision.customerStatus, "EM_ANALISE");
+      assert.equal(decision.customerStatus, "BLOQUEADO");
       assert.equal(decision.reason, "EXTERNAL_PROTEST_REVIEW");
       assert.equal(decision.allowed, false);
       assert.equal(decision.evidence.externalProtestReview, review);
@@ -419,7 +419,7 @@ describe("protesto externo — motor de crédito", () => {
         env: {},
       },
     });
-    assert.equal(failed.decision.customerStatus, "EM_ANALISE");
+    assert.equal(failed.decision.customerStatus, "BLOQUEADO");
     assert.equal(failed.decision.reason, "EXTERNAL_PROTEST_REVIEW");
     assert.equal(failed.decision.allowed, false);
     assert.equal(failed.externalProtestConsultation.reliableClear, false);

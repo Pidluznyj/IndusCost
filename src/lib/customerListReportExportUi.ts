@@ -10,6 +10,7 @@ export function buildCustomerListExportQuery(input: {
   state?: string;
   city?: string;
   creditStatus?: string;
+  linkStatus?: string;
 }): string {
   const params = new URLSearchParams();
   const search = input.search?.trim() ?? "";
@@ -17,11 +18,13 @@ export function buildCustomerListExportQuery(input: {
   const state = input.state?.trim() ?? "";
   const city = input.city?.trim() ?? "";
   const creditStatus = input.creditStatus?.trim() ?? "";
+  const linkStatus = input.linkStatus?.trim() ?? "";
   if (search) params.set("search", search);
   if (owner) params.set("commercialOwner", owner);
   if (state) params.set("state", state);
   if (city) params.set("city", city);
   if (creditStatus) params.set("creditStatus", creditStatus);
+  if (linkStatus) params.set("linkStatus", linkStatus);
   return params.toString();
 }
 

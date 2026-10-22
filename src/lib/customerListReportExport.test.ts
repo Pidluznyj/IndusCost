@@ -148,6 +148,7 @@ describe("customerListReportExport", () => {
       { label: "Estado", value: "Todos os estados" },
       { label: "Cidade", value: "Todas as cidades" },
       { label: "Situação de crédito", value: "Todas as situações" },
+      { label: "Radar", value: "Todos" },
     ]);
     const empty = buildCustomerListReportAppliedFilters({
       search: "",

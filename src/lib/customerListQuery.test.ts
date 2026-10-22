@@ -4,6 +4,7 @@ import {
   CUSTOMER_LIST_DEFAULT_LIMIT,
   CUSTOMER_LIST_MAX_LIMIT,
   CUSTOMER_LIST_OWNER_NONE,
+  buildCustomerLinkWhere,
   buildCustomerListResponse,
   buildCustomerListWhere,
   buildCustomerOwnerWhere,
@@ -62,6 +63,10 @@ describe("customerListQuery", () => {
     assert.equal(shouldUseCustomerPagination({ creditStatus: "blocked" }), true);
     assert.equal(parseCustomerListQuery({ creditStatus: "blocked" }).creditStatus, "blocked");
     assert.equal(parseCustomerListQuery({ creditStatus: "qualquer" }).creditStatus, "");
+    assert.equal(parseCustomerListQuery({ linkStatus: "pending" }).linkStatus, "pending");
+    assert.equal(parseCustomerListQuery({ linkStatus: "grupo" }).linkStatus, "");
+    assert.ok(buildCustomerLinkWhere("confirmed"));
+    assert.equal(buildCustomerLinkWhere(""), undefined);
   });
 
   it("vazio não restringe e none marca cliente sem responsável ativo", () => {

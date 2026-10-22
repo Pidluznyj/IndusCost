@@ -360,7 +360,7 @@ describe("decideCommercialCredit", () => {
       }),
       cadastral: { score: 95, verdict: "VENDA LIBERADA" },
     });
-    assert.equal(decision.status, "EM_ANALISE");
+    assert.equal(decision.status, "BLOQUEADO");
     assert.equal(decision.reason, "FINANCIAL_UNVERIFIED");
     assert.equal(decision.allowed, false);
   });
@@ -439,6 +439,40 @@ describe("decideCommercialCredit", () => {
     assert.throws(() => {
       throw new CommercialCreditExceptionError("EXCEPTION_IMPLICIT_SUPER_ADMIN", "negado");
     }, CommercialCreditExceptionError);
+  });
+
+  it("grupo confirmado bloqueia todos quando um deve, deve ao mercado ou está incompleto", () => {
+    const base = {
+      customerId: CUSTOMER,
+      enforcement: "CREDIT_GRANT" as const,
+      paymentTerms: "30",
+      delinquency: analysis(),
+      now: NOW,
+    };
+    const owingUs = decideCommercialCredit({
+      ...base,
+      relatedParties: [{ customerId: RELATED, delinquency: analysis({ status: "OVERDUE" }) }],
+    });
+    const owingMarket = decideCommercialCredit({
+      ...base,
+      relatedParties: [{ customerId: RELATED, delinquency: analysis(), owesMarket: true }],
+    });
+    const incomplete = decideCommercialCredit({
+      ...base,
+      relatedParties: [{ customerId: RELATED, delinquency: analysis(), incomplete: true }],
+    });
+    const pendingOnly = decideCommercialCredit({
+      ...base,
+      pendingRelatedPartyCount: 1,
+    });
+    assert.equal(owingUs.customerStatus, "BLOQUEADO");
+    assert.equal(owingUs.reason, "RELATED_PARTY_DELINQUENT");
+    assert.equal(owingMarket.customerStatus, "BLOQUEADO");
+    assert.equal(owingMarket.reason, "RELATED_PARTY_MARKET");
+    assert.equal(incomplete.customerStatus, "BLOQUEADO");
+    assert.equal(incomplete.reason, "RELATED_PARTY_INCOMPLETE");
+    assert.equal(pendingOnly.customerStatus, "EM_ANALISE");
+    assert.equal(pendingOnly.reason, "RELATED_PARTY_UNVERIFIED");
   });
 
   it("o motor não consulta o score cadastral", () => {

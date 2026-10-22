@@ -6,6 +6,7 @@
 import type { CommercialDelinquencyAnalysis } from "./customerDelinquencyAnalysis.js";
 import { analyzeManyCustomerDelinquency, type CustomerDelinquencyDb } from "./customerDelinquencyAnalysis.server.js";
 import {
+  confirmedRelatedExposure,
   decideCommercialCredit,
   type CommercialIeptbEvidence,
   type CommercialQuodEvidence,
@@ -129,6 +130,26 @@ export async function loadPortfolioCredit(
       for (const id of sameRootPeersByCustomer.get(customer.id) ?? []) relatedIds.add(id);
     }
     const involved = [...new Set([...ids, ...relatedIds])];
+    const extraQuodIds = involved.filter((id) => !ids.includes(id));
+    if (extraQuodIds.length > 0 && models.quodDossierConsultation && !quodLoad.readFailed) {
+      const extraQuod = await loadRows(() =>
+        models.quodDossierConsultation!.findMany({
+          where: { customerId: { in: extraQuodIds } },
+          orderBy: { consultedAt: "desc" },
+          select: {
+            customerId: true,
+            cnpj: true,
+            status: true,
+            confirmedRestriction: true,
+            insufficient: true,
+            validUntil: true,
+            consultedAt: true,
+          },
+        })
+      );
+      if (extraQuod.readFailed) quodLoad.readFailed = true;
+      else quodLoad.rows.push(...extraQuod.rows);
+    }
     const ieptbLoad = await loadRows(models.ieptbOnlineConsultation ? () => models.ieptbOnlineConsultation!.findMany({
       where: { customerId: { in: involved } },
       orderBy: { consultedAt: "desc" },
@@ -168,7 +189,7 @@ export async function loadPortfolioCredit(
         },
       }) : null),
     ]);
-    const quodByCustomer = groupConsultationsByCustomer(quodLoad.rows, ids);
+    const quodByCustomer = groupConsultationsByCustomer(quodLoad.rows, involved);
     const ieptbByCustomer = groupConsultationsByCustomer(ieptbLoad.rows, involved);
     const protestsByCustomer = groupConsultationsByCustomer(protests.rows, involved);
     const exceptionsByCustomer = groupConsultationsByCustomer(exceptions.rows, ids);
@@ -227,13 +248,27 @@ export async function loadPortfolioCredit(
         cadastral: { score: customer.cnpjRisk?.score ?? null, verdict: customer.cnpjRisk?.verdict ?? null },
         quod,
         ieptb,
-        relatedParties: slice.map((relatedId) => ({
-          customerId: relatedId,
-          delinquency: delinquency.get(relatedId) ?? unknownDelinquency(relatedId, now),
-          confirmedProtest:
-            relatedProtest(ieptbByCustomer.get(relatedId) ?? [], now) ||
-            resolveStoredExternalProtest(protestsByCustomer.get(relatedId) ?? [], now) === "CONFIRMED_CURRENT",
-        })),
+        relatedParties: slice.map((relatedId) => {
+          const externalProtest = resolveStoredExternalProtest(protestsByCustomer.get(relatedId) ?? [], now);
+          const relatedQuod = quodLoad.readFailed
+            ? QUOD_READ_FAILED
+            : quodLoad.available
+              ? selectQuodCreditEvidence(quodByCustomer.get(relatedId) ?? [], now)
+              : QUOD_ABSENT;
+          const relatedIeptb = ieptbLoad.readFailed
+            ? IEPTB_READ_FAILED
+            : ieptbLoad.available
+              ? selectIeptbCreditEvidence(ieptbByCustomer.get(relatedId) ?? [], now)
+              : IEPTB_ABSENT;
+          const exposure = confirmedRelatedExposure({ quod: relatedQuod, ieptb: relatedIeptb, externalProtest });
+          return {
+            customerId: relatedId,
+            delinquency: delinquency.get(relatedId) ?? unknownDelinquency(relatedId, now),
+            confirmedProtest: relatedProtest(ieptbByCustomer.get(relatedId) ?? [], now) || externalProtest === "CONFIRMED_CURRENT",
+            owesMarket: exposure.owesMarket,
+            incomplete: exposure.incomplete,
+          };
+        }),
         relatedPartyOverflow: overflow,
         pendingRelatedPartyCount: signal.pendingCount + (complementaryFailure ? 1 : 0),
         now,

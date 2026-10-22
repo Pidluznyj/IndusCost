@@ -19,6 +19,7 @@ export type PortfolioCreditReasonGroup =
   | "restricao_quod"
   | "risco_compartilhado"
   | "avaliacao_pendente"
+  | "cadastro_incompleto"
   | "regular";
 
 export type PortfolioCreditDecisionPublic = {
@@ -64,6 +65,7 @@ const REASON_LABEL: Record<PortfolioCreditReasonGroup, string> = {
   restricao_quod: "Restrição QUOD",
   risco_compartilhado: "Risco compartilhado",
   avaliacao_pendente: "Avaliação pendente",
+  cadastro_incompleto: "Cadastro incompleto",
   regular: "Sem restrição impeditiva",
 };
 
@@ -72,15 +74,22 @@ export function portfolioCreditReasonGroup(reasons: readonly string[]): Portfoli
     return "protesto";
   }
   if (reasons.includes("OVERDUE_OPEN_BALANCE")) return "inadimplencia_propria";
-  if (reasons.includes("RELATED_PARTY_DELINQUENT")) return "risco_compartilhado";
+  if (
+    reasons.some((reason) =>
+      ["RELATED_PARTY_DELINQUENT", "RELATED_PARTY_MARKET", "RELATED_PARTY_INCOMPLETE"].includes(reason)
+    )
+  ) {
+    return "risco_compartilhado";
+  }
   if (reasons.includes("QUOD_EXTERNAL_RESTRICTION") || reasons.includes("QUOD_INSUFFICIENT")) return "restricao_quod";
   if (
     reasons.some((reason) =>
-      ["RELATED_PARTY_UNVERIFIED", "FINANCIAL_UNVERIFIED", "IEPTB_INSUFFICIENT", "EXTERNAL_PROTEST_REVIEW"].includes(reason)
+      ["FINANCIAL_UNVERIFIED", "IEPTB_INSUFFICIENT", "EXTERNAL_PROTEST_REVIEW"].includes(reason)
     )
   ) {
-    return "avaliacao_pendente";
+    return "cadastro_incompleto";
   }
+  if (reasons.includes("RELATED_PARTY_UNVERIFIED")) return "avaliacao_pendente";
   return "regular";
 }
 

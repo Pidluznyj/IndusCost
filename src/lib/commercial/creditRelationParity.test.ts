@@ -325,7 +325,7 @@ describe("paridade da decisão entre carteira, detalhe e operação", () => {
       ieptb: [favorableIeptb(A, CNPJ_A)],
     });
     const restricted = await compareConsumers(regular, customer(A, CNPJ_A, 100));
-    assert.equal(restricted.read.decision.customerStatus, "EM_ANALISE");
+    assert.equal(restricted.read.decision.customerStatus, "BLOQUEADO");
     assert.equal(restricted.read.decision.reason, "QUOD_EXTERNAL_RESTRICTION");
     assert.equal(restricted.snap.confidence.quod.status, "RESTRITIVA");
     assert.notEqual(restricted.snap.confidence.quod.status, "AUSENTE");
@@ -348,7 +348,7 @@ describe("paridade da decisão entre carteira, detalhe e operação", () => {
 
     const failed = createDb({ customers: [customer(A, CNPJ_A, 100)], quodThrows: true });
     const failure = await compareConsumers(failed, customer(A, CNPJ_A, 100));
-    assert.equal(failure.read.decision.customerStatus, "EM_ANALISE");
+    assert.equal(failure.read.decision.customerStatus, "BLOQUEADO");
     assert.equal(failure.snap.confidence.quod.status, "FALHA");
     assert.notEqual(failure.snap.decision.customerStatus, "LIBERADO");
     assert.equal(failure.read.decision.allowed, false);

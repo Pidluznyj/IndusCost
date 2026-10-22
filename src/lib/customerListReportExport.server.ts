@@ -14,6 +14,7 @@ import {
 import { attachCustomerSalesBlocks } from "./commercial/customerSalesBlock.server.js";
 import { attachCustomerLastPurchase } from "./commercial/customerLastPurchase.server.js";
 import {
+  buildCustomerLinkWhere,
   buildCustomerListWhere,
   buildCustomerStateWhere,
   parseCustomerListQuery,
@@ -68,7 +69,8 @@ export async function loadCustomerListReportExportPayload(
     list.search,
     ownerFilter.ownerWhere,
     stateWhere,
-    cityFilter.cityWhere
+    cityFilter.cityWhere,
+    buildCustomerLinkWhere(list.linkStatus)
   );
 
   const totalMatched = await prisma.customer.count({ where });
@@ -123,6 +125,7 @@ export async function loadCustomerListReportExportPayload(
     cityLabel: cityFilter.options.find((option) => option.key === list.city)?.label,
     creditStatus: list.creditStatus,
     creditStatusCapped: creditCapped,
+    linkStatus: list.linkStatus,
   });
   const emitterName = options.emitterName?.trim() || "—";
   const emitterEmail = options.emitterEmail?.trim() || "—";
