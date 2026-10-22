@@ -4,6 +4,9 @@
  *   (vínculo × inativação/unificação deixam de se cruzar).
  * - Chave de identidade (CPF/e-mail): advisory lock da transação, porque Person não tem UNIQUE
  *   de CPF/e-mail no banco (decisão da auditoria) — a 2ª criação espera e cai na checagem de duplicidade.
+ * - Conta ↔ colaborador na mesma Pessoa: advisory lock por Pessoa para quem põe colaborador OU conta
+ *   numa Pessoa (os FOR SHARE acima não se excluem entre si) — a checagem da evidência "mesma Pessoa"
+ *   da política de identidade de conta sempre vê a escrita concorrente.
  */
 import type { Prisma } from "@prisma/client";
 
@@ -15,6 +18,10 @@ export async function lockPersonRows(tx: RawTx, ids: Array<string | null | undef
     if (mode === "UPDATE") await tx.$executeRaw`SELECT id FROM "Person" WHERE id = ${id}::uuid FOR UPDATE`;
     else await tx.$executeRaw`SELECT id FROM "Person" WHERE id = ${id}::uuid FOR SHARE`;
   }
+}
+
+export async function lockPersonAccountLinks(tx: RawTx, personIds: Array<string | null | undefined>): Promise<void> {
+  await lockIdentityKeys(tx, personIds.map((id) => (id ? `account-link:${id}` : null)));
 }
 
 export async function lockIdentityKeys(tx: RawTx, keys: Array<string | null | undefined>): Promise<void> {

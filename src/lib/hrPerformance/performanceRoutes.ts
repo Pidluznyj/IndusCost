@@ -145,6 +145,8 @@ export type PerformanceRouteDeps = {
   loadHierarchyReader?: () => Promise<{ hierarchy: HierarchyReader; activeIds: Set<string> }>;
   /** Prontidão: colaboradores com usuário ativo vinculado (quem consegue avaliar a equipe). */
   loadLinkedEmployeeIds?: (employeeIds: string[]) => Promise<Set<string>>;
+  /** Identidade operacional dos avaliadores (mesma régua de loadLinkedEmployeeIds + motivo). Somente leitura. */
+  loadEvaluatorIdentities?: (employeeIds: string[]) => Promise<Map<string, import("./evaluatorIdentity.js").EvaluatorIdentity>>;
   /** Prontidão: desde quando cada pessoa está com o líder atual (histórico do cadastro). */
   loadLeaderSince?: (employeeIds: string[]) => Promise<Map<string, { since: string; managerId: string | null; previousManagerName: string | null }>>;
   /** Central de acompanhamento: diretoria de cada setor (organograma). */
@@ -855,16 +857,21 @@ export function registerPerformanceRoutes(expressApp: express.Application, deps:
   /** Monta o contexto externo. Sem `loadLinkedEmployeeIds` (testes antigos), a trava não se aplica. */
   const readinessOf = async (db: PerformanceDatabase, cycleId: string) => {
     const cycle = db.cycles.find((c) => c.id === cycleId);
-    if (!cycle || !deps.loadLinkedEmployeeIds) return null;
+    if (!cycle || (!deps.loadLinkedEmployeeIds && !deps.loadEvaluatorIdentities)) return null;
     const live = db.participants.filter((p) => p.cycleId === cycleId && !p.removedAt);
     const evaluatorIds = [...new Set(live.map((p) => p.managerId).filter((id): id is string => Boolean(id)))];
     const outsideIds = evaluatorIds.filter((id) => !live.some((p) => p.employeeId === id));
-    const [linked, leaderSince, outsiders] = await Promise.all([
-      deps.loadLinkedEmployeeIds(evaluatorIds),
+    const identityPromise = deps.loadEvaluatorIdentities ? deps.loadEvaluatorIdentities(evaluatorIds) : Promise.resolve(null);
+    const [identity, leaderSince, outsiders] = await Promise.all([
+      identityPromise,
       deps.loadLeaderSince ? deps.loadLeaderSince(live.map((p) => p.employeeId)) : Promise.resolve(new Map()),
       outsideIds.length ? deps.loadEmployees(outsideIds) : Promise.resolve([]),
     ]);
-    const ctx: ReadinessContext = { linkedEmployeeIds: linked, leaderSince, names: new Map(outsiders.map((e) => [e.id, e.name])) };
+    // Uma só régua: "apto" = conta ativa ligada ao colaborador (a mesma de loadScope / Minha equipe).
+    const linked = identity
+      ? new Set([...identity.values()].filter((i) => i.status === "LINKED").map((i) => i.employeeId))
+      : await deps.loadLinkedEmployeeIds!(evaluatorIds);
+    const ctx: ReadinessContext = { linkedEmployeeIds: linked, evaluatorIdentity: identity ?? undefined, leaderSince, names: new Map(outsiders.map((e) => [e.id, e.name])) };
     return cycleReadiness(db, cycle, ctx, now());
   };
 

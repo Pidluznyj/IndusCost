@@ -38,7 +38,7 @@ export type PendingLink = {
   kind: "employee" | "app_user" | "fleet_driver" | "commission_person" | "person";
   entityId: string;
   label: string;
-  evidence: "CPF_EXACT" | "EMAIL_EXACT" | "EMPLOYEE_USER_LINK";
+  evidence: "CPF_EXACT" | "EMAIL_EXACT" | "EMPLOYEE_USER_LINK" | "ACCOUNT_WITHOUT_EMPLOYEE";
   currentPersonId: string | null;
   currentPersonLabel: string | null;
   severity: "PENDING" | "CONFLICT";
@@ -193,7 +193,7 @@ export type AttachPreview = {
   decision: { ok: true; kind: "LINK" | "RELINK"; setEmployeeId: string | null; setEmployeePersonId: boolean; touchesSuperAdmin: boolean } | { ok: false; code: string; status: number; message: string };
   changes: string[];
   unchanged: string[];
-  expected: { personId: string | null; employeeId: string | null };
+  expected: { personId: string | null; employeeId: string | null; linkEmployeeId?: string | null };
 };
 export function fetchCandidateAccounts(personId: string, q: string) {
   return fetchJsonOk<{ items: CandidateAccount[] }>(`/api/people/${encodeURIComponent(personId)}/access/candidates?q=${encodeURIComponent(q)}`);
@@ -201,7 +201,7 @@ export function fetchCandidateAccounts(personId: string, q: string) {
 export function previewAttachAccount(personId: string, body: { appUserId: string; employeeId?: string | null }) {
   return fetchJsonOk<AttachPreview>(`/api/people/${encodeURIComponent(personId)}/access/attach/preview`, { method: "POST", headers: json, body: JSON.stringify(body) });
 }
-export function attachAccount(personId: string, body: { appUserId: string; employeeId?: string | null; expected: { personId: string | null; employeeId: string | null }; confirmEmailMismatch: boolean; reason: string }) {
+export function attachAccount(personId: string, body: { appUserId: string; employeeId?: string | null; expected: { personId: string | null; employeeId: string | null; linkEmployeeId?: string | null }; confirmEmailMismatch: boolean; reason: string }) {
   return fetchJsonOk<{ eventId: string; kind: string }>(`/api/people/${encodeURIComponent(personId)}/access/attach`, { method: "POST", headers: json, body: JSON.stringify(body) });
 }
 
@@ -254,6 +254,7 @@ export const PERSON_FLAG_LABEL: Record<string, string> = {
   NEEDS_REVIEW: "Identidade em revisão",
   USER_ON_OTHER_PERSON: "Conta do colaborador aponta para outra Pessoa",
   USER_WITHOUT_PERSON: "Conta do colaborador sem Pessoa",
+  USER_WITHOUT_EMPLOYEE_LINK: "Conta sem vínculo ao colaborador (não avalia a equipe)",
   PERSON_INACTIVE_WITH_ACTIVE_LINKS: "Pessoa inativa com vínculos ativos (reative ou corrija)",
   NO_LINKS: "Sem vínculos",
 };

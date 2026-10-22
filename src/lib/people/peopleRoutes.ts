@@ -38,6 +38,11 @@ export function registerPeopleRoutes(
     resolveActor?: (req: express.Request) => SuperAdminGuardActor;
     /** Guarda de criação de contas (admin.settings.security:manage) — a mesma de Configurações › Usuários. */
     requireUsersManage?: express.RequestHandler;
+    /**
+     * Permissão efetiva de vínculo com usuário (admin.employees.user_link:manage), sem efeito HTTP —
+     * decide por objeto quando a correção de vínculo muda a identidade de uma conta. Ausente = não tem.
+     */
+    canManageAccountIdentity?: (req: express.Request) => Promise<boolean>;
   }
 ): void {
   const { requireAppAuth, requireResource, getCurrentAppUser } = guards;
@@ -57,6 +62,7 @@ export function registerPeopleRoutes(
     const guard = guards.resolveActor?.(req) ?? { id: u?.id ?? null, role: u?.role ?? null, elevated: false };
     return { id: u?.id ?? guard.id ?? null, name: u?.name ?? null, role: guard.role ?? u?.role ?? null, elevated: guard.elevated };
   };
+  const canManageAccountIdentityOf = async (req: express.Request) => Boolean(await guards.canManageAccountIdentity?.(req));
   const originOf = (req: express.Request) => ({ ipAddress: resolveAuditIpAddress(req.socket?.remoteAddress), userAgent: normalizeUserAgent(req.headers["user-agent"]) });
   const masterCaps = async (req: express.Request) => buildPeopleMasterCaps(await resolvePeopleViewerInput(req, getCurrentAppUser));
   /** Unificar/reverter: privilégio máximo — SUPER_ADMIN elevado (step-up), além de links:manage. */
@@ -199,13 +205,13 @@ export function registerPeopleRoutes(
   app.post("/api/people/:id/access/attach", ...userLinkManageGuard, async (req, res) => {
     try {
       const body = (req.body ?? {}) as Record<string, unknown>;
-      const expected = (body.expected && typeof body.expected === "object" ? body.expected : {}) as { personId?: string | null; employeeId?: string | null };
+      const expected = (body.expected && typeof body.expected === "object" ? body.expected : {}) as { personId?: string | null; employeeId?: string | null; linkEmployeeId?: string | null };
       res.json(
         await attachAccountToPerson(prisma, {
           targetPersonId: req.params.id,
           appUserId: body.appUserId,
           employeeId: body.employeeId,
-          expected: { personId: expected.personId, employeeId: expected.employeeId },
+          expected: { personId: expected.personId, employeeId: expected.employeeId, linkEmployeeId: expected.linkEmployeeId },
           confirmEmailMismatch: body.confirmEmailMismatch === true,
           reason: typeof body.reason === "string" ? body.reason : null,
           actor: await actorOf(req),
@@ -256,6 +262,7 @@ export function registerPeopleRoutes(
           expectedCurrentPersonId: req.body?.expectedCurrentPersonId === undefined ? undefined : (req.body.expectedCurrentPersonId ?? null),
           reason: typeof req.body?.reason === "string" ? req.body.reason : null,
           actor,
+          canManageAccountIdentity: await canManageAccountIdentityOf(req),
         })
       );
     } catch (error) {
@@ -273,6 +280,7 @@ export function registerPeopleRoutes(
           entityId: req.params.entityId,
           reason: typeof req.body?.reason === "string" ? req.body.reason : typeof req.query.reason === "string" ? req.query.reason : null,
           actor,
+          canManageAccountIdentity: await canManageAccountIdentityOf(req),
         })
       );
     } catch (error) {

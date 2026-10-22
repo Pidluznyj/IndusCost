@@ -14,22 +14,28 @@ import {
   type MergePlan,
 } from "@/src/lib/people/personLinkOps.js";
 import { PERSON_LINK_EVENT_KINDS, recordPersonLinkEvent, type PersonLinkEvidence } from "@/src/lib/people/personLinkEvents.server.js";
-import { evaluateSuperAdminAccountOperation, superAdminGuardDenial, type SuperAdminGuardActor } from "@/src/lib/security/superAdminRoleGuard.js";
+import type { SuperAdminGuardActor } from "@/src/lib/security/superAdminRoleGuard.js";
+import { accountIdentityChangeDenial, employeePersonChangeDenial } from "@/src/lib/security/accountIdentityLinkPolicy.js";
+import { findAccountGainingEmployeeEvidence } from "@/src/lib/security/accountIdentityGuard.server.js";
 import { decideAttachAccount, emailsMatch } from "@/src/lib/people/personAccountLink.js";
 import { SECURITY_AUDIT_EVENTS, writeSecurityAuditLog } from "@/src/lib/auth/securityAudit.server.js";
-import { lockPersonRows } from "@/src/lib/people/personLocks.server.js";
+import { lockPersonAccountLinks, lockPersonRows } from "@/src/lib/people/personLocks.server.js";
 
 type Db = Prisma.TransactionClient;
 export type OpsActor = { id: string | null; name?: string | null };
 /** Ator com papel/elevação: operações sobre contas SUPER_ADMIN exigem SUPER_ADMIN elevado. */
 export type OpsActorWithRole = OpsActor & Partial<Pick<SuperAdminGuardActor, "role" | "elevated">>;
 
-function assertAccountOperationAllowed(actor: OpsActorWithRole | undefined, targetRole: string | null | undefined) {
-  const denial = superAdminGuardDenial(
-    evaluateSuperAdminAccountOperation({ actor: { id: actor?.id ?? null, role: actor?.role ?? null, elevated: Boolean(actor?.elevated) }, targetRole })
-  );
+/** Mudar a Pessoa de uma conta: permissão efetiva de vínculo com usuário + política única (também usada pelo RH). */
+function assertAccountOperationAllowed(actor: OpsActorWithRole | undefined, account: { id: string; role: string | null | undefined }, canManageAccountIdentity: boolean | undefined) {
+  if (!canManageAccountIdentity) {
+    throw new CanonicalPersonError("ACCOUNT_LINK_PERMISSION_REQUIRED", "Corrigir o vínculo de uma conta de acesso exige a permissão de vínculo com usuário (RH).", 403);
+  }
+  const denial = accountIdentityChangeDenial({ actor: toGuardActor(actor), account });
   if (denial) throw new CanonicalPersonError(denial.code, denial.message, denial.status);
 }
+
+const toGuardActor = (actor: OpsActorWithRole | undefined) => ({ id: actor?.id ?? null, role: actor?.role ?? null, elevated: Boolean(actor?.elevated) });
 
 function assertUuid(value: unknown, label: string): string {
   if (!isPersonUuid(value)) throw new CanonicalPersonError("INVALID_ID", `${label} inválido.`, 400);
@@ -153,7 +159,16 @@ export async function previewRelink(prisma: PrismaClient, input: { targetPersonI
 
 export async function relinkEntity(
   prisma: PrismaClient,
-  input: { targetPersonId: string; entityKind: unknown; entityId: unknown; expectedCurrentPersonId: string | null | undefined; reason: string | null; actor: OpsActorWithRole }
+  input: {
+    targetPersonId: string;
+    entityKind: unknown;
+    entityId: unknown;
+    expectedCurrentPersonId: string | null | undefined;
+    reason: string | null;
+    actor: OpsActorWithRole;
+    /** Permissão efetiva de vínculo com usuário, resolvida pela rota (ausente = não tem). */
+    canManageAccountIdentity?: boolean;
+  }
 ) {
   const targetId = assertUuid(input.targetPersonId, "Pessoa");
   if (!isValidLinkEntityKind(input.entityKind)) throw new CanonicalPersonError("INVALID_ENTITY_KIND", "Tipo de cadastro inválido.", 400);
@@ -165,7 +180,17 @@ export async function relinkEntity(
     return await prisma.$transaction(async (tx) => {
       await lockPersonRows(tx, [targetId], "SHARE");
       const [target, entity] = await Promise.all([loadIdentityForMerge(tx, targetId), loadEntity(tx, kind, entityId)]);
-      if (kind === "app_user") assertAccountOperationAllowed(input.actor, entity.role);
+      if (kind === "app_user") {
+        assertAccountOperationAllowed(input.actor, { id: entity.id, role: entity.role }, input.canManageAccountIdentity);
+        // Conta entrando na Pessoa: serializa com quem põe colaborador nela (evidência "mesma Pessoa").
+        await lockPersonAccountLinks(tx, [entity.personId, target.id]);
+      }
+      if (kind === "employee") {
+        // Colaborador entrando na Pessoa de uma conta sem colaborador = mudança de identidade daquela conta.
+        const affectedAccount = await findAccountGainingEmployeeEvidence(tx, { fromPersonId: entity.personId, toPersonId: target.id });
+        const denial = employeePersonChangeDenial({ actor: toGuardActor(input.actor), canManageAccountIdentity: Boolean(input.canManageAccountIdentity), affectedAccount });
+        if (denial) throw new CanonicalPersonError(denial.code, denial.message, denial.status);
+      }
       const decision = decideRelink({
         entityKind: kind,
         currentPersonId: entity.personId,
@@ -199,7 +224,10 @@ export async function relinkEntity(
   }
 }
 
-export async function unlinkEntity(prisma: PrismaClient, input: { personId: string; entityKind: unknown; entityId: unknown; reason: string | null; actor: OpsActorWithRole }) {
+export async function unlinkEntity(
+  prisma: PrismaClient,
+  input: { personId: string; entityKind: unknown; entityId: unknown; reason: string | null; actor: OpsActorWithRole; canManageAccountIdentity?: boolean }
+) {
   const personId = assertUuid(input.personId, "Pessoa");
   if (!isValidLinkEntityKind(input.entityKind)) throw new CanonicalPersonError("INVALID_ENTITY_KIND", "Tipo de cadastro inválido.", 400);
   const kind = input.entityKind;
@@ -208,7 +236,7 @@ export async function unlinkEntity(prisma: PrismaClient, input: { personId: stri
   if (reason.length < 5) throw new CanonicalPersonError("REASON_REQUIRED", "Informe a justificativa (mínimo 5 caracteres).", 400);
   return prisma.$transaction(async (tx) => {
     const entity = await loadEntity(tx, kind, entityId);
-    if (kind === "app_user") assertAccountOperationAllowed(input.actor, entity.role);
+    if (kind === "app_user") assertAccountOperationAllowed(input.actor, { id: entity.id, role: entity.role }, input.canManageAccountIdentity);
     if (entity.personId !== personId) throw new CanonicalPersonError("STALE", "O registro não aponta mais para esta pessoa. Recarregue.", 409);
     await setEntityPerson(tx, kind, entityId, null, personId);
     const event = await recordPersonLinkEvent(tx, {
@@ -486,7 +514,7 @@ export async function previewAttachAccount(prisma: PrismaClient, input: { target
   });
   const changes: string[] = [];
   if (decision.ok) {
-    changes.push(`app_user.personId: ${ctx.account.personId ? ctx.account.personId.slice(0, 8) + "…" : "—"} → ${ctx.target.id.slice(0, 8)}…`);
+    if (ctx.account.personId !== ctx.target.id) changes.push(`app_user.personId: ${ctx.account.personId ? ctx.account.personId.slice(0, 8) + "…" : "—"} → ${ctx.target.id.slice(0, 8)}…`);
     if (decision.setEmployeeId) changes.push(`app_user.employeeId: — → ${decision.setEmployeeId.slice(0, 8)}…`);
     if (decision.setEmployeePersonId && ctx.employee) changes.push(`employee.personId: — → ${ctx.target.id.slice(0, 8)}…`);
   }
@@ -499,7 +527,7 @@ export async function previewAttachAccount(prisma: PrismaClient, input: { target
     decision,
     changes,
     unchanged: ["Identificador, login, senha e sessões da conta", "Papel, perfil de acesso e permissões", "Vínculo comercial (vendedor Nomus)", "Histórico e auditorias já gravados"],
-    expected: { personId: ctx.account.personId, employeeId: ctx.account.employeeId },
+    expected: { personId: ctx.account.personId, employeeId: ctx.account.employeeId, linkEmployeeId: decision.ok ? decision.setEmployeeId : null },
   };
 }
 
@@ -509,7 +537,7 @@ export async function attachAccountToPerson(
     targetPersonId: string;
     appUserId: unknown;
     employeeId?: unknown;
-    expected: { personId?: string | null; employeeId?: string | null };
+    expected: { personId?: string | null; employeeId?: string | null; linkEmployeeId?: string | null };
     confirmEmailMismatch: boolean;
     reason: string | null;
     actor: OpsActorWithRole;
@@ -523,6 +551,8 @@ export async function attachAccountToPerson(
   try {
     return await prisma.$transaction(async (tx) => {
       await lockPersonRows(tx, [targetId], "SHARE");
+      // Conta entrando na Pessoa: serializa com quem põe colaborador nela antes de ler os colaboradores.
+      await lockPersonAccountLinks(tx, [targetId]);
       const ctx = await loadAttachContext(tx, targetId, appUserId, input.employeeId);
       const decision = decideAttachAccount({
         account: { id: ctx.account.id, role: ctx.account.role, personId: ctx.account.personId, employeeId: ctx.account.employeeId, isActive: ctx.account.isActive, email: ctx.account.email },

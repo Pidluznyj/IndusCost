@@ -4,6 +4,7 @@
 
 import type express from "express";
 import type { Prisma } from "@prisma/client";
+import type { SuperAdminGuardActor } from "@/src/lib/security/superAdminRoleGuard.js";
 import type { RequestHandler } from "express";
 import { prisma } from "@/src/lib/prisma.js";
 import {
@@ -479,10 +480,12 @@ export async function planPersonLinkFromEmployeeBody(
 
 export async function applyPersonLinkPlan(
   tx: Prisma.TransactionClient,
-  plan: Awaited<ReturnType<typeof planPersonLinkFromEmployeeBody>>
+  plan: Awaited<ReturnType<typeof planPersonLinkFromEmployeeBody>>,
+  /** Ator e permissão efetiva de vínculo com usuário: decidem se o colaborador pode entrar na Pessoa de uma conta. */
+  accountIdentity?: { actor: SuperAdminGuardActor | null; canManageAccountIdentity: boolean }
 ) {
   const { applyEmployeePersonLinkPlan } = await import("@/src/lib/canonicalPersonService.server.js");
-  return applyEmployeePersonLinkPlan(tx, plan);
+  return applyEmployeePersonLinkPlan(tx, plan, accountIdentity);
 }
 
 /** Compatibilidade: plano + execução em transação própria (fluxos antigos e testes). */

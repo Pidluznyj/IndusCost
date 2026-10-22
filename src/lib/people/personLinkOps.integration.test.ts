@@ -15,8 +15,8 @@ const isLocal = /@(127\.0\.0\.1|localhost)(:\d+)?\//.test(url);
 const skip = !url ? "PEOPLE_PG_TEST_URL não definida" : !isLocal ? "URL não é local: recusado" : false;
 const TAG = `p360-ops-${Date.now()}`;
 // As contas de teste são SUPER_ADMIN: mexer na identidade delas exige SUPER_ADMIN com step-up.
-const actor = { id: null, name: "teste", role: "SUPER_ADMIN", elevated: true };
-const hrEditor = { id: null, name: "editor RH", role: "VIEWER", elevated: false };
+const actor = { id: null as string | null, name: "teste", role: "SUPER_ADMIN", elevated: true };
+const hrEditor = { id: null as string | null, name: "editor RH", role: "VIEWER", elevated: false };
 
 describe("Pessoas 360° v1.1 — operações em PostgreSQL local", { skip }, () => {
   let prisma: PrismaClient;
@@ -27,6 +27,11 @@ describe("Pessoas 360° v1.1 — operações em PostgreSQL local", { skip }, () 
     prisma = new PrismaClient({ datasources: { db: { url } } });
     const role = await prisma.role.upsert({ where: { name: `${TAG} cargo` }, create: { name: `${TAG} cargo`, baseSalary: 0 }, update: {} });
     roleId = role.id;
+    // Atores reais: a política de identidade de conta recusa operação sem usuário identificado.
+    actor.id = (await prisma.appUser.create({ data: { name: "Ator de teste", email: `${TAG}-ator-actor@local.test`.toLowerCase(), passwordHash: "x", role: "SUPER_ADMIN", isActive: true } })).id;
+    ids.users.push(actor.id);
+    hrEditor.id = (await prisma.appUser.create({ data: { name: "Ator de teste", email: `${TAG}-ator-hreditor@local.test`.toLowerCase(), passwordHash: "x", role: "VIEWER", isActive: true } })).id;
+    ids.users.push(hrEditor.id);
   });
   after(async () => {
     await prisma.personLinkEvent.deleteMany({ where: { OR: [{ personId: { in: ids.people } }, { fromPersonId: { in: ids.people } }, { toPersonId: { in: ids.people } }] } });
@@ -73,11 +78,11 @@ describe("Pessoas 360° v1.1 — operações em PostgreSQL local", { skip }, () 
     assert.equal((await prisma.appUser.findUniqueOrThrow({ where: { id: u.id } })).personId, B.id, "prévia não grava");
 
     await assert.rejects(
-      () => relinkEntity(prisma, { targetPersonId: A.id, entityKind: "app_user", entityId: u.id, expectedCurrentPersonId: B.id, reason: "editor de RH tentando", actor: hrEditor }),
+      () => relinkEntity(prisma, { targetPersonId: A.id, entityKind: "app_user", entityId: u.id, expectedCurrentPersonId: B.id, reason: "editor de RH tentando", actor: hrEditor, canManageAccountIdentity: true }),
       (err: unknown) => err instanceof CanonicalPersonError && err.code === "SUPER_ADMIN_REQUIRED"
     );
     assert.equal((await prisma.appUser.findUniqueOrThrow({ where: { id: u.id } })).personId, B.id, "recusa não grava");
-    const done = await relinkEntity(prisma, { targetPersonId: A.id, entityKind: "app_user", entityId: u.id, expectedCurrentPersonId: B.id, reason: "Correção do caso real", actor });
+    const done = await relinkEntity(prisma, { targetPersonId: A.id, entityKind: "app_user", entityId: u.id, expectedCurrentPersonId: B.id, reason: "Correção do caso real", actor, canManageAccountIdentity: true });
     assert.equal(done!.kind, "RELINK");
     const after1 = await prisma.appUser.findUniqueOrThrow({ where: { id: u.id } });
     assert.equal(after1.personId, A.id);
@@ -92,7 +97,7 @@ describe("Pessoas 360° v1.1 — operações em PostgreSQL local", { skip }, () 
     assert.equal((await findPendingLinksForPerson(prisma, A.id)).filter((p) => p.kind === "app_user").length, 0, "pendência resolvida");
 
     // Reverter a correção = religar para B (vínculo de volta), com estado esperado.
-    const back = await relinkEntity(prisma, { targetPersonId: B.id, entityKind: "app_user", entityId: u.id, expectedCurrentPersonId: A.id, reason: "Reversão de teste", actor });
+    const back = await relinkEntity(prisma, { targetPersonId: B.id, entityKind: "app_user", entityId: u.id, expectedCurrentPersonId: A.id, reason: "Reversão de teste", actor, canManageAccountIdentity: true });
     assert.equal(back!.fromPersonId, A.id);
   });
 
@@ -102,7 +107,7 @@ describe("Pessoas 360° v1.1 — operações em PostgreSQL local", { skip }, () 
     const d = await prisma.fleetDriver.create({ data: { name: `${TAG} motorista`, cpf: "11144477735", status: "AUTHORIZED", personId: A.id } });
     ids.drivers.push(d.id);
     await assert.rejects(
-      () => relinkEntity(prisma, { targetPersonId: B.id, entityKind: "fleet_driver", entityId: d.id, expectedCurrentPersonId: null, reason: "teste stale", actor }),
+      () => relinkEntity(prisma, { targetPersonId: B.id, entityKind: "fleet_driver", entityId: d.id, expectedCurrentPersonId: null, reason: "teste stale", actor, canManageAccountIdentity: true }),
       (err: unknown) => err instanceof CanonicalPersonError && err.code === "STALE" && err.status === 409
     );
     assert.equal((await prisma.fleetDriver.findUniqueOrThrow({ where: { id: d.id } })).personId, A.id);
@@ -113,8 +118,8 @@ describe("Pessoas 360° v1.1 — operações em PostgreSQL local", { skip }, () 
     const B = await person("Race B");
     const u = await user("race", null, null);
     const results = await Promise.allSettled([
-      relinkEntity(prisma, { targetPersonId: A.id, entityKind: "app_user", entityId: u.id, expectedCurrentPersonId: null, reason: "corrida A", actor }),
-      relinkEntity(prisma, { targetPersonId: B.id, entityKind: "app_user", entityId: u.id, expectedCurrentPersonId: null, reason: "corrida B", actor }),
+      relinkEntity(prisma, { targetPersonId: A.id, entityKind: "app_user", entityId: u.id, expectedCurrentPersonId: null, reason: "corrida A", actor, canManageAccountIdentity: true }),
+      relinkEntity(prisma, { targetPersonId: B.id, entityKind: "app_user", entityId: u.id, expectedCurrentPersonId: null, reason: "corrida B", actor, canManageAccountIdentity: true }),
     ]);
     const ok = results.filter((r) => r.status === "fulfilled").length;
     const conflicts = results.filter((r) => r.status === "rejected" && r.reason instanceof CanonicalPersonError && (r.reason.code === "STALE" || r.reason.code === "UNIQUE_CONFLICT")).length;
@@ -129,7 +134,7 @@ describe("Pessoas 360° v1.1 — operações em PostgreSQL local", { skip }, () 
     const u1 = await user("uniq1", null, A.id);
     const u2 = await user("uniq2", null, null);
     await assert.rejects(
-      () => relinkEntity(prisma, { targetPersonId: A.id, entityKind: "app_user", entityId: u2.id, expectedCurrentPersonId: null, reason: "teste unicidade", actor }),
+      () => relinkEntity(prisma, { targetPersonId: A.id, entityKind: "app_user", entityId: u2.id, expectedCurrentPersonId: null, reason: "teste unicidade", actor, canManageAccountIdentity: true }),
       (err: unknown) => err instanceof CanonicalPersonError && err.code === "TARGET_HAS_USER"
     );
     assert.equal((await prisma.appUser.findUniqueOrThrow({ where: { id: u1.id } })).personId, A.id);
@@ -138,8 +143,8 @@ describe("Pessoas 360° v1.1 — operações em PostgreSQL local", { skip }, () 
   it("desvincular exige motivo, grava evento e não apaga nada", async () => {
     const A = await person("Unlink A");
     const e = await employee("Unlink", A.id);
-    await assert.rejects(() => unlinkEntity(prisma, { personId: A.id, entityKind: "employee", entityId: e.id, reason: "", actor }), /justificativa/);
-    const r = await unlinkEntity(prisma, { personId: A.id, entityKind: "employee", entityId: e.id, reason: "teste desvincular", actor });
+    await assert.rejects(() => unlinkEntity(prisma, { personId: A.id, entityKind: "employee", entityId: e.id, reason: "", actor, canManageAccountIdentity: true }), /justificativa/);
+    const r = await unlinkEntity(prisma, { personId: A.id, entityKind: "employee", entityId: e.id, reason: "teste desvincular", actor, canManageAccountIdentity: true });
     assert.ok(r.eventId);
     assert.equal((await prisma.employee.findUniqueOrThrow({ where: { id: e.id } })).personId, null);
     assert.equal(await prisma.person.count({ where: { id: A.id } }), 1);
@@ -177,7 +182,7 @@ describe("Pessoas 360° v1.1 — operações em PostgreSQL local", { skip }, () 
     assert.equal((await prisma.person.findUniqueOrThrow({ where: { id: W.id } })).corporateEmail, `${TAG}-merge@local.test`);
     // Pessoa MERGED não pode ser alvo
     await assert.rejects(
-      () => relinkEntity(prisma, { targetPersonId: L.id, entityKind: "fleet_driver", entityId: d.id, expectedCurrentPersonId: W.id, reason: "alvo merged", actor }),
+      () => relinkEntity(prisma, { targetPersonId: L.id, entityKind: "fleet_driver", entityId: d.id, expectedCurrentPersonId: W.id, reason: "alvo merged", actor, canManageAccountIdentity: true }),
       (err: unknown) => err instanceof CanonicalPersonError && err.code === "TARGET_MERGED"
     );
     // Repetir a unificação é bloqueado (LOSER_MERGED)
@@ -202,7 +207,7 @@ describe("Pessoas 360° v1.1 — operações em PostgreSQL local", { skip }, () 
     const d = await prisma.fleetDriver.create({ data: { name: `${TAG} dep motorista`, cpf: "11144477735", status: "PENDING" } });
     ids.drivers.push(d.id);
     const done = await executePersonMerge(prisma, { winnerId: W.id, loserId: L.id, reason: "unificação para teste de dependência", actor, expectedMoveCount: 0 });
-    await relinkEntity(prisma, { targetPersonId: W.id, entityKind: "fleet_driver", entityId: d.id, expectedCurrentPersonId: null, reason: "vínculo novo depois da unificação", actor });
+    await relinkEntity(prisma, { targetPersonId: W.id, entityKind: "fleet_driver", entityId: d.id, expectedCurrentPersonId: null, reason: "vínculo novo depois da unificação", actor, canManageAccountIdentity: true });
     await assert.rejects(
       () => revertPersonMerge(prisma, { eventId: done!.eventId, reason: "tentativa de reverter", actor }),
       (err: unknown) => err instanceof CanonicalPersonError && err.code === "NEWER_DEPENDENCIES" && err.status === 409
