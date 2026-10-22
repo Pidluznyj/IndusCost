@@ -34,6 +34,7 @@ import { motion } from "motion/react";
 import { DataImportDialog } from "./shared/DataImportDialog";
 import { CustomerImportConfig } from "../lib/importer/CustomerConfig";
 import { CustomerCommercial360 } from "./customers/CustomerCommercial360";
+import { CorporateRadarReviewDialog } from "./customers/CorporateRadarPanel";
 import { CustomerCommercialOwnerTab } from "./customers/CustomerCommercialOwnerTab";
 import { CustomerPeopleLinksPanel } from "./customers/CustomerPeopleLinksPanel";
 import { useAuth } from "@/src/contexts/AuthContext";
@@ -47,6 +48,7 @@ import { CustomerCnpjIntelligencePanel } from "./customers/CustomerCnpjIntellige
 import { CustomerCreditOccurrenceHistory } from "./customers/CustomerCreditOccurrenceHistory";
 import { CustomerListReportPrintDocument } from "./customers/CustomerListReportPrintDocument";
 import { CustomerCnpjRiskTag } from "./customers/CustomerCnpjRiskTag";
+import { CustomerCreditPostureBadge } from "./customers/CustomerCreditPostureBadge";
 import {
   CustomerCadastralStatusBadge,
   CustomerNewQuoteButton,
@@ -115,6 +117,7 @@ export const CustomerModule = () => {
   const [pagination, setPagination] = useState<CustomerListMeta | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isImportOpen, setIsImportOpen] = useState(false);
+  const [radarOpen, setRadarOpen] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
   const [commercial360CustomerId, setCommercial360CustomerId] = useState<string | null>(null);
   const [intelligenceOpen, setIntelligenceOpen] = useState(false);
@@ -490,6 +493,14 @@ export const CustomerModule = () => {
             <SearchCheck className="h-4 w-4" />
             Consultar CNPJ
           </button>
+          <button
+            type="button"
+            onClick={() => setRadarOpen(true)}
+            className="flex items-center gap-2 bg-accent text-accent-foreground px-4 py-2 rounded-lg font-medium hover:opacity-90 transition-opacity text-sm"
+            data-testid="corporate-radar-open"
+          >
+            Radar de relacionamentos
+          </button>
           {allowImport ? (
           <button 
             onClick={() => setIsImportOpen(true)}
@@ -521,6 +532,8 @@ export const CustomerModule = () => {
         previewUrl="/api/customers/import/preview"
         confirmUrl="/api/customers/import/confirm"
       />
+
+      <CorporateRadarReviewDialog open={radarOpen} onClose={() => setRadarOpen(false)} />
 
       <CustomerCommercial360
         open={commercial360CustomerId != null}
@@ -570,7 +583,7 @@ export const CustomerModule = () => {
             <thead className="sticky top-0 z-30">
               <tr className="bg-accent/80 backdrop-blur-sm border-b border-border">
                 <th className="px-3 py-2 font-semibold text-xs whitespace-nowrap">Cliente</th>
-                <th className="px-3 py-2 font-semibold text-xs whitespace-nowrap">Score CNPJ</th>
+                <th className="px-3 py-2 font-semibold text-xs whitespace-nowrap">Score de Confiança</th>
                 <th className="px-3 py-2 font-semibold text-xs whitespace-nowrap">Responsável Comercial</th>
                 <th className="px-3 py-2 font-semibold text-xs whitespace-nowrap">Última compra</th>
                 <th className="px-3 py-2 font-semibold text-xs whitespace-nowrap">Localização</th>
@@ -596,7 +609,10 @@ export const CustomerModule = () => {
                 </tr>
               ) : (
                 listRows.map((c) => {
-                  const saleBlocked = c.salesBlock?.blocked === true;
+                  const creditBlocked =
+                    c.portfolioCredit?.decision.customerStatus === "BLOQUEADO" ||
+                    c.portfolioCredit?.decision.customerStatus === "BLOQUEIO_CRITICO";
+                  const saleBlocked = c.salesBlock?.blocked === true || creditBlocked;
                   return (
                   <tr
                     key={c.id}
@@ -618,12 +634,17 @@ export const CustomerModule = () => {
                           <p className="text-[11px] text-muted-foreground truncate" title={c.tradeName ?? undefined}>
                             {c.tradeName || "—"}
                           </p>
+                          <CustomerCreditPostureBadge decision={c.portfolioCredit?.decision} className="mt-1 max-w-full" />
                           <CustomerSalesBlockBadge salesBlock={c.salesBlock} className="mt-1 max-w-full" />
                         </div>
                       </div>
                     </td>
                     <td className="px-3 py-1.5 whitespace-nowrap">
-                      <CustomerCnpjRiskTag risk={c.cnpjRisk} onConsult={() => openCnpjLookup({ customer: c })} />
+                      <CustomerCnpjRiskTag
+                        risk={c.cnpjRisk}
+                        confidence={c.portfolioCredit?.confidence}
+                        onConsult={() => openCnpjLookup({ customer: c })}
+                      />
                     </td>
                     <td className="px-3 py-1.5">
                       <div className="flex items-center gap-1 min-w-0">
@@ -811,6 +832,7 @@ export const CustomerModule = () => {
                   <>
                     <CustomerNewSaleButton
                       salesBlock={editingCustomer.salesBlock}
+                      creditDecision={editingCustomer.portfolioCredit?.decision}
                       onClick={() => navigate(`/proposals?customerId=${editingCustomer.id}`)}
                     />
                     <CustomerNewQuoteButton

@@ -633,6 +633,7 @@ import {
   shouldUseCustomerPagination,
 } from "./src/lib/customerListQuery.js";
 import { attachCustomerCnpjRisk } from "./src/lib/customerCnpjRiskSummary.server.js";
+import { attachPortfolioCredit, attachPortfolioCreditToNestedCustomers } from "./src/lib/commercial/portfolioCredit.server.js";
 import {
   attachCustomerSalesBlocks,
   attachSalesBlockToNestedCustomers,
@@ -14249,9 +14250,11 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
         const customers = await prisma.customer.findMany({
           orderBy: { companyName: "asc" },
         });
-        const withRisk = await attachCustomerCnpjRisk(prisma, customers);
+        const evaluatedAt = new Date();
+        const withRisk = await attachCustomerCnpjRisk(prisma, customers, evaluatedAt);
         const withOwners = await attachCustomerCommercialOwnerListFields(withRisk);
-        return res.json(await attachCustomerSalesBlocks(prisma, withOwners, { includeFinancialDetails }));
+        const withBlocks = await attachCustomerSalesBlocks(prisma, withOwners, { includeFinancialDetails, now: evaluatedAt });
+        return res.json(await attachPortfolioCredit(prisma, withBlocks, evaluatedAt));
       }
 
       const list = parseCustomerListQuery(query);
@@ -14281,15 +14284,15 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
       ]);
 
       const meta = customerListMeta(total, list.page, list.limit);
-      const withRisk = await attachCustomerCnpjRisk(prisma, items);
+      const evaluatedAt = new Date();
+      const withRisk = await attachCustomerCnpjRisk(prisma, items, evaluatedAt);
       const withOwners = await attachCustomerCommercialOwnerListFields(withRisk);
       // Última compra = mesmo motor da rotina de 90 dias (loadLastValidInvoices), em lote para a página.
       const withLastPurchase = await attachCustomerLastPurchase(prisma, withOwners);
+      const withBlocks = await attachCustomerSalesBlocks(prisma, withLastPurchase, { includeFinancialDetails, now: evaluatedAt });
+      const withCredit = await attachPortfolioCredit(prisma, withBlocks, evaluatedAt);
       res.json({
-        ...buildCustomerListResponse(
-          await attachCustomerSalesBlocks(prisma, withLastPurchase, { includeFinancialDetails }),
-          meta
-        ),
+        ...buildCustomerListResponse(withCredit, meta),
         commercialOwnerOptions,
         cityOptions: cityFilter.options,
       });
@@ -14468,12 +14471,15 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
         await loadOfficialCommercial360MarginBundle(prisma, salesOrders);
 
       const auth = (req as { appAuth?: AppAuthContext }).appAuth ?? (await getCurrentAppUser(req));
+      const evaluatedAt = new Date();
       const [customerWithSalesBlock] = await attachCustomerSalesBlocks(prisma, [customer], {
         includeFinancialDetails: canExposeCustomerSalesBlockFinancialDetails(auth),
+        now: evaluatedAt,
       });
+      const [customerWithCredit] = await attachPortfolioCredit(prisma, [customerWithSalesBlock], evaluatedAt);
 
       res.json({
-        customer: customerWithSalesBlock,
+        customer: customerWithCredit,
         salesOrders: salesOrdersWithOfficialMargin,
         portfolioAbc,
         officialOrderMetrics,
@@ -15855,6 +15861,15 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
       where: { id },
       data: body,
     });
+    const watched = ["phone", "email", "address", "city", "state", "zipCode", "taxId"] as const;
+    if (watched.some((field) => Object.prototype.hasOwnProperty.call(body, field))) {
+      try {
+        const { scheduleCorporateRadar } = await import("./src/lib/commercial/corporateRadar.server.js");
+        scheduleCorporateRadar(customer.id, "CUSTOMER_UPDATE");
+      } catch (error) {
+        console.error("corporate-radar", error instanceof Error ? error.name : "error");
+      }
+    }
     res.json(customer);
   });
 
@@ -16222,12 +16237,15 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
         orderBy: buildProposalListOrderBy(),
       });
       const auth = (req as { appAuth?: AppAuthContext }).appAuth ?? (await getCurrentAppUser(req));
+      const evaluatedAt = new Date();
       const withBlock = await attachSalesBlockToNestedCustomers(prisma, proposals, {
         includeFinancialDetails: canExposeCustomerSalesBlockFinancialDetails(auth),
+        now: evaluatedAt,
       });
+      const withCredit = await attachPortfolioCreditToNestedCustomers(prisma, withBlock, evaluatedAt);
       return res.json(
         await withOfficialProposalListMargin(
-          withBlock as Array<Record<string, unknown>>
+          withCredit as Array<Record<string, unknown>>
         )
       );
     }
@@ -16322,12 +16340,14 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     };
 
     const auth = (req as { appAuth?: AppAuthContext }).appAuth ?? (await getCurrentAppUser(req));
+    const evaluatedAt = new Date();
     const withBlock = await attachSalesBlockToNestedCustomers(
       prisma,
       rowsRaw.slice(0, pageSize) as Array<{ customerId: string; Customer?: { id: string } | null }>,
-      { includeFinancialDetails: canExposeCustomerSalesBlockFinancialDetails(auth) }
+      { includeFinancialDetails: canExposeCustomerSalesBlockFinancialDetails(auth), now: evaluatedAt }
     );
-    const rows = await withOfficialProposalListMargin(withBlock as Array<Record<string, unknown>>);
+    const withCredit = await attachPortfolioCreditToNestedCustomers(prisma, withBlock, evaluatedAt);
+    const rows = await withOfficialProposalListMargin(withCredit as Array<Record<string, unknown>>);
 
     res.json({
       data: rows,

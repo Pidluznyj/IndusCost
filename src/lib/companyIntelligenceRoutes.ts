@@ -126,6 +126,243 @@ export function registerCompanyIntelligenceRoutes(app: express.Express, auth: Au
     }
   );
 
+  app.post(
+    "/api/customers/:id/corporate-links",
+    requireAppAuth,
+    canView,
+    async (req, res) => {
+      try {
+        const { id } = req.params;
+        if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
+        const user = await getCurrentAppUser(req);
+        if (!user) return res.status(401).json({ error: "Não autenticado." });
+        const body = (req.body ?? {}) as { relatedCustomerId?: unknown; action?: unknown; justification?: unknown };
+        const relatedCustomerId = typeof body.relatedCustomerId === "string" ? body.relatedCustomerId : "";
+        const action = typeof body.action === "string" ? body.action : "";
+        const justification = typeof body.justification === "string" ? body.justification : "";
+        const { prisma } = await import("@/src/lib/prisma.js");
+        const { applyCorporateLinkReview } = await import("@/src/lib/commercial/corporateLinkReview.server.js");
+        const { corporateCandidateFingerprint } = await import("@/src/lib/commercial/corporateRelation.js");
+        const { loadCorporateRelationAssessment } = await import("@/src/lib/commercial/corporateRelation.server.js");
+        const { writeCommercialAuditLog } = await import("@/src/lib/commercialAuditLog.js");
+        let evidenceFingerprint: string | null = null;
+        if (action === "reject") {
+          const customer = await prisma.customer.findUnique({ where: { id }, select: { taxId: true } });
+          const assessment = await loadCorporateRelationAssessment(prisma as never, {
+            customerId: id,
+            cnpj: customer?.taxId ?? null,
+            now: new Date(),
+          });
+          const candidate = assessment.candidates.find((item) => item.relatedCustomerId === relatedCustomerId);
+          evidenceFingerprint = candidate ? corporateCandidateFingerprint(candidate) : null;
+        }
+        const result = await applyCorporateLinkReview(
+          prisma as never,
+          {
+            actor: {
+              id: user.id,
+              role: user.role,
+              assignedPermissions: user.effectivePermissions,
+            },
+            subjectCustomerId: id,
+            relatedCustomerId,
+            action,
+            justification,
+            evidenceFingerprint,
+          },
+          async (entry) => {
+            await writeCommercialAuditLog(entry);
+          }
+        );
+        if (!result.ok) {
+          const status = result.code.startsWith("EXCEPTION_") ? 403 : 400;
+          return res.status(status).json({ error: result.message, code: result.code });
+        }
+        res.json({ status: result.status });
+      } catch (e) {
+        console.error("corporate-link-review", e instanceof Error ? e.name : "error");
+        res.status(500).json({ error: "Não foi possível registrar o vínculo." });
+      }
+    }
+  );
+
+  app.get(
+    "/api/customers/:id/corporate-radar",
+    requireAppAuth,
+    canView,
+    async (req, res) => {
+      try {
+        const { id } = req.params;
+        if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
+        const { prisma } = await import("@/src/lib/prisma.js");
+        const customer = await prisma.customer.findUnique({ where: { id }, select: { id: true, taxId: true } });
+        if (!customer) return res.status(404).json({ error: "Cliente não encontrado." });
+        const { loadCorporateRelationAssessment, presentCorporateCandidate, presentCorporateRelation } = await import(
+          "@/src/lib/commercial/corporateRelation.server.js"
+        );
+        const assessment = await loadCorporateRelationAssessment(prisma as never, {
+          customerId: id,
+          cnpj: customer.taxId,
+          now: new Date(),
+        });
+        res.json({
+          writes: "NONE",
+          formal: assessment.relations.map((relation) => presentCorporateRelation(relation, "Conferido pelo cadastro")),
+          review: assessment.candidates.map((candidate) => presentCorporateCandidate(candidate)),
+        });
+      } catch (error) {
+        console.error("corporate-radar", error instanceof Error ? error.name : "error");
+        res.status(500).json({ error: "Radar indisponível." });
+      }
+    }
+  );
+
+  app.get("/api/commercial/corporate-radar", requireAppAuth, canView, async (_req, res) => {
+    try {
+      const { prisma } = await import("@/src/lib/prisma.js");
+      const model = (prisma as unknown as {
+        commercialCorporateRadarSignal?: { findMany(args: unknown): Promise<unknown[]> };
+      }).commercialCorporateRadarSignal;
+      if (!model) return res.json({ persisted: false, signals: [] });
+      const signals = await model.findMany({
+        orderBy: [{ priorityRank: "asc" }, { evaluatedAt: "desc" }],
+        take: 100,
+        select: {
+          pairKey: true,
+          customerId: true,
+          relatedCustomerId: true,
+          classification: true,
+          patternCodes: true,
+          evidenceSummary: true,
+          status: true,
+          priorityRank: true,
+          direction: true,
+          evaluatedAt: true,
+        },
+      });
+      res.json({ persisted: true, signals });
+    } catch (error) {
+      console.error("corporate-radar-list", error instanceof Error ? error.name : "error");
+      res.json({ persisted: false, signals: [] });
+    }
+  });
+
+  app.post("/api/commercial/corporate-radar/scan", requireAppAuth, canView, async (req, res) => {
+    try {
+      const body = (req.body ?? {}) as { dryRun?: unknown };
+      const dryRun = body.dryRun !== false;
+      const user = await getCurrentAppUser(req);
+      if (!dryRun) {
+        const { resolveCommercialCreditExceptionPermission } = await import(
+          "@/src/lib/commercial/commercialCreditDecision.js"
+        );
+        const permission = resolveCommercialCreditExceptionPermission({
+          role: user?.role ?? "",
+          assignedPermissions: user?.effectivePermissions ?? [],
+        });
+        if (!permission.ok) return res.status(403).json({ error: permission.code });
+      }
+      const { prisma } = await import("@/src/lib/prisma.js");
+      const customers = await prisma.customer.findMany({
+        select: {
+          id: true,
+          taxId: true,
+          companyName: true,
+          phone: true,
+          email: true,
+          address: true,
+          city: true,
+          state: true,
+          zipCode: true,
+          updatedAt: true,
+        },
+        take: 5000,
+      });
+      let memberships: Array<{
+        subjectCnpj: string;
+        subjectCustomerId: string | null;
+        memberNameKey?: string | null;
+        memberName?: string | null;
+        memberIdentityKey?: string | null;
+        memberCnpj: string | null;
+        source: string;
+        consultedAt: Date;
+      }> = [];
+      try {
+        memberships = await prisma.commercialCorporateMembership.findMany({
+          select: {
+            subjectCnpj: true,
+            subjectCustomerId: true,
+            memberNameKey: true,
+            memberName: true,
+            memberIdentityKey: true,
+            memberCnpj: true,
+            source: true,
+            consultedAt: true,
+          },
+          orderBy: { consultedAt: "desc" },
+          take: 20000,
+        });
+      } catch {
+        memberships = await prisma.commercialCorporateMembership.findMany({
+          select: {
+            subjectCnpj: true,
+            subjectCustomerId: true,
+            memberIdentityKey: true,
+            memberCnpj: true,
+            source: true,
+            consultedAt: true,
+          },
+          orderBy: { consultedAt: "desc" },
+          take: 20000,
+        });
+      }
+      const byCnpj = new Map(customers.map((row) => [row.taxId.replace(/\D/g, ""), row.id]));
+      const { runCorporateRadar } = await import("@/src/lib/commercial/corporateRadar.server.js");
+      const report = await runCorporateRadar({
+        db: prisma as never,
+        parties: customers.map((row) => ({
+          customerId: row.id,
+          cnpj: row.taxId,
+          companyName: row.companyName,
+          phone: row.phone,
+          email: row.email,
+          address: row.address,
+          city: row.city,
+          state: row.state,
+          zipCode: row.zipCode,
+          updatedAt: row.updatedAt,
+        })),
+        memberships: memberships.map((row) => ({
+          subjectCustomerId: row.subjectCustomerId ?? byCnpj.get(row.subjectCnpj.replace(/\D/g, "")) ?? "",
+          nameKey: row.memberNameKey,
+          displayName: row.memberName,
+          identityKey: row.memberIdentityKey,
+          memberCnpj: row.memberCnpj,
+          source: row.source,
+          consultedAt: row.consultedAt.toISOString(),
+        })).filter((row) => row.subjectCustomerId),
+        mode: dryRun ? "dry-run" : "portfolio",
+        dryRun,
+        persist: !dryRun,
+      });
+      res.json({
+        ...report,
+        samples: report.samples.map((sample) => ({
+          pairKey: sample.pairKey,
+          classification: sample.classification,
+          patternCodes: sample.patterns.map((pattern) => pattern.code),
+          priorityRank: sample.priorityRank,
+          priorityReasons: sample.priorityReasons,
+          evidenceSummary: sample.evidenceSummary,
+        })),
+      });
+    } catch (error) {
+      console.error("corporate-radar-scan", error instanceof Error ? error.name : "error");
+      res.status(500).json({ error: "Varredura do radar indisponível." });
+    }
+  });
+
   app.get(
     "/api/customers/:id/commercial-credit/history",
     requireAppAuth,

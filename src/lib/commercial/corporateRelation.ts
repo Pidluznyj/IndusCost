@@ -11,6 +11,7 @@
 
 import { createHash } from "node:crypto";
 import { isValidCnpj, normalizeCnpj } from "@/src/lib/companyCnpjFormat.js";
+import { normalizeBrazilUf } from "@/src/lib/customerIndicators.js";
 import { isValidCpf } from "@/src/lib/fleetCpfUtils.js";
 
 export const CORPORATE_MEMBERSHIP_MAX_AGE_DAYS = 90;
@@ -28,7 +29,7 @@ export const CORPORATE_MEMBER_KIND_LABEL: Record<CorporateMemberKind, string> = 
 
 export type CorporateDocumentKind = "CNPJ" | "MASKED" | "ABSENT" | "CPF_WITHHELD";
 export type CorporateReliability = "HIGH" | "INSUFFICIENT";
-export type CorporateRelationBasis = "DIRECT_CNPJ" | "SHARED_CNPJ" | "SHARED_CPF" | "TRANSITIVE";
+export type CorporateRelationBasis = "DIRECT_CNPJ" | "SHARED_CNPJ" | "SHARED_CPF" | "TRANSITIVE" | "SAME_ROOT";
 
 export type CorporateMembershipDraft = {
   subjectCnpj: string;
@@ -43,8 +44,10 @@ export type CorporateMembershipDraft = {
   evidenceRef: string;
   /** Hash irreversível de CPF válido. O CPF não é gravado nem exibido. */
   identityKey: string | null;
-  /** Só para detectar homônimo nesta análise. Não é gravado nem exibido. */
+  /** Nome normalizado. Serve para candidato de revisão, não para confirmar o grupo. */
   nameKey: string | null;
+  /** Nome original do QSA, quando a consulta o trouxe. */
+  displayName?: string | null;
 };
 
 export type RegisteredCorporateParty = {
@@ -74,9 +77,11 @@ export type CorporateCandidate = {
   relatedCompanyName: string;
   relatedCnpj: string;
   registryKind: "CUSTOMER" | "LEAD";
-  basis: "SHARED_NAME";
+  basis: "SHARED_NAME" | "SHARED_ADDRESS" | "SHARED_PHONE" | "SHARED_EMAIL";
   status: "PENDING_REVIEW";
   consultedAt: string;
+  /** Evidência da revisão. Nome público, endereço, telefone ou e-mail. Nunca CPF. */
+  evidenceLabel: string;
 };
 
 export type CorporateRelationReport = {
@@ -192,6 +197,7 @@ function membership(input: {
     reliability: document.memberCnpj || identityKey ? "HIGH" : "INSUFFICIENT",
     identityKey,
     nameKey: corporateNameKey(input.name),
+    displayName: input.name,
     evidenceRef: evidenceRef({
       subjectCnpj: input.subjectCnpj,
       source: input.source,
@@ -284,6 +290,155 @@ export function extractMembershipsFromLookup(rawJson: unknown, consultedAt: Date
     ...(brasil ? extractBrasilApiMemberships(brasil, consultedAt) : []),
     ...(publica ? extractPublicaMemberships(publica, consultedAt) : []),
   ];
+}
+
+function nameTokenCount(nameKey: string): number {
+  return nameKey.split(" ").filter((token) => token.length > 0).length;
+}
+
+export function corporateCandidateFingerprint(candidate: {
+  basis: string;
+  evidenceLabel: string;
+}): string {
+  const label = corporateNameKey(candidate.evidenceLabel) ?? candidate.evidenceLabel.trim().toUpperCase();
+  return createHash("sha256").update(`${candidate.basis}|${label}`).digest("hex");
+}
+
+export function visibleCorporateCandidates(
+  candidates: readonly CorporateCandidate[],
+  rejected: readonly { relatedCustomerId: string; fingerprint: string | null }[]
+): CorporateCandidate[] {
+  const blocked = new Set(
+    rejected
+      .filter((row) => row.fingerprint)
+      .map((row) => `${row.relatedCustomerId}:${row.fingerprint}`)
+  );
+  return candidates.filter(
+    (candidate) => !blocked.has(`${candidate.relatedCustomerId}:${corporateCandidateFingerprint(candidate)}`)
+  );
+}
+
+export function expandConfirmedCustomerIds(
+  startId: string,
+  edges: ReadonlyArray<{ leftId: string; rightId: string }>,
+  limit = CORPORATE_RELATION_COMPONENT_LIMIT
+): { ids: string[]; overflow: boolean } {
+  const graph = new Map<string, Set<string>>();
+  const connect = (left: string, right: string) => {
+    if (!left || !right || left === right) return;
+    const bucket = graph.get(left) ?? new Set<string>();
+    bucket.add(right);
+    graph.set(left, bucket);
+  };
+  for (const edge of edges) {
+    connect(edge.leftId, edge.rightId);
+    connect(edge.rightId, edge.leftId);
+  }
+  const seen = new Set<string>([startId]);
+  const queue = [startId];
+  let overflow = false;
+  while (queue.length > 0) {
+    const current = queue.shift()!;
+    for (const next of graph.get(current) ?? []) {
+      if (seen.has(next)) continue;
+      if (seen.size >= limit) {
+        overflow = true;
+        continue;
+      }
+      seen.add(next);
+      queue.push(next);
+    }
+  }
+  seen.delete(startId);
+  return { ids: [...seen], overflow };
+}
+
+function contactTextKey(value: string | null | undefined): string {
+  return String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^A-Za-z0-9 ]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toUpperCase();
+}
+
+export function corporatePhoneKey(phone: string | null | undefined): string | null {
+  const digits = String(phone ?? "").replace(/\D/g, "");
+  if (digits.length < 10 || digits.length > 13) return null;
+  return digits.replace(/^0+/, "");
+}
+
+export function corporateEmailKey(email: string | null | undefined): string | null {
+  const text = String(email ?? "").trim().toLowerCase();
+  if (!text.includes("@") || text.length < 6) return null;
+  return text;
+}
+
+/** Endereço fiscal completo. CEP, município ou CNAE isolados não geram chave. */
+export function corporateAddressKey(input: {
+  address?: string | null;
+  city?: string | null;
+  state?: string | null;
+  zipCode?: string | null;
+}): string | null {
+  const street = contactTextKey(input.address);
+  const city = contactTextKey(input.city);
+  const uf = normalizeBrazilUf(input.state);
+  const zip = String(input.zipCode ?? "").replace(/\D/g, "");
+  if (street.length < 8 || !city || uf === "—" || uf === "OUTROS" || zip.length !== 8) return null;
+  return `${street}|${city}|${uf}|${zip}`;
+}
+
+export type CorporateContactParty = {
+  customerId: string;
+  cnpj: string;
+  companyName: string;
+  registryKind: "CUSTOMER" | "LEAD";
+  phone?: string | null;
+  email?: string | null;
+  address?: string | null;
+  city?: string | null;
+  state?: string | null;
+  zipCode?: string | null;
+};
+
+export function analyzeCorporateContactClues(input: {
+  subjectCustomerId: string;
+  parties: readonly CorporateContactParty[];
+  now?: Date;
+}): CorporateCandidate[] {
+  const subject = input.parties.find((party) => party.customerId === input.subjectCustomerId);
+  if (!subject) return [];
+  const consultedAt = (input.now ?? new Date()).toISOString();
+  const phone = corporatePhoneKey(subject.phone);
+  const email = corporateEmailKey(subject.email);
+  const address = corporateAddressKey(subject);
+  const candidates: CorporateCandidate[] = [];
+  const seen = new Set<string>();
+  for (const peer of input.parties) {
+    if (peer.customerId === subject.customerId) continue;
+    const push = (basis: CorporateCandidate["basis"], evidenceLabel: string) => {
+      const key = `${peer.customerId}:${basis}`;
+      if (seen.has(key) || candidates.length >= CORPORATE_RELATION_COMPONENT_LIMIT) return;
+      seen.add(key);
+      candidates.push({
+        subjectCustomerId: subject.customerId,
+        relatedCustomerId: peer.customerId,
+        relatedCompanyName: peer.companyName,
+        relatedCnpj: peer.cnpj,
+        registryKind: peer.registryKind,
+        basis,
+        status: "PENDING_REVIEW",
+        consultedAt,
+        evidenceLabel,
+      });
+    };
+    if (phone && corporatePhoneKey(peer.phone) === phone) push("SHARED_PHONE", phone);
+    if (email && corporateEmailKey(peer.email) === email) push("SHARED_EMAIL", email);
+    if (address && corporateAddressKey(peer) === address) push("SHARED_ADDRESS", address);
+  }
+  return candidates;
 }
 
 function isFresh(row: CorporateMembershipDraft, now: Date, maxAgeDays: number): boolean {
@@ -471,7 +626,7 @@ export function analyzeCorporateRelations(input: {
   const candidates: CorporateCandidate[] = [];
   const candidateKeys = new Set<string>();
   const freshNames = input.memberships.filter(
-    (row) => row.nameKey && row.reliability !== "HIGH" && isFresh(row, input.now, maxAgeDays)
+    (row) => row.nameKey && nameTokenCount(row.nameKey) >= 2 && isFresh(row, input.now, maxAgeDays)
   );
   const byName = new Map<string, CorporateMembershipDraft[]>();
   for (const row of freshNames) {
@@ -502,6 +657,7 @@ export function analyzeCorporateRelations(input: {
           basis: "SHARED_NAME",
           status: "PENDING_REVIEW",
           consultedAt: left.consultedAt.toISOString(),
+          evidenceLabel: left.displayName?.trim() || left.nameKey || "",
         });
       }
     }

@@ -4,6 +4,7 @@
  */
 
 import { commercialCreditReasonMessage } from "./commercialCreditDecision.js";
+import { creditConfidenceFromEvidence, explainBlockedConfidence } from "./creditConfidence.js";
 import type {
   CommercialCreditDecision,
   CommercialCreditDecisionStatus,
@@ -251,6 +252,16 @@ export type CreditOverdueTitleView = {
   protested: boolean;
 };
 
+export type RelatedCreditRestrictionFact = {
+  companyName: string;
+  cnpj: string | null;
+  titleCount: number | null;
+  overdueAmount: number | null;
+  maxDaysOverdue: number | null;
+  syncedAt: string | null;
+  protest: boolean;
+};
+
 export type CommercialCreditIntelligenceView = {
   consulted: boolean;
   customerStatus: CommercialCreditDecisionStatus | null;
@@ -271,6 +282,7 @@ export type CommercialCreditIntelligenceView = {
   ownDecisionTitle: string;
   relatedRiskNote: string | null;
   pendingCorporateRelations: CorporateRelationView[];
+  relatedRestrictionLines: string[];
   situationLabel: string;
   reason: string | null;
   cadastralAuthorizesCredit: false;
@@ -296,6 +308,10 @@ export type CommercialCreditIntelligenceView = {
   corporateRelations: CorporateRelationView[];
   cadastralScoreLabel: string;
   cadastralVerdict: string | null;
+  confidenceScoreLabel: string;
+  confidenceDetail: string;
+  confidenceNote: string | null;
+  confidencePolicyVersion: string;
   authorizedExceptions: string[];
 };
 
@@ -326,6 +342,19 @@ function situationLabel(status: CommercialCreditDecisionStatus): string {
     case "BLOQUEIO_CRITICO":
       return "Bloqueio crítico";
   }
+}
+
+function relatedRestrictionLine(fact: RelatedCreditRestrictionFact, reveal: boolean): string {
+  const money = !reveal
+    ? "saldo restrito"
+    : fact.overdueAmount == null
+      ? "saldo não verificado"
+      : fact.overdueAmount.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+  const titles = fact.titleCount == null ? "títulos não verificados" : `${fact.titleCount} título(s) vencido(s)`;
+  const delay = fact.maxDaysOverdue == null ? "atraso não verificado" : `maior atraso ${fact.maxDaysOverdue} dias`;
+  const when = fact.syncedAt ? `informação de ${fact.syncedAt.slice(0, 10)}` : "data da informação indisponível";
+  const protest = fact.protest ? " Protesto confirmado na relacionada." : "";
+  return `${fact.companyName} · ${fact.cnpj ?? "CNPJ não informado"} · ${titles} · ${money} · ${delay} · ${when}.${protest} A dívida não foi transferida a este CNPJ.`;
 }
 
 function moneyLabel(value: number | null, reveal: boolean, consulted: boolean, unavailable: boolean, clear: boolean): string {
@@ -389,12 +418,18 @@ export function ieptbSituationLabel(
   confirmedProtest: boolean
 ): string {
   if (state === "NOT_CONSULTED") return "Não consultado";
+  if (state === "IN_PROGRESS") return "Consulta pendente";
+  if (state === "UNAVAILABLE" || state === "FAILED") return "Consulta indisponível";
   if (state === "STALE" && confirmedProtest) return "Ocorrência confirmada em consulta vencida";
   if (state === "STALE") return "Consulta vencida";
+  if (state === "PARTIAL") {
+    return confirmedProtest
+      ? "Ocorrência histórica preservada em consulta insuficiente"
+      : "Consulta insuficiente";
+  }
   if (confirmedProtest) return "Consulta concluída com ocorrência confirmada";
-  if (state === "PARTIAL") return "Consulta insuficiente";
   if (state === "VALID") return "Consulta concluída sem ocorrência";
-  return "Não consultado";
+  return "Consulta indisponível";
 }
 
 function internalProtestState(
@@ -491,9 +526,26 @@ export function notConsultedCommercialCreditView(): CommercialCreditIntelligence
     occurrenceLines: [],
     corporateRelations: [],
     pendingCorporateRelations: [],
+    relatedRestrictionLines: [],
     cadastralScoreLabel: INTELLIGENCE_FACT_LABEL.NOT_CONSULTED,
     cadastralVerdict: null,
+    ...confidencePresentation(creditConfidenceFromEvidence({
+      cadastralScore: null,
+      quodState: "NOT_CONSULTED",
+      quodConfirmedRestriction: false,
+      ieptbState: "NOT_CONSULTED",
+      ieptbConfirmedProtest: false,
+    })),
     authorizedExceptions: [],
+  };
+}
+
+function confidencePresentation(confidence: ReturnType<typeof creditConfidenceFromEvidence>, note: string | null = null) {
+  return {
+    confidenceScoreLabel: confidence.label,
+    confidenceDetail: `Cadastro ${confidence.cadastral.contribution}/${confidence.cadastral.maxContribution} · QUOD ${confidence.quod.contribution}/${confidence.quod.maxContribution} (${confidence.quod.status}) · IEPTB ${confidence.ieptb.contribution}/${confidence.ieptb.maxContribution} (${confidence.ieptb.status}) · Teto ${confidence.maximumPossibleScore} · ${confidence.policyVersion}`,
+    confidenceNote: note,
+    confidencePolicyVersion: confidence.policyVersion,
   };
 }
 
@@ -506,9 +558,16 @@ export function buildCommercialCreditIntelligenceView(input: {
   externalProtestConsultation?: ExternalProtestCreditFact | null;
   corporateRelations?: readonly CorporateRelationView[];
   pendingCorporateRelations?: readonly CorporateRelationView[];
+  relatedRestrictionFacts?: readonly RelatedCreditRestrictionFact[];
   ownCustomerStatus?: CommercialCreditDecisionStatus | null;
   authorizedExceptions?: readonly string[];
 }): CommercialCreditIntelligenceView {
+  const confidence = creditConfidenceFromEvidence(input.decision.evidence);
+  const confidenceNote = explainBlockedConfidence({
+    score: confidence.score,
+    customerStatus: input.decision.customerStatus,
+    reasons: input.decision.reasons,
+  });
   const status = input.decision.customerStatus;
   const unavailable = input.delinquency.status === "UNKNOWN";
   const clearBook = !unavailable && (input.delinquency.overdueTitleCount ?? 0) === 0 && status !== "BLOQUEADO" && status !== "BLOQUEIO_CRITICO";
@@ -570,11 +629,15 @@ export function buildCommercialCreditIntelligenceView(input: {
     occurrenceLines: [...(input.occurrenceLines ?? [])],
     corporateRelations: [...(input.corporateRelations ?? [])],
     pendingCorporateRelations: [...(input.pendingCorporateRelations ?? [])],
+    relatedRestrictionLines: (input.relatedRestrictionFacts ?? []).map((fact) =>
+      relatedRestrictionLine(fact, input.revealFinancial)
+    ),
     cadastralScoreLabel:
       input.decision.evidence.cadastralScore == null
         ? INTELLIGENCE_FACT_LABEL.NOT_CONSULTED
         : `${input.decision.evidence.cadastralScore}/100`,
     cadastralVerdict: input.decision.evidence.cadastralVerdict,
+    ...confidencePresentation(confidence, confidenceNote),
     authorizedExceptions: [...(input.authorizedExceptions ?? [])],
   };
 }

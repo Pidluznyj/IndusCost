@@ -5,6 +5,7 @@
 import type { PrismaClient } from "@prisma/client";
 import { createHash } from "node:crypto";
 import { attachCustomerCnpjRisk } from "./customerCnpjRiskSummary.server.js";
+import { attachPortfolioCredit } from "./commercial/portfolioCredit.server.js";
 import {
   attachCustomerCommercialOwnerListFields,
   prepareCommercialOwnerCustomerListFilter,
@@ -50,6 +51,7 @@ export async function loadCustomerListReportExportPayload(
     emitterName?: string | null;
     emitterEmail?: string | null;
     emitterUserId?: string | null;
+    evaluatedAt?: Date;
   }
 ): Promise<CustomerListReportExportPayload> {
   const list = parseCustomerListQuery(query);
@@ -76,14 +78,17 @@ export async function loadCustomerListReportExportPayload(
     select: CUSTOMER_LIST_EXPORT_SELECT,
   });
 
-  const withRisk = await attachCustomerCnpjRisk(prisma, items);
+  const evaluatedAt = options.evaluatedAt ?? new Date();
+  const withRisk = await attachCustomerCnpjRisk(prisma, items, evaluatedAt);
   const withOwners = await attachCustomerCommercialOwnerListFields(withRisk);
   const withLastPurchase = await attachCustomerLastPurchase(prisma, withOwners);
   const withBlocks = await attachCustomerSalesBlocks(prisma, withLastPurchase, {
     includeFinancialDetails: options.includeFinancialDetails,
+    now: evaluatedAt,
   });
+  const withCredit = await attachPortfolioCredit(prisma, withBlocks, evaluatedAt);
 
-  const rows = withBlocks.map((customer) =>
+  const rows = withCredit.map((customer) =>
     mapCustomerListReportExportRow({
       companyName: customer.companyName,
       tradeName: customer.tradeName,
@@ -97,6 +102,7 @@ export async function loadCustomerListReportExportPayload(
       lastPurchaseStatus: customer.lastPurchaseStatus,
       cnpjRisk: customer.cnpjRisk,
       salesBlock: customer.salesBlock,
+      portfolioCredit: customer.portfolioCredit,
     })
   );
 

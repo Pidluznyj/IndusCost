@@ -43,6 +43,8 @@ export type CommercialCreditEvaluationDraft = {
 export type CommercialCreditOperationSummary = {
   cadastralScoreLabel: string;
   cadastralVerdict: string | null;
+  confidenceScoreLabel: string;
+  confidenceNote: string | null;
   creditStatusLabel: string;
   statusCode: string | null;
   headline: string | null;
@@ -121,6 +123,8 @@ export function buildCommercialCreditOperationSummary(
   return {
     cadastralScoreLabel: view.cadastralScoreLabel,
     cadastralVerdict: view.cadastralVerdict,
+    confidenceScoreLabel: view.confidenceScoreLabel,
+    confidenceNote: view.confidenceNote,
     creditStatusLabel: view.situationLabel,
     statusCode: view.customerStatus,
     headline: view.headline,

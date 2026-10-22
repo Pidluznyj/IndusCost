@@ -40,6 +40,8 @@ export interface Customer {
   lastPurchaseAt?: string | null;
   lastPurchaseStatus?: import("../lib/commercial/customerLastPurchase").CustomerLastPurchaseStatus | null;
   salesBlock?: import("../lib/commercial/customerSalesBlockView").CustomerSalesBlockPublic | null;
+  /** Score de Confiança e decisão oficial da mesma leitura da carteira. */
+  portfolioCredit?: import("../lib/commercial/portfolioCredit").PortfolioCreditPublic | null;
 }
 
 export interface ProposalItem {

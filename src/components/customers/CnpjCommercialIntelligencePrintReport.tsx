@@ -142,9 +142,15 @@ export function CnpjCommercialIntelligencePrintReport({ data }: Props) {
                     Dívida de empresa relacionada não é dívida deste CNPJ. O score cadastral não autoriza crédito.
                   </p>
                   {data.credit.relatedRiskNote ? <p>{formatCnpjPrintText(data.credit.relatedRiskNote)}</p> : null}
-                  {data.credit.corporateRelations.length === 0 && data.credit.pendingCorporateRelations.length === 0 ? (
+                  {data.credit.corporateRelations.length === 0 ? (
                     <p>Nenhuma empresa relacionada confirmada.</p>
                   ) : null}
+                  {data.credit.pendingCorporateRelations.length > 0 ? (
+                    <p>Existem possíveis vínculos societários pendentes de validação.</p>
+                  ) : null}
+                  {data.credit.relatedRestrictionLines.map((line) => (
+                    <p key={line}>{formatCnpjPrintText(line)}</p>
+                  ))}
                   {data.credit.corporateRelations.map((relation) => (
                     <p key={`${relation.kindLabel}-${relation.relatedCompany}`}>
                       {formatCnpjPrintText(
@@ -215,6 +221,13 @@ export function CnpjCommercialIntelligencePrintReport({ data }: Props) {
         <p className="cnpj-intelligence-print-note">
           Indicador de consistência e características cadastrais. Não autoriza crédito nem venda a prazo.
         </p>
+        {data.credit ? (
+          <>
+            <p className="cnpj-intelligence-print-lead">Score de Confiança: {data.credit.confidenceScoreLabel}</p>
+            <p className="cnpj-intelligence-print-note">{data.credit.confidenceDetail}</p>
+            {data.credit.confidenceNote ? <p className="cnpj-intelligence-print-note">{data.credit.confidenceNote}</p> : null}
+          </>
+        ) : null}
         {data.risk.explanation.length > 0 ? (
           <ul className="cnpj-intelligence-print-list">
             {data.risk.explanation.map((line) => (

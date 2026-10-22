@@ -149,13 +149,13 @@ export function CustomerListReportPrintDocument({
                   <th className="col-client">Razão social</th>
                   <th className="col-trade">Nome fantasia</th>
                   <th className="col-cnpj">CNPJ</th>
-                  <th className="col-score">Score CNPJ</th>
+                  <th className="col-score">Score de Confiança</th>
                   <th className="col-owner">Responsável</th>
                   <th className="col-purchase">Última compra</th>
                   <th className="col-city">Localização</th>
                   <th className="col-seg">Segmento</th>
                   <th className="col-status">Status</th>
-                  <th className="col-block">Bloqueio</th>
+                  <th className="col-block">Decisão de crédito</th>
                 </tr>
               </thead>
               <tbody>
@@ -174,7 +174,7 @@ export function CustomerListReportPrintDocument({
                     <td className="col-status">
                       <span className={statusToneClass(row.status)}>{row.status}</span>
                     </td>
-                    <td className="col-block">{row.salesBlock || "—"}</td>
+                    <td className="col-block">{row.creditDecision || row.salesBlock || "—"}</td>
                   </tr>
                 ))}
               </tbody>

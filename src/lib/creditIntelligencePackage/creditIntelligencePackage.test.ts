@@ -442,17 +442,20 @@ describe("IEPTB parse e crédito", () => {
     assert.ok(decision.reasons.includes("IEPTB_NATIONAL_PROTEST"));
   });
 
-  it("IEPTB confirmado em cliente regular vai para análise, não libera", () => {
+  it("IEPTB confirmado e vigente bloqueia o prazo e o score não libera", () => {
     const decision = decideCommercialCredit({
       customerId: CUSTOMER,
       enforcement: "CREDIT_GRANT",
       paymentTerms: "30",
       delinquency: analysis(false),
+      cadastral: { score: 91, verdict: "VENDA LIBERADA" },
       ieptb: { state: "VALID", confirmedProtest: true, insufficient: false },
       now: new Date(2026, 9, 20),
     });
-    assert.equal(decision.customerStatus, "EM_ANALISE");
+    assert.equal(decision.customerStatus, "BLOQUEADO");
+    assert.equal(decision.allowed, false);
     assert.equal(decision.reason, "IEPTB_NATIONAL_PROTEST");
+    assert.equal(decision.cadastralIgnored, true);
   });
 });
 

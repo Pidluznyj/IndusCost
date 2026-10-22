@@ -21,26 +21,26 @@ const risk: CustomerCnpjRiskSummary = {
 };
 
 describe("CustomerCnpjRiskTag", () => {
-  it("mostra score e veredito como tag com a cor do veredito e tooltip completo", () => {
+  it("mostra o Score de Confiança sem o veredito de venda", () => {
     const html = renderToStaticMarkup(<CustomerCnpjRiskTag risk={risk} />);
-    assert.ok(html.includes("83 · VENDA LIBERADA"));
+    assert.ok(html.includes("66/100 · Regular"));
+    assert.equal(html.includes("VENDA LIBERADA"), false);
     assert.match(html, /data-testid="customer-cnpj-risk-tag"/);
-    assert.match(html, /data-tone="released"/);
-    assert.match(html, /bg-emerald-100/);
+    assert.match(html, /data-tone="unknown"/);
     assert.match(html, /whitespace-nowrap/);
-    assert.match(html, /title="Score 83\/100 · VENDA LIBERADA/);
-    assert.match(html, /Risco: Baixo — Prazos comerciais convencionais\./);
+    assert.match(html, /title="Score de Confiança 66\/100 · Regular/);
+    assert.match(html, /Score cadastral original: 83\/100/);
   });
 
-  it("cada veredito tem a sua cor; consulta vencida fica atenuada", () => {
+  it("a faixa muda com o score cadastral; consulta vencida fica atenuada", () => {
     const blocked = renderToStaticMarkup(<CustomerCnpjRiskTag risk={{ ...risk, score: 5, verdict: "VENDA BLOQUEADA" }} />);
-    assert.match(blocked, /data-tone="blocked"/);
-    assert.match(blocked, /bg-red-100/);
+    assert.match(blocked, /data-tone="unknown"/);
+    assert.ok(blocked.includes("4/100 · Baixo"));
+    assert.equal(blocked.includes("VENDA BLOQUEADA"), false);
     const advance = renderToStaticMarkup(<CustomerCnpjRiskTag risk={{ ...risk, score: 40, verdict: "APENAS PAGAMENTO ANTECIPADO" }} />);
-    assert.match(advance, /data-tone="advance"/);
-    assert.ok(advance.includes("40 · APENAS PAGAMENTO ANTECIPADO"));
+    assert.ok(advance.includes("32/100 · Baixo"));
     const conditional = renderToStaticMarkup(<CustomerCnpjRiskTag risk={{ ...risk, score: 70, verdict: "VENDA CONDICIONADA" }} />);
-    assert.match(conditional, /data-tone="conditional"/);
+    assert.ok(conditional.includes("56/100 · Regular"));
     const stale = renderToStaticMarkup(<CustomerCnpjRiskTag risk={{ ...risk, expired: true }} />);
     assert.match(stale, /data-expired="true"/);
     assert.match(stale, /opacity-70/);

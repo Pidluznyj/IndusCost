@@ -133,7 +133,7 @@ describe("customerListReportExport", () => {
       fetchedAt: "2026-09-30T12:00:00.000Z",
       expiresAt: "2026-10-01T12:00:00.000Z",
       expired: false,
-    }), /90 · VENDA LIBERADA/);
+    }), /72\/100 · Bom/);
   });
 
   it("filtros da tela entram na aba Filtros", () => {
@@ -176,12 +176,12 @@ describe("customerListReportExport", () => {
     const clientes = XLSX.utils.sheet_to_json<Record<string, unknown>>(parsed.Sheets.Clientes);
     assert.equal(clientes.length, 2);
     assert.equal(clientes[0]?.["Razão social"], "1 LINHA AGENCIA DE SERVICOS LTDA");
-    assert.equal(clientes[0]?.["Score CNPJ"], "90 · VENDA LIBERADA");
+    assert.equal(clientes[0]?.["Score de Confiança"], "72/100 · Bom");
     assert.equal(clientes[1]?.["Responsável comercial"], "Sem responsável");
     assert.equal(clientes[0]?.["Última compra"], "Nunca");
     assert.equal(Object.keys(clientes[0] ?? {}).indexOf("Última compra"), 5);
     assert.equal(clientes[1]?.["Bloqueio de venda"], "Venda bloqueada");
-    assert.match(String(clientes[1]?.["Score CNPJ"]), /consulta vencida/);
+    assert.match(String(clientes[1]?.["Score de Confiança"]), /consulta vencida/);
     const filtros = XLSX.utils.sheet_to_json<Record<string, unknown>>(parsed.Sheets.Filtros);
     assert.equal(filtros[0]?.Filtro, "Busca");
     assert.equal(filtros[0]?.Valor, "linha");

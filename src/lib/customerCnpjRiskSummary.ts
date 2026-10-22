@@ -16,6 +16,7 @@
 
 import type { CommercialRiskVerdict } from "./companyCommercialRiskScore.js";
 import { normalizeCnpj } from "./companyCnpjFormat.js";
+import { calculateCreditConfidence } from "./commercial/creditConfidence.js";
 
 export type CustomerCnpjRiskSummary = {
   lookupId: string;
@@ -141,7 +142,7 @@ export function customerCnpjRiskTone(verdict: string | null | undefined): Custom
 export const CUSTOMER_CNPJ_RISK_NO_LOOKUP_LABEL = "Sem consulta";
 
 export function formatCustomerCnpjRiskTagLabel(risk: CustomerCnpjRiskSummary): string {
-  return `${risk.score} · ${risk.verdict}`;
+  return calculateCreditConfidence({ cadastralScore: risk.score }).label;
 }
 
 function formatDateTimePtBr(iso: string): string {
@@ -151,10 +152,16 @@ function formatDateTimePtBr(iso: string): string {
 }
 
 export function formatCustomerCnpjRiskTooltip(risk: CustomerCnpjRiskSummary): string {
-  const parts = [`Score ${risk.score}/100 · ${risk.verdict}`];
-  if (risk.riskLevel || risk.saleRecommendation) {
-    parts.push(`Risco: ${risk.riskLevel ?? "—"}${risk.saleRecommendation ? ` — ${risk.saleRecommendation}` : ""}`);
-  }
+  const confidence = calculateCreditConfidence({ cadastralScore: risk.score });
+  const parts = [
+    `Score de Confiança ${confidence.label}`,
+    `Score cadastral original: ${confidence.cadastral.originalScore ?? "—"}/100`,
+    `Contribuição cadastral: ${confidence.cadastral.contribution}/${confidence.cadastral.maxContribution}`,
+    `Teto sem consulta externa: ${confidence.maximumPossibleScore}`,
+    `Política: ${confidence.policyVersion}`,
+    "Esta pontuação não autoriza venda a prazo. A decisão de crédito é outra informação.",
+  ];
+  if (risk.riskLevel) parts.push(`Nível cadastral: ${risk.riskLevel}`);
   parts.push(`Consulta: ${formatDateTimePtBr(risk.fetchedAt)} · Fonte: ${risk.source}`);
   if (risk.expired) parts.push("Consulta vencida (TTL 24h) — clique em Consulta CNPJ para atualizar.");
   return parts.join("\n");

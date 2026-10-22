@@ -80,7 +80,7 @@ describe("vínculos societários", () => {
     assert.equal(rows[1]?.documentKind, "MASKED");
     assert.equal(rows[1]?.memberCnpj, null);
     const persisted = rows.map(({ nameKey: _nameKey, ...rest }) => rest);
-    assert.equal(JSON.stringify(persisted).includes("PESSOA OCULTA"), false);
+    assert.match(persisted[1]?.displayName ?? "", /PESSOA OCULTA/);
     assert.equal(JSON.stringify(persisted).includes("123456"), false);
   });
 
@@ -205,7 +205,8 @@ describe("vínculos societários", () => {
     assert.equal(pendingFromA.length, 1);
     assert.equal(pendingFromA[0]?.status, "PENDING_REVIEW");
     assert.equal(pendingFromA[0]?.relatedCustomerId, B);
-    assert.equal(JSON.stringify(pendingFromA).includes("JOAO"), false);
+    assert.match(pendingFromA[0]?.evidenceLabel ?? "", /JOAO DA SILVA/);
+    assert.equal(JSON.stringify(pendingFromA).includes("52998224725"), false);
     const confirmedFromB = report.relations.filter((relation) => relation.subjectCustomerId === B && relation.basis === "SHARED_CNPJ");
     assert.equal(confirmedFromB[0]?.relatedCustomerId, C);
   });
@@ -269,8 +270,27 @@ describe("vínculos societários", () => {
     const db = {
       customer: {
         findUnique: async ({ where }: { where: { id: string } }) => customers.find((item) => item.id === where.id) ?? null,
-        findMany: async ({ where }: { where: { taxId: { in: string[] } } }) =>
-          customers.filter((item) => where.taxId.in.includes(item.taxId)),
+        findMany: async (args?: {
+          where?: {
+            taxId?: { in?: string[] };
+            id?: { in?: string[] };
+            OR?: Array<{ taxId?: { startsWith?: string } }>;
+          };
+          skip?: number;
+          take?: number;
+        }) => {
+          const where = args?.where;
+          let rows = customers;
+          if (where?.taxId?.in) rows = rows.filter((item) => where.taxId?.in?.includes(item.taxId));
+          if (where?.id?.in) rows = rows.filter((item) => where.id?.in?.includes(item.id));
+          const prefixes = (where?.OR ?? [])
+            .map((item) => item.taxId?.startsWith)
+            .filter((value): value is string => Boolean(value));
+          if (prefixes.length > 0) rows = rows.filter((item) => prefixes.some((prefix) => item.taxId.startsWith(prefix)));
+          const skip = args?.skip ?? 0;
+          const take = args?.take ?? rows.length;
+          return rows.slice(skip, skip + take);
+        },
       },
       salesOrder: { findMany: async () => [] },
       nomusAccountsReceivable: {
@@ -348,6 +368,7 @@ describe("vínculos societários", () => {
         registryKind: "LEAD",
         relatedCompanyName: "Beta",
         relatedCnpj: CNPJ_B,
+        relatedCustomerId: B,
         source: "brasilapi",
         consultedAt: FRESH.toISOString(),
         basis: "DIRECT_CNPJ",

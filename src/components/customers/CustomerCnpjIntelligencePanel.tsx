@@ -429,6 +429,12 @@ export function CustomerCnpjIntelligencePanel({
                 credit={credit}
                 loading={creditLoading}
                 error={creditError}
+                customerId={customerId}
+                canReviewCorporateLinks={(auth?.authUser?.effectivePermissions ?? []).some(
+                  (key) =>
+                    key === "commercial.credit.exception.grant" ||
+                    key === "commercial.credit.exception.grant.board"
+                )}
                 onRefresh={() => void loadCredit()}
               />
               <div className="cnpj-intelligence-no-print">
@@ -545,6 +551,12 @@ export function CustomerCnpjIntelligencePanel({
                 loading={creditLoading}
                 error={creditError}
                 sources={data.sources}
+                customerId={customerId}
+                canReviewCorporateLinks={(auth?.authUser?.effectivePermissions ?? []).some(
+                  (key) =>
+                    key === "commercial.credit.exception.grant" ||
+                    key === "commercial.credit.exception.grant.board"
+                )}
                 onRefresh={customerId ? () => void loadCredit() : undefined}
               />
               {customerId ? (
