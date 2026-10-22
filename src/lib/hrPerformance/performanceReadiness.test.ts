@@ -157,3 +157,96 @@ describe("calibração com todos os ângulos", () => {
     assert.equal(denied.ok, false);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Identidade dos avaliadores: o motivo de "sem acesso" é separado e a decisão continua sendo
+// só a conta ativa ligada ao colaborador (a mesma régua de loadScope / Minha equipe).
+// ---------------------------------------------------------------------------
+import { createServer as createEvaluatorServer } from "node:http";
+import type { AddressInfo as EvaluatorAddressInfo } from "node:net";
+import evaluatorExpress from "express";
+import { createMemoryPerformanceStore } from "./performancePrisma.js";
+import { registerPerformanceRoutes } from "./performanceRoutes.js";
+import type { EvaluatorIdentity, EvaluatorIdentityStatus } from "./evaluatorIdentity.js";
+
+const identity = (entries: Array<[string, EvaluatorIdentityStatus, string | null]>) =>
+  new Map<string, EvaluatorIdentity>(entries.map(([employeeId, status, personId]) => [employeeId, { employeeId, status, personId, accountId: status === "NO_ACCOUNT" ? null : `u-${employeeId}`, reason: `motivo ${status}` }]));
+
+describe("prontidão × identidade dos avaliadores", () => {
+  it("conta da mesma Pessoa sem vínculo (conta SUPER_ADMIN legada) vira pendência própria, BLOCK, com a Pessoa para regularizar", () => {
+    const { db, cycle } = prepared(people.map((p) => p.id));
+    const issues = cycleReadiness(db, cycle, ctx({ linkedEmployeeIds: new Set(["carla", "marcos"]), evaluatorIdentity: identity([["carla", "LINKED", "p-carla"], ["marcos", "LINKED", "p-marcos"], ["bruno", "ACCOUNT_NOT_LINKED", "p-bruno"]]) }), NOW);
+    const notLinked = issues.find((i) => i.code === "EVALUATOR_ACCOUNT_NOT_LINKED")!;
+    assert.equal(notLinked.severity, "BLOCK");
+    assert.equal(notLinked.action, "REGULARIZE_ACCOUNT");
+    assert.deepEqual(notLinked.people.map((p) => [p.name, p.personId]), [["Bruno Gerente", "p-bruno"]]);
+    assert.match(notLinked.people[0]!.detail ?? "", /avalia 3 pessoa/);
+    assert.ok(!issues.some((i) => i.code === "EVALUATOR_WITHOUT_USER"), "não é 'sem usuário': a conta existe");
+  });
+
+  it("cada motivo tem seu código: sem conta, conta inativa, conflito/Pessoa inativa — todos bloqueiam", () => {
+    const { db, cycle } = prepared(people.map((p) => p.id));
+    const issues = cycleReadiness(db, cycle, ctx({ linkedEmployeeIds: new Set(), evaluatorIdentity: identity([["carla", "NO_ACCOUNT", "p-carla"], ["bruno", "ACCOUNT_INACTIVE", "p-bruno"], ["marcos", "IDENTITY_CONFLICT", "p-marcos"]]) }), NOW);
+    assert.deepEqual(
+      issues.filter((i) => i.code.startsWith("EVALUATOR_")).map((i) => `${i.severity}:${i.code}:${i.action}:${i.people.map((p) => p.employeeId).join(",")}`).sort(),
+      ["BLOCK:EVALUATOR_ACCOUNT_INACTIVE:REVIEW_ACCOUNT:bruno", "BLOCK:EVALUATOR_IDENTITY_CONFLICT:REVIEW_IDENTITY:marcos", "BLOCK:EVALUATOR_WITHOUT_USER:LINK_USERS:carla"]
+    );
+  });
+
+  it("identidade canônica nunca libera: LINKED no mapa mas fora do conjunto ligado continua bloqueado", () => {
+    const { db, cycle } = prepared(people.map((p) => p.id));
+    const issues = cycleReadiness(db, cycle, ctx({ linkedEmployeeIds: new Set(["carla", "marcos"]), evaluatorIdentity: identity([["bruno", "ACCOUNT_NOT_LINKED", "p-bruno"]]) }), NOW);
+    assert.equal(readinessBlocked(issues).length, 1);
+  });
+
+  it("TOP_WITHOUT_EVALUATOR é independente do acesso: o topo que também avalia gera WARN de topo e, sem conta ligada, BLOCK de acesso", () => {
+    const { db, cycle } = prepared(people.map((p) => p.id), true, "TEST");
+    const issues = cycleReadiness(db, cycle, ctx({ linkedEmployeeIds: new Set(["bruno", "marcos"]), evaluatorIdentity: identity([["carla", "NO_ACCOUNT", null], ["bruno", "LINKED", null], ["marcos", "LINKED", null]]) }), NOW);
+    const top = issues.find((i) => i.code === "TOP_WITHOUT_EVALUATOR")!;
+    assert.equal(top.severity, "WARN");
+    assert.equal(top.action, "SET_EVALUATOR");
+    assert.deepEqual(top.people.map((p) => p.name), ["Carla Diretora"]);
+    const access = issues.find((i) => i.code === "EVALUATOR_WITHOUT_USER")!;
+    assert.deepEqual(access.people.map((p) => p.name), ["Carla Diretora"]);
+    // Resolver o acesso não some com o aviso de topo (e vice-versa).
+    const after = cycleReadiness(db, cycle, ctx({ linkedEmployeeIds: new Set(["carla", "bruno", "marcos"]) }), NOW);
+    assert.deepEqual(codes(after), ["WARN:TOP_WITHOUT_EVALUATOR"]);
+    assert.equal(readinessBlocked(after).length, 0, "ciclo TEST com topo sem avaliador abre (só aviso)");
+  });
+});
+
+describe("rota de prontidão usa a identidade dos avaliadores (antes e depois da regularização)", () => {
+  it("GET /readiness: ACCOUNT_NOT_LINKED bloqueia; depois de ligar a conta, só o aviso do topo", async () => {
+    const { db, cycleId } = prepared(people.map((p) => p.id), true, "TEST");
+    let state: Map<string, EvaluatorIdentity> = identity([["carla", "LINKED", "p-carla"], ["marcos", "LINKED", "p-marcos"], ["bruno", "ACCOUNT_NOT_LINKED", "p-bruno"]]);
+    const app = evaluatorExpress();
+    app.use(evaluatorExpress.json());
+    registerPerformanceRoutes(app, {
+      enabled: () => true,
+      options: { now: () => NOW, officialPublication: false, identityOtpEnabled: false, remindersEnabled: false, publicOrigin: "https://induscost.local" },
+      store: createMemoryPerformanceStore(db),
+      requireAppAuth: (_req, _res, next) => next(),
+      requireResource: () => (_req, _res, next) => next(),
+      can: async () => true,
+      loadScope: async () => ({ accessScope: "ALL", actorEmployeeId: null, teamIds: [] }),
+      loadEmployees: async (ids) => people.filter((e) => ids.includes(e.id)),
+      actorUserId: async () => "u-rh",
+      loadEvaluatorIdentities: async (ids) => new Map([...state].filter(([id]) => ids.includes(id))),
+    });
+    const server = createEvaluatorServer(app);
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
+    const port = (server.address() as EvaluatorAddressInfo).port;
+    try {
+      const get = async () => (await fetch(`http://127.0.0.1:${port}/api/hr/performance/cycles/${cycleId}/readiness`)).json() as Promise<{ issues: Array<{ code: string; severity: string }>; blocked: boolean }>;
+      const before = await get();
+      assert.equal(before.blocked, true);
+      assert.ok(before.issues.some((i) => i.code === "EVALUATOR_ACCOUNT_NOT_LINKED"));
+      state = identity([["carla", "LINKED", "p-carla"], ["marcos", "LINKED", "p-marcos"], ["bruno", "LINKED", "p-bruno"]]);
+      const after = await get();
+      assert.equal(after.blocked, false);
+      assert.deepEqual(after.issues.map((i) => `${i.severity}:${i.code}`), ["WARN:TOP_WITHOUT_EVALUATOR"]);
+    } finally {
+      server.close();
+    }
+  });
+});

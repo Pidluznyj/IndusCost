@@ -456,3 +456,5 @@ src/lib/people/personAccountLink.test.ts
 src/lib/people/personDriverEnable.test.ts
 src/lib/people/personAccessEnable.invariance.test.ts
 src/lib/people/personReviewFixes.test.ts
+src/lib/hrPerformance/evaluatorIdentity.test.ts
+src/lib/security/accountIdentityLinkPolicy.test.ts

@@ -37,7 +37,17 @@ export type BackfillApplyResult = {
   skippedAlreadyLinked: number;
   failed: Array<{ entityKind: string; entityId: string; error: string }>;
   linkedIds: Array<{ entityKind: string; entityId: string; personId: string }>;
+  /** Não ligados de propósito: mexeriam na identidade de uma conta — regularizar em Pessoas 360°. */
+  heldForRegularization: Array<{ entityKind: string; entityId: string; personId: string; reason: string }>;
 };
+
+/**
+ * Rotina interna formal (CLI com acesso ao banco). Não tem ator nem passa pela política de identidade
+ * de conta, por isso nunca: liga conta SUPER_ADMIN; liga conta a uma Pessoa que tem colaborador sem
+ * conta; põe colaborador na Pessoa de uma conta sem colaborador. Esses casos criariam a evidência
+ * "mesma Pessoa" do vínculo conta ↔ colaborador e ficam para a regularização auditada.
+ */
+export class BackfillHeld extends Error {}
 
 const DEFAULT_LIMIT = 2000;
 const ALL_KINDS: BackfillEntityKind[] = [
@@ -279,7 +289,7 @@ export async function scanCanonicalPersonBackfill(
   };
 }
 
-async function linkOne(
+export async function linkBackfillCandidate(
   prisma: PrismaClient,
   c: BackfillCandidate
 ): Promise<"linked" | "skipped"> {
@@ -293,6 +303,8 @@ async function linkOne(
       if (!cur) throw new Error("Employee não encontrado.");
       if (cur.personId === personId) return "skipped";
       if (cur.personId) throw new Error("Já possui personId diferente.");
+      const account = await prisma.appUser.findUnique({ where: { personId }, select: { employeeId: true } });
+      if (account && !account.employeeId) throw new BackfillHeld("Pessoa tem conta sem colaborador: ligar criaria a evidência conta ↔ colaborador.");
       await prisma.employee.update({
         where: { id: c.entityId },
         data: { personId },
@@ -302,11 +314,16 @@ async function linkOne(
     case "app_user": {
       const cur = await prisma.appUser.findUnique({
         where: { id: c.entityId },
-        select: { personId: true },
+        select: { personId: true, role: true, employeeId: true },
       });
       if (!cur) throw new Error("AppUser não encontrado.");
       if (cur.personId === personId) return "skipped";
       if (cur.personId) throw new Error("Já possui personId diferente.");
+      if (cur.role === "SUPER_ADMIN") throw new BackfillHeld("Conta SUPER_ADMIN: só por SUPER_ADMIN com step-up.");
+      if (!cur.employeeId) {
+        const freeEmployee = await prisma.employee.findFirst({ where: { personId, appUser: null }, select: { id: true } });
+        if (freeEmployee) throw new BackfillHeld("Pessoa tem colaborador sem conta: ligar criaria a evidência conta ↔ colaborador.");
+      }
       await prisma.appUser.update({
         where: { id: c.entityId },
         data: { personId },
@@ -380,6 +397,7 @@ export async function applyCanonicalPersonBackfill(
     skippedAlreadyLinked: 0,
     failed: [],
     linkedIds: [],
+    heldForRegularization: [],
   };
 
   // Uma transação por item: falha parcial não derruba o lote; idempotente.
@@ -388,7 +406,7 @@ export async function applyCanonicalPersonBackfill(
     for (const c of chunk) {
       try {
         await prisma.$transaction(async (tx) => {
-          const status = await linkOne(tx as unknown as PrismaClient, c);
+          const status = await linkBackfillCandidate(tx as unknown as PrismaClient, c);
           if (status === "skipped") {
             result.skippedAlreadyLinked += 1;
           } else {
@@ -413,6 +431,10 @@ export async function applyCanonicalPersonBackfill(
           );
         }
       } catch (err) {
+        if (err instanceof BackfillHeld) {
+          result.heldForRegularization.push({ entityKind: c.entityKind, entityId: c.entityId, personId: c.targetPersonId!, reason: err.message });
+          continue;
+        }
         result.failed.push({
           entityKind: c.entityKind,
           entityId: c.entityId,

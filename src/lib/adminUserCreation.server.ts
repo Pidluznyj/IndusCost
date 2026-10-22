@@ -20,7 +20,7 @@ import { hashPassword as defaultHashPassword } from "@/src/lib/auth/appAuth.serv
 import { SECURITY_AUDIT_EVENTS, writeSecurityAuditLog, type SecurityAuditSource } from "@/src/lib/auth/securityAudit.server.js";
 import { PERSON_LINK_EVENT_KINDS, recordPersonLinkEvent } from "@/src/lib/people/personLinkEvents.server.js";
 import { isPersonUuid } from "@/src/lib/canonicalPerson.js";
-import { lockPersonRows } from "@/src/lib/people/personLocks.server.js";
+import { lockPersonAccountLinks, lockPersonRows } from "@/src/lib/people/personLocks.server.js";
 
 function assertPersonStatusForAccount(status: string | null | undefined, viaEmployee: boolean): void {
   if (status === "MERGED") {
@@ -209,6 +209,11 @@ export async function createAppUserAccount(
         await lockPersonRows(tx, [personIdForUser], "SHARE");
         const fresh = await tx.person.findUnique({ where: { id: personIdForUser }, select: { status: true } });
         assertPersonStatusForAccount(fresh?.status, input.source.kind === "employee");
+        // Conta sem colaborador numa Pessoa que ganhou colaborador agora criaria a evidência "mesma Pessoa".
+        await lockPersonAccountLinks(tx, [personIdForUser]);
+        if (!employee && (await tx.employee.count({ where: { personId: personIdForUser } })) > 0) {
+          throw new AppUserCreationError("STALE", "A pessoa ganhou um colaborador durante a operação. Recarregue e tente de novo.", 409);
+        }
       }
       const created = await tx.appUser.create({
         data: {

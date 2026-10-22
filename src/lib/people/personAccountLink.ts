@@ -5,12 +5,13 @@
  * Nunca altera id, senha, papel, permissões, sessões, perfil nem vínculo comercial da conta.
  * Só personId (e employeeId quando a conta ainda não tem colaborador).
  */
-import { evaluateSuperAdminAccountOperation, superAdminGuardDenial, type SuperAdminGuardActor } from "@/src/lib/security/superAdminRoleGuard.js";
+import { accountIdentityChangeDenial } from "@/src/lib/security/accountIdentityLinkPolicy.js";
+import type { SuperAdminGuardActor } from "@/src/lib/security/superAdminRoleGuard.js";
 
 export type AttachAccountInput = {
   account: { id: string; role: string; personId: string | null; employeeId: string | null; isActive: boolean; email: string | null };
   /** Estado lido na prévia (comparação-e-troca). `undefined` = não checar. */
-  expected: { personId?: string | null; employeeId?: string | null };
+  expected: { personId?: string | null; employeeId?: string | null; /** colaborador que a prévia mostrou que seria ligado */ linkEmployeeId?: string | null };
   target: { id: string; status: string; userIds: string[]; employeeIds?: string[] };
   /** Colaborador a ligar (escolhido) ou o colaborador atual da conta; null quando não há. */
   employee: { id: string; status: string; personId: string | null; appUserId: string | null; corporateEmail: string | null } | null;
@@ -42,7 +43,8 @@ export function decideAttachAccount(args: AttachAccountInput): AttachAccountDeci
   if (expected.employeeId !== undefined && expected.employeeId !== account.employeeId) {
     return { ok: false, code: "STALE", status: 409, message: "O vínculo de colaborador da conta mudou desde a prévia. Recarregue." };
   }
-  const guard = superAdminGuardDenial(evaluateSuperAdminAccountOperation({ actor: args.actor, targetRole: account.role }));
+  // Política única (SUPER_ADMIN com step-up; nunca a própria conta, salvo SUPER_ADMIN elevado).
+  const guard = accountIdentityChangeDenial({ actor: args.actor, account: { id: account.id, role: account.role } });
   if (guard) return { ok: false, code: guard.code, status: guard.status as 403 | 409, message: guard.message };
 
   if (target.status === "MERGED") {
@@ -80,6 +82,9 @@ export function decideAttachAccount(args: AttachAccountInput): AttachAccountDeci
     }
   }
 
+  if (expected.linkEmployeeId !== undefined && (setEmployeeId ?? null) !== expected.linkEmployeeId) {
+    return { ok: false, code: "STALE", status: 409, message: "O colaborador a ligar mudou desde a prévia. Recarregue e confira antes de confirmar." };
+  }
   if (account.personId === target.id && !setEmployeeId && !setEmployeePersonId) {
     return { ok: false, code: "SAME", status: 409, message: "A conta já aponta para esta pessoa." };
   }

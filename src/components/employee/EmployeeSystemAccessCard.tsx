@@ -28,6 +28,8 @@ export type EmployeeUserLinkDto = {
     employeeId: string | null;
   } | null;
   emailMismatch: boolean;
+  /** Por que o vínculo não pode ser feito/desfeito aqui (identidade não confirmada ou a própria conta). */
+  linkBlockedReason?: string | null;
 };
 
 type Props = {
@@ -178,12 +180,19 @@ export function EmployeeSystemAccessCard({
             </div>
           )}
 
-          {!data.appUser && data.matchedUser && data.status === "available_match" && (
+          {!data.appUser && data.matchedUser && (data.status === "available_match" || data.status === "match_blocked") && (
             <div className="rounded-lg border border-sky-200 bg-sky-50/80 p-3 text-xs text-sky-950">
               Usuário encontrado com o mesmo e-mail ({data.matchedUser.email}
-              {!data.matchedUser.isActive ? ", inativo" : ""}). Confirme o vínculo abaixo.
+              {!data.matchedUser.isActive ? ", inativo" : ""}).{" "}
+              {data.canLink ? "Confirme o vínculo abaixo." : null}
             </div>
           )}
+
+          {data.linkBlockedReason ? (
+            <p className="rounded-lg border border-amber-200 bg-amber-50/80 p-3 text-xs text-amber-950" data-testid="employee-user-link-blocked">
+              {data.linkBlockedReason}
+            </p>
+          ) : null}
 
           {!data.appUser && data.status === "conflict" && (
             <div className="rounded-lg border border-amber-200 bg-amber-50/80 p-3 text-xs text-amber-950">

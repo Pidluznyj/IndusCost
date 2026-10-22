@@ -24,6 +24,9 @@ import {
   mapResolveItemToLegacyHit,
   resolvePeopleSearch,
 } from "@/src/lib/canonicalPersonSearch.server.js";
+import { employeePersonChangeDenial } from "@/src/lib/security/accountIdentityLinkPolicy.js";
+import { findAccountGainingEmployeeEvidence } from "@/src/lib/security/accountIdentityGuard.server.js";
+import type { SuperAdminGuardActor } from "@/src/lib/security/superAdminRoleGuard.js";
 
 export type PersonSearchHit = {
   key: string;
@@ -181,8 +184,8 @@ async function linkSourceToPerson(db: PersonDb, source: SourceIdentity, personId
       await db.employee.update({ where: { id: source.sourceId }, data: { personId } });
       return;
     case "app_user":
-      await db.appUser.update({ where: { id: source.sourceId }, data: { personId } });
-      return;
+      // Conta de acesso só muda de Pessoa pela política de identidade (Pessoas 360°), nunca por aqui.
+      throw accountRegularizationRequired();
     case "commission_person":
       await db.commissionPerson.update({ where: { id: source.sourceId }, data: { personId } });
       return;
@@ -197,6 +200,10 @@ async function linkSourceToPerson(db: PersonDb, source: SourceIdentity, personId
   }
 }
 
+const ACCOUNT_REGULARIZATION_MESSAGE =
+  "Conta de acesso só é ligada a uma Pessoa em Pessoas 360° › Regularizar vínculo existente (prévia, justificativa e auditoria).";
+const accountRegularizationRequired = () => new CanonicalPersonError("ACCOUNT_REGULARIZATION_REQUIRED", ACCOUNT_REGULARIZATION_MESSAGE, 409);
+
 /**
  * Garante a Pessoa de uma origem (colaborador, usuário, comissionável, motorista, cliente PF).
  *
@@ -206,6 +213,10 @@ async function linkSourceToPerson(db: PersonDb, source: SourceIdentity, personId
  *  - e-mail igual sem CPF → NÃO decide sozinho: 409 `DUPLICATE_PRIMARY_EMAIL` nomeando a candidata;
  *  - caso contrário cria pela regra canônica (`createPersonCore`, com as mesmas checagens).
  * Tudo dentro de uma transação (do chamador, ou própria).
+ *
+ * Identidade de conta: esta rotina não tem ator com autoridade sobre contas. Por isso nunca liga
+ * uma conta (origem `app_user` sem Pessoa → 409) e nunca põe um colaborador na Pessoa de uma
+ * conta sem colaborador (criaria a evidência "mesma Pessoa") — os dois vão para Pessoas 360°.
  */
 export async function ensurePersonFromSource(
   prisma: PrismaClient | PersonDb,
@@ -217,6 +228,7 @@ export async function ensurePersonFromSource(
       const p = await db.person.findUniqueOrThrow({ where: { id: source.personId } });
       return { id: p.id, displayName: p.displayName, created: false, reused: false, evidence: null };
     }
+    if (source.sourceKind === "app_user") throw accountRegularizationRequired();
     const { createPersonCore, findPersonIdentityHints } = await import("@/src/lib/canonicalPersonCore.server.js");
     const { recordPersonLinkEvent, PERSON_LINK_EVENT_KINDS } = await import("@/src/lib/people/personLinkEvents.server.js");
     const cpf = source.snapshot.cpfNormalized ?? null;
@@ -225,6 +237,9 @@ export async function ensurePersonFromSource(
       if (hints.byCpf.length === 1) {
         const existing = await db.person.findUniqueOrThrow({ where: { id: hints.byCpf[0]! } });
         if (existing.status !== "MERGED") {
+          if (source.sourceKind === "employee" && (await findAccountGainingEmployeeEvidence(db, { fromPersonId: null, toPersonId: existing.id }))) {
+            throw accountRegularizationRequired();
+          }
           await linkSourceToPerson(db, source, existing.id);
           await recordPersonLinkEvent(db, {
             personId: existing.id,
@@ -506,7 +521,9 @@ export async function planEmployeePersonLink(
  */
 export async function applyEmployeePersonLinkPlan(
   db: PersonDb,
-  plan: EmployeePersonLinkPlan
+  plan: EmployeePersonLinkPlan,
+  /** Ator e permissão efetiva de vínculo com usuário da requisição (ausente = sem autoridade sobre contas). */
+  accountIdentity?: { actor: SuperAdminGuardActor | null; canManageAccountIdentity: boolean }
 ): Promise<{ personId: string | null; appliedForm: PersonIdentitySnapshot; conflicts: FieldConflict[] }> {
   if (plan.kind === "NONE") {
     return { personId: null, appliedForm: plan.appliedForm, conflicts: [] };
@@ -553,6 +570,17 @@ export async function applyEmployeePersonLinkPlan(
     }
   }
   if (!personId) throw new CanonicalPersonError("PERSON_REQUIRED", "Selecione uma pessoa válida.");
+  // Colaborador entrando na Pessoa de uma conta sem colaborador = mudança de identidade daquela conta.
+  const fromPersonId = plan.existingEmployeeId
+    ? (await db.employee.findUnique({ where: { id: plan.existingEmployeeId }, select: { personId: true } }))?.personId ?? null
+    : null;
+  const affectedAccount = await findAccountGainingEmployeeEvidence(db, { fromPersonId, toPersonId: personId });
+  const denial = employeePersonChangeDenial({
+    actor: accountIdentity?.actor ?? null,
+    canManageAccountIdentity: Boolean(accountIdentity?.canManageAccountIdentity),
+    affectedAccount,
+  });
+  if (denial) throw new CanonicalPersonError(denial.code, denial.message, denial.status);
   await syncPersonIdentityFromAppliedForm(db as unknown as PrismaClient, personId, plan.appliedForm);
   if (plan.existingEmployeeId) {
     const { recordPersonLinkEvent, PERSON_LINK_EVENT_KINDS } = await import("@/src/lib/people/personLinkEvents.server.js");

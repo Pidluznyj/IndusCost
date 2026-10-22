@@ -145,7 +145,12 @@ export function CycleReadinessPanel({
                   <UserPlus className="h-4 w-4" aria-hidden /> Incluir os líderes
                 </button>
               ) : null}
-              {issue.action === "LINK_USERS" ? (
+              {issue.action === "LINK_USERS" || issue.action === "REGULARIZE_ACCOUNT" || issue.action === "REVIEW_IDENTITY" ? (
+                <a className={BTN_SECONDARY} href="/people" target="_blank" rel="noopener" data-testid={`perf-readiness-people-${issue.code}`}>
+                  Pessoas 360°
+                </a>
+              ) : null}
+              {issue.action === "REVIEW_ACCOUNT" ? (
                 <a className={BTN_SECONDARY} href="/settings/users" target="_blank" rel="noopener">
                   Configurações › Usuários
                 </a>
@@ -159,6 +164,11 @@ export function CycleReadinessPanel({
                       <span className="font-medium">{p.name}</span>
                       {p.detail ? <span className="text-xs text-muted-foreground"> · {p.detail}</span> : null}
                     </span>
+                    {p.personId && (issue.action === "LINK_USERS" || issue.action === "REGULARIZE_ACCOUNT" || issue.action === "REVIEW_IDENTITY" || issue.action === "REVIEW_ACCOUNT") ? (
+                      <a className={BTN_GHOST} href={`/people/${p.personId}`} target="_blank" rel="noopener" data-testid={`perf-readiness-person-${p.employeeId}`}>
+                        {issue.action === "REGULARIZE_ACCOUNT" ? "Regularizar na ficha" : issue.action === "LINK_USERS" ? "Habilitar acesso na ficha" : "Abrir ficha"}
+                      </a>
+                    ) : null}
                     {canManage && p.participantId && (issue.action === "SET_EVALUATOR" || issue.action === "REVIEW_LEADER") ? (
                       <button type="button" className={BTN_GHOST} onClick={() => onPickLeader(p.participantId!)} data-testid={`perf-readiness-leader-${p.name}`}>
                         <UserRoundCog className="h-3.5 w-3.5" aria-hidden /> {issue.action === "SET_EVALUATOR" ? "Definir avaliador" : "Trocar líder"}

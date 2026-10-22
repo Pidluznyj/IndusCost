@@ -4,15 +4,36 @@
  */
 
 import { Prisma, type PrismaClient } from "@prisma/client";
-import { evaluateSuperAdminAccountOperation, superAdminGuardDenial, type SuperAdminGuardActor } from "@/src/lib/security/superAdminRoleGuard.js";
+import type { SuperAdminGuardActor } from "@/src/lib/security/superAdminRoleGuard.js";
+import { accountIdentityChangeDenial, hasConfirmedAccountIdentity } from "@/src/lib/security/accountIdentityLinkPolicy.js";
+import { SECURITY_AUDIT_EVENTS, writeSecurityAuditLog } from "@/src/lib/auth/securityAudit.server.js";
+import { lockPersonAccountLinks } from "@/src/lib/people/personLocks.server.js";
 
-/** Vincular/desvincular colaborador de uma conta SUPER_ADMIN exige SUPER_ADMIN com step-up (E2 por identidade). */
-function assertAccountIdentityChangeAllowed(actor: SuperAdminGuardActor | undefined, targetRole: string | null | undefined) {
-  const denial = superAdminGuardDenial(
-    evaluateSuperAdminAccountOperation({ actor: actor ?? { id: null, role: null, elevated: false }, targetRole })
-  );
+type LinkOpts = { actorUserId?: string | null; actor?: SuperAdminGuardActor };
+
+/**
+ * Política única de identidade de conta (a mesma de Pessoas 360°): conta SUPER_ADMIN só por
+ * SUPER_ADMIN com step-up, e nunca a própria conta (salvo SUPER_ADMIN elevado). Sem ator
+ * identificado a operação é recusada (fail-closed).
+ */
+function assertAccountIdentityChangeAllowed(opts: LinkOpts | undefined, account: { id: string; role: string | null | undefined }) {
+  // As duas fontes do ator (sessão e guarda) contam para reconhecer a própria conta; sem nenhuma, a política recusa.
+  const actorId = account.id === opts?.actorUserId ? opts.actorUserId : (opts?.actor?.id ?? opts?.actorUserId ?? null);
+  const denial = accountIdentityChangeDenial({
+    actor: { id: actorId, role: opts?.actor?.role ?? null, elevated: Boolean(opts?.actor?.elevated) },
+    account,
+  });
   if (denial) throw new EmployeeRegistrationError(denial.code, denial.message, denial.status);
 }
+
+/** A rota rápida do RH só liga com a Pessoa compartilhada ATIVA; a mensagem diz o motivo real. */
+const personNotActiveMessage = (status: string | null | undefined) =>
+  status === "NEEDS_REVIEW"
+    ? "A identidade desta Pessoa está em revisão. Conclua a revisão em Pessoas 360° antes de ligar a conta."
+    : "A Pessoa deste colaborador está inativa ou unificada. Resolva a identidade em Pessoas 360° antes de vincular a conta.";
+
+const IDENTITY_CONFIRMATION_MESSAGE =
+  "E-mail igual não confirma a identidade. Regularize em Pessoas 360° › Regularizar vínculo existente (prévia, confirmação e justificativa).";
 import { normalizeCorporateEmail } from "@/src/lib/employeeCorporateEmail.js";
 import {
   EmployeeRegistrationError,
@@ -49,17 +70,21 @@ export type EmployeeUserLinkDto = {
   } | null;
   /** Login e e-mail corporativo diferem (após alteração de e-mail). */
   emailMismatch: boolean;
+  /** Por que vincular/desvincular não está disponível aqui (identidade não confirmada ou a própria conta). */
+  linkBlockedReason: string | null;
 };
 
 export async function getEmployeeUserLinkStatus(
   prisma: PrismaClient,
-  employeeId: string
+  employeeId: string,
+  opts?: { viewerUserId?: string | null }
 ): Promise<EmployeeUserLinkDto> {
   const emp = await prisma.employee.findUnique({
     where: { id: employeeId },
     select: {
       id: true,
       corporateEmail: true,
+      personId: true,
       appUser: {
         select: { id: true, email: true, isActive: true, role: true, name: true },
       },
@@ -76,12 +101,17 @@ export async function getEmployeeUserLinkStatus(
     employeeId: string | null;
     isActive: boolean;
   } | null = null;
+  let matchingPersonId: string | null = null;
 
   if (corporateEmail && !emp.appUser) {
-    matchingUser = await prisma.appUser.findFirst({
+    const found = await prisma.appUser.findFirst({
       where: { email: { equals: corporateEmail, mode: "insensitive" } },
-      select: { id: true, email: true, employeeId: true, isActive: true },
+      select: { id: true, email: true, employeeId: true, isActive: true, personId: true },
     });
+    if (found) {
+      matchingUser = { id: found.id, email: found.email, employeeId: found.employeeId, isActive: found.isActive };
+      matchingPersonId = found.personId ?? null;
+    }
   }
 
   const link = resolveUserLinkStatus({
@@ -101,25 +131,41 @@ export async function getEmployeeUserLinkStatus(
     emailMismatch,
   });
 
-  const canLink =
-    status === "available_match" &&
-    Boolean(corporateEmail) &&
-    Boolean(matchingUser) &&
-    !matchingUser?.employeeId;
-
+  // Mesma régua da gravação (somente leitura): Pessoa canônica confirmada e nunca a própria conta.
+  const viewer = opts?.viewerUserId ?? null;
+  const matchable = status === "available_match" && Boolean(corporateEmail) && Boolean(matchingUser) && !matchingUser?.employeeId;
+  const confirmed = hasConfirmedAccountIdentity({ accountPersonId: matchingPersonId, employeePersonId: emp.personId });
+  const ownMatch = Boolean(viewer && matchingUser && matchingUser.id === viewer);
+  const ownLinked = Boolean(viewer && emp.appUser && emp.appUser.id === viewer);
+  const personStatus = matchable && confirmed && emp.personId
+    ? (await prisma.person.findUnique({ where: { id: emp.personId }, select: { status: true } }))?.status ?? null
+    : null;
+  const personActive = personStatus === "ACTIVE";
+  const canLink = matchable && confirmed && personActive && !ownMatch;
   const canUnlink =
-    status === "linked" || status === "linked_inactive" || status === "email_mismatch";
+    (status === "linked" || status === "linked_inactive" || status === "email_mismatch") && !ownLinked;
+  const linkBlockedReason =
+    ownMatch || ownLinked
+      ? "É a sua própria conta: peça a outro administrador."
+      : matchable && !confirmed
+        ? IDENTITY_CONFIRMATION_MESSAGE
+        : matchable && !personActive
+          ? personNotActiveMessage(personStatus)
+          : null;
+  // O selo "disponível para vínculo" só quando a operação está de fato disponível.
+  const shownStatus: EmployeeUserAccessState = matchable && !canLink ? "match_blocked" : status;
 
   return {
     employeeId: emp.id,
     corporateEmail,
-    status,
-    message: accessStateMessage(status),
+    status: shownStatus,
+    message: accessStateMessage(shownStatus),
     canLink,
     canUnlink,
     appUser: emp.appUser,
     matchedUser: matchingUser,
     emailMismatch,
+    linkBlockedReason,
   };
 }
 
@@ -170,7 +216,7 @@ export async function findAppUserByLoginEmail(
 export async function linkEmployeeToAppUser(
   prisma: PrismaClient,
   employeeId: string,
-  opts?: { actorUserId?: string | null; actor?: SuperAdminGuardActor }
+  opts?: LinkOpts
 ): Promise<{
   appUser: { id: string; email: string; isActive: boolean; role: string; name: string };
 }> {
@@ -213,24 +259,13 @@ export async function linkEmployeeToAppUser(
         404
       );
     }
-    assertAccountIdentityChangeAllowed(opts?.actor, user.role);
+    assertAccountIdentityChangeAllowed(opts, { id: user.id, role: user.role });
     if (user.employeeId && user.employeeId !== employeeId) {
       throw new EmployeeRegistrationError(
         "APPUSER_ALREADY_LINKED",
         "Este usuário já está vinculado a outro colaborador.",
         409
       );
-    }
-    if (emp.personId && !user.personId) {
-      // Cadastro mestre: Pessoa inativa nunca é copiada para a conta em silêncio.
-      const person = await tx.person.findUnique({ where: { id: emp.personId }, select: { status: true } });
-      if (person && person.status !== "ACTIVE") {
-        throw new EmployeeRegistrationError(
-          "PERSON_INACTIVE",
-          "A Pessoa deste colaborador está inativa ou unificada. Resolva a identidade em Pessoas 360° antes de vincular a conta.",
-          409
-        );
-      }
     }
     if (user.personId && emp.personId && user.personId !== emp.personId) {
       throw new EmployeeRegistrationError(
@@ -239,15 +274,34 @@ export async function linkEmployeeToAppUser(
         409
       );
     }
+    // E-mail igual não basta (o e-mail corporativo é editável por quem opera): exige a mesma Pessoa
+    // canônica nos dois lados. Fora disso, a regularização de Pessoas 360° (prévia + justificativa).
+    if (!hasConfirmedAccountIdentity({ accountPersonId: user.personId, employeePersonId: emp.personId })) {
+      throw new EmployeeRegistrationError("IDENTITY_CONFIRMATION_REQUIRED", IDENTITY_CONFIRMATION_MESSAGE, 409);
+    }
+    // Serializa com quem põe colaborador/conta nesta Pessoa (evidência "mesma Pessoa").
+    await lockPersonAccountLinks(tx, [emp.personId]);
+    const freshEmp = await tx.employee.findUnique({ where: { id: employeeId }, select: { personId: true, appUser: { select: { id: true } } } });
+    if (!freshEmp || freshEmp.personId !== emp.personId || freshEmp.appUser) {
+      throw new EmployeeRegistrationError("STALE", "O colaborador mudou durante a operação. Recarregue e tente de novo.", 409);
+    }
+    const person = await tx.person.findUnique({ where: { id: emp.personId! }, select: { status: true } });
+    if (!person || person.status !== "ACTIVE") {
+      throw new EmployeeRegistrationError("PERSON_INACTIVE", personNotActiveMessage(person?.status), 409);
+    }
 
-    let updated: { id: string; email: string; isActive: boolean; role: string; name: string };
+    let updated: { id: string; email: string; isActive: boolean; role: string; name: string } | null;
     try {
-      updated = await tx.appUser.update({
+      // Comparação-e-troca: só grava se a conta ainda está como foi lida (sem colaborador, mesma Pessoa).
+      const r = await tx.appUser.updateMany({
+        where: { id: user.id, employeeId: null, personId: user.personId },
+        data: { employeeId },
+      });
+      if (r.count !== 1) {
+        throw new EmployeeRegistrationError("STALE", "A conta mudou durante a operação. Recarregue e tente de novo.", 409);
+      }
+      updated = await tx.appUser.findUnique({
         where: { id: user.id },
-        data: {
-          employeeId,
-          ...(emp.personId && !user.personId ? { personId: emp.personId } : {}),
-        },
         select: { id: true, email: true, isActive: true, role: true, name: true },
       });
     } catch (error) {
@@ -266,29 +320,21 @@ export async function linkEmployeeToAppUser(
       }
       throw error;
     }
-    if (emp.personId && !user.personId) {
-      const { recordPersonLinkEvent, PERSON_LINK_EVENT_KINDS } = await import("@/src/lib/people/personLinkEvents.server.js");
-      await recordPersonLinkEvent(tx, {
-        personId: emp.personId,
-        eventKind: PERSON_LINK_EVENT_KINDS.LINKED,
-        entityKind: "app_user",
-        entityId: user.id,
-        toPersonId: emp.personId,
-        actorUserId: opts?.actorUserId ?? null,
-        reason: "Conta vinculada ao colaborador pelo RH (e-mail corporativo igual)",
-        evidence: "EMAIL_EXACT",
-        snapshot: { employeeId, source: "HR_LINK_USER" },
-        reversible: true,
-      });
-    }
+    if (!updated) throw new EmployeeRegistrationError("STALE", "A conta mudou durante a operação. Recarregue e tente de novo.", 409);
+    const actorUserId = opts?.actorUserId ?? opts?.actor?.id ?? null;
+    await writeSecurityAuditLog(tx, {
+      eventType: SECURITY_AUDIT_EVENTS.USER_IDENTITY_LINKED,
+      actorUserId,
+      targetUserId: user.id,
+      metadata: { source: "HR_LINK_USER", employeeId, personId: emp.personId, evidence: "CANONICAL_PERSON", touchesSuperAdmin: user.role === "SUPER_ADMIN" },
+    });
 
     console.info(
       JSON.stringify({
         audit: "employee.link_user",
         employeeId,
         appUserId: updated.id,
-        actorUserId: opts?.actorUserId ?? null,
-        syncedPersonId: Boolean(emp.personId && !user.personId),
+        actorUserId,
         at: new Date().toISOString(),
       })
     );
@@ -300,7 +346,7 @@ export async function linkEmployeeToAppUser(
 export async function unlinkEmployeeFromAppUser(
   prisma: PrismaClient,
   employeeId: string,
-  opts?: { actorUserId?: string | null; actor?: SuperAdminGuardActor }
+  opts?: LinkOpts
 ): Promise<{ ok: true; appUserId: string }> {
   return prisma.$transaction(async (tx) => {
     const emp = await tx.employee.findUnique({
@@ -323,12 +369,22 @@ export async function unlinkEmployeeFromAppUser(
       );
     }
 
-    assertAccountIdentityChangeAllowed(opts?.actor, emp.appUser.role);
-    // Desvincular não remove SUPER_ADMIN nem desativa — apenas limpa employeeId.
+    assertAccountIdentityChangeAllowed(opts, { id: emp.appUser.id, role: emp.appUser.role });
+    // Desvincular não remove SUPER_ADMIN nem desativa — apenas limpa employeeId (comparação-e-troca).
     const appUserId = emp.appUser.id;
-    await tx.appUser.update({
-      where: { id: appUserId },
+    const r = await tx.appUser.updateMany({
+      where: { id: appUserId, employeeId },
       data: { employeeId: null },
+    });
+    if (r.count !== 1) {
+      throw new EmployeeRegistrationError("STALE", "O vínculo mudou durante a operação. Recarregue e tente de novo.", 409);
+    }
+    const actorUserId = opts?.actorUserId ?? opts?.actor?.id ?? null;
+    await writeSecurityAuditLog(tx, {
+      eventType: SECURITY_AUDIT_EVENTS.USER_IDENTITY_UNLINKED,
+      actorUserId,
+      targetUserId: appUserId,
+      metadata: { source: "HR_UNLINK_USER", employeeId, touchesSuperAdmin: emp.appUser.role === "SUPER_ADMIN" },
     });
 
     console.info(
@@ -336,7 +392,7 @@ export async function unlinkEmployeeFromAppUser(
         audit: "employee.unlink_user",
         employeeId,
         appUserId,
-        actorUserId: opts?.actorUserId ?? null,
+        actorUserId,
         note: "AppUser permanece ativo; e-mail de login inalterado",
         at: new Date().toISOString(),
       })

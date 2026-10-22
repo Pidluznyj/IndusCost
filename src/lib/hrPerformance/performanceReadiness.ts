@@ -5,18 +5,38 @@
  *
  * - L1  ciclo oficial sem modelo de liderança: ninguém avaliaria o próprio líder (BLOCK).
  * - L2  liderado no ciclo cujo líder ficou fora: a equipe não avaliaria o líder e ele não seria avaliado (BLOCK).
- * - L3  avaliador sem usuário vinculado: a avaliação dele nunca seria respondida (BLOCK).
+ * - L3  avaliador sem conta ativa ligada ao colaborador (AppUser.employeeId): a avaliação dele nunca
+ *       seria respondida (BLOCK). Com a identidade dos avaliadores (evaluatorIdentity), o motivo é
+ *       separado: sem conta, conta da mesma Pessoa sem vínculo (regularizar), conta inativa, conflito.
  * - L4  topo da estrutura sem avaliador: só calibração por exceção (WARN, com ação para definir).
  * - L11 líder atual há menos que a observação mínima: avaliação de quem mal se conhece (WARN).
  * - líder no ciclo, mas não elegível: a equipe não o avalia neste ciclo (WARN).
  */
 import { eligibleParticipants, liveParticipants } from "./performanceService.js";
 import type { CycleRecord, ParticipantRecord, PerformanceDatabase } from "./performanceState.js";
+import type { EvaluatorIdentity, EvaluatorIdentityStatus } from "./evaluatorIdentity.js";
 
-export type ReadinessAction = "SET_LEADERSHIP_MODEL" | "INCLUDE_LEADERS" | "LINK_USERS" | "SET_EVALUATOR" | "REVIEW_LEADER";
-export type ReadinessPerson = { participantId: string | null; employeeId: string; name: string; detail?: string | null };
+export type ReadinessAction =
+  | "SET_LEADERSHIP_MODEL"
+  | "INCLUDE_LEADERS"
+  | "LINK_USERS"
+  | "REGULARIZE_ACCOUNT"
+  | "REVIEW_ACCOUNT"
+  | "REVIEW_IDENTITY"
+  | "SET_EVALUATOR"
+  | "REVIEW_LEADER";
+export type ReadinessPerson = { participantId: string | null; employeeId: string; name: string; detail?: string | null; personId?: string | null };
 export type ReadinessIssue = {
-  code: "LEADERSHIP_MODEL_REQUIRED" | "LEADER_OUTSIDE_CYCLE" | "EVALUATOR_WITHOUT_USER" | "TOP_WITHOUT_EVALUATOR" | "RECENT_LEADER_CHANGE" | "LEADER_NOT_ELIGIBLE";
+  code:
+    | "LEADERSHIP_MODEL_REQUIRED"
+    | "LEADER_OUTSIDE_CYCLE"
+    | "EVALUATOR_WITHOUT_USER"
+    | "EVALUATOR_ACCOUNT_NOT_LINKED"
+    | "EVALUATOR_ACCOUNT_INACTIVE"
+    | "EVALUATOR_IDENTITY_CONFLICT"
+    | "TOP_WITHOUT_EVALUATOR"
+    | "RECENT_LEADER_CHANGE"
+    | "LEADER_NOT_ELIGIBLE";
   severity: "BLOCK" | "WARN";
   title: string;
   message: string;
@@ -26,8 +46,10 @@ export type ReadinessIssue = {
 
 /** Dados de fora do módulo (cadastro e usuários), lidos pela rota. */
 export type ReadinessContext = {
-  /** Colaboradores com usuário ativo vinculado. */
+  /** Colaboradores com conta ativa ligada (AppUser.employeeId) — a mesma identidade que "Minha equipe" usa. */
   linkedEmployeeIds: ReadonlySet<string>;
+  /** Por que cada avaliador não está apto (somente leitura). Sem ele, tudo vira EVALUATOR_WITHOUT_USER. */
+  evaluatorIdentity?: ReadonlyMap<string, EvaluatorIdentity>;
   /** Desde quando cada pessoa está com o líder atual (último registro de troca de gestor no cadastro). */
   leaderSince: ReadonlyMap<string, { since: string; managerId: string | null; previousManagerName: string | null }>;
   /** Nome de quem não é participante (líder fora do ciclo). */
@@ -85,20 +107,53 @@ export function cycleReadiness(db: PerformanceDatabase, cycle: CycleRecord, ctx:
     });
   }
 
-  // Avaliadores que não conseguiriam responder (sem usuário no sistema).
-  const withoutUser = readinessEvaluatorIds(db, cycle.id).filter((id) => !ctx.linkedEmployeeIds.has(id));
+  // Avaliadores que não conseguiriam responder: sem conta ativa ligada ao colaborador.
+  // O motivo vem da identidade dos avaliadores; a decisão continua sendo só o vínculo direto.
+  const notLinked = readinessEvaluatorIds(db, cycle.id).filter((id) => !ctx.linkedEmployeeIds.has(id));
+  const evaluatorPerson = (id: string, detail: string): ReadinessPerson => {
+    const p = byEmployee.get(id);
+    const team = eligible.filter((x) => x.managerId === id).length;
+    return { participantId: p?.id ?? null, employeeId: id, name: p?.employeeName ?? ctx.names.get(id) ?? id, detail: `avalia ${team} pessoa(s)${detail ? ` · ${detail}` : ""}`, personId: ctx.evaluatorIdentity?.get(id)?.personId ?? null };
+  };
+  const statusOf = (id: string): EvaluatorIdentityStatus => ctx.evaluatorIdentity?.get(id)?.status ?? "NO_ACCOUNT";
+  const groups: Array<{ statuses: EvaluatorIdentityStatus[]; code: ReadinessIssue["code"]; action: ReadinessAction; title: (n: number) => string; message: string }> = [
+    {
+      statuses: ["ACCOUNT_NOT_LINKED"],
+      code: "EVALUATOR_ACCOUNT_NOT_LINKED",
+      action: "REGULARIZE_ACCOUNT",
+      title: (n) => `${n} avaliador(es) com conta sem vínculo ao colaborador`,
+      message:
+        "A pessoa tem conta ativa (mesma Pessoa canônica), mas a conta não está ligada ao colaborador; sem esse vínculo ela não vê a equipe em Minha equipe. Regularize em Pessoas 360° › Regularizar vínculo existente (prévia, justificativa e auditoria). Nada é ligado automaticamente.",
+    },
+    {
+      statuses: ["ACCOUNT_INACTIVE"],
+      code: "EVALUATOR_ACCOUNT_INACTIVE",
+      action: "REVIEW_ACCOUNT",
+      title: (n) => `${n} avaliador(es) com conta inativa`,
+      message: "A conta existe, mas está inativa. Reative em Configurações › Usuários (e regularize o vínculo em Pessoas 360°, se indicado) ou troque o avaliador.",
+    },
+    {
+      statuses: ["IDENTITY_CONFLICT", "PERSON_NOT_ACTIVE"],
+      code: "EVALUATOR_IDENTITY_CONFLICT",
+      action: "REVIEW_IDENTITY",
+      title: (n) => `${n} avaliador(es) com identidade a revisar`,
+      message: "Conta e colaborador não batem com segurança (conta ligada a outro colaborador, Pessoa com mais de um colaborador, ou Pessoa inativa/unificada). Revise a ficha em Pessoas 360°; nada é escolhido automaticamente.",
+    },
+  ];
+  for (const g of groups) {
+    const ids = notLinked.filter((id) => g.statuses.includes(statusOf(id)));
+    if (ids.length === 0) continue;
+    issues.push({ code: g.code, severity: "BLOCK", title: g.title(ids.length), message: g.message, action: g.action, people: ids.map((id) => evaluatorPerson(id, ctx.evaluatorIdentity?.get(id)?.reason ?? "")) });
+  }
+  const withoutUser = notLinked.filter((id) => statusOf(id) === "NO_ACCOUNT");
   if (withoutUser.length > 0) {
     issues.push({
       code: "EVALUATOR_WITHOUT_USER",
       severity: "BLOCK",
       title: `${withoutUser.length} avaliador(es) sem acesso ao sistema`,
-      message: "Estes líderes avaliam a equipe na aba Minha equipe e precisam de usuário vinculado ao cadastro (Configurações › Usuários). Outra saída é trocar o avaliador.",
+      message: "Estes líderes avaliam a equipe na aba Minha equipe e precisam de uma conta ativa ligada ao colaborador. Crie pela ficha da Pessoa (Pessoas 360° › Habilitar acesso), que já nasce ligada ao colaborador. Outra saída é trocar o avaliador.",
       action: "LINK_USERS",
-      people: withoutUser.map((id) => {
-        const p = byEmployee.get(id);
-        const team = eligible.filter((x) => x.managerId === id).length;
-        return { participantId: p?.id ?? null, employeeId: id, name: p?.employeeName ?? ctx.names.get(id) ?? id, detail: `avalia ${team} pessoa(s)` };
-      }),
+      people: withoutUser.map((id) => evaluatorPerson(id, "")),
     });
   }
 

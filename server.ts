@@ -716,6 +716,7 @@ import {
 } from "./src/lib/adminUserEmployeeLink.js";
 import { resolveNewUserInitialAccess } from "./src/lib/adminUserCreationPolicy.js";
 import { AppUserCreationError, createAppUserAccount } from "./src/lib/adminUserCreation.server.js";
+import { loadEvaluatorIdentities, loadLinkedEvaluatorIds } from "./src/lib/hrPerformance/evaluatorIdentity.server.js";
 import { resolveAppUserSellerLinkFromBody } from "./src/lib/adminUserSellerLink.js";
 import { syncCommissionPersonFromAppUserSellerLink } from "./src/lib/commissions/commissionPersonAppUserSync.server.js";
 import { evaluateAppUserDeleteGuard } from "./src/lib/adminUserDelete.js";
@@ -2229,6 +2230,48 @@ async function startServer() {
     });
   }
 
+  /** Atalho do editor de RH: só supre a ausência de grant (DENY_DEFAULT), nunca um deny explícito. */
+  async function hrEditorFallbackAllows(
+    req: express.Request,
+    resourceKey: string,
+    action: string,
+    decision: Awaited<ReturnType<typeof authorizeResourceRequest>>
+  ): Promise<boolean> {
+    const moduleWrite =
+      resourceKey === EMPLOYEES_RESOURCE_KEYS.module &&
+      (action === EMPLOYEES_ACTIONS.create || action === EMPLOYEES_ACTIONS.update);
+    if (!resourceKey.startsWith(`${EMPLOYEES_RESOURCE_KEYS.module}.`) && !moduleWrite) return false;
+    // `=== false`: sem strictNullChecks o `!decision.ok` não estreita a união.
+    if (!(decision.ok === false && decision.status === 403 && decision.source === "DENY_DEFAULT")) return false;
+    const authUser = (req as { appAuth?: AppAuthContext }).appAuth ?? null;
+    const denyKey = `${decision.resourceKey ?? resourceKey}:${decision.action ?? action}`;
+    return Boolean(
+      authUser &&
+        authUser.isActive !== false &&
+        employeePermCheck(authUser).isHrEditor &&
+        !(authUser.canonicalAccess?.overrideDenied ?? []).includes(denyKey)
+    );
+  }
+
+  /** Mesma régua de requireResourceOrHrEditor, sem efeito HTTP (decisão por objeto dentro de serviços). */
+  async function allowsResourceOrHrEditor(req: express.Request, resourceKey: string, action: string): Promise<boolean> {
+    try {
+      const decision = await authorizeResourceRequest(req, resourceKey, action);
+      if (decision.ok) return true;
+      return await hrEditorFallbackAllows(req, resourceKey, action, decision);
+    } catch {
+      return false;
+    }
+  }
+
+  /** Ator da política de identidade de conta: usuário da sessão + papel + step-up. */
+  async function resolveAccountIdentityContext(req: express.Request) {
+    return {
+      actor: resolveSuperAdminGuardActor(req),
+      canManageAccountIdentity: await allowsResourceOrHrEditor(req, EMPLOYEES_RESOURCE_KEYS.userLink, EMPLOYEES_ACTIONS.manage),
+    };
+  }
+
   /**
    * Guard de escrita do cadastro (POST / PUT / status) e das rotas auxiliares
    * (lookups / vínculos): em `admin.employees:create|update` e nas facetas
@@ -2253,18 +2296,8 @@ async function startServer() {
         const decision = await authorizeResourceRequest(req, resourceKey, action);
         // Só ausência de grant (DENY_DEFAULT) é suprida; deny explícito, recurso
         // desconhecido, usuário inativo etc. seguem para a negativa oficial.
-        // `=== false`: sem strictNullChecks o `!decision.ok` não estreita a união.
-        if (decision.ok === false && decision.status === 403 && decision.source === "DENY_DEFAULT") {
-          const authUser = (req as { appAuth?: AppAuthContext }).appAuth ?? null;
-          const denyKey = `${decision.resourceKey ?? resourceKey}:${decision.action ?? action}`;
-          if (
-            authUser &&
-            authUser.isActive !== false &&
-            employeePermCheck(authUser).isHrEditor &&
-            !(authUser.canonicalAccess?.overrideDenied ?? []).includes(denyKey)
-          ) {
-            return next();
-          }
+        if (await hrEditorFallbackAllows(req, resourceKey, action, decision)) {
+          return next();
         }
       } catch {
         // Falha ao pré-avaliar: o guard oficial decide (e responde 500 se for o caso).
@@ -3752,6 +3785,8 @@ app.post("/api/employees", requireAppAuth, requireResourceOrHrEditor(EMPLOYEES_R
     // CP3: plano somente leitura antes das validações; a escrita na Pessoa acontece dentro da
     // transação do colaborador (nada de Pessoa órfã quando uma validação posterior falha).
     let personPlan;
+    // Ator e permissão de vínculo com usuário: o colaborador só entra na Pessoa de uma conta pela política de identidade.
+    const accountIdentity = await resolveAccountIdentityContext(req);
     try {
       personPlan = await planPersonLinkFromEmployeeBody(req.body, null, authUser?.id ?? null);
     } catch (linkErr) {
@@ -3820,7 +3855,7 @@ app.post("/api/employees", requireAppAuth, requireResourceOrHrEditor(EMPLOYEES_R
     let employee;
     try {
       employee = await prisma.$transaction(async (tx) => {
-      const appliedLink = await applyPersonLinkPlan(tx, personPlan);
+      const appliedLink = await applyPersonLinkPlan(tx, personPlan, accountIdentity);
       personResolve.personId = appliedLink.personId;
       return tx.employee.create({
       data: {
@@ -4032,6 +4067,8 @@ app.put("/api/employees/:id", requireAppAuth, requireResourceOrHrEditor(EMPLOYEE
     await assertRoleExists(prisma, cleanRoleId);
 
     let personPlan;
+    // Ator e permissão de vínculo com usuário: o colaborador só entra na Pessoa de uma conta pela política de identidade.
+    const accountIdentity = await resolveAccountIdentityContext(req);
     try {
       personPlan = await planPersonLinkFromEmployeeBody(req.body, id, authUser?.id ?? null);
     } catch (linkErr) {
@@ -4196,7 +4233,7 @@ app.put("/api/employees/:id", requireAppAuth, requireResourceOrHrEditor(EMPLOYEE
       await tx.employeePayrollComponent.deleteMany({
         where: { employeeId: id },
       });
-      const appliedLink = await applyPersonLinkPlan(tx, personPlan);
+      const appliedLink = await applyPersonLinkPlan(tx, personPlan, accountIdentity);
       nextPersonId = appliedLink.personId ?? existingEmployee.personId ?? null;
       // Vínculo já existente sem reenvio de personId: ainda assim sincroniza identidade — dentro da transação.
       if (nextPersonId && appliedLink.personId === null) {
@@ -4275,7 +4312,8 @@ app.put("/api/employees/:id", requireAppAuth, requireResourceOrHrEditor(EMPLOYEE
         employeeId: id,
         personId: nextPersonId ?? null,
         previousPersonId: existingEmployee.personId ?? null,
-        actor: resolveSuperAdminGuardActor(req),
+        actor: accountIdentity.actor,
+        canManageAccountIdentity: accountIdentity.canManageAccountIdentity,
       });
       return updated;
     });
@@ -15628,11 +15666,10 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
       return { hierarchy, activeIds: new Set(active.map((row) => row.id)) };
     },
     // Prontidão do ciclo: quem tem usuário ativo para avaliar e desde quando cada pessoa está com o líder atual.
-    loadLinkedEmployeeIds: async (employeeIds) => {
-      if (employeeIds.length === 0) return new Set<string>();
-      const rows = await prisma.appUser.findMany({ where: { employeeId: { in: employeeIds }, isActive: true }, select: { employeeId: true } });
-      return new Set(rows.map((row) => row.employeeId).filter((id): id is string => Boolean(id)));
-    },
+    // Mesma régua de loadScope (authUser.employeeId): apto = conta ATIVA ligada ao colaborador.
+    // A identidade canônica só explica a pendência (nunca concede acesso nem grava vínculo).
+    loadLinkedEmployeeIds: (employeeIds) => loadLinkedEvaluatorIds(prisma, employeeIds),
+    loadEvaluatorIdentities: (employeeIds) => loadEvaluatorIdentities(prisma, employeeIds),
     loadLeaderSince: async (employeeIds) => {
       const out = new Map<string, { since: string; managerId: string | null; previousManagerName: string | null }>();
       if (employeeIds.length === 0) return out;
@@ -15761,6 +15798,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     getCurrentAppUser,
     resolveActor: resolveSuperAdminGuardActor,
     requireUsersManage: requireUsersManageOrBootstrap,
+    canManageAccountIdentity: (req) => allowsResourceOrHrEditor(req, EMPLOYEES_RESOURCE_KEYS.userLink, EMPLOYEES_ACTIONS.manage),
   });
 
   // Metas (OKR) — docs/goal-engine-plan.md (recurso admin.goals).

@@ -229,14 +229,14 @@ export type CycleLifecycleInfo = {
   canManage: boolean;
 };
 // ------------------------------------------------------------------ prontidão (antes de abrir)
-export type ReadinessAction = "SET_LEADERSHIP_MODEL" | "INCLUDE_LEADERS" | "LINK_USERS" | "SET_EVALUATOR" | "REVIEW_LEADER";
+export type ReadinessAction = "SET_LEADERSHIP_MODEL" | "INCLUDE_LEADERS" | "LINK_USERS" | "REGULARIZE_ACCOUNT" | "REVIEW_ACCOUNT" | "REVIEW_IDENTITY" | "SET_EVALUATOR" | "REVIEW_LEADER";
 export type ReadinessIssue = {
   code: string;
   severity: "BLOCK" | "WARN";
   title: string;
   message: string;
   action: ReadinessAction;
-  people: { participantId: string | null; employeeId: string; name: string; detail?: string | null }[];
+  people: { participantId: string | null; employeeId: string; name: string; detail?: string | null; personId?: string | null }[];
 };
 export const fetchCycleReadiness = (cycleId: string) => json<{ issues: ReadinessIssue[]; blocked: boolean }>(`${BASE}/cycles/${cycleId}/readiness`);
 /** Inclui no ciclo os líderes que faltam, subindo a cadeia até o topo. */

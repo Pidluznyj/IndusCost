@@ -5,6 +5,8 @@
 export type EmployeeUserAccessState =
   | "none"
   | "available_match"
+  /** Há conta com o mesmo e-mail, mas o vínculo não pode ser feito aqui (identidade não confirmada ou a própria conta). */
+  | "match_blocked"
   | "linked"
   | "linked_inactive"
   | "conflict"
@@ -32,6 +34,8 @@ export function accessStateMessage(state: EmployeeUserAccessState): string {
       return "Sem usuário de acesso";
     case "available_match":
       return "Usuário disponível para vínculo";
+    case "match_blocked":
+      return "Usuário encontrado — vínculo bloqueado";
     case "linked":
       return "Usuário vinculado";
     case "linked_inactive":
@@ -54,6 +58,7 @@ export function accessStateBadgeClass(state: EmployeeUserAccessState): string {
     case "linked_inactive":
     case "email_mismatch":
     case "conflict":
+    case "match_blocked":
       return "bg-amber-500/10 text-amber-900";
     default:
       return "bg-muted text-muted-foreground";

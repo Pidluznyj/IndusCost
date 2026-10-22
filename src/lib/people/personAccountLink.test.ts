@@ -84,6 +84,23 @@ describe("decideAttachAccount — os 7 casos legados", () => {
   });
 });
 
+describe("decideAttachAccount — a própria conta", () => {
+  it("quem opera não liga a própria conta a um colaborador (ganharia o escopo da equipe dele); só SUPER_ADMIN com step-up", () => {
+    const employee = { id: "e1", status: "ACTIVE", personId: P, appUserId: null, corporateEmail: "x@empresa.com" };
+    const own = (actor: AttachAccountInput["actor"], role = "VIEWER") =>
+      decideAttachAccount(base({ account: { id: "actor", role, personId: P, employeeId: null, isActive: true, email: "x@empresa.com" }, employee, actor }));
+    for (const r of [own(admin), own({ id: "actor", role: "VIEWER", elevated: true }), own(superPlain, "SUPER_ADMIN")]) {
+      assert.equal(r.ok, false);
+      assert.ok("code" in r && (r.code === "SELF_LINK_FORBIDDEN" || r.code === "ADMIN_ELEVATION_REQUIRED"), "code" in r ? r.code : "");
+    }
+    const vie = own(admin);
+    assert.ok("code" in vie && vie.code === "SELF_LINK_FORBIDDEN" && vie.status === 403);
+    const sa = own(superElevated, "SUPER_ADMIN");
+    assert.ok(sa.ok && sa.setEmployeeId === "e1", "SUPER_ADMIN elevado regulariza a si mesmo (auditado)");
+    assert.equal(decideAttachAccount(base({ employee, account: { id: "u1", role: "VIEWER", personId: P, employeeId: null, isActive: true, email: "x@empresa.com" } })).ok, true, "conta de outra pessoa segue liberada");
+  });
+});
+
 describe("emailsMatch", () => {
   it("compara sem caixa e sem espaços; vazio nunca casa", () => {
     assert.equal(emailsMatch(" A@X.com", "a@x.com "), true);

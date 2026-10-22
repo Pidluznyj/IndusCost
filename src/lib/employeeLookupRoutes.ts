@@ -315,7 +315,7 @@ export function registerEmployeeLookupRoutes(
         const { getEmployeeUserLinkStatus } = await import(
           "@/src/lib/employeeUserLink.server.js"
         );
-        const payload = await getEmployeeUserLinkStatus(prisma, id);
+        const payload = await getEmployeeUserLinkStatus(prisma, id, { viewerUserId: await resolveActorId(req) });
         res.json(payload);
       } catch (error) {
         if (error instanceof EmployeeRegistrationError) {

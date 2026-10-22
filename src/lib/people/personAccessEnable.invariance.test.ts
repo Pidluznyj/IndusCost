@@ -52,6 +52,8 @@ describe("Habilitar acesso pela Pessoa — política fail-closed e nada de comis
         },
         securityAuditLog: { create: () => ({ id: "a" }) },
         personLinkEvent: { create: () => ({ id: "ev" }) },
+        // Rechecagem sob a trava: a Pessoa não ganhou colaborador entre a leitura e a gravação.
+        employee: { count: () => 0 },
       },
       log
     );
@@ -78,6 +80,8 @@ describe("Habilitar acesso pela Pessoa — política fail-closed e nada de comis
     assert.equal(c.sellerResponsibleName, null);
     assert.equal(c.personId, PERSON);
     assert.equal(c.employeeId, null);
+    assert.ok(log.some((x) => x.model === "employee" && x.op === "count"), "conta sem colaborador: recheca os colaboradores da Pessoa sob a trava");
+    assert.ok(!log.some((x) => x.model === "employee" && x.op !== "count"), "nenhuma escrita em colaborador");
     assert.equal(c.mustChangePassword, true, "ADMIN não desliga a troca obrigatória");
     assert.equal(c.email, "dir@parceiro.com");
     assert.equal(log.filter((l) => l.model === "securityAuditLog").length, 2);

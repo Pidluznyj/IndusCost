@@ -21,16 +21,19 @@ describe("#12 RH não altera vínculo de conta SUPER_ADMIN pelas rotas antigas",
   const txFor = (writes: unknown[]) => ({
     $transaction: async (fn: (tx: unknown) => Promise<unknown>) =>
       fn({
+        $executeRaw: async () => 0,
         employee: { findUnique: async () => ({ id: "e1", corporateEmail: "sa@x.com", personId: P, appUser: null }) },
         person: { findUnique: async () => ({ status: "ACTIVE" }) },
         appUser: {
-          findFirst: async () => ({ id: "u-sa", employeeId: null, personId: null, email: "sa@x.com", role: "SUPER_ADMIN" }),
-          update: async (args: unknown) => {
+          // Mesma Pessoa canônica nos dois lados: única evidência aceita pela rota do RH.
+          findFirst: async () => ({ id: "u-sa", employeeId: null, personId: P, email: "sa@x.com", role: "SUPER_ADMIN" }),
+          updateMany: async (args: unknown) => {
             writes.push(args);
-            return { id: "u-sa", email: "sa@x.com", isActive: true, role: "SUPER_ADMIN", name: "SA" };
+            return { count: 1 };
           },
+          findUnique: async () => ({ id: "u-sa", email: "sa@x.com", isActive: true, role: "SUPER_ADMIN", name: "SA" }),
         },
-        personLinkEvent: { create: async () => ({ id: "ev" }) },
+        securityAuditLog: { create: async () => ({}) },
       }),
   });
   it("link-user: editor de RH recebe 403 e nada é gravado; SUPER_ADMIN elevado vincula", async () => {
@@ -53,6 +56,7 @@ describe("#12 RH não altera vínculo de conta SUPER_ADMIN pelas rotas antigas",
 
 describe("#13/#19 propagação E4 não alcança conta SUPER_ADMIN sem elevação nem copia Pessoa inativa", () => {
   const tx = (role: string, personStatus: string, writes: unknown[]) => ({
+    $executeRaw: async () => 0,
     appUser: {
       findUnique: async (args: { where: { employeeId?: string; personId?: string } }) => (args.where.employeeId ? { id: "u1", personId: null, role } : null),
       update: async (args: unknown) => {
@@ -64,15 +68,23 @@ describe("#13/#19 propagação E4 não alcança conta SUPER_ADMIN sem elevação
   });
   it("SUPER_ADMIN sem step-up: não propaga (pendência explícita)", async () => {
     const writes: unknown[] = [];
-    const r = await propagateEmployeePersonToLinkedUser(tx("SUPER_ADMIN", "ACTIVE", writes) as never, { employeeId: "e1", personId: P, previousPersonId: null, actor: hrEditor });
-    assert.equal(r.outcome, "SUPER_ADMIN_ELEVATION_REQUIRED");
+    const r = await propagateEmployeePersonToLinkedUser(tx("SUPER_ADMIN", "ACTIVE", writes) as never, { employeeId: "e1", personId: P, previousPersonId: null, actor: hrEditor, canManageAccountIdentity: true });
+    assert.deepEqual(r, { outcome: "ACCOUNT_IDENTITY_DENIED", userId: "u1", code: "SUPER_ADMIN_REQUIRED" });
+    assert.equal(writes.length, 0);
+  });
+  it("propagação: sem permissão de vínculo com usuário, sem ator ou na própria conta (editor de RH mudando a Pessoa do próprio colaborador) → não propaga", async () => {
+    const writes: unknown[] = [];
+    // Sem a permissão efetiva de vínculo com usuário (ex.: deny explícito), a conta de outra pessoa não muda.
+    assert.deepEqual(await propagateEmployeePersonToLinkedUser(tx("VIEWER", "ACTIVE", writes) as never, { employeeId: "e1", personId: P, previousPersonId: null, actor: hrEditor }), { outcome: "ACCOUNT_IDENTITY_DENIED", userId: "u1", code: "ACCOUNT_LINK_PERMISSION_REQUIRED" });
+    assert.deepEqual(await propagateEmployeePersonToLinkedUser(tx("VIEWER", "ACTIVE", writes) as never, { employeeId: "e1", personId: P, previousPersonId: null, canManageAccountIdentity: true }), { outcome: "ACCOUNT_IDENTITY_DENIED", userId: "u1", code: "ACTOR_REQUIRED" });
+    assert.deepEqual(await propagateEmployeePersonToLinkedUser(tx("VIEWER", "ACTIVE", writes) as never, { employeeId: "e1", personId: P, previousPersonId: null, actor: { id: "u1", role: "VIEWER", elevated: false }, canManageAccountIdentity: true }), { outcome: "ACCOUNT_IDENTITY_DENIED", userId: "u1", code: "SELF_LINK_FORBIDDEN" });
     assert.equal(writes.length, 0);
   });
   it("Pessoa INACTIVE: não propaga; conta comum com Pessoa ativa: propaga", async () => {
     const writes: unknown[] = [];
-    assert.equal((await propagateEmployeePersonToLinkedUser(tx("VIEWER", "INACTIVE", writes) as never, { employeeId: "e1", personId: P, previousPersonId: null, actor: hrEditor })).outcome, "PERSON_NOT_ACTIVE");
+    assert.equal((await propagateEmployeePersonToLinkedUser(tx("VIEWER", "INACTIVE", writes) as never, { employeeId: "e1", personId: P, previousPersonId: null, actor: hrEditor, canManageAccountIdentity: true })).outcome, "PERSON_NOT_ACTIVE");
     assert.equal(writes.length, 0);
-    assert.equal((await propagateEmployeePersonToLinkedUser(tx("VIEWER", "ACTIVE", writes) as never, { employeeId: "e1", personId: P, previousPersonId: null, actor: hrEditor })).outcome, "PROPAGATED");
+    assert.equal((await propagateEmployeePersonToLinkedUser(tx("VIEWER", "ACTIVE", writes) as never, { employeeId: "e1", personId: P, previousPersonId: null, actor: hrEditor, canManageAccountIdentity: true })).outcome, "PROPAGATED");
     assert.equal(writes.length, 1);
   });
 });

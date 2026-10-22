@@ -49,7 +49,7 @@ const ROLE_META: Record<RoleKey, { label: string; icon: React.ComponentType<{ cl
   commissionPerson: { label: "Comissionável", icon: Wallet, kinds: ["commission_person", "seller_alias"], pendingKind: "commission_person", help: "Identidade comercial do Nomus. Regras e valores de comissão não mudam por vínculo." },
 };
 
-function RoleSection({ roleKey, state, cards, pending, canView, canManage, linked, onRelink, onUnlink, actions }: { roleKey: RoleKey; state: PersonLinkState; cards: SystemLinkCard[]; pending: PendingLink[]; canView: boolean; canManage: boolean; linked: Array<{ kind: LinkEntityKind; id: string }>; onRelink: (kind: LinkEntityKind, id: string) => void; onUnlink: (kind: LinkEntityKind, id: string, label: string) => void; actions?: React.ReactNode }) {
+function RoleSection({ roleKey, state, cards, pending, canView, canManage, linked, onRelink, onUnlink, actions, onAttach }: { onAttach?: (accountId: string) => void; roleKey: RoleKey; state: PersonLinkState; cards: SystemLinkCard[]; pending: PendingLink[]; canView: boolean; canManage: boolean; linked: Array<{ kind: LinkEntityKind; id: string }>; onRelink: (kind: LinkEntityKind, id: string) => void; onUnlink: (kind: LinkEntityKind, id: string, label: string) => void; actions?: React.ReactNode }) {
   const meta = ROLE_META[roleKey];
   const Icon = meta.icon;
   return (
@@ -90,8 +90,14 @@ function RoleSection({ roleKey, state, cards, pending, canView, canManage, linke
                   ({p.currentPersonId.slice(0, 8)}…).
                 </p>
               ) : null}
-              <p className="mt-0.5 text-[11px] opacity-80">Evidência: {p.evidence === "CPF_EXACT" ? "CPF igual" : p.evidence === "EMAIL_EXACT" ? "e-mail igual (não decide sozinho)" : "vínculo colaborador ↔ conta"}.</p>
-              {canManage && p.kind !== "person" ? (
+              <p className="mt-0.5 text-[11px] opacity-80">Evidência: {p.evidence === "CPF_EXACT" ? "CPF igual" : p.evidence === "EMAIL_EXACT" ? "e-mail igual (não decide sozinho)" : p.evidence === "ACCOUNT_WITHOUT_EMPLOYEE" ? "conta já é desta Pessoa; falta ligar ao colaborador" : "vínculo colaborador ↔ conta"}.</p>
+              {p.evidence === "ACCOUNT_WITHOUT_EMPLOYEE" ? (
+                onAttach ? (
+                  <button type="button" onClick={() => onAttach(p.entityId)} className="mt-1 rounded-lg border border-current px-2 py-1 text-[11px] font-semibold hover:bg-white/50" data-testid={`person-attach-employee-${p.entityId}`}>
+                    Ligar conta ao colaborador
+                  </button>
+                ) : null
+              ) : canManage && p.kind !== "person" ? (
                 <button type="button" onClick={() => onRelink(p.kind as LinkEntityKind, p.entityId)} className="mt-1 rounded-lg border border-current px-2 py-1 text-[11px] font-semibold hover:bg-white/50" data-testid={`person-relink-open-${p.kind}-${p.entityId}`}>
                   {p.currentPersonId ? "Corrigir vínculo para esta pessoa" : "Vincular a esta pessoa"}
                 </button>
@@ -321,6 +327,7 @@ export function PersonProfilePage({ personId }: { personId: string }) {
         <RoleSection roleKey="employee" state={linkStates.employee} cards={cardsFor(ROLE_META.employee.kinds)} pending={pendingFor("employee")} canView={caps.canViewEmployees} canManage={caps.canManagePersonLink} linked={data.linkedEntities.filter((l) => l.kind === "employee")} onRelink={(kind, id) => setDialog({ type: "relink", kind, id })} onUnlink={(kind, id, label) => setDialog({ type: "unlink", kind, id, label })} />
         <RoleSection
           roleKey="appUser"
+          onAttach={caps.canAttachAccount ? (accountId) => setDialog({ type: "attach-account", accountId }) : undefined}
           state={linkStates.appUser}
           cards={cardsFor(ROLE_META.appUser.kinds)}
           pending={pendingFor("app_user")}

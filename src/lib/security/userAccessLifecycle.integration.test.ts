@@ -19,6 +19,8 @@ const isLocal = /@(127\.0\.0\.1|localhost)(:\d+)?\//.test(url);
 const skip = !url ? "PEOPLE_PG_TEST_URL não definida" : !isLocal ? "URL não é local: recusado" : false;
 
 const TAG = `p360-lifecycle-${Date.now()}`;
+// Ator real do PUT do colaborador: a propagação passa pela política de identidade de conta.
+const hrActor = { id: null as string | null, role: "VIEWER", elevated: false };
 
 describe("ciclo de vida do acesso em PostgreSQL local (E1/E3/E4)", { skip }, () => {
   let prisma: PrismaClient;
@@ -29,6 +31,8 @@ describe("ciclo de vida do acesso em PostgreSQL local (E1/E3/E4)", { skip }, () 
     prisma = new PrismaClient({ datasources: { db: { url } } });
     const role = await prisma.role.upsert({ where: { name: `${TAG} cargo` }, create: { name: `${TAG} cargo`, baseSalary: 0 }, update: {} });
     roleId = role.id;
+    hrActor.id = (await prisma.appUser.create({ data: { name: "Ator de teste", email: `${TAG}-ator@local.test`.toLowerCase(), passwordHash: "x", role: "VIEWER", isActive: true } })).id;
+    created.users.push(hrActor.id);
   });
 
   after(async () => {
@@ -129,19 +133,28 @@ describe("ciclo de vida do acesso em PostgreSQL local (E1/E3/E4)", { skip }, () 
     const pB = await person("F-B");
     const e = await employee("F", pA.id);
     const u = await user("f", e.id, null);
-    const r1 = await prisma.$transaction((tx) => propagateEmployeePersonToLinkedUser(tx, { employeeId: e.id, personId: pA.id, previousPersonId: null }));
+    const r1 = await prisma.$transaction((tx) => propagateEmployeePersonToLinkedUser(tx, { employeeId: e.id, personId: pA.id, previousPersonId: null, actor: hrActor, canManageAccountIdentity: true }));
     assert.deepEqual(r1, { outcome: "PROPAGATED", userId: u.id, fromPersonId: null });
     assert.equal((await prisma.appUser.findUniqueOrThrow({ where: { id: u.id } })).personId, pA.id);
-    const r2 = await prisma.$transaction((tx) => propagateEmployeePersonToLinkedUser(tx, { employeeId: e.id, personId: pA.id, previousPersonId: pA.id }));
+    const r2 = await prisma.$transaction((tx) => propagateEmployeePersonToLinkedUser(tx, { employeeId: e.id, personId: pA.id, previousPersonId: pA.id, actor: hrActor, canManageAccountIdentity: true }));
     assert.deepEqual(r2, { outcome: "ALREADY_SAME" });
     // Conta aponta para B; colaborador muda para A sem passar por B: conflito, não sobrescreve.
     await prisma.appUser.update({ where: { id: u.id }, data: { personId: pB.id } });
-    const r3 = await prisma.$transaction((tx) => propagateEmployeePersonToLinkedUser(tx, { employeeId: e.id, personId: pA.id, previousPersonId: null }));
+    const r3 = await prisma.$transaction((tx) => propagateEmployeePersonToLinkedUser(tx, { employeeId: e.id, personId: pA.id, previousPersonId: null, actor: hrActor, canManageAccountIdentity: true }));
     assert.deepEqual(r3, { outcome: "USER_HAS_OTHER_PERSON", userId: u.id, userPersonId: pB.id });
     assert.equal((await prisma.appUser.findUniqueOrThrow({ where: { id: u.id } })).personId, pB.id);
     // Colaborador trocou de B para A: a conta que tinha B acompanha.
-    const r4 = await prisma.$transaction((tx) => propagateEmployeePersonToLinkedUser(tx, { employeeId: e.id, personId: pA.id, previousPersonId: pB.id }));
+    const r4 = await prisma.$transaction((tx) => propagateEmployeePersonToLinkedUser(tx, { employeeId: e.id, personId: pA.id, previousPersonId: pB.id, actor: hrActor, canManageAccountIdentity: true }));
     assert.deepEqual(r4, { outcome: "PROPAGATED", userId: u.id, fromPersonId: pB.id });
+    const audits = await prisma.securityAuditLog.findMany({ where: { targetUserId: u.id, eventType: "USER_IDENTITY_LINKED" } });
+    assert.equal(audits.length, 2, "cada propagação efetiva fica auditada");
+    assert.ok(audits.every((a) => a.actorUserId === hrActor.id && (a.metadata as { source?: string }).source === "EMPLOYEE_PERSON_PROPAGATION"));
+    // Sem permissão de vínculo com usuário, sem ator (rotina sem autoridade sobre contas) ou na própria conta: não propaga.
+    await prisma.appUser.update({ where: { id: u.id }, data: { personId: null } });
+    assert.deepEqual(await prisma.$transaction((tx) => propagateEmployeePersonToLinkedUser(tx, { employeeId: e.id, personId: pA.id, previousPersonId: null, actor: hrActor })), { outcome: "ACCOUNT_IDENTITY_DENIED", userId: u.id, code: "ACCOUNT_LINK_PERMISSION_REQUIRED" });
+    assert.deepEqual(await prisma.$transaction((tx) => propagateEmployeePersonToLinkedUser(tx, { employeeId: e.id, personId: pA.id, previousPersonId: null, canManageAccountIdentity: true })), { outcome: "ACCOUNT_IDENTITY_DENIED", userId: u.id, code: "ACTOR_REQUIRED" });
+    assert.deepEqual(await prisma.$transaction((tx) => propagateEmployeePersonToLinkedUser(tx, { employeeId: e.id, personId: pA.id, previousPersonId: null, actor: { id: u.id, role: "VIEWER", elevated: false }, canManageAccountIdentity: true })), { outcome: "ACCOUNT_IDENTITY_DENIED", userId: u.id, code: "SELF_LINK_FORBIDDEN" });
+    assert.equal((await prisma.appUser.findUniqueOrThrow({ where: { id: u.id } })).personId, null);
   });
 
   it("E4: Pessoa já usada por outra conta não é duplicada na propagação (unicidade preservada)", async () => {
@@ -149,7 +162,7 @@ describe("ciclo de vida do acesso em PostgreSQL local (E1/E3/E4)", { skip }, () 
     const e = await employee("G", p.id);
     const other = await user("g-other", null, p.id);
     const u = await user("g", e.id, null);
-    const r = await prisma.$transaction((tx) => propagateEmployeePersonToLinkedUser(tx, { employeeId: e.id, personId: p.id, previousPersonId: null }));
+    const r = await prisma.$transaction((tx) => propagateEmployeePersonToLinkedUser(tx, { employeeId: e.id, personId: p.id, previousPersonId: null, actor: hrActor, canManageAccountIdentity: true }));
     assert.deepEqual(r, { outcome: "PERSON_HELD_BY_OTHER_USER", userId: u.id, otherUserId: other.id });
     assert.equal((await prisma.appUser.findUniqueOrThrow({ where: { id: u.id } })).personId, null);
   });

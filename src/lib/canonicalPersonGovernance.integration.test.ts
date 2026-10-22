@@ -25,7 +25,7 @@ const CPF_B = "11144477735";
 describe("governança de Person em PostgreSQL local (CP3)", { skip }, () => {
   let prisma: PrismaClient;
   let roleId = "";
-  const ids = { employees: [] as string[], users: [] as string[], drivers: [] as string[], people: [] as string[] };
+  const ids = { employees: [] as string[], users: [] as string[], drivers: [] as string[], people: [] as string[], commission: [] as string[] };
 
   before(async () => {
     prisma = new PrismaClient({ datasources: { db: { url } } });
@@ -36,6 +36,7 @@ describe("governança de Person em PostgreSQL local (CP3)", { skip }, () => {
     await prisma.personLinkEvent.deleteMany({ where: { personId: { in: ids.people } } });
     await prisma.appUser.deleteMany({ where: { id: { in: ids.users } } });
     await prisma.fleetDriver.deleteMany({ where: { id: { in: ids.drivers } } });
+    await prisma.commissionPerson.deleteMany({ where: { id: { in: ids.commission } } });
     await prisma.employee.deleteMany({ where: { id: { in: ids.employees } } });
     await prisma.person.deleteMany({ where: { id: { in: ids.people } } });
     await prisma.role.deleteMany({ where: { id: roleId } });
@@ -72,15 +73,27 @@ describe("governança de Person em PostgreSQL local (CP3)", { skip }, () => {
   it("e-mail igual sem CPF nunca decide sozinho: 409 nomeando a candidata, nada gravado", async () => {
     const existing = await prisma.person.create({ data: { displayName: `${TAG} Bia`, corporateEmail: `${TAG}-bia@local.test`.toLowerCase(), origin: "MANUAL" } });
     ids.people.push(existing.id);
-    const u = await prisma.appUser.create({ data: { name: `${TAG} Bia usuária`, email: `${TAG}-bia@local.test`.toLowerCase(), passwordHash: "x", role: "VIEWER" } });
-    ids.users.push(u.id);
+    const c = await prisma.commissionPerson.create({ data: { name: `${TAG} Bia comissionada`, type: "SELLER", source: "MANUAL", email: `${TAG}-bia@local.test`.toLowerCase() } });
+    ids.commission.push(c.id);
     await assert.rejects(
-      () => ensurePersonFromSource(prisma, { sourceKind: "app_user", sourceId: u.id }),
+      () => ensurePersonFromSource(prisma, { sourceKind: "commission_person", sourceId: c.id }),
       (err: unknown) => err instanceof CanonicalPersonError && err.code === "DUPLICATE_PRIMARY_EMAIL" && err.message.includes("Bia")
     );
-    assert.equal((await prisma.appUser.findUniqueOrThrow({ where: { id: u.id } })).personId, null);
+    assert.equal((await prisma.commissionPerson.findUniqueOrThrow({ where: { id: c.id } })).personId, null);
     await trackPeople();
     assert.equal(await prisma.person.count({ where: { displayName: { startsWith: `${TAG} Bia` } } }), 1);
+  });
+
+  it("conta de acesso nunca é ligada por esta rotina: origem app_user sem Pessoa → 409, conta e Pessoas intactas", async () => {
+    const u = await prisma.appUser.create({ data: { name: `${TAG} Duda usuária`, email: `${TAG}-duda@local.test`.toLowerCase(), passwordHash: "x", role: "VIEWER" } });
+    ids.users.push(u.id);
+    const before = await prisma.person.count();
+    await assert.rejects(
+      () => ensurePersonFromSource(prisma, { sourceKind: "app_user", sourceId: u.id }),
+      (err: unknown) => err instanceof CanonicalPersonError && err.code === "ACCOUNT_REGULARIZATION_REQUIRED" && err.status === 409
+    );
+    assert.equal((await prisma.appUser.findUniqueOrThrow({ where: { id: u.id } })).personId, null);
+    assert.equal(await prisma.person.count(), before);
   });
 
   it("a prévia nunca cria Pessoa (origem sem Pessoa devolve wouldCreatePerson)", async () => {

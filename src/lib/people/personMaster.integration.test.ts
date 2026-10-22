@@ -34,6 +34,11 @@ describe("Pessoas 360° — cadastro mestre (PostgreSQL local)", { skip }, () =>
     prisma = new PrismaClient({ datasources: { db: { url } } });
     const role = await prisma.role.upsert({ where: { name: `${TAG} cargo` }, create: { name: `${TAG} cargo`, baseSalary: 0 }, update: {} });
     roleId = role.id;
+    // Atores reais: a política de identidade de conta recusa operação sem usuário identificado.
+    sa.id = (await prisma.appUser.create({ data: { name: "Ator de teste", email: `${TAG}-ator-sa@local.test`.toLowerCase(), passwordHash: "x", role: "SUPER_ADMIN", isActive: true } })).id;
+    ids.users.push(sa.id);
+    admin.id = (await prisma.appUser.create({ data: { name: "Ator de teste", email: `${TAG}-ator-admin@local.test`.toLowerCase(), passwordHash: "x", role: "ADMIN", isActive: true } })).id;
+    ids.users.push(admin.id);
   });
   after(async () => {
     const people = [...new Set(ids.people)];
@@ -111,7 +116,7 @@ describe("Pessoas 360° — cadastro mestre (PostgreSQL local)", { skip }, () =>
     assert.equal(off.status, "INACTIVE");
     // Pessoa inativa: conta nova e vínculo novo são recusados até reativar
     const other = await user("situacao2", null, null);
-    await assert.rejects(relinkEntity(prisma, { targetPersonId: p.id, entityKind: "app_user", entityId: other.id, expectedCurrentPersonId: null, reason: "tentativa em pessoa inativa", actor: sa }), (e: unknown) => e instanceof CanonicalPersonError && e.code === "TARGET_INACTIVE");
+    await assert.rejects(relinkEntity(prisma, { targetPersonId: p.id, entityKind: "app_user", entityId: other.id, expectedCurrentPersonId: null, reason: "tentativa em pessoa inativa", actor: sa, canManageAccountIdentity: true }), (e: unknown) => e instanceof CanonicalPersonError && e.code === "TARGET_INACTIVE");
     const on = await setPersonStatus(prisma, p.id, { actor: sa, status: "ACTIVE", reason: "voltou" });
     assert.equal(on.status, "ACTIVE");
     const kinds = (await events(p.id)).map((x) => x.eventKind);

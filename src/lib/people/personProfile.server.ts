@@ -104,6 +104,8 @@ export function summarizePersonRow(p: PersonRow): PeopleListRow {
   if (p.status === "NEEDS_REVIEW") flags.push("NEEDS_REVIEW");
   if (employeeUserOther) flags.push("USER_ON_OTHER_PERSON");
   if (employeeUserPending) flags.push("USER_WITHOUT_PERSON");
+  // Conta da Pessoa sem employeeId enquanto o colaborador da Pessoa não tem conta (avaliador "sem acesso" no Desempenho).
+  if (p.status === "ACTIVE" && linkedUser && !linkedUser.employeeId && employee && employeeActive && !employee.appUser) flags.push("USER_WITHOUT_EMPLOYEE_LINK");
   // Pessoa INACTIVE com vínculo ativo: estado contraditório do legado (ex.: colaborador ativo apontando para Pessoa inativa).
   const activeUser = p.appUsers.some((u) => u.isActive);
   const activeDriver = p.fleetDrivers.some((d) => d.status !== "INACTIVE");
@@ -205,8 +207,14 @@ export async function listPeople(prisma: PrismaClient, filters: PeopleListFilter
     and.push(cpfs.length ? { cpfNormalized: { in: cpfs } } : { id: "00000000-0000-0000-0000-000000000000" });
   }
   if (filters.pending === "mismatch") {
-    // Colaborador desta Pessoa cuja conta aponta para outra Pessoa, ou conta sem Pessoa.
-    and.push({ employees: { some: { appUser: { isNot: null } } } });
+    // Colaborador desta Pessoa cuja conta aponta para outra Pessoa, ou conta sem Pessoa; ou conta desta
+    // Pessoa sem vínculo ao colaborador dela (avaliador "sem acesso" no Desempenho).
+    and.push({
+      OR: [
+        { employees: { some: { appUser: { isNot: null } } } },
+        { appUsers: { some: { employeeId: null } }, employees: { some: { appUser: { is: null } } } },
+      ],
+    });
   }
 
   const where: Prisma.PersonWhereInput = and.length ? { AND: and } : {};
@@ -222,7 +230,7 @@ export async function listPeople(prisma: PrismaClient, filters: PeopleListFilter
   ]);
   let items = rows.map(summarizePersonRow);
   if (filters.pending === "mismatch") {
-    items = items.filter((r) => r.flags.includes("USER_ON_OTHER_PERSON") || r.flags.includes("USER_WITHOUT_PERSON"));
+    items = items.filter((r) => r.flags.includes("USER_ON_OTHER_PERSON") || r.flags.includes("USER_WITHOUT_PERSON") || r.flags.includes("USER_WITHOUT_EMPLOYEE_LINK"));
   }
   return { items, meta: { page, limit, total, totalPages: Math.max(1, Math.ceil(total / limit)) } };
 }
@@ -231,7 +239,8 @@ export type PendingLink = {
   kind: "employee" | "app_user" | "fleet_driver" | "commission_person" | "person";
   entityId: string;
   label: string;
-  evidence: "CPF_EXACT" | "EMAIL_EXACT" | "EMPLOYEE_USER_LINK";
+  /** ACCOUNT_WITHOUT_EMPLOYEE: conta desta Pessoa sem AppUser.employeeId enquanto a Pessoa tem colaborador sem conta. */
+  evidence: "CPF_EXACT" | "EMAIL_EXACT" | "EMPLOYEE_USER_LINK" | "ACCOUNT_WITHOUT_EMPLOYEE";
   /** Pessoa para a qual o registro aponta hoje (null = nenhuma). */
   currentPersonId: string | null;
   currentPersonLabel: string | null;
@@ -246,7 +255,7 @@ export type PendingLink = {
 export async function findPendingLinksForPerson(prisma: PrismaClient, personId: string): Promise<PendingLink[]> {
   const person = await prisma.person.findUnique({
     where: { id: personId },
-    select: { id: true, displayName: true, status: true, cpfNormalized: true, corporateEmail: true, employees: { select: { id: true, name: true, appUser: { select: { id: true, name: true, email: true, personId: true, person: { select: { displayName: true } } } } } } },
+    select: { id: true, displayName: true, status: true, cpfNormalized: true, corporateEmail: true, appUsers: { select: { id: true, name: true, email: true, isActive: true, employeeId: true } }, employees: { select: { id: true, name: true, status: true, appUser: { select: { id: true, name: true, email: true, personId: true, person: { select: { displayName: true } } } } } } },
   });
   if (!person) throw new CanonicalPersonError("PERSON_NOT_FOUND", "Pessoa não encontrada.", 404);
   const out: PendingLink[] = [];
@@ -254,6 +263,27 @@ export async function findPendingLinksForPerson(prisma: PrismaClient, personId: 
   if (person.status === "MERGED") return out;
   const cpf = person.cpfNormalized;
   const email = normalizeEmailLoose(person.corporateEmail);
+
+  // Conta DESTA Pessoa sem vínculo ao colaborador (legado: personId certo, employeeId nulo). Sem o vínculo
+  // a conta não vê "Minha equipe" nem responde avaliações; a correção é a regularização auditada.
+  // Só sugere o que a regularização aceita: Pessoa ativa e colaborador não desligado.
+  const freeEmployees = person.status === "ACTIVE" ? person.employees.filter((e) => !e.appUser && (e.status ?? "ACTIVE").toUpperCase() !== "INACTIVE") : [];
+  for (const u of person.appUsers) {
+    if (u.employeeId || freeEmployees.length === 0) continue;
+    out.push({
+      kind: "app_user",
+      entityId: u.id,
+      label: u.name,
+      evidence: "ACCOUNT_WITHOUT_EMPLOYEE",
+      currentPersonId: person.id,
+      currentPersonLabel: person.displayName,
+      severity: "PENDING",
+      hint:
+        freeEmployees.length === 1
+          ? `A conta ${maskEmail(u.email) ?? ""}${u.isActive ? "" : " (inativa)"} é desta Pessoa, mas não está ligada ao colaborador ${freeEmployees[0]!.name}: sem isso ela não vê a equipe nem responde avaliações.`
+          : `A conta ${maskEmail(u.email) ?? ""} é desta Pessoa, mas há ${freeEmployees.length} colaboradores sem conta: escolha qual ela representa.`,
+    });
+  }
 
   // Conta do colaborador desta Pessoa apontando para outra Pessoa (caso real) ou sem Pessoa.
   for (const e of person.employees) {

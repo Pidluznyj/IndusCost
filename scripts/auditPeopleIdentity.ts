@@ -38,6 +38,7 @@ type Finding = {
     | "USUARIO_PESSOA_DIVERGE_DO_COLABORADOR"
     | "USUARIO_COLABORADOR_PESSOA_INATIVA"
     | "USUARIO_EMAIL_DIVERGE_DO_COLABORADOR"
+    | "USUARIO_PESSOA_COM_COLABORADOR_SEM_VINCULO"
     | "COLABORADOR_SEM_PESSOA"
     | "COMISSIONADO_SEM_PESSOA"
     | "MOTORISTA_SEM_PESSOA"
@@ -125,10 +126,23 @@ async function main() {
       const email = normalizeEmailLoose(e.corporateEmail);
       if (email && isActive(e.status)) employeesByEmail.set(email, [...(employeesByEmail.get(email) ?? []), e]);
     }
+    const linkedEmployeeIds = new Set(users.map((x) => x.employeeId).filter(Boolean));
     for (const u of users) {
       if (!u.isActive) continue;
       const who = `${u.name} <${u.email}> · ${u.role}`;
       if (!u.personId) findings.push({ categoria: "USUARIO_SEM_PESSOA", quem: who, detalhe: "usuário ativo sem Pessoa canônica", ids: short(u.id) });
+      if (!u.employeeId && u.personId) {
+        // Caso do avaliador "sem acesso": a conta é da Pessoa certa, mas não está ligada ao colaborador dela.
+        const samePerson = employees.filter((e) => e.personId === u.personId && isActive(e.status) && !linkedEmployeeIds.has(e.id));
+        if (samePerson.length > 0) {
+          findings.push({
+            categoria: "USUARIO_PESSOA_COM_COLABORADOR_SEM_VINCULO",
+            quem: who,
+            detalhe: `conta da mesma Pessoa do colaborador ${samePerson.map((e) => e.name).join(", ")} sem employeeId — não responde avaliações; regularizar em Pessoas 360° (${samePerson.length > 1 ? "mais de um colaborador: revisão" : "inequívoco"})`,
+            ids: `${short(u.id)}→${samePerson.map((e) => short(e.id)).join(",")}`,
+          });
+        }
+      }
       if (!u.employeeId) {
         const sameEmail = employeesByEmail.get(normalizeEmailLoose(u.email) ?? "") ?? [];
         if (sameEmail.length > 0) {
@@ -215,6 +229,7 @@ async function main() {
       USUARIO_PESSOA_DIVERGE_DO_COLABORADOR: count("USUARIO_PESSOA_DIVERGE_DO_COLABORADOR"),
       USUARIO_COLABORADOR_PESSOA_INATIVA: count("USUARIO_COLABORADOR_PESSOA_INATIVA"),
       USUARIO_EMAIL_DIVERGE_DO_COLABORADOR: count("USUARIO_EMAIL_DIVERGE_DO_COLABORADOR"),
+      USUARIO_PESSOA_COM_COLABORADOR_SEM_VINCULO: count("USUARIO_PESSOA_COM_COLABORADOR_SEM_VINCULO"),
       COLABORADOR_SEM_PESSOA: count("COLABORADOR_SEM_PESSOA"),
       COMISSIONADO_SEM_PESSOA: count("COMISSIONADO_SEM_PESSOA"),
       MOTORISTA_SEM_PESSOA: count("MOTORISTA_SEM_PESSOA"),

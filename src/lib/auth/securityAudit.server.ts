@@ -33,6 +33,8 @@ export const SECURITY_AUDIT_EVENTS = {
   USER_DELETE_REQUEST_CONVERTED: "USER_DELETE_REQUEST_CONVERTED",
   /** Pessoas 360° (cadastro mestre): identidade da conta vinculada/regularizada (personId/employeeId), sem tocar credenciais. */
   USER_IDENTITY_LINKED: "USER_IDENTITY_LINKED",
+  /** Cadastro de RH: conta desligada do colaborador (employeeId limpo), sem tocar credenciais nem ativação. */
+  USER_IDENTITY_UNLINKED: "USER_IDENTITY_UNLINKED",
   /** Emissão de cópia controlada da Política Comercial. O digest fica na tabela da cópia. */
   COMMERCIAL_POLICY_CONTROLLED_COPY: "COMMERCIAL_POLICY_CONTROLLED_COPY",
   /** SUPER_ADMIN zerou aceites da Política Comercial (o metadata guarda o que foi apagado). */
