@@ -59,6 +59,9 @@ describe("customerListQuery", () => {
     assert.equal(shouldUseCustomerPagination({ commercialOwner: "none" }), true);
     assert.equal(shouldUseCustomerPagination({ state: "SP" }), true);
     assert.equal(shouldUseCustomerPagination({ city: "Campina Grande" }), true);
+    assert.equal(shouldUseCustomerPagination({ creditStatus: "blocked" }), true);
+    assert.equal(parseCustomerListQuery({ creditStatus: "blocked" }).creditStatus, "blocked");
+    assert.equal(parseCustomerListQuery({ creditStatus: "qualquer" }).creditStatus, "");
   });
 
   it("vazio não restringe e none marca cliente sem responsável ativo", () => {

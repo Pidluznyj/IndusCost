@@ -633,6 +633,7 @@ import {
   shouldUseCustomerPagination,
 } from "./src/lib/customerListQuery.js";
 import { attachCustomerCnpjRisk } from "./src/lib/customerCnpjRiskSummary.server.js";
+import { loadCustomerCreditFilteredPage } from "./src/lib/commercial/customerCreditListFilter.server.js";
 import { attachPortfolioCredit, attachPortfolioCreditToNestedCustomers } from "./src/lib/commercial/portfolioCredit.server.js";
 import { loadSalesOrderCreditBlockAlerts } from "./src/lib/commercial/salesOrderCreditBlockAlert.server.js";
 import {
@@ -14274,6 +14275,26 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
         cityFilter.cityWhere
       );
       const commercialOwnerOptions = ownerFilter.options;
+      const evaluatedAt = new Date();
+      if (list.creditStatus) {
+        const filtered = await loadCustomerCreditFilteredPage(prisma, {
+          where,
+          skip: list.skip,
+          limit: list.limit,
+          creditStatus: list.creditStatus,
+          includeFinancialDetails,
+          evaluatedAt,
+        });
+        const meta = customerListMeta(filtered.total, list.page, list.limit);
+        res.json({
+          ...buildCustomerListResponse(filtered.items, meta),
+          commercialOwnerOptions,
+          cityOptions: cityFilter.options,
+          creditFilterCapped: filtered.capped,
+        });
+        return;
+      }
+
       const [total, items] = await Promise.all([
         prisma.customer.count({ where }),
         prisma.customer.findMany({
@@ -14285,7 +14306,6 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
       ]);
 
       const meta = customerListMeta(total, list.page, list.limit);
-      const evaluatedAt = new Date();
       const withRisk = await attachCustomerCnpjRisk(prisma, items, evaluatedAt);
       const withOwners = await attachCustomerCommercialOwnerListFields(withRisk);
       // Última compra = mesmo motor da rotina de 90 dias (loadLastValidInvoices), em lote para a página.

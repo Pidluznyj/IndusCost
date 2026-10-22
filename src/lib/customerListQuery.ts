@@ -1,5 +1,9 @@
 import type { Prisma } from "@prisma/client";
 import { normalizeCityKey } from "./commercial/customerActivityMap/customerActivityMap.js";
+import {
+  parseCustomerCreditListFilter,
+  type CustomerCreditListFilter,
+} from "./commercial/customerCreditListFilter.js";
 import { brazilUfMatchValues, normalizeBrazilUf, parseBrazilUfFilter } from "./customerIndicators.js";
 
 export const CUSTOMER_LIST_DEFAULT_LIMIT = 20;
@@ -18,6 +22,8 @@ export type CustomerListQuery = {
   state: string;
   /** Chave de cidade (sem acento e sem caixa), ou vazio (todas). */
   city: string;
+  /** Situação oficial de crédito, ou vazio (todas). */
+  creditStatus: CustomerCreditListFilter | "";
 };
 
 export type CustomerCityOption = {
@@ -58,6 +64,7 @@ export function parseCustomerListQuery(query: Record<string, unknown>): Customer
     commercialOwner: String(query.commercialOwner ?? "").trim(),
     state: parseBrazilUfFilter(query.state),
     city: parseCustomerCityFilter(query.city),
+    creditStatus: parseCustomerCreditListFilter(query.creditStatus),
   };
 }
 
@@ -96,6 +103,7 @@ export function shouldUseCustomerPagination(query: Record<string, unknown>): boo
     query.commercialOwner != null ||
     query.state != null ||
     query.city != null ||
+    query.creditStatus != null ||
     String(query.paginated ?? "").trim() === "true"
   );
 }

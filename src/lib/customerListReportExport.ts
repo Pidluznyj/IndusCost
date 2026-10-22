@@ -4,6 +4,10 @@
 import * as XLSX from "xlsx";
 import { buildMinimalPdfDocument } from "./minimalPdfWriter.js";
 import { formatCustomerLastPurchaseMonth, type CustomerLastPurchaseStatus } from "./commercial/customerLastPurchase.js";
+import {
+  customerCreditListFilterLabel,
+  type CustomerCreditListFilter,
+} from "./commercial/customerCreditListFilter.js";
 import { formatBrazilStateLabel } from "./customerIndicators.js";
 import {
   CUSTOMER_CNPJ_RISK_NO_LOOKUP_LABEL,
@@ -110,8 +114,11 @@ export function buildCustomerListReportAppliedFilters(input: {
   stateUf?: string;
   cityKey?: string;
   cityLabel?: string;
+  creditStatus?: CustomerCreditListFilter | "";
+  creditStatusCapped?: boolean;
 }): Array<{ label: string; value: string }> {
   const city = input.cityLabel?.trim() || input.cityKey?.trim() || "";
+  const credit = customerCreditListFilterLabel(input.creditStatus ?? "");
   return [
     { label: "Busca", value: input.search.trim() || CUSTOMER_LIST_EXPORT_SEARCH_ALL_LABEL },
     {
@@ -123,6 +130,12 @@ export function buildCustomerListReportAppliedFilters(input: {
     },
     { label: "Estado", value: formatBrazilStateLabel(input.stateUf) },
     { label: "Cidade", value: city || CUSTOMER_LIST_EXPORT_CITY_ALL_LABEL },
+    {
+      label: "Situação de crédito",
+      value: input.creditStatusCapped
+        ? `${credit} (leitura limitada aos primeiros ${CUSTOMER_LIST_EXPORT_MAX.toLocaleString("pt-BR")} do recorte)`
+        : credit,
+    },
   ];
 }
 

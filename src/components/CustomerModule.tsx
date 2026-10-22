@@ -59,6 +59,7 @@ import { GuidedTour } from "@/src/components/tour/GuidedTour";
 import { TourHelpButton } from "@/src/components/tour/TourHelpButton";
 import { CUSTOMER_TOUR_STEPS } from "@/src/tours/customerTourSteps";
 import { formatCustomerListRange, type CustomerCityOption } from "@/src/lib/customerListQuery";
+import type { CustomerCreditListFilter } from "@/src/lib/commercial/customerCreditListFilter";
 import { BRAZIL_STATES } from "@/src/lib/customerIndicators";
 import { formatCustomerLastPurchaseDay, formatCustomerLastPurchaseMonth } from "@/src/lib/commercial/customerLastPurchase";
 import { canAssignCustomerCommercialOwnerAccess } from "@/src/lib/customerCommercialOwnerAssignAccess";
@@ -78,6 +79,20 @@ type CustomerListMeta = {
 };
 
 const CUSTOMER_PAGE_SIZE = 20;
+
+const CUSTOMER_CREDIT_FILTER_OPTIONS: Array<{
+  id: CustomerCreditListFilter | "";
+  label: string;
+  dot?: string;
+  active: string;
+}> = [
+  { id: "", label: "Todos", active: "border-slate-400 bg-slate-100 text-slate-900" },
+  { id: "released", label: "Liberado", dot: "bg-emerald-500", active: "border-emerald-300 bg-emerald-50 text-emerald-900" },
+  { id: "review", label: "Em análise", dot: "bg-amber-400", active: "border-amber-300 bg-amber-50 text-amber-950" },
+  { id: "blocked", label: "Bloqueado", dot: "bg-red-500", active: "border-red-300 bg-red-50 text-red-900" },
+  { id: "unread", label: "Sem leitura", dot: "bg-slate-400", active: "border-slate-300 bg-slate-100 text-slate-800" },
+];
+
 const COMMERCIAL_OWNER_EMPTY_LABEL = "Sem responsável";
 const CUSTOMER_LIST_OWNER_NONE = "none";
 
@@ -111,6 +126,8 @@ export const CustomerModule = () => {
   const [ownerFilter, setOwnerFilter] = useState("");
   const [stateFilter, setStateFilter] = useState("");
   const [cityFilter, setCityFilter] = useState("");
+  const [creditFilter, setCreditFilter] = useState<CustomerCreditListFilter | "">("");
+  const [creditFilterCapped, setCreditFilterCapped] = useState(false);
   const [cityOptions, setCityOptions] = useState<CustomerCityOption[]>([]);
   const [ownerOptions, setOwnerOptions] = useState<CommercialOwnerFilterOption[]>([]);
   const [page, setPage] = useState(1);
@@ -162,6 +179,7 @@ export const CustomerModule = () => {
       if (ownerFilter) q.set("commercialOwner", ownerFilter);
       if (stateFilter) q.set("state", stateFilter);
       if (cityFilter) q.set("city", cityFilter);
+      if (creditFilter) q.set("creditStatus", creditFilter);
       const data = await fetchJsonOk<{
         items?: Customer[];
         customers?: Customer[];
@@ -171,6 +189,7 @@ export const CustomerModule = () => {
         totalPages?: number;
         commercialOwnerOptions?: CommercialOwnerFilterOption[];
         cityOptions?: CustomerCityOption[];
+        creditFilterCapped?: boolean;
       }>(`/api/customers?${q}`);
       const items = Array.isArray(data.items)
         ? data.items
@@ -182,6 +201,7 @@ export const CustomerModule = () => {
         setOwnerOptions(data.commercialOwnerOptions);
       }
       setCityOptions(Array.isArray(data.cityOptions) ? data.cityOptions : []);
+      setCreditFilterCapped(data.creditFilterCapped === true);
       setPagination({
         page: data.page ?? page,
         limit: data.limit ?? CUSTOMER_PAGE_SIZE,
@@ -194,7 +214,7 @@ export const CustomerModule = () => {
     } finally {
       setLoading(false);
     }
-  }, [page, debouncedSearch, ownerFilter, stateFilter, cityFilter]);
+  }, [page, debouncedSearch, ownerFilter, stateFilter, cityFilter, creditFilter]);
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedSearch(searchTerm.trim()), 300);
@@ -306,6 +326,7 @@ export const CustomerModule = () => {
     commercialOwner: ownerFilter,
     state: stateFilter,
     city: cityFilter,
+    creditStatus: creditFilter,
   });
 
   const handleExportXlsx = async () => {
@@ -444,6 +465,36 @@ export const CustomerModule = () => {
               </option>
             ))}
           </select>
+        </div>
+        <div
+          className="flex flex-wrap items-center gap-1.5"
+          role="group"
+          aria-label="Filtrar por situação de crédito"
+          data-testid="customers-filter-credit"
+        >
+          <span className="mr-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Crédito</span>
+          {CUSTOMER_CREDIT_FILTER_OPTIONS.map((option) => {
+            const selected = creditFilter === option.id;
+            return (
+              <button
+                key={option.id || "all"}
+                type="button"
+                aria-pressed={selected}
+                data-credit-filter={option.id || "all"}
+                onClick={() => {
+                  setCreditFilter(option.id);
+                  setPage(1);
+                }}
+                className={cn(
+                  "inline-flex h-8 items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium transition-colors",
+                  selected ? option.active : "border-border bg-card text-muted-foreground hover:bg-accent"
+                )}
+              >
+                {option.dot ? <span className={cn("h-2 w-2 rounded-full", option.dot)} aria-hidden /> : null}
+                {option.label}
+              </button>
+            );
+          })}
         </div>
         <div className="flex flex-wrap items-center justify-end gap-1.5">
           <TourHelpButton onClick={() => setTourOpen(true)} />
@@ -769,6 +820,7 @@ export const CustomerModule = () => {
             <span>
               {formatCustomerListRange(pagination)}
               {pagination.totalPages > 1 ? ` · Página ${pagination.page} de ${pagination.totalPages}` : ""}
+              {creditFilterCapped ? " · Situação lida nos primeiros 8.000 do recorte. Afine estado, cidade ou busca para o restante." : ""}
             </span>
             <div className="flex flex-wrap gap-1.5">
               <button

@@ -147,6 +147,7 @@ describe("customerListReportExport", () => {
       { label: "Responsável comercial", value: "GISLENE LIMA" },
       { label: "Estado", value: "Todos os estados" },
       { label: "Cidade", value: "Todas as cidades" },
+      { label: "Situação de crédito", value: "Todas as situações" },
     ]);
     const empty = buildCustomerListReportAppliedFilters({
       search: "",
@@ -238,8 +239,9 @@ describe("customerListReportExport", () => {
         commercialOwner: "none",
         state: "SC",
         city: "JOINVILLE",
+        creditStatus: "blocked",
       }),
-      "search=acme&commercialOwner=none&state=SC&city=JOINVILLE"
+      "search=acme&commercialOwner=none&state=SC&city=JOINVILLE&creditStatus=blocked"
     );
     assert.doesNotMatch(query, /page=/);
     assert.doesNotMatch(query, /limit=/);

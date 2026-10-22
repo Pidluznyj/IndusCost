@@ -1,10 +1,11 @@
 /**
  * Carrega a população filtrada da tela Comercial > Clientes para exportação.
- * Mesmos filtros da grade (busca, responsável, estado e cidade), sem paginação de 20.
+ * Mesmos filtros da grade (busca, responsável, estado, cidade e situação de crédito), sem paginação de 20.
  */
 import type { PrismaClient } from "@prisma/client";
 import { createHash } from "node:crypto";
 import { attachCustomerCnpjRisk } from "./customerCnpjRiskSummary.server.js";
+import { portfolioDecisionMatchesCreditFilter } from "./commercial/customerCreditListFilter.js";
 import { attachPortfolioCredit } from "./commercial/portfolioCredit.server.js";
 import {
   attachCustomerCommercialOwnerListFields,
@@ -87,8 +88,14 @@ export async function loadCustomerListReportExportPayload(
     now: evaluatedAt,
   });
   const withCredit = await attachPortfolioCredit(prisma, withBlocks, evaluatedAt);
+  const creditCapped = Boolean(list.creditStatus) && totalMatched > CUSTOMER_LIST_EXPORT_MAX;
+  const creditMatched = list.creditStatus
+    ? withCredit.filter((customer) =>
+        portfolioDecisionMatchesCreditFilter(customer.portfolioCredit?.decision.customerStatus, list.creditStatus)
+      )
+    : withCredit;
 
-  const rows = withCredit.map((customer) =>
+  const rows = creditMatched.map((customer) =>
     mapCustomerListReportExportRow({
       companyName: customer.companyName,
       tradeName: customer.tradeName,
@@ -114,6 +121,8 @@ export async function loadCustomerListReportExportPayload(
     stateUf: list.state,
     cityKey: list.city,
     cityLabel: cityFilter.options.find((option) => option.key === list.city)?.label,
+    creditStatus: list.creditStatus,
+    creditStatusCapped: creditCapped,
   });
   const emitterName = options.emitterName?.trim() || "—";
   const emitterEmail = options.emitterEmail?.trim() || "—";
@@ -136,7 +145,7 @@ export async function loadCustomerListReportExportPayload(
   return {
     generatedAt,
     appliedFilters,
-    summary: buildCustomerListReportExportSummary(rows, totalMatched),
+    summary: buildCustomerListReportExportSummary(rows, list.creditStatus ? rows.length : totalMatched),
     rows,
     copyControl: {
       copyCode: buildCustomerListReportCopyCode(new Date(generatedAt), fingerprint),
