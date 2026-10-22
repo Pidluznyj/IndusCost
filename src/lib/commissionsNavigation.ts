@@ -15,6 +15,7 @@ export const COMMISSIONS_UI_SECTION_IDS = [
   "customerExclusions",
   "orderProvision",
   "portfolioOutlook",
+  "view360",
   "reports",
   "reprocess",
 ] as const;
@@ -83,6 +84,7 @@ export const COMMISSIONS_SECTION_PATHS: Record<CommissionsSectionId, string> = {
   customerExclusions: "/commissions/exclusoes-cliente",
   orderProvision: "/commissions/provisao-pedido",
   portfolioOutlook: "/commissions/fluxo",
+  view360: "/commissions/visao-360",
   reports: "/commissions/relatorios",
   reprocess: "/commissions/reprocessar",
 };
@@ -133,6 +135,13 @@ export const COMMISSIONS_SECTIONS: CommissionsSectionDef[] = [
       "Realizado pelo recebimento, previsto pelo vencimento e saldo ainda não pago ao vendedor. Não fecha nem paga.",
   },
   {
+    id: "view360",
+    label: "Visão 360°",
+    path: COMMISSIONS_SECTION_PATHS.view360,
+    description:
+      "Pago, realizado, previsto sobre CRs e potencial dos PVs, com conciliação dos CRs. Somente leitura.",
+  },
+  {
     id: "reports",
     label: "Relatórios",
     path: COMMISSIONS_SECTION_PATHS.reports,
@@ -180,6 +189,7 @@ export function isCommissionsCanonicalPath(pathname: string): boolean {
   if (firstSegment === "exclusoes-cliente") return true;
   if (firstSegment === "provisao-pedido") return true;
   if (firstSegment === "fluxo") return true;
+  if (firstSegment === "visao-360") return true;
   if (firstSegment === "relatorios") return true;
   if (firstSegment === "reprocessar") return true;
   if (isCommissionsSectionId(firstSegment)) return true;
@@ -200,6 +210,7 @@ export function parseCommissionsSectionFromPath(pathname: string): CommissionsSe
   if (next === "exclusoes-cliente") return "customerExclusions";
   if (next === "provisao-pedido") return "orderProvision";
   if (next === "fluxo") return "portfolioOutlook";
+  if (next === "visao-360") return "view360";
   if (next === "relatorios") return "reports";
   if (next === "reprocessar") return "reprocess";
   if (isCommissionsLegacySectionSegment(next)) return "monthlyClosing";

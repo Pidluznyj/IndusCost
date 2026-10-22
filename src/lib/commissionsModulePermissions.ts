@@ -21,6 +21,7 @@ const LIVE_SECTION_RESOURCE: Partial<Record<CommissionsSectionId, string>> = {
   customerExclusions: TabResourceKeys.COMISSOES_EXCECOES,
   orderProvision: TabResourceKeys.COMISSOES_PROVISAO_PEDIDO,
   portfolioOutlook: TabResourceKeys.COMISSOES_RELATORIOS,
+  view360: TabResourceKeys.COMISSOES_RELATORIOS,
   reports: TabResourceKeys.COMISSOES_RELATORIOS,
   reprocess: TabResourceKeys.COMISSOES_REPROCESSAR,
 };
@@ -59,6 +60,9 @@ export function canViewCommissionsSection(
     return check.hasAnyPermission([...COMMISSIONS_VIEW_PERMISSIONS]);
   }
   if (sectionId === "portfolioOutlook") {
+    return check.hasAnyPermission([...COMMISSIONS_VIEW_PERMISSIONS]);
+  }
+  if (sectionId === "view360") {
     return check.hasAnyPermission([...COMMISSIONS_VIEW_PERMISSIONS]);
   }
   if (sectionId === "reports") {
@@ -102,6 +106,7 @@ export function listAllowedCommissionsLiveSectionIds(
   | "customerExclusions"
   | "orderProvision"
   | "portfolioOutlook"
+  | "view360"
   | "reports"
   | "reprocess"
 > {

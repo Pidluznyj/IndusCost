@@ -75,6 +75,7 @@ export type CommissionsLiveTabId =
   | "customerExclusions"
   | "orderProvision"
   | "portfolioOutlook"
+  | "view360"
   | "reports"
   | "reprocess";
 
@@ -107,6 +108,11 @@ export const COMMISSIONS_LIVE_UI_TABS: ReadonlyArray<{
     id: "portfolioOutlook",
     resourceKey: TabResourceKeys.COMISSOES_RELATORIOS,
     label: "Previsão",
+  },
+  {
+    id: "view360",
+    resourceKey: TabResourceKeys.COMISSOES_RELATORIOS,
+    label: "Visão 360°",
   },
   {
     id: "reports",

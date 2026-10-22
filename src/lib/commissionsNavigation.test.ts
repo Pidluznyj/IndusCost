@@ -31,14 +31,15 @@ function checker(perms: string[]): PermissionChecker {
 describe("commissionsNavigation", () => {
   it("modo simplificado expõe fechamento, fechamentos, exclusões, provisão, relatórios e reprocessamento", () => {
     assert.equal(COMMISSIONS_SIMPLIFIED_UI, true);
-    assert.equal(COMMISSIONS_SECTIONS.length, 7);
+    assert.equal(COMMISSIONS_SECTIONS.length, 8);
     assert.equal(COMMISSIONS_SECTIONS[0]?.id, "monthlyClosing");
     assert.equal(COMMISSIONS_SECTIONS[1]?.id, "closings");
     assert.equal(COMMISSIONS_SECTIONS[2]?.id, "customerExclusions");
     assert.equal(COMMISSIONS_SECTIONS[3]?.id, "orderProvision");
     assert.equal(COMMISSIONS_SECTIONS[4]?.id, "portfolioOutlook");
-    assert.equal(COMMISSIONS_SECTIONS[5]?.id, "reports");
-    assert.equal(COMMISSIONS_SECTIONS[6]?.id, "reprocess");
+    assert.equal(COMMISSIONS_SECTIONS[5]?.id, "view360");
+    assert.equal(COMMISSIONS_SECTIONS[6]?.id, "reports");
+    assert.equal(COMMISSIONS_SECTIONS[7]?.id, "reprocess");
     assert.equal(COMMISSIONS_SECTIONS.some((s) => s.id === "receivableForecast"), false);
     assert.equal(COMMISSIONS_SECTIONS.some((s) => s.id === "visualAudit"), false);
     assert.equal(COMMISSIONS_SECTION_PATHS.monthlyClosing, "/commissions");
@@ -46,6 +47,7 @@ describe("commissionsNavigation", () => {
     assert.equal(COMMISSIONS_SECTION_PATHS.customerExclusions, "/commissions/exclusoes-cliente");
     assert.equal(COMMISSIONS_SECTION_PATHS.orderProvision, "/commissions/provisao-pedido");
     assert.equal(COMMISSIONS_SECTION_PATHS.portfolioOutlook, "/commissions/fluxo");
+    assert.equal(COMMISSIONS_SECTION_PATHS.view360, "/commissions/visao-360");
     assert.equal(COMMISSIONS_SECTION_PATHS.reports, "/commissions/relatorios");
     assert.equal(COMMISSIONS_SECTION_PATHS.reprocess, "/commissions/reprocessar");
     assert.equal(isCommissionsHiddenSection("receivableForecast"), true);
