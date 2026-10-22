@@ -2,6 +2,8 @@ import React from "react";
 import { Link } from "react-router-dom";
 import { MaterialsMarketIntelligenceMonitoredList } from "@/src/components/materials/MaterialsMarketIntelligenceMonitoredList";
 import { MaterialsMarketGlobalIndicatorsSection } from "@/src/components/materials/MaterialsMarketGlobalIndicatorsSection";
+import { MarketGlobalIndicatorsTrendsSection } from "@/src/components/materials/MarketGlobalIndicatorsTrendsSection";
+import { MarketGlobalIndicatorsRefreshProvider } from "@/src/components/materials/marketGlobalIndicatorsRefresh";
 import { MaterialsMarketIntelligenceAlertsPanel } from "@/src/components/materials/MaterialMarketAlertsList";
 import { MaterialsMarketIntelligenceTopOpportunityCard } from "@/src/components/materials/MaterialsMarketIntelligenceTopOpportunityCard";
 import { MaterialMarketAlertGlobalConfigPanel } from "@/src/components/materials/MaterialMarketAlertGlobalConfigPanel";
@@ -33,7 +35,10 @@ export function MaterialsMarketIntelligencePage() {
         </Link>
       </header>
 
-      <MaterialsMarketGlobalIndicatorsSection />
+      <MarketGlobalIndicatorsRefreshProvider>
+        <MaterialsMarketGlobalIndicatorsSection />
+        <MarketGlobalIndicatorsTrendsSection />
+      </MarketGlobalIndicatorsRefreshProvider>
 
       <section
         className="space-y-3"

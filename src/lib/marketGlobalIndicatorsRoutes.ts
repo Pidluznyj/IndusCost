@@ -2,6 +2,13 @@ import type express from "express";
 import type { RequestHandler } from "express";
 import { ENGINEERING_RESOURCE_KEYS } from "@/src/lib/engineeringAccess.js";
 import { collectBrentCommoditySnapshot } from "@/src/lib/brentCommodityCollection.js";
+import {
+  MARKET_GLOBAL_INDICATORS_HISTORY_API,
+  parseMarketHistoryRange,
+  type MarketGlobalIndicatorsHistoryDto,
+  type MarketHistoryRange,
+} from "@/src/lib/marketGlobalIndicatorsHistory.js";
+import { loadMarketGlobalIndicatorsHistory } from "@/src/lib/marketGlobalIndicatorsHistory.server.js";
 import { loadMarketGlobalIndicators } from "@/src/lib/marketGlobalIndicators.server.js";
 import {
   mapCollectionOutcomeToRefreshPart,
@@ -16,6 +23,10 @@ import {
 type AuthGuards = {
   requireAppAuth: RequestHandler;
   requireResource: (resourceKey: string, action?: string) => RequestHandler;
+};
+
+export type MarketGlobalIndicatorsRouteDeps = {
+  loadHistory?: (input: { range: MarketHistoryRange }) => Promise<MarketGlobalIndicatorsHistoryDto>;
 };
 
 export async function refreshMarketGlobalIndicators(): Promise<MarketGlobalIndicatorsRefreshResponse> {
@@ -37,9 +48,13 @@ export async function refreshMarketGlobalIndicators(): Promise<MarketGlobalIndic
 
 export function registerMarketGlobalIndicatorsRoutes(
   app: express.Application,
-  guards: AuthGuards
+  guards: AuthGuards,
+  deps: MarketGlobalIndicatorsRouteDeps = {}
 ): void {
   const { requireAppAuth, requireResource } = guards;
+  const loadHistory =
+    deps.loadHistory ??
+    ((input: { range: MarketHistoryRange }) => loadMarketGlobalIndicatorsHistory(input));
   const viewMi = requireResource(
     ENGINEERING_RESOURCE_KEYS.marketIntelligenceHome,
     "view"
@@ -76,6 +91,31 @@ export function registerMarketGlobalIndicatorsRoutes(
         return res.status(500).json({
           error: "GLOBAL_INDICATORS_FAILED",
           message: "Não foi possível carregar os indicadores globais de mercado.",
+        });
+      }
+    }
+  );
+
+  app.get(
+    MARKET_GLOBAL_INDICATORS_HISTORY_API,
+    requireAppAuth,
+    viewMi,
+    async (req, res) => {
+      const parsed = parseMarketHistoryRange(req.query.range);
+      if (!parsed.ok) {
+        return res.status(400).json({
+          error: "INVALID_RANGE",
+          message: "Período inválido. Use 7d, 30d ou 90d.",
+        });
+      }
+      try {
+        const payload = await loadHistory({ range: parsed.range });
+        return res.json(payload);
+      } catch (error) {
+        console.error(`GET ${MARKET_GLOBAL_INDICATORS_HISTORY_API}`, error);
+        return res.status(500).json({
+          error: "GLOBAL_INDICATORS_HISTORY_FAILED",
+          message: "Não foi possível carregar o histórico dos indicadores globais.",
         });
       }
     }

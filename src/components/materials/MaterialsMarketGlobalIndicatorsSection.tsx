@@ -12,6 +12,7 @@ import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
 import { SYSTEM_TOTALIZER_GRID_CLASS } from "@/src/components/ui/SystemTotalizerCard";
 import { ExecutiveSummarySection } from "@/src/components/ui/ExecutiveSummarySection";
 import { ContextualDashboardEmpty } from "@/src/components/contextual/ContextualDashboardEmpty";
+import { useMarketGlobalIndicatorsRefresh } from "@/src/components/materials/marketGlobalIndicatorsRefresh";
 
 export const MARKET_GLOBAL_INDICATORS_EMPTY_MESSAGE =
   "Ainda não há indicadores globais registrados. Os valores de Dólar PTAX e Brent aparecerão aqui após a primeira coleta bem-sucedida.";
@@ -81,6 +82,7 @@ export function MaterialsMarketGlobalIndicatorsSection() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [refreshWarning, setRefreshWarning] = useState<string | null>(null);
+  const persistedRefresh = useMarketGlobalIndicatorsRefresh();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -110,12 +112,13 @@ export function MaterialsMarketGlobalIndicatorsSection() {
       setData(payload.indicators);
       const warning = buildRefreshWarning(payload);
       if (warning) setRefreshWarning(warning);
+      persistedRefresh?.notifyPersistedRefresh();
     } catch {
       setError(MARKET_GLOBAL_INDICATORS_ERROR_MESSAGE);
     } finally {
       setRefreshing(false);
     }
-  }, []);
+  }, [persistedRefresh]);
 
   useEffect(() => {
     void load();

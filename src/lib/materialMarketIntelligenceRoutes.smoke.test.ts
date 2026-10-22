@@ -248,6 +248,7 @@ describe("MI route smoke — modular registrars (HTTP 401 auth-gate)", () => {
     // Global indicators (home KPIs)
     { method: "GET", path: "/api/market/header-ticker" },
     { method: "GET", path: "/api/market-intelligence/global-indicators" },
+    { method: "GET", path: "/api/market-intelligence/global-indicators/history?range=30d" },
     { method: "POST", path: "/api/market-intelligence/global-indicators/refresh" },
     // Governance (related quote lifecycle)
     {
