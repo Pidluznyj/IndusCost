@@ -2523,6 +2523,9 @@ model Customer {
   commercialCreditExceptions       CommercialCreditException[]
   corporateLinks                   CustomerCorporateLink[]       @relation("CorporateLinkSubject")
   corporateLinksIncoming           CustomerCorporateLink[]       @relation("CorporateLinkRelated")
+  corporateRadarProfile            CommercialCorporateRadarProfile?
+  corporateRadarSignals            CommercialCorporateRadarSignal[] @relation("RadarSignalSubject")
+  corporateRadarSignalsIncoming    CommercialCorporateRadarSignal[] @relation("RadarSignalRelated")
   commercialExternalProtests       CommercialExternalProtest[]
   commercialExternalProtestConsultations CommercialExternalProtestConsultation[]
   commercialCorporateMemberships   CommercialCorporateMembership[]
@@ -3429,18 +3432,92 @@ model CommercialCreditException {
   @@index([customerId, expiresAt])
 }
 
-/// Vínculo societário confirmado entre clientes oficiais. Sem valor de dívida.
+/// Vínculo entre clientes oficiais. Sem valor de dívida. Linha antiga permanece confirmada.
 model CustomerCorporateLink {
-  id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  customerId        String   @db.Uuid
-  relatedCustomerId String   @db.Uuid
-  evidenceRef       String?
-  createdAt         DateTime @default(now()) @db.Timestamptz(6)
-  Customer          Customer @relation("CorporateLinkSubject", fields: [customerId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  RelatedCustomer   Customer @relation("CorporateLinkRelated", fields: [relatedCustomerId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  id                   String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  customerId           String    @db.Uuid
+  relatedCustomerId    String    @db.Uuid
+  evidenceRef          String?
+  /// CONFIRMED, REJECTED ou CLOSED. Ausência legada significa confirmado.
+  status               String    @default("CONFIRMED")
+  evidenceKind         String?
+  justification        String?
+  actorUserId          String?
+  evidenceFingerprint  String?
+  closedAt             DateTime? @db.Timestamptz(6)
+  createdAt            DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt            DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+  Customer             Customer  @relation("CorporateLinkSubject", fields: [customerId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  RelatedCustomer      Customer  @relation("CorporateLinkRelated", fields: [relatedCustomerId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@unique([customerId, relatedCustomerId])
   @@index([relatedCustomerId])
+  @@index([status])
+}
+
+/// Índice do Radar. Não altera o cadastro oficial do Nomus nem guarda CPF.
+model CommercialCorporateRadarProfile {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  customerId    String   @unique @db.Uuid
+  cnpjRoot      String?
+  phoneKey      String?
+  emailKey      String?
+  emailDomain   String?
+  addressKey    String?
+  versionHash   String
+  evaluatedAt   DateTime @db.Timestamptz(6)
+  Customer      Customer @relation(fields: [customerId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([cnpjRoot])
+  @@index([phoneKey])
+  @@index([emailKey])
+  @@index([emailDomain])
+  @@index([addressKey])
+}
+
+/// Sugestão do Radar. Não é vínculo confirmado e não entra no crédito enquanto estiver só aqui.
+model CommercialCorporateRadarSignal {
+  id                  String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  pairKey             String   @unique
+  customerId          String   @db.Uuid
+  relatedCustomerId   String   @db.Uuid
+  classification      String
+  patternCodes        String
+  evidenceFingerprint String
+  evidenceSummary     String
+  direction           String   @default("SYMMETRIC")
+  source              String
+  status              String   @default("OPEN")
+  priorityRank        Int      @default(5)
+  detectedAt          DateTime @db.Timestamptz(6)
+  evaluatedAt         DateTime @db.Timestamptz(6)
+  actorUserId         String?
+  justification       String?
+  evidenceHistory     Json?
+  Customer            Customer @relation("RadarSignalSubject", fields: [customerId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  RelatedCustomer     Customer @relation("RadarSignalRelated", fields: [relatedCustomerId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([status, priorityRank])
+  @@index([customerId])
+  @@index([relatedCustomerId])
+}
+
+/// Execução do Radar. Não grava título, saldo nem comissão.
+model CommercialCorporateRadarRun {
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  mode         String
+  startedAt    DateTime  @db.Timestamptz(6)
+  finishedAt   DateTime? @db.Timestamptz(6)
+  examined     Int       @default(0)
+  created      Int       @default(0)
+  updated      Int       @default(0)
+  queued       Int       @default(0)
+  errors       Int       @default(0)
+  durationMs   Int       @default(0)
+  checkpoint   DateTime? @db.Timestamptz(6)
+  dryRun       Boolean   @default(true)
+
+  @@index([startedAt])
 }
 
 /// Registro manual de protesto externo. A ausência de linha não significa consulta sem ocorrência.
@@ -3493,6 +3570,10 @@ model CommercialCorporateMembership {
   memberCnpj        String?
   /// Hash irreversível de CPF válido. Não guarda o documento.
   memberIdentityKey String?
+  /// Nome público do QSA, só como evidência de revisão. Não é CPF.
+  memberName        String?
+  /// Nome normalizado para achar coincidência. Não confirma identidade.
+  memberNameKey     String?
   reliability       String
   evidenceRef       String    @unique
   createdAt         DateTime  @default(now()) @db.Timestamptz(6)
@@ -3501,6 +3582,7 @@ model CommercialCorporateMembership {
   @@index([subjectCnpj, consultedAt])
   @@index([memberCnpj])
   @@index([memberIdentityKey])
+  @@index([memberNameKey])
   @@index([subjectCustomerId, consultedAt])
 }
 

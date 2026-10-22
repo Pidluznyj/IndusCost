@@ -11,6 +11,7 @@ import {
   CustomerSalesBlockBadge,
 } from "../../components/customers/CustomerSalesBlockBadge.js";
 import type { CustomerSalesBlockPublic } from "./customerSalesBlockView.js";
+import { operationBlockedByOfficialCredit } from "./portfolioCredit.js";
 
 const PAGE = "src/components/CustomerModule.tsx";
 const HEADER = "src/components/crm/customer-intelligence/CustomerIntelligenceHeader.tsx";
@@ -113,16 +114,42 @@ describe("customer sales block UI", () => {
     assert.doesNotMatch(identity, /boleto/i);
 
     const free = renderToStaticMarkup(
-      <CustomerNewSaleButton salesBlock={{ blocked: false, reason: null, resolution: "RESOLVED" }} />
+      <CustomerNewSaleButton
+        salesBlock={{ blocked: false, reason: null, resolution: "RESOLVED" }}
+        creditDecision={{ customerStatus: "LIBERADO", decisionTitle: "CRÉDITO LIBERADO", reasonLabel: "Sem restrição impeditiva" }}
+      />
     );
     assert.doesNotMatch(free, /disabled=""/);
     assert.match(free, /title="Nova venda"/);
+
+    const sharedRisk = renderToStaticMarkup(
+      <>
+        <CustomerNewSaleButton
+          salesBlock={{ blocked: false, reason: null, resolution: "RESOLVED" }}
+          creditDecision={{
+            customerStatus: "BLOQUEADO",
+            decisionTitle: "CRÉDITO BLOQUEADO",
+            reasonLabel: "Risco compartilhado",
+          }}
+        />
+        <CustomerNewQuoteButton />
+      </>
+    );
+    assert.match(sharedRisk, /<button[^>]*disabled=""[^>]*data-testid="customer-new-sale"/);
+    assert.match(sharedRisk, /title="CRÉDITO BLOQUEADO\. Risco compartilhado\."/);
+    assert.doesNotMatch(sharedRisk, /boleto/i);
+    assert.doesNotMatch(sharedRisk, /customer-new-quote"[^>]*disabled/);
+    assert.equal(operationBlockedByOfficialCredit({ paymentTerms: "30", customerStatus: "BLOQUEADO" }), true);
+    assert.equal(operationBlockedByOfficialCredit({ paymentTerms: "À vista", customerStatus: "BLOQUEADO" }), false);
+    assert.equal(operationBlockedByOfficialCredit({ paymentTerms: "30", customerStatus: "EM_ANALISE" }), true);
+    assert.equal(operationBlockedByOfficialCredit({ paymentTerms: "30", customerStatus: "LIBERADO" }), false);
   });
 
   it("grid de clientes, header 360 e propostas consomem o payload sem recalcular dívida", () => {
     const page = read(PAGE);
     const header = read(HEADER);
     const proposals = read(PROPOSALS);
+    const server = read(SERVER);
     assert.match(page, /CustomerSalesBlockBadge/);
     assert.match(page, /salesBlock\?\.blocked === true/);
     assert.match(page, /bg-red-50/);
@@ -130,12 +157,15 @@ describe("customer sales block UI", () => {
     assert.match(page, /CustomerCadastralStatusBadge/);
     assert.match(page, /CustomerNewSaleButton/);
     assert.match(page, /salesBlock=\{editingCustomer\.salesBlock\}/);
+    assert.match(page, /creditDecision=\{editingCustomer\.portfolioCredit\?\.decision\}/);
     assert.match(header, /CustomerSalesBlockBadge/);
     assert.match(header, /CustomerCadastralStatusBadge/);
     assert.doesNotMatch(page, /dueDate < /);
     assert.doesNotMatch(page, /balanceReceivable/);
     assert.match(proposals, /salesBlock\?\.blocked/);
+    assert.match(proposals, /operationBlockedByOfficialCredit/);
     assert.match(proposals, /customerSalesBlockButtonHint/);
+    assert.match(server, /attachPortfolioCreditToNestedCustomers/);
   });
 
   it("backend da criação de venda revalida a trava e responde com o código do motivo real", () => {

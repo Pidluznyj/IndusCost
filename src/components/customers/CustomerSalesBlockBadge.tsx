@@ -10,6 +10,10 @@ import {
   isCustomerSalesBlockIdentityUnresolved,
   type CustomerSalesBlockPublic,
 } from "@/src/lib/commercial/customerSalesBlockView";
+import {
+  officialCreditDeniesTermSale,
+  officialCreditSaleHint,
+} from "@/src/lib/commercial/portfolioCredit";
 
 export function CustomerCadastralStatusBadge({
   status,
@@ -73,6 +77,7 @@ export function CustomerSalesBlockBadge({
 
 export function CustomerNewSaleButton({
   salesBlock,
+  creditDecision,
   blocked,
   disabled,
   onClick,
@@ -80,17 +85,22 @@ export function CustomerNewSaleButton({
 }: {
   /** Payload do backend; decide bloqueio e dica pelo motivo real. */
   salesBlock?: CustomerSalesBlockPublic | null;
+  /** Decisão oficial de prazo. Ausente não libera; o backend revalida a efetivação. */
+  creditDecision?: { customerStatus: string; decisionTitle: string; reasonLabel: string } | null;
   /** Compatibilidade: bloqueio explícito quando não há payload. */
   blocked?: boolean;
   disabled?: boolean;
   onClick?: () => void;
   className?: string;
 }) {
-  const isBlocked = blocked === true || salesBlock?.blocked === true;
+  const creditBlocked = officialCreditDeniesTermSale(creditDecision);
+  const isBlocked = blocked === true || salesBlock?.blocked === true || creditBlocked;
   const isDisabled = Boolean(disabled || isBlocked);
-  const hint = isBlocked
-    ? customerSalesBlockButtonHint(salesBlock ?? { blocked: true, reason: "OVERDUE_BOLETO" })
-    : null;
+  const hint = creditBlocked && creditDecision
+    ? officialCreditSaleHint(creditDecision)
+    : isBlocked
+      ? customerSalesBlockButtonHint(salesBlock ?? { blocked: true, reason: "OVERDUE_BOLETO" })
+      : null;
   return (
     <button
       type="button"

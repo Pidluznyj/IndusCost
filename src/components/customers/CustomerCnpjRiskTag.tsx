@@ -1,14 +1,14 @@
 /**
- * Tag de score CNPJ no grid de Clientes: "83 · VENDA LIBERADA".
- * Só apresenta o que o backend persistiu na última consulta — nunca calcula.
+ * Tag de Score de Confiança no grid de Clientes: "66/100 · Regular".
+ * Parte do score cadastral persistido. Não repete o veredito de venda.
  * Sem consulta: chip neutro que abre a Consulta CNPJ (quando permitido).
  */
 import React from "react";
 import { ShieldCheck } from "lucide-react";
 import { cn } from "@/src/lib/utils";
+import type { CreditConfidenceResult } from "@/src/lib/commercial/creditConfidence";
 import {
   CUSTOMER_CNPJ_RISK_NO_LOOKUP_LABEL,
-  customerCnpjRiskTone,
   formatCustomerCnpjRiskTagLabel,
   formatCustomerCnpjRiskTooltip,
   type CustomerCnpjRiskSummary,
@@ -29,14 +29,32 @@ const BASE_CLASS =
 
 export function CustomerCnpjRiskTag({
   risk,
+  confidence,
   onConsult,
   className,
 }: {
   risk: CustomerCnpjRiskSummary | null | undefined;
+  /** Resultado oficial do lote. Quando presente, substitui o recálculo só cadastral. */
+  confidence?: CreditConfidenceResult | null;
   /** Abre a Consulta CNPJ do cliente (chip "Sem consulta" ou consulta vencida). */
   onConsult?: () => void;
   className?: string;
 }) {
+  if (confidence) {
+    const title = `Score de Confiança ${confidence.label}\nCadastro ${confidence.cadastral.contribution}/${confidence.cadastral.maxContribution} · QUOD ${confidence.quod.status} · IEPTB ${confidence.ieptb.status}\nTeto ${confidence.maximumPossibleScore} · ${confidence.policyVersion}\nEsta pontuação não autoriza venda a prazo.`;
+    return (
+      <span
+        className={cn(BASE_CLASS, TONE_CLASS.unknown, risk?.expired && "opacity-70", className)}
+        title={title}
+        data-testid="customer-cnpj-risk-tag"
+        data-tone="unknown"
+        data-expired={risk?.expired ? "true" : "false"}
+      >
+        <ShieldCheck className="h-3 w-3 shrink-0" aria-hidden />
+        <span className="truncate">{confidence.label}</span>
+      </span>
+    );
+  }
   if (!risk) {
     const label = CUSTOMER_CNPJ_RISK_NO_LOOKUP_LABEL;
     const title = "Nenhuma consulta CNPJ registrada para este cliente.";
@@ -60,9 +78,11 @@ export function CustomerCnpjRiskTag({
     );
   }
 
-  const tone = customerCnpjRiskTone(risk.verdict);
-  const label = formatCustomerCnpjRiskTagLabel(risk);
-  const title = formatCustomerCnpjRiskTooltip(risk);
+  const tone: CustomerCnpjRiskTone = "unknown";
+  const label = confidence?.label ?? formatCustomerCnpjRiskTagLabel(risk);
+  const title = confidence
+    ? `Score de Confiança ${confidence.label}\nCadastro ${confidence.cadastral.contribution}/${confidence.cadastral.maxContribution} · QUOD ${confidence.quod.status} · IEPTB ${confidence.ieptb.status}\nTeto ${confidence.maximumPossibleScore} · ${confidence.policyVersion}\nEsta pontuação não autoriza venda a prazo.`
+    : formatCustomerCnpjRiskTooltip(risk);
   return (
     <span
       className={cn(BASE_CLASS, TONE_CLASS[tone], risk.expired && "opacity-70", className)}

@@ -229,6 +229,15 @@ export async function buildCompanyIntelligencePayload(input: {
     } catch (error) {
       console.error("corporate-membership-record", error instanceof Error ? error.name : "error");
     }
+    try {
+      const customerId = input.customerId ?? row.customerId;
+      if (customerId) {
+        const { scheduleCorporateRadar } = await import("./commercial/corporateRadar.server.js");
+        scheduleCorporateRadar(customerId, "CNPJ_LOOKUP");
+      }
+    } catch (error) {
+      console.error("corporate-radar", error instanceof Error ? error.name : "error");
+    }
 
     await writeCommercialAuditLog({
       entityType: input.customerId ? "Customer" : "CustomerCnpjLookup",
@@ -428,6 +437,12 @@ export async function createCustomerFromCompanyIntelligence(input: {
     newValue: customer.taxId,
     performedBy: input.userId ?? null,
   });
+  try {
+    const { scheduleCorporateRadar } = await import("./commercial/corporateRadar.server.js");
+    scheduleCorporateRadar(customer.id, "CUSTOMER_CREATE");
+  } catch (error) {
+    console.error("corporate-radar", error instanceof Error ? error.name : "error");
+  }
 
   if (usePublicContact && (summary.phone || summary.email)) {
     await writeCommercialAuditLog({

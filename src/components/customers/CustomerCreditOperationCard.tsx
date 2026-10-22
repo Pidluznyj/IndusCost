@@ -32,10 +32,12 @@ export function CustomerCreditOperationSummaryView({
       <dl className="grid gap-2 sm:grid-cols-2">
         <div>
           <dt className="text-[10px] font-bold uppercase text-slate-500">Score cadastral</dt>
-          <dd>
-            {summary.cadastralScoreLabel}
-            {summary.cadastralVerdict ? ` · ${summary.cadastralVerdict}` : ""}
-          </dd>
+          <dd>{summary.cadastralScoreLabel}</dd>
+        </div>
+        <div>
+          <dt className="text-[10px] font-bold uppercase text-slate-500">Score de Confiança</dt>
+          <dd data-testid="customer-credit-confidence">{summary.confidenceScoreLabel}</dd>
+          {summary.confidenceNote ? <p className="text-xs font-semibold text-red-800">{summary.confidenceNote}</p> : null}
         </div>
         <div>
           <dt className="text-[10px] font-bold uppercase text-slate-500">Status de crédito</dt>

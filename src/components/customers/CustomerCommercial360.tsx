@@ -32,7 +32,9 @@ import {
   CustomerCadastralStatusBadge,
   CustomerSalesBlockBadge,
 } from "@/src/components/customers/CustomerSalesBlockBadge";
+import { CustomerCreditPostureBadge } from "@/src/components/customers/CustomerCreditPostureBadge";
 import { CustomerCreditOperationCard } from "@/src/components/customers/CustomerCreditOperationCard";
+import { CorporateRadarCustomerCard } from "@/src/components/customers/CorporateRadarPanel";
 import type { PortfolioAbcResult } from "@/src/lib/customerCommercialShared";
 import type { OfficialScopedOrderMetrics } from "@/src/lib/salesOrderRulesAdapter.js";
 import {
@@ -554,6 +556,7 @@ export const CustomerCommercial360: React.FC<Props> = ({ open, customerId, onClo
                 {customer?.tradeName ? `· ${customer.tradeName}` : ""}
               </span>
               <CustomerCadastralStatusBadge status={customer?.status} />
+              <CustomerCreditPostureBadge decision={customer?.portfolioCredit?.decision} />
               <CustomerSalesBlockBadge salesBlock={customer?.salesBlock} />
             </p>
             <p className="text-[10px] text-muted-foreground mt-2 max-w-2xl flex gap-1">
@@ -582,6 +585,8 @@ export const CustomerCommercial360: React.FC<Props> = ({ open, customerId, onClo
             </button>
           </div>
         </div>
+
+        <CorporateRadarCustomerCard customerId={customerId} />
 
         {customerId ? (
           <div className="mx-4 mt-3 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 text-xs text-muted-foreground flex flex-wrap items-center justify-between gap-2 shrink-0">

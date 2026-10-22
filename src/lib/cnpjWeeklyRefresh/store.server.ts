@@ -174,6 +174,14 @@ export function createPrismaCnpjRefreshStore(prisma: PrismaClient): CnpjRefreshS
       } catch (error) {
         console.error("corporate-membership-record", error instanceof Error ? error.name : "error");
       }
+      try {
+        if (input.customerId) {
+          const { scheduleCorporateRadar } = await import("@/src/lib/commercial/corporateRadar.server.js");
+          scheduleCorporateRadar(input.customerId, "QSA_REFRESH");
+        }
+      } catch (error) {
+        console.error("corporate-radar", error instanceof Error ? error.name : "error");
+      }
       return {
         id: row.id,
         cnpj: row.cnpj,

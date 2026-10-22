@@ -112,10 +112,11 @@ describe("apresentação da tag", () => {
 
   it("rótulo e tooltip só formatam o que foi persistido", () => {
     const risk = buildCustomerCnpjRiskSummary(lookup({ id: "l1" }), NOW);
-    assert.equal(formatCustomerCnpjRiskTagLabel(risk), "83 · VENDA LIBERADA");
+    assert.equal(formatCustomerCnpjRiskTagLabel(risk), "66/100 · Regular");
     const tooltip = formatCustomerCnpjRiskTooltip(risk);
-    assert.match(tooltip, /Score 83\/100 · VENDA LIBERADA/);
-    assert.match(tooltip, /Risco: Baixo — Prazos comerciais convencionais\./);
+    assert.match(tooltip, /Score de Confiança 66\/100 · Regular/);
+    assert.match(tooltip, /Score cadastral original: 83\/100/);
+    assert.doesNotMatch(tooltip, /VENDA LIBERADA/);
     assert.match(tooltip, /Fonte: brasilapi\+publica\.cnpj\.ws/);
     assert.doesNotMatch(tooltip, /vencida/);
     const stale = buildCustomerCnpjRiskSummary(lookup({ id: "l2", expiresAt: new Date("2026-09-01T00:00:00Z") }), NOW);
@@ -172,15 +173,18 @@ describe("grid de Clientes — contrato", () => {
   const server = readFileSync("server.ts", "utf8");
 
   it("API paginada anexa cnpjRisk a cada cliente", () => {
-    assert.match(server, /attachCustomerCnpjRisk\(prisma, items\)/);
+    assert.match(server, /attachCustomerCnpjRisk\(prisma, items, evaluatedAt\)/);
+    assert.match(server, /attachPortfolioCredit\(prisma, withBlocks, evaluatedAt\)/);
     assert.match(server, /buildCustomerListResponse\(/);
   });
 
   it("coluna Documento saiu; coluna Score CNPJ entrou com a tag", () => {
     const header = /<thead[\s\S]*?<\/thead>/.exec(module)![0];
     assert.doesNotMatch(header, />Documento</);
-    assert.match(header, />Score CNPJ</);
-    assert.match(module, /<CustomerCnpjRiskTag risk=\{c\.cnpjRisk\} onConsult=/);
+    assert.match(header, />Score de Confiança</);
+    assert.match(module, /<CustomerCnpjRiskTag/);
+    assert.match(module, /confidence=\{c\.portfolioCredit\?\.confidence\}/);
+    assert.match(module, /CustomerCreditPostureBadge/);
     assert.doesNotMatch(module, /whitespace-nowrap">\{c\.taxId\}<\/td>/);
   });
 
@@ -190,7 +194,7 @@ describe("grid de Clientes — contrato", () => {
     assert.match(module, /<table className="w-full table-fixed text-left border-collapse">/);
     const colgroup = /<colgroup>[\s\S]*?<\/colgroup>/.exec(module);
     assert.ok(colgroup, "colgroup ausente");
-    assert.equal((colgroup[0].match(/<col[\s/]/g) ?? []).length, 6);
+    assert.equal((colgroup[0].match(/<col[\s/]/g) ?? []).length, 7);
     const tableCell = /<td className="px-3 py-1\.5 whitespace-nowrap">\s*<CustomerCnpjRiskTag/.exec(module);
     assert.ok(tableCell, "célula da tag deve ser nowrap");
     // Nenhum max-w nas células: larguras vêm do colgroup.

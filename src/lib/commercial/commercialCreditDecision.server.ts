@@ -12,6 +12,7 @@ import {
   CommercialCreditDeniedError,
   CommercialCreditExceptionError,
   decideCommercialCredit,
+  interpretIeptbConsultations,
   resolveCommercialCreditExceptionPermission,
   type CommercialIeptbEvidence,
   type CommercialQuodEvidence,
@@ -30,11 +31,20 @@ import {
 } from "./commercialCreditOccurrence.js";
 import {
   creditStatusLabel,
+  loadCorporateLinkGraph,
   loadCorporateRelationAssessment,
   presentCorporateCandidate,
   presentCorporateRelation,
   type CorporateRelationView,
 } from "./corporateRelation.server.js";
+import { loadCreditRelationSignals } from "./creditRelationFacts.server.js";
+import {
+  IEPTB_READ_FAILED,
+  QUOD_READ_FAILED,
+  selectIeptbCreditEvidence,
+  selectQuodCreditEvidence,
+  type StoredQuodConsultation,
+} from "./creditEvidenceSelection.js";
 import type { ExternalProtestCreditFact } from "./externalProtest/externalProtestProvider.js";
 import type { ExternalProtestCache } from "./externalProtest/externalProtestQuery.js";
 import {
@@ -81,40 +91,46 @@ const QUOD_NOT_CONSULTED: CommercialQuodEvidence = {
   state: "NOT_CONSULTED",
   confirmedRestriction: false,
   insufficient: false,
+  cnpjMatches: true,
 };
 
-/** Lê só os indicadores da última consulta válida. Sem payload e sem score. */
+/** Lê só os indicadores já persistidos. Sem payload, sem score e sem consulta paga. */
 export async function loadQuodCreditEvidence(
   db: object,
   customerId: string,
-  now: Date
+  now: Date,
+  customerCnpj?: string | null
 ): Promise<CommercialQuodEvidence> {
   const model = (db as {
     quodDossierConsultation?: {
-      findFirst(args: unknown): Promise<{
-        confirmedRestriction: boolean;
-        insufficient: boolean;
-        validUntil: Date | null;
-      } | null>;
+      findMany?(args: unknown): Promise<StoredQuodConsultation[]>;
+      findFirst?(args: unknown): Promise<StoredQuodConsultation | null>;
     };
   }).quodDossierConsultation;
-  if (!model?.findFirst) return QUOD_NOT_CONSULTED;
+  if (!model?.findMany && !model?.findFirst) return QUOD_NOT_CONSULTED;
   try {
-    const row = await model.findFirst({
-      where: { customerId, status: "SUCCEEDED" },
-      orderBy: { consultedAt: "desc" },
-      select: { confirmedRestriction: true, insufficient: true, validUntil: true },
-    });
-    if (!row) return QUOD_NOT_CONSULTED;
-    const fresh = row.validUntil != null && row.validUntil.getTime() > now.getTime();
-    return {
-      state: fresh ? "VALID" : "STALE",
-      confirmedRestriction: row.confirmedRestriction === true,
-      insufficient: row.insufficient === true,
-    };
+    const rows = model.findMany
+      ? await model.findMany({
+          where: { customerId },
+          orderBy: { consultedAt: "desc" },
+          select: {
+            cnpj: true,
+            status: true,
+            confirmedRestriction: true,
+            insufficient: true,
+            validUntil: true,
+            consultedAt: true,
+          },
+        })
+      : [await model.findFirst!({
+          where: { customerId, status: "SUCCEEDED" },
+          orderBy: { consultedAt: "desc" },
+          select: { cnpj: true, confirmedRestriction: true, insufficient: true, validUntil: true, consultedAt: true },
+        })].filter((row): row is StoredQuodConsultation => row != null).map((row) => ({ ...row, status: row.status ?? "SUCCEEDED" }));
+    return selectQuodCreditEvidence(rows, now, customerCnpj);
   } catch (error) {
     console.error("quod-credit-evidence", error instanceof Error ? error.name : "error");
-    return QUOD_NOT_CONSULTED;
+    return QUOD_READ_FAILED;
   }
 }
 
@@ -124,38 +140,70 @@ const IEPTB_NOT_CONSULTED: CommercialIeptbEvidence = {
   insufficient: false,
 };
 
-/** Lê só o indicador da última consulta IEPTB válida. Sem payload. */
+/** Lê só o indicador da consulta IEPTB já persistida. Sem payload e sem consulta paga. */
 export async function loadIeptbCreditEvidence(
   db: object,
   customerId: string,
-  now: Date
+  now: Date,
+  customerCnpj?: string | null
 ): Promise<CommercialIeptbEvidence> {
   const model = (db as {
     ieptbOnlineConsultation?: {
-      findFirst(args: unknown): Promise<{
+      findMany?(args: unknown): Promise<
+        Array<{
+          status?: string | null;
+          confirmedProtest: boolean;
+          confirmedClear?: boolean | null;
+          insufficient: boolean;
+          validUntil: Date | null;
+          consultedAt?: Date | null;
+        }>
+      >;
+      findFirst?(args: unknown): Promise<{
+        status?: string | null;
         confirmedProtest: boolean;
+        confirmedClear?: boolean | null;
         insufficient: boolean;
         validUntil: Date | null;
+        consultedAt?: Date | null;
       } | null>;
     };
   }).ieptbOnlineConsultation;
-  if (!model?.findFirst) return IEPTB_NOT_CONSULTED;
+  if (!model?.findMany && !model?.findFirst) return IEPTB_NOT_CONSULTED;
   try {
-    const row = await model.findFirst({
+    if (model.findMany) {
+      const rows = await model.findMany({
+        where: { customerId },
+        orderBy: { consultedAt: "desc" },
+        take: 8,
+        select: {
+          cnpj: true,
+          status: true,
+          confirmedProtest: true,
+          confirmedClear: true,
+          insufficient: true,
+          validUntil: true,
+          consultedAt: true,
+        },
+      });
+      return selectIeptbCreditEvidence(rows, now, customerCnpj);
+    }
+    const row = await model.findFirst!({
       where: { customerId, status: "SUCCEEDED" },
       orderBy: { consultedAt: "desc" },
-      select: { confirmedProtest: true, insufficient: true, validUntil: true },
+      select: {
+        status: true,
+        confirmedProtest: true,
+        confirmedClear: true,
+        insufficient: true,
+        validUntil: true,
+        consultedAt: true,
+      },
     });
-    if (!row) return IEPTB_NOT_CONSULTED;
-    const fresh = row.validUntil != null && row.validUntil.getTime() > now.getTime();
-    return {
-      state: fresh ? "VALID" : "STALE",
-      confirmedProtest: row.confirmedProtest === true,
-      insufficient: row.insufficient === true,
-    };
+    return selectIeptbCreditEvidence(row ? [{ ...row, status: row.status ?? "SUCCEEDED" }] : [], now, customerCnpj);
   } catch (error) {
     console.error("ieptb-credit-evidence", error instanceof Error ? error.name : "error");
-    return IEPTB_NOT_CONSULTED;
+    return IEPTB_READ_FAILED;
   }
 }
 
@@ -191,23 +239,44 @@ async function loadRelatedConfirmedProtests(
   const ieptb = (db as {
     ieptbOnlineConsultation?: {
       findMany(args: unknown): Promise<
-        Array<{ customerId: string; confirmedProtest: boolean; validUntil: Date | null }>
+        Array<{
+          customerId: string;
+          status?: string | null;
+          confirmedProtest: boolean;
+          confirmedClear?: boolean | null;
+          insufficient?: boolean | null;
+          validUntil: Date | null;
+          consultedAt?: Date | null;
+        }>
       >;
     };
   }).ieptbOnlineConsultation;
   if (ieptb?.findMany) {
     try {
       const rows = await ieptb.findMany({
-        where: { customerId: { in: [...customerIds] }, status: "SUCCEEDED" },
+        where: { customerId: { in: [...customerIds] } },
         orderBy: { consultedAt: "desc" },
-        select: { customerId: true, confirmedProtest: true, validUntil: true },
+        select: {
+          customerId: true,
+          status: true,
+          confirmedProtest: true,
+          confirmedClear: true,
+          insufficient: true,
+          validUntil: true,
+          consultedAt: true,
+        },
       });
-      const seen = new Set<string>();
+      const grouped = new Map<string, typeof rows>();
       for (const row of rows) {
-        if (!allowed.has(row.customerId) || seen.has(row.customerId)) continue;
-        seen.add(row.customerId);
-        const fresh = row.validUntil != null && row.validUntil.getTime() > now.getTime();
-        if (fresh && row.confirmedProtest === true) found.add(row.customerId);
+        if (!allowed.has(row.customerId)) continue;
+        const list = grouped.get(row.customerId) ?? [];
+        if (list.length >= 8) continue;
+        list.push(row);
+        grouped.set(row.customerId, list);
+      }
+      for (const [customerId, list] of grouped) {
+        const evidence = interpretIeptbConsultations(list, now);
+        if (evidence.state === "VALID" && evidence.confirmedProtest) found.add(customerId);
       }
     } catch (error) {
       console.error("related-ieptb", error instanceof Error ? error.name : "error");
@@ -250,6 +319,7 @@ export async function readCommercialCreditDecision(
     quod?: CommercialQuodEvidence | null;
     ieptb?: CommercialIeptbEvidence | null;
     now?: Date;
+    relationLimits?: { examineLimit?: number; maxCatalogRows?: number };
     externalProtestQuery?: {
       config?: ExternalProtestConfig;
       provider?: ExternalProtestProvider;
@@ -274,18 +344,23 @@ export async function readCommercialCreditDecision(
   occurrenceLines: string[];
   corporateRelations: CorporateRelationView[];
   pendingCorporateRelations: CorporateRelationView[];
+  relatedRestrictionFacts: Array<{
+    companyName: string;
+    cnpj: string | null;
+    titleCount: number | null;
+    overdueAmount: number | null;
+    maxDaysOverdue: number | null;
+    syncedAt: string | null;
+    protest: boolean;
+  }>;
   ownCustomerStatus: CommercialCreditDecision["customerStatus"];
   activeExceptions: Array<{ id: string; scope: string; expiresAt: Date; grantedByPermission: string | null }>;
   confirmedPendingProtest: boolean;
 }> {
   const now = input.now ?? new Date();
-  const [delinquency, links, protests, exceptions, occurrences] = await Promise.all([
+  const [delinquency, linkGraph, protests, exceptions, occurrences] = await Promise.all([
     analyzeCustomerDelinquency(db, input.customerId, now),
-    db.customerCorporateLink.findMany({
-      where: { customerId: input.customerId },
-      select: { relatedCustomerId: true },
-      take: COMMERCIAL_CREDIT_RELATED_PARTY_LIMIT + 1,
-    }),
+    loadCorporateLinkGraph(db, input.customerId),
     db.commercialExternalProtest.findMany({
       where: { customerId: input.customerId },
       select: { status: true, effectiveFrom: true, effectiveUntil: true },
@@ -311,18 +386,35 @@ export async function readCommercialCreditDecision(
     }),
   ]);
 
-  const qsa = await loadCorporateRelationAssessment(db as never, {
-    customerId: input.customerId,
-    cnpj: delinquency.evidence.cnpj,
+  let qsa: Awaited<ReturnType<typeof loadCorporateRelationAssessment>>;
+  try {
+    qsa = await loadCorporateRelationAssessment(db as never, {
+      customerId: input.customerId,
+      cnpj: delinquency.evidence.cnpj,
+      now,
+      rejected: linkGraph.rejected,
+    });
+  } catch (error) {
+    console.error("corporate-relation-assessment", error instanceof Error ? error.name : "error");
+    qsa = { relations: [], candidates: [], radarReadFailed: true };
+  }
+  const signals = await loadCreditRelationSignals(
+    db,
+    [{ id: input.customerId, taxId: delinquency.evidence.cnpj }],
     now,
-  });
-  const relatedIds = [
-    ...new Set([
-      ...links.map((link) => link.relatedCustomerId),
-      ...qsa.relations.map((relation) => relation.relatedCustomerId),
-    ]),
-  ].filter((id) => id !== input.customerId);
-  const relatedPartyOverflow = relatedIds.length > COMMERCIAL_CREDIT_RELATED_PARTY_LIMIT;
+    new Map([[input.customerId, linkGraph.rejected]]),
+    input.relationLimits
+  );
+  const signal = signals.byCustomer.get(input.customerId) ?? {
+    confirmedIds: [],
+    pendingCount: 1,
+    overflow: true,
+    readFailed: true,
+  };
+  const relatedIds = [...new Set([...linkGraph.confirmedIds, ...signal.confirmedIds])]
+    .filter((id) => id !== input.customerId)
+    .sort();
+  const relatedPartyOverflow = linkGraph.overflow || signal.overflow || signal.readFailed || relatedIds.length > COMMERCIAL_CREDIT_RELATED_PARTY_LIMIT;
   const relatedSlice = relatedIds.slice(0, COMMERCIAL_CREDIT_RELATED_PARTY_LIMIT);
   const relatedProtests = await loadRelatedConfirmedProtests(db, relatedSlice, now);
   const relatedParties = await Promise.all(
@@ -344,6 +436,36 @@ export async function readCommercialCreditDecision(
     .filter((relation) => relatedSlice.includes(relation.relatedCustomerId))
     .map((relation) => presentCorporateRelation(relation, statusByCustomer.get(relation.relatedCustomerId) ?? "Não consultado"));
   const pendingCorporateRelations = qsa.candidates.map((candidate) => presentCorporateCandidate(candidate));
+  let relatedNames = new Map<string, { companyName: string; taxId: string | null }>();
+  try {
+    const named = await db.customer.findMany({
+      where: { id: { in: relatedSlice } },
+      select: { id: true, companyName: true, taxId: true },
+    });
+    relatedNames = new Map(named.map((row) => [row.id, { companyName: row.companyName, taxId: row.taxId }]));
+  } catch {
+    relatedNames = new Map();
+  }
+  const relatedRestrictionFacts = relatedParties
+    .filter(
+      (party) =>
+        party.delinquency.status === "OVERDUE" ||
+        party.delinquency.status === "PROTESTED" ||
+        party.confirmedProtest === true
+    )
+    .map((party) => {
+      const named = relatedNames.get(party.customerId);
+      const relation = qsa.relations.find((item) => item.relatedCustomerId === party.customerId);
+      return {
+        companyName: named?.companyName || relation?.relatedCompanyName || "Empresa relacionada",
+        cnpj: named?.taxId || relation?.relatedCnpj || party.delinquency.evidence.cnpj,
+        titleCount: party.delinquency.overdueTitleCount,
+        overdueAmount: party.delinquency.overdueAmount,
+        maxDaysOverdue: party.delinquency.maxDaysOverdue,
+        syncedAt: party.delinquency.lastSyncedAt,
+        protest: party.confirmedProtest === true || party.delinquency.status === "PROTESTED",
+      };
+    });
   const storedExternalProtest = resolveStoredExternalProtest(protests, now);
   const externalProtestConsultation = await resolveExternalProtestForDecision({
     cnpj: delinquency.evidence.cnpj,
@@ -356,8 +478,8 @@ export async function readCommercialCreditDecision(
     confirmedCurrent: externalProtestConsultation.confirmedCurrent,
     review: externalProtestConsultation.review,
   });
-  const quod = input.quod === undefined ? await loadQuodCreditEvidence(db, input.customerId, now) : input.quod;
-  const ieptb = input.ieptb === undefined ? await loadIeptbCreditEvidence(db, input.customerId, now) : input.ieptb;
+  const quod = input.quod === undefined ? await loadQuodCreditEvidence(db, input.customerId, now, delinquency.evidence.cnpj) : input.quod;
+  const ieptb = input.ieptb === undefined ? await loadIeptbCreditEvidence(db, input.customerId, now, delinquency.evidence.cnpj) : input.ieptb;
   const formalProtest = resolveConfirmedPendingProtest({
     occurrences,
     openProtestedTitleIds: delinquency.evidence.protestedTitleIds,
@@ -390,7 +512,7 @@ export async function readCommercialCreditDecision(
     ...decisionInput,
     relatedParties,
     relatedPartyOverflow,
-    pendingRelatedPartyCount: pendingCorporateRelations.length,
+    pendingRelatedPartyCount: signal.pendingCount,
   });
   const ownDecision = decideCommercialCredit({
     ...decisionInput,
@@ -406,6 +528,7 @@ export async function readCommercialCreditDecision(
     occurrenceLines,
     corporateRelations,
     pendingCorporateRelations,
+    relatedRestrictionFacts,
     ownCustomerStatus: ownDecision.customerStatus,
     activeExceptions: exceptions
       .filter((row) => row.revokedAt == null && row.expiresAt.getTime() > now.getTime())
@@ -616,6 +739,7 @@ export async function loadCustomerCommercialCreditIntelligence(
     occurrenceLines: read.occurrenceLines,
     corporateRelations: read.corporateRelations,
     pendingCorporateRelations: read.pendingCorporateRelations,
+    relatedRestrictionFacts: read.relatedRestrictionFacts,
     ownCustomerStatus: read.ownCustomerStatus,
     authorizedExceptions: read.activeExceptions.map((row) =>
       formatCommercialCreditException({

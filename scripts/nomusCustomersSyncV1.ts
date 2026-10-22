@@ -418,6 +418,11 @@ async function main(): Promise<void> {
         customerIds: applied.affectedCustomerIds,
       })
     );
+    const { observeCustomerSyncRadar, scheduleCorporateRadar, flushCorporateRadarQueue } = await import("../src/lib/commercial/corporateRadar.server.js");
+    await observeCustomerSyncRadar(async () => {
+      for (const customerId of applied.affectedCustomerIds) scheduleCorporateRadar(customerId, "NOMUS_SYNC");
+      await flushCorporateRadarQueue();
+    });
   }
 }
 

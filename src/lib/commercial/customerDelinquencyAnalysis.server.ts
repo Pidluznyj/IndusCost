@@ -187,3 +187,110 @@ export async function analyzeCustomerDelinquency(
     referenceDate,
   });
 }
+
+/**
+ * Vários clientes, as mesmas regras de `analyzeCustomerDelinquency`.
+ * Uma leitura de cadastro, pedidos, títulos e sincronismo para o lote.
+ */
+export async function analyzeManyCustomerDelinquency(
+  db: CustomerDelinquencyDb,
+  customerIds: readonly string[],
+  referenceDate: Date = new Date()
+): Promise<Map<string, CommercialDelinquencyAnalysis>> {
+  const result = new Map<string, CommercialDelinquencyAnalysis>();
+  const ids = [...new Set(customerIds)];
+  if (ids.length === 0) return result;
+  const customers = await db.customer.findMany({
+    where: { id: { in: ids } },
+    select: CUSTOMER_SELECT,
+  });
+  const byId = new Map(customers.map((customer) => [customer.id, customer]));
+  const taxIdKeys = [
+    ...new Set(
+      customers.flatMap((customer) => {
+        const cnpj = normalizeCnpj(customer.taxId);
+        return [cnpj, formatCnpj(cnpj)].filter((value) => value && value !== "—");
+      })
+    ),
+  ];
+  const [peers, orders, syncAgg, latestRun] = await Promise.all([
+    taxIdKeys.length === 0
+      ? Promise.resolve([] as Array<{ id: string; taxId: string | null }>)
+      : db.customer.findMany({
+          where: { taxId: { in: taxIdKeys } },
+          select: { id: true, taxId: true },
+        }),
+    db.salesOrder.findMany({
+      where: { customerId: { in: ids } },
+      select: { customerId: true, externalCustomerId: true },
+    }),
+    db.nomusAccountsReceivable.aggregate({ _max: { syncedAt: true } }),
+    db.nomusSourceSyncRun.findFirst({
+      where: { entityType: "ACCOUNTS_RECEIVABLE" },
+      orderBy: { startedAt: "desc" },
+      select: { status: true, payloadComplete: true },
+    }),
+  ]);
+  const personIds = [...new Set(customers.map((customer) => customer.nomusExternalPersonId).filter((id): id is number => id != null && id > 0))];
+  const titleRows =
+    personIds.length === 0
+      ? []
+      : await db.nomusAccountsReceivable.findMany({
+          where: { personId: { in: personIds } },
+          select: AR_SELECT,
+        });
+  const titles = titleRows.map(toTitle);
+  const syncCutoff = buildNomusArReportSyncCutoff(syncAgg._max.syncedAt);
+  const peersByTaxId = new Map<string, string[]>();
+  for (const peer of peers) {
+    const key = normalizeCnpj(peer.taxId);
+    if (!key) continue;
+    const list = peersByTaxId.get(key) ?? [];
+    list.push(peer.id);
+    peersByTaxId.set(key, list);
+  }
+  const ordersByCustomer = new Map<string, Array<number | null>>();
+  for (const order of orders) {
+    const list = ordersByCustomer.get(order.customerId) ?? [];
+    list.push(order.externalCustomerId);
+    ordersByCustomer.set(order.customerId, list);
+  }
+  for (const customerId of ids) {
+    const customer = byId.get(customerId);
+    if (!customer) {
+      result.set(
+        customerId,
+        analyzeCommercialDelinquency({
+          customerId,
+          taxId: null,
+          nomusExternalPersonId: null,
+          salesOrderExternalCustomerIds: [],
+          peerCustomerIdsWithSameCnpj: [],
+          titles: [],
+          syncCutoff: null,
+          latestRunStatus: null,
+          payloadComplete: null,
+          referenceDate,
+        })
+      );
+      continue;
+    }
+    const cnpj = normalizeCnpj(customer.taxId);
+    result.set(
+      customerId,
+      analyzeCommercialDelinquency({
+        customerId: customer.id,
+        taxId: customer.taxId,
+        nomusExternalPersonId: customer.nomusExternalPersonId,
+        salesOrderExternalCustomerIds: ordersByCustomer.get(customer.id) ?? [],
+        peerCustomerIdsWithSameCnpj: peersByTaxId.get(cnpj) ?? [customer.id],
+        titles,
+        syncCutoff,
+        latestRunStatus: asRunStatus(latestRun?.status),
+        payloadComplete: latestRun?.payloadComplete ?? null,
+        referenceDate,
+      })
+    );
+  }
+  return result;
+}

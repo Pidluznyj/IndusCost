@@ -286,7 +286,7 @@ describe("prova arquitetural: uma única fonte para grid, export e rotina", () =
   it("grid: cabeçalho, célula MM/AAAA / Nunca entre Responsável e Localização, colunas e colSpan coerentes", () => {
     const grid = readFileSync(path.join(ROOT, "src/components/CustomerModule.tsx"), "utf8");
     const headers = [...grid.matchAll(/<th className="px-3 py-2 font-semibold text-xs whitespace-nowrap">([^<]+)<\/th>/g)].map((match) => match[1]);
-    assert.deepEqual(headers, ["Cliente", "Score CNPJ", "Responsável Comercial", "Última compra", "Localização", "Status"]);
+    assert.deepEqual(headers, ["Cliente", "Score de Confiança", "Responsável Comercial", "Última compra", "Localização", "Status"]);
     assert.match(grid, /formatCustomerLastPurchaseMonth\(/);
     assert.match(grid, /data-testid="customer-last-purchase"/);
     assert.equal((grid.match(/colSpan=\{7\}/g) ?? []).length, 2);

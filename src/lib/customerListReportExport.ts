@@ -36,6 +36,7 @@ export type CustomerListReportExportRow = {
   tradeName: string;
   taxId: string;
   cnpjScore: string;
+  creditDecision: string;
   commercialOwnerName: string;
   /** Competência "MM/AAAA" da última compra válida, "Nunca" ou "—" (NF sem data utilizável). */
   lastPurchase: string;
@@ -138,12 +139,16 @@ export function mapCustomerListReportExportRow(input: {
   lastPurchaseStatus?: CustomerLastPurchaseStatus | null;
   cnpjRisk?: CustomerCnpjRiskSummary | null;
   salesBlock?: Pick<CustomerSalesBlockPublic, "blocked" | "reason"> | null;
+  portfolioCredit?: { confidence: { label: string }; decision: { decisionTitle: string; reasonLabel: string } } | null;
 }): CustomerListReportExportRow {
   return {
     companyName: input.companyName?.trim() || "—",
     tradeName: input.tradeName?.trim() || "—",
     taxId: input.taxId?.trim() || "—",
-    cnpjScore: formatCustomerListExportCnpjScore(input.cnpjRisk),
+    cnpjScore: input.portfolioCredit?.confidence.label ?? formatCustomerListExportCnpjScore(input.cnpjRisk),
+    creditDecision: input.portfolioCredit
+      ? `${input.portfolioCredit.decision.decisionTitle} · ${input.portfolioCredit.decision.reasonLabel}`
+      : "",
     commercialOwnerName: formatCustomerListExportOwner(input.commercialOwnerName),
     // Sem regra fiscal aqui: a data já vem resolvida pelo motor da rotina de 90 dias.
     lastPurchase: formatCustomerLastPurchaseMonth({
@@ -176,7 +181,7 @@ function mapSheetRow(row: CustomerListReportExportRow): Record<string, string> {
     "Razão social": row.companyName,
     "Nome fantasia": row.tradeName,
     CNPJ: row.taxId,
-    "Score CNPJ": row.cnpjScore,
+    "Score de Confiança": row.cnpjScore,
     "Responsável comercial": row.commercialOwnerName,
     "Última compra": row.lastPurchase,
     Cidade: row.city,
@@ -184,6 +189,7 @@ function mapSheetRow(row: CustomerListReportExportRow): Record<string, string> {
     Segmento: row.segment,
     Status: row.status,
     "Bloqueio de venda": row.salesBlock,
+    "Decisão de crédito": row.creditDecision,
   };
 }
 
@@ -332,12 +338,13 @@ export function buildCustomerListReportExportPdf(payload: CustomerListReportExpo
       "Razao social",
       "Nome fantasia",
       "CNPJ",
-      "Score CNPJ",
+      "Score de Confiança",
       "Responsavel",
       "Ultima compra",
       "Cidade",
       "UF",
       "Status",
+      "Decisao de credito",
     ].join(" | ")
   );
 
@@ -354,6 +361,7 @@ export function buildCustomerListReportExportPdf(payload: CustomerListReportExpo
         row.city,
         row.state,
         row.status,
+        row.creditDecision,
       ].join(" | ")
     );
   }

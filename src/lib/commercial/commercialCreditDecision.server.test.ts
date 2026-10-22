@@ -65,8 +65,31 @@ function createDb(seed: {
     customer: {
       findUnique: async ({ where }: { where: { id: string } }) =>
         seed.customers.find((row) => row.id === where.id) ?? null,
-      findMany: async ({ where }: { where: { taxId: { in: string[] } } }) =>
-        seed.customers.filter((row) => where.taxId.in.includes(row.taxId)),
+      findMany: async (args?: {
+        where?: {
+          id?: { in?: string[] };
+          taxId?: { in?: string[]; startsWith?: string };
+          OR?: Array<{ taxId?: { startsWith?: string } }>;
+        };
+        skip?: number;
+        take?: number;
+      }) => {
+        const where = args?.where;
+        let rows = seed.customers;
+        if (where?.id?.in) rows = rows.filter((row) => where.id?.in?.includes(row.id));
+        if (where?.taxId?.in) rows = rows.filter((row) => where.taxId?.in?.includes(row.taxId));
+        if (where?.taxId?.startsWith) {
+          const prefix = where.taxId.startsWith;
+          rows = rows.filter((row) => row.taxId.startsWith(prefix));
+        }
+        const prefixes = (where?.OR ?? []).map((item) => item.taxId?.startsWith).filter((value): value is string => Boolean(value));
+        if (prefixes.length > 0) {
+          rows = seed.customers.filter((row) => prefixes.some((prefix) => row.taxId.startsWith(prefix)));
+        }
+        const skip = args?.skip ?? 0;
+        const take = args?.take ?? rows.length;
+        return rows.slice(skip, skip + take);
+      },
     },
     salesOrder: {
       findMany: async ({ where }: { where: { customerId: string } }) =>
@@ -105,8 +128,23 @@ function createDb(seed: {
         seed.run === undefined ? { status: "SUCCESS", payloadComplete: true, startedAt: SYNCED } : seed.run,
     },
     customerCorporateLink: {
-      findMany: async ({ where, take }: { where: { customerId: string }; take?: number }) =>
-        (seed.links ?? []).filter((row) => row.customerId === where.customerId).slice(0, take),
+      findMany: async (args: {
+        where?: {
+          customerId?: string;
+          OR?: Array<{ customerId?: { in?: string[] }; relatedCustomerId?: { in?: string[] } }>;
+        };
+        take?: number;
+      }) => {
+        const ids = new Set<string>();
+        if (args.where?.customerId) ids.add(args.where.customerId);
+        for (const clause of args.where?.OR ?? []) {
+          for (const id of clause.customerId?.in ?? []) ids.add(id);
+          for (const id of clause.relatedCustomerId?.in ?? []) ids.add(id);
+        }
+        return (seed.links ?? [])
+          .filter((row) => ids.size === 0 || ids.has(row.customerId) || ids.has(row.relatedCustomerId))
+          .slice(0, args.take);
+      },
     },
     commercialExternalProtest: {
       findMany: async ({ where }: { where: { customerId: string } }) =>

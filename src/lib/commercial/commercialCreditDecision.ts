@@ -81,14 +81,91 @@ export type CommercialQuodEvidence = {
   state: "NOT_CONSULTED" | "VALID" | "STALE" | "FAILED" | "PARTIAL" | "UNAVAILABLE" | "IN_PROGRESS";
   confirmedRestriction: boolean;
   insufficient: boolean;
+  cnpjMatches?: boolean;
+  consultedAt?: string | null;
+  validUntil?: string | null;
+  /** Falha ao ler a evidência persistida. Não é o mesmo que consulta ausente. */
+  readFailed?: boolean;
 };
 
-/** Evidência IEPTB. constamProtestos confirmado gera análise, não liberação. Score QUOD não entra. */
+/** Evidência IEPTB. Protesto vigente bloqueia. Consulta ausente, vencida ou indisponível não vira "sem protesto". */
 export type CommercialIeptbEvidence = {
   state: "NOT_CONSULTED" | "VALID" | "STALE" | "FAILED" | "PARTIAL" | "UNAVAILABLE" | "IN_PROGRESS";
   confirmedProtest: boolean;
   insufficient: boolean;
+  /** Negativa explícita e vigente. `confirmedProtest: false` sozinho não basta. */
+  confirmedClear?: boolean;
+  cnpjMatches?: boolean;
+  consultedAt?: string | null;
+  validUntil?: string | null;
+  /** Falha ao ler a evidência persistida. Não é o mesmo que consulta ausente. */
+  readFailed?: boolean;
 };
+
+export type IeptbConsultationFact = {
+  status?: string | null;
+  confirmedProtest?: boolean | null;
+  confirmedClear?: boolean | null;
+  insufficient?: boolean | null;
+  validUntil?: Date | null;
+  consultedAt?: Date | null;
+};
+
+function ieptbTime(value: Date | null | undefined): number {
+  if (!value) return 0;
+  const time = value.getTime();
+  return Number.isNaN(time) ? 0 : time;
+}
+
+function ieptbFresh(row: IeptbConsultationFact, now: Date): boolean {
+  return row.validUntil != null && row.validUntil.getTime() > now.getTime();
+}
+
+function ieptbFreshClear(row: IeptbConsultationFact, now: Date): boolean {
+  return (
+    row.confirmedClear === true &&
+    row.confirmedProtest !== true &&
+    row.insufficient !== true &&
+    ieptbFresh(row, now) &&
+    (row.status == null || row.status === "SUCCEEDED")
+  );
+}
+
+/**
+ * A consulta mais recente não apaga protesto ainda vigente.
+ * Uma negativa confirmada e vigente substitui o protesto anterior.
+ */
+export function interpretIeptbConsultations(
+  rows: readonly IeptbConsultationFact[],
+  now: Date
+): CommercialIeptbEvidence {
+  if (rows.length === 0) return { state: "NOT_CONSULTED", confirmedProtest: false, insufficient: false };
+  const ordered = [...rows].sort((left, right) => ieptbTime(right.consultedAt) - ieptbTime(left.consultedAt));
+  const freshClear = ordered.find((row) => ieptbFreshClear(row, now));
+  const freshProtest = ordered.find((row) => row.confirmedProtest === true && row.status !== "FAILED" && ieptbFresh(row, now));
+  if (freshClear && (!freshProtest || ieptbTime(freshClear.consultedAt) > ieptbTime(freshProtest.consultedAt))) {
+    return { state: "VALID", confirmedProtest: false, insufficient: false, confirmedClear: true };
+  }
+  if (freshProtest) return { state: "VALID", confirmedProtest: true, insufficient: false };
+  if (ordered.some((row) => row.confirmedProtest === true)) {
+    return { state: "STALE", confirmedProtest: true, insufficient: false };
+  }
+  const latest = ordered[0]!;
+  const status = latest.status ?? "SUCCEEDED";
+  if (status === "SENT" || status === "RESERVED") {
+    return { state: "IN_PROGRESS", confirmedProtest: false, insufficient: true };
+  }
+  if (status === "FAILED") return { state: "FAILED", confirmedProtest: false, insufficient: true };
+  if (status === "PARTIAL" || latest.insufficient === true) {
+    return { state: "PARTIAL", confirmedProtest: false, insufficient: true };
+  }
+  if (status !== "SUCCEEDED") return { state: "UNAVAILABLE", confirmedProtest: false, insufficient: true };
+  return {
+    state: ieptbFresh(latest, now) ? "VALID" : "STALE",
+    confirmedProtest: false,
+    insufficient: false,
+  };
+}
 
 export type CommercialCreditDecision = {
   status: CommercialCreditDecisionStatus;
@@ -112,6 +189,15 @@ export type CommercialCreditDecision = {
     quodConfirmedRestriction: boolean;
     ieptbState: CommercialIeptbEvidence["state"];
     ieptbConfirmedProtest: boolean;
+    ieptbConfirmedClear: boolean;
+    quodCnpjMatches: boolean;
+    quodConsultedAt: string | null;
+    quodValidUntil: string | null;
+    quodReadFailed: boolean;
+    ieptbCnpjMatches: boolean;
+    ieptbConsultedAt: string | null;
+    ieptbValidUntil: string | null;
+    ieptbReadFailed: boolean;
   };
 };
 
@@ -162,7 +248,7 @@ const MESSAGES: Record<string, string> = {
   QUOD_INSUFFICIENT:
     "Crédito em análise: a consulta externa não trouxe informação suficiente. Isso não significa cliente regular.",
   IEPTB_NATIONAL_PROTEST:
-    "Crédito em análise: protesto nacional confirmado na consulta IEPTB. Exige decisão administrativa. Não substitui o protesto interno Nomus.",
+    "Crédito bloqueado quando o protesto nacional está confirmado e vigente. Consulta vencida permanece em análise. O score cadastral não autoriza o prazo.",
   IEPTB_INSUFFICIENT:
     "Crédito em análise: a consulta nacional de protestos não trouxe informação suficiente. Isso não significa ausência de protesto.",
   ADVANCE_NOT_CONFIRMED: "Pagamento antecipado só segue quando estiver aprovado e confirmado.",
@@ -363,7 +449,9 @@ function customerHolds(input: {
     pushHold(holds, { status: "EM_ANALISE", reason: "RELATED_PARTY_UNVERIFIED", scope: "RELATED_PARTY" });
   }
   const quod = input.quod;
-  if (quod && (quod.state === "VALID" || quod.state === "STALE" || quod.state === "PARTIAL")) {
+  if (quod && (quod.readFailed || quod.state === "UNAVAILABLE" || quod.state === "FAILED" || quod.state === "IN_PROGRESS")) {
+    pushHold(holds, { status: "EM_ANALISE", reason: "QUOD_INSUFFICIENT", scope: "QUOD_REVIEW" });
+  } else if (quod && (quod.state === "VALID" || quod.state === "STALE" || quod.state === "PARTIAL")) {
     if (quod.confirmedRestriction) {
       pushHold(holds, { status: "EM_ANALISE", reason: "QUOD_EXTERNAL_RESTRICTION", scope: "QUOD_REVIEW" });
     } else if (quod.state === "VALID" && quod.insufficient) {
@@ -371,10 +459,14 @@ function customerHolds(input: {
     }
   }
   const ieptb = input.ieptb;
-  if (ieptb && (ieptb.state === "VALID" || ieptb.state === "STALE" || ieptb.state === "PARTIAL")) {
-    if (ieptb.confirmedProtest) {
+  if (ieptb && ieptb.state !== "NOT_CONSULTED") {
+    if (ieptb.confirmedProtest && ieptb.state === "VALID") {
+      pushHold(holds, { status: "BLOQUEADO", reason: "IEPTB_NATIONAL_PROTEST", scope: "IEPTB_REVIEW" });
+    } else if (ieptb.confirmedProtest) {
       pushHold(holds, { status: "EM_ANALISE", reason: "IEPTB_NATIONAL_PROTEST", scope: "IEPTB_REVIEW" });
-    } else if (ieptb.state === "VALID" && ieptb.insufficient) {
+    } else if (ieptb.state === "VALID" && !ieptb.insufficient) {
+      // Negativa confirmada e vigente. Não é o mesmo que consulta ausente.
+    } else {
       pushHold(holds, { status: "EM_ANALISE", reason: "IEPTB_INSUFFICIENT", scope: "IEPTB_REVIEW" });
     }
   }
@@ -497,8 +589,17 @@ export function decideCommercialCredit(input: {
       cadastralVerdict: input.cadastral?.verdict ?? null,
       quodState: input.quod?.state ?? "NOT_CONSULTED",
       quodConfirmedRestriction: input.quod?.confirmedRestriction === true,
+      quodCnpjMatches: input.quod?.cnpjMatches !== false,
+      quodConsultedAt: input.quod?.consultedAt ?? null,
+      quodValidUntil: input.quod?.validUntil ?? null,
+      quodReadFailed: input.quod?.readFailed === true,
       ieptbState: input.ieptb?.state ?? "NOT_CONSULTED",
       ieptbConfirmedProtest: input.ieptb?.confirmedProtest === true,
+      ieptbConfirmedClear: input.ieptb?.confirmedClear === true,
+      ieptbCnpjMatches: input.ieptb?.cnpjMatches !== false,
+      ieptbConsultedAt: input.ieptb?.consultedAt ?? null,
+      ieptbValidUntil: input.ieptb?.validUntil ?? null,
+      ieptbReadFailed: input.ieptb?.readFailed === true,
     },
   };
 }
