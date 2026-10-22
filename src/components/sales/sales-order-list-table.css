@@ -68,6 +68,47 @@
   box-shadow: inset 2px 0 0 #1d4ed8;
 }
 
+.sales-order-list-table tbody tr[data-credit-blocked="true"],
+.sales-order-list-table tbody tr[data-credit-blocked="true"]:nth-child(even) {
+  background: #fef2f2;
+  box-shadow: inset 3px 0 0 #dc2626;
+}
+
+.sales-order-list-table tbody tr[data-credit-blocked="true"]:hover,
+.sales-order-list-table tbody tr[data-credit-blocked="true"][data-selected="true"] {
+  background: #fee2e2;
+  box-shadow: inset 3px 0 0 #b91c1c;
+}
+
+.so-credit-legend {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 0 10px 8px;
+  color: #6b7280;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.so-credit-legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #ef4444;
+  flex: none;
+}
+
+.so-credit-block-note {
+  margin-top: 2px;
+  color: #b91c1c;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
 .sales-order-list-table .so-cell-ellipsis {
   max-width: 14rem;
   overflow: hidden;

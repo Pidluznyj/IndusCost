@@ -39,6 +39,10 @@ import { SearchableSelect, type SelectOption } from "./shared/SearchableSelect";
 import { Proposal, Customer, ProposalItem, ProposalStatus } from "@/src/types/commercial";
 import { customerSalesBlockButtonHint } from "@/src/lib/commercial/customerSalesBlockView";
 import { officialCreditSaleHint, operationBlockedByOfficialCredit } from "@/src/lib/commercial/portfolioCredit";
+import {
+  BLOCKED_DOCUMENT_ROW_LEGEND,
+  blockedCustomerDocumentAlert,
+} from "@/src/lib/commercial/blockedCustomerDocumentAlert";
 import { Product } from "@/src/types/product";
 import { motion, AnimatePresence } from "motion/react";
 import { STORAGE_OPEN_PROPOSAL_KEY } from "@/src/lib/salesFunnel";
@@ -2900,6 +2904,12 @@ export const ProposalModule = () => {
         className="bg-card rounded-xl border border-border overflow-hidden shadow-sm"
         data-tour="proposals-table"
       >
+        <div className="flex items-center border-b border-border px-4 py-1.5">
+          <p className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground" data-testid="proposal-credit-block-legend">
+            <span className="h-2 w-2 rounded-full bg-red-500" aria-hidden />
+            {BLOCKED_DOCUMENT_ROW_LEGEND}
+          </p>
+        </div>
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
@@ -2933,8 +2943,27 @@ export const ProposalModule = () => {
                   </td>
                 </tr>
               ) : (
-                pagedProposals.map((p) => (
-                  <tr key={p.id} className="hover:bg-accent/30 transition-colors group">
+                pagedProposals.map((p) => {
+                  const creditAlert = blockedCustomerDocumentAlert({
+                    customerStatus: p.Customer?.portfolioCredit?.decision.customerStatus,
+                    decisionTitle: p.Customer?.portfolioCredit?.decision.decisionTitle,
+                    reasonLabel: p.Customer?.portfolioCredit?.decision.reasonLabel,
+                    kind: "proposal",
+                    documentStatus: p.status,
+                    paymentTerms: p.paymentTerms,
+                    paymentTermsKnown: typeof p.paymentTerms === "string",
+                  });
+                  return (
+                  <tr
+                    key={p.id}
+                    className={cn(
+                      "transition-colors group",
+                      creditAlert ? "bg-red-50 hover:bg-red-100/80" : "hover:bg-accent/30"
+                    )}
+                    title={creditAlert?.title}
+                    data-credit-blocked={creditAlert ? "true" : "false"}
+                    data-testid={`proposal-row-${p.id}`}
+                  >
                     <td className="p-4">
                       <div className="flex items-center gap-3">
                         <div className="h-9 w-9 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
@@ -2949,6 +2978,11 @@ export const ProposalModule = () => {
                     <td className="p-4">
                       <p className="text-sm font-medium">{p.Customer?.companyName}</p>
                       <p className="text-[10px] text-muted-foreground">{p.Customer?.taxId}</p>
+                      {creditAlert ? (
+                        <p className="mt-0.5 text-[11px] font-medium text-red-700" title={creditAlert.title}>
+                          {creditAlert.label}
+                        </p>
+                      ) : null}
                     </td>
                     <td className="p-4">
                       <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -3081,7 +3115,8 @@ export const ProposalModule = () => {
                       </div>
                     </td>
                   </tr>
-                ))
+                  );
+                })
               )}
             </tbody>
           </table>

@@ -55,6 +55,8 @@ describe("PERFORMANCE 04 — sales-orders list/detail DTOs", () => {
     assert.equal(row.Customer?.companyName, "Acme");
     assert.equal(row.hasInvoice, true);
     assert.equal(row.invoiceCount, 1);
+    assert.equal("paymentTerms" in row, false);
+    assert.equal("creditBlockAlert" in row, false);
   });
 
   it("page select da lista não carrega nomusRawResponse", () => {
@@ -77,6 +79,8 @@ describe("PERFORMANCE 04 — sales-orders list/detail DTOs", () => {
     assert.match(chunk, /_sum:\s*\{\s*totalNetValue:\s*true/);
     assert.match(chunk, /buildSalesOrderListSummaryFromAggregate/);
     assert.match(chunk, /toSalesOrderListHttpRow/);
+    assert.match(chunk, /loadSalesOrderCreditBlockAlerts/);
+    assert.match(chunk, /creditBlockAlert/);
     assert.match(chunk, /loadSalesOrderLinkedNfeContextMap/);
     assert.match(chunk, /omitLinkRawPayload:\s*true/);
     assert.doesNotMatch(chunk, /nomusRawResponse:\s*order\.nomusRawResponse/);

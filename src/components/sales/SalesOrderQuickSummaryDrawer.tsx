@@ -72,6 +72,8 @@ export type SalesOrderListRowSnapshot = {
   lastInvoiceDate?: string | null;
   Customer?: { companyName?: string; tradeName?: string };
   Proposal?: { number: number; externalProposalCode?: string | null; title?: string | null };
+  /** Presente quando o cliente da linha está com crédito bloqueado e o pedido ainda pode seguir. */
+  creditBlockAlert?: { label: string; title: string } | null;
 };
 
 function SummaryField({ label, value }: { label: string; value: React.ReactNode }) {

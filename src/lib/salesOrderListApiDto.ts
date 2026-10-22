@@ -27,6 +27,7 @@ export const SALES_ORDER_LIST_PAGE_PRISMA_SELECT = {
   totalNetValue: true,
   externalSellerId: true,
   proposalId: true,
+  paymentTerms: true,
   Customer: {
     select: {
       companyName: true,
@@ -95,6 +96,8 @@ type ListPageOrder = {
   totalNetValue: unknown;
   externalSellerId: number | null;
   proposalId: string | null;
+  /** Usado só para o aviso de crédito. Não entra no JSON da grade. */
+  paymentTerms?: string | null;
   Customer?: { companyName: string | null; tradeName: string | null } | null;
   Proposal?: {
     id: string;

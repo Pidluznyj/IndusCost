@@ -20,6 +20,7 @@ import {
   salesOrderBillingStatusLabel,
 } from "@/src/lib/sales/salesOrderListBillingStatus";
 import { noteDevPerfRender } from "@/src/lib/devPerfBaselineClient";
+import { BLOCKED_DOCUMENT_ROW_LEGEND } from "@/src/lib/commercial/blockedCustomerDocumentAlert";
 import "./sales-order-list-table.css";
 
 /**
@@ -109,6 +110,8 @@ const SalesOrderListTableRow = memo(function SalesOrderListTableRow({
     <tr
       data-testid={`sales-order-row-${row.id}`}
       data-selected={selected ? "true" : "false"}
+      data-credit-blocked={row.creditBlockAlert ? "true" : "false"}
+      title={row.creditBlockAlert?.title}
       onClick={handleRowClick}
     >
       <td>
@@ -139,6 +142,11 @@ const SalesOrderListTableRow = memo(function SalesOrderListTableRow({
         {customerMeta ? (
           <div className="so-cell-meta so-cell-ellipsis" title={customerMeta}>
             {customerMeta}
+          </div>
+        ) : null}
+        {row.creditBlockAlert ? (
+          <div className="so-credit-block-note" title={row.creditBlockAlert.title}>
+            {row.creditBlockAlert.label}
           </div>
         ) : null}
       </td>
@@ -233,6 +241,10 @@ export const SalesOrderListTable = memo(function SalesOrderListTable({
       data-testid="sales-order-list-table-wrap"
     >
       <div className="sales-order-list-grid-title">Pedidos de venda</div>
+      <p className="so-credit-legend" data-testid="sales-order-credit-block-legend">
+        <span className="so-credit-legend-dot" aria-hidden />
+        {BLOCKED_DOCUMENT_ROW_LEGEND}
+      </p>
       <div className="sales-order-list-table-wrap">
         <table className="sales-order-list-table" data-testid="sales-order-list-table">
           <thead>

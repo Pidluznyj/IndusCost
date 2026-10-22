@@ -634,6 +634,7 @@ import {
 } from "./src/lib/customerListQuery.js";
 import { attachCustomerCnpjRisk } from "./src/lib/customerCnpjRiskSummary.server.js";
 import { attachPortfolioCredit, attachPortfolioCreditToNestedCustomers } from "./src/lib/commercial/portfolioCredit.server.js";
+import { loadSalesOrderCreditBlockAlerts } from "./src/lib/commercial/salesOrderCreditBlockAlert.server.js";
 import {
   attachCustomerSalesBlocks,
   attachSalesBlockToNestedCustomers,
@@ -16974,7 +16975,24 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
         console.error("GET /api/sales-orders linked-nfe enrichment failed", nfeError);
       }
 
-      const data = rows.map((order) => {
+      const evaluatedAt = new Date();
+      let creditBlockAlerts: Awaited<ReturnType<typeof loadSalesOrderCreditBlockAlerts>> = rows.map(() => null);
+      try {
+        creditBlockAlerts = await loadSalesOrderCreditBlockAlerts(
+          prisma,
+          rows.map((order) => ({
+            customerId: order.customerId,
+            status: order.status,
+            proposalId: order.proposalId,
+            paymentTerms: order.paymentTerms,
+          })),
+          evaluatedAt
+        );
+      } catch (creditError) {
+        console.error("GET /api/sales-orders credit-block-alert failed", creditError);
+      }
+
+      const data = rows.map((order, index) => {
         const seller = buildSalesOrderNomusSellerDto(
           {
             externalSellerId: order.externalSellerId ?? null,
@@ -16997,7 +17015,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
           linked?.lastNfeProcessingDate?.toISOString() ??
           linked?.lastNfeIssueDate?.toISOString() ??
           null;
-        return toSalesOrderListHttpRow(order, {
+        const httpRow = toSalesOrderListHttpRow(order, {
           seller,
           hasInvoice: linked?.hasNfe ?? false,
           billingStatus,
@@ -17013,6 +17031,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
                   ? `Vendedor Nomus não mapeado: ID ${seller.externalSellerId}`
                   : null),
         });
+        return { ...httpRow, creditBlockAlert: creditBlockAlerts[index] ?? null };
       });
 
       res.json({
