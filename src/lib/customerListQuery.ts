@@ -1,4 +1,5 @@
 import type { Prisma } from "@prisma/client";
+import { brazilUfMatchValues, parseBrazilUfFilter } from "./customerIndicators.js";
 
 export const CUSTOMER_LIST_DEFAULT_LIMIT = 20;
 export const CUSTOMER_LIST_MAX_LIMIT = 100;
@@ -12,6 +13,8 @@ export type CustomerListQuery = {
   search: string;
   /** Chave de identidade do responsável, `none`, ou vazio (todos). */
   commercialOwner: string;
+  /** Sigla UF, ou vazio (todos os estados). */
+  state: string;
 };
 
 export type CustomerListMeta = {
@@ -45,6 +48,7 @@ export function parseCustomerListQuery(query: Record<string, unknown>): Customer
     skip: (page - 1) * limit,
     search: String(query.search ?? "").trim(),
     commercialOwner: String(query.commercialOwner ?? "").trim(),
+    state: parseBrazilUfFilter(query.state),
   };
 }
 
@@ -71,6 +75,7 @@ export function shouldUseCustomerPagination(query: Record<string, unknown>): boo
     query.limit != null ||
     query.search != null ||
     query.commercialOwner != null ||
+    query.state != null ||
     String(query.paginated ?? "").trim() === "true"
   );
 }
@@ -107,11 +112,26 @@ export function buildCustomerOwnerWhere(ownerKey: string): Prisma.CustomerWhereI
   return { NOT: { CrmCustomerCommercialOwner: { is: { isActive: true } } } };
 }
 
+/** Cadastro cuja UF normalizada é a sigla pedida (SP, São Paulo, Sao Paulo). */
+export function buildCustomerStateWhere(uf: string): Prisma.CustomerWhereInput | undefined {
+  const values = brazilUfMatchValues(uf);
+  if (values.length === 0) return undefined;
+  return {
+    OR: values.map((value) => ({
+      state: { equals: value, mode: "insensitive" as const },
+    })),
+  };
+}
+
 export function buildCustomerListWhere(
   search: string,
-  ownerWhere?: Prisma.CustomerWhereInput
+  ownerWhere?: Prisma.CustomerWhereInput,
+  stateWhere?: Prisma.CustomerWhereInput
 ): Prisma.CustomerWhereInput | undefined {
-  const searchWhere = buildCustomerSearchWhere(search);
-  if (searchWhere && ownerWhere) return { AND: [searchWhere, ownerWhere] };
-  return searchWhere ?? ownerWhere;
+  const parts = [buildCustomerSearchWhere(search), ownerWhere, stateWhere].filter(
+    (part): part is Prisma.CustomerWhereInput => part != null
+  );
+  if (parts.length === 0) return undefined;
+  if (parts.length === 1) return parts[0];
+  return { AND: parts };
 }

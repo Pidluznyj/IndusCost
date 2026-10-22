@@ -626,6 +626,7 @@ import { registerCustomerActivityMapRoutes } from "./src/lib/commercial/customer
 import {
   buildCustomerListResponse,
   buildCustomerListWhere,
+  buildCustomerStateWhere,
   customerListMeta,
   parseCustomerListQuery,
   shouldUseCustomerPagination,
@@ -14216,7 +14217,11 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
 
       const list = parseCustomerListQuery(query);
       const ownerFilter = await prepareCommercialOwnerCustomerListFilter(list.commercialOwner);
-      const where = buildCustomerListWhere(list.search, ownerFilter.ownerWhere);
+      const where = buildCustomerListWhere(
+        list.search,
+        ownerFilter.ownerWhere,
+        buildCustomerStateWhere(list.state)
+      );
       const commercialOwnerOptions = ownerFilter.options;
       const [total, items] = await Promise.all([
         prisma.customer.count({ where }),
