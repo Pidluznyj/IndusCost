@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { ChevronRight } from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
 import type { CommercialCreditIntelligenceView } from "@/src/lib/commercial/commercialCreditIntelligenceView";
 import {
@@ -6,21 +7,28 @@ import {
   type CommercialCreditOperationSummary,
 } from "@/src/lib/commercial/commercialCreditOperation";
 
-export function CustomerCreditOperationSummaryView({
-  summary,
-}: {
-  summary: CommercialCreditOperationSummary;
-}) {
+function CreditStatusBadge({ summary }: { summary: CommercialCreditOperationSummary }) {
+  const blocked =
+    Boolean(summary.headline) ||
+    summary.statusCode === "BLOQUEADO" ||
+    summary.statusCode === "BLOQUEIO_CRITICO";
+  const tone = blocked
+    ? "bg-red-100 text-red-900"
+    : summary.statusCode === "EM_ANALISE"
+      ? "bg-amber-100 text-amber-950"
+      : summary.statusCode === "LIBERADO"
+        ? "bg-emerald-100 text-emerald-900"
+        : "bg-slate-100 text-slate-700";
   return (
-    <section className="rounded-xl border border-border bg-card p-3 text-sm" data-testid="customer-credit-operation">
-      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-        <h3 className="font-semibold">Crédito comercial</h3>
-        {summary.headline ? (
-          <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-bold text-red-900">{summary.headline}</span>
-        ) : (
-          <span className="text-xs font-semibold text-slate-700">{summary.creditStatusLabel}</span>
-        )}
-      </div>
+    <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-bold ${tone}`}>
+      {summary.headline ?? summary.creditStatusLabel}
+    </span>
+  );
+}
+
+function CreditOperationBody({ summary }: { summary: CommercialCreditOperationSummary }) {
+  return (
+    <>
       {summary.statusCode ? (
         <p className="mb-2 text-xs font-semibold" data-testid="customer-credit-status-code">
           Status comercial: {summary.statusCode}
@@ -80,11 +88,66 @@ export function CustomerCreditOperationSummaryView({
           summary.evaluations.map((line) => <p key={line}>{line}</p>)
         )}
       </div>
+    </>
+  );
+}
+
+export function CustomerCreditOperationSummaryView({
+  summary,
+  collapsed = false,
+}: {
+  summary: CommercialCreditOperationSummary;
+  collapsed?: boolean;
+}) {
+  if (collapsed) {
+    return (
+      <details
+        className="group rounded-xl border border-border bg-card text-sm"
+        data-testid="customer-credit-operation"
+      >
+        <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2.5 [&::-webkit-details-marker]:hidden">
+          <ChevronRight
+            className="h-4 w-4 shrink-0 text-slate-500 transition-transform group-open:rotate-90"
+            aria-hidden="true"
+          />
+          <span className="min-w-0">
+            <span className="block font-semibold text-foreground">Crédito comercial</span>
+            <span className="block text-xs text-slate-500 group-open:hidden">Clique para ver o detalhamento</span>
+            <span className="hidden text-xs text-slate-500 group-open:block">Clique para recolher</span>
+          </span>
+          <span className="ml-auto">
+            <CreditStatusBadge summary={summary} />
+          </span>
+        </summary>
+        <div className="border-t border-border px-3 pb-3 pt-2">
+          <CreditOperationBody summary={summary} />
+        </div>
+      </details>
+    );
+  }
+
+  return (
+    <section className="rounded-xl border border-border bg-card p-3 text-sm" data-testid="customer-credit-operation">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <h3 className="font-semibold">Crédito comercial</h3>
+        {summary.headline ? (
+          <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-bold text-red-900">{summary.headline}</span>
+        ) : (
+          <span className="text-xs font-semibold text-slate-700">{summary.creditStatusLabel}</span>
+        )}
+      </div>
+      <CreditOperationBody summary={summary} />
     </section>
   );
 }
 
-export function CustomerCreditOperationCard({ customerId }: { customerId: string | null }) {
+export function CustomerCreditOperationCard({
+  customerId,
+  collapsed = false,
+}: {
+  customerId: string | null;
+  collapsed?: boolean;
+}) {
   const [summary, setSummary] = useState<CommercialCreditOperationSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -114,5 +177,5 @@ export function CustomerCreditOperationCard({ customerId }: { customerId: string
   if (!customerId) return null;
   if (error) return <p className="text-sm text-red-700">{error}</p>;
   if (!summary) return <p className="text-sm text-slate-500">Carregando crédito...</p>;
-  return <CustomerCreditOperationSummaryView summary={summary} />;
+  return <CustomerCreditOperationSummaryView summary={summary} collapsed={collapsed} />;
 }

@@ -302,7 +302,7 @@ export function SalesOrderDetailDialog({
         <div className="so-detail-dialog-body flex-1 overflow-y-auto bg-[#f8fafc] px-4 py-4">
           {payload?.header.customerId ? (
             <div className="so-detail-no-print mb-3">
-              <CustomerCreditOperationCard customerId={payload.header.customerId} />
+              <CustomerCreditOperationCard customerId={payload.header.customerId} collapsed />
             </div>
           ) : null}
           {loading ? (

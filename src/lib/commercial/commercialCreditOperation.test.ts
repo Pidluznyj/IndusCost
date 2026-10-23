@@ -101,6 +101,15 @@ describe("operação comercial de crédito", () => {
     assert.match(html, /91\/100/);
     assert.match(html, /CRÉDITO BLOQUEADO/);
     assert.match(html, /servidor autorizar/);
+    assert.doesNotMatch(html, /<details/);
+
+    const collapsed = renderToStaticMarkup(
+      React.createElement(CustomerCreditOperationSummaryView, { summary: visible, collapsed: true })
+    );
+    assert.match(collapsed, /<details(?![^>]*\bopen\b)/);
+    assert.match(collapsed, /Clique para ver o detalhamento/);
+    assert.match(collapsed, /CRÉDITO BLOQUEADO/);
+    assert.match(collapsed, /Score cadastral/);
   });
 
   it("separa bloqueio, protesto pendente e análise", () => {
@@ -207,6 +216,10 @@ describe("operação comercial de crédito", () => {
     ]) {
       assert.equal(read(path).includes("CustomerCreditOperationCard"), true, path);
     }
+    assert.match(
+      read("src/components/sales/SalesOrderDetailDialog.tsx"),
+      /<CustomerCreditOperationCard customerId=\{payload\.header\.customerId\} collapsed \/>/
+    );
     const portfolio = read("src/components/crm/CrmCustomerPortfolioSection.tsx");
     assert.match(portfolio, /COMMERCIAL_CREDIT_PORTFOLIO_FILTER_LABEL/);
     assert.match(portfolio, /bloqueio de venda continua no servidor/);
