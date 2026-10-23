@@ -78,6 +78,7 @@ function entityLabel(entityType: string): string {
   if (entityType === "SALES_ORDER") return "Pedidos";
   if (entityType === "ACCOUNTS_RECEIVABLE") return "Contas a Receber";
   if (entityType === "ACCOUNTS_PAYABLE") return "Contas a Pagar";
+  if (entityType === "PURCHASE_ORDER") return "Pedidos de Compra";
   return entityType;
 }
 

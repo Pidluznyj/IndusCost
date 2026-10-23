@@ -9,6 +9,7 @@ import { Prisma, type PrismaClient } from "@prisma/client";
 import { parsePurchaseOrderPlannedInstallments } from "@/src/lib/nomus/nomusPurchaseOrder360.js";
 import { resolvePurchaseOrderSupplierDisplayNames } from "@/src/lib/nomus/nomusPurchaseOrder360.server.js";
 import { calendarDateKey } from "./purchasePaymentTerms.js";
+import { isNomusOpsExcludeMissingPurchaseOrdersEnabled } from "@/src/lib/nomus/nomusSourcePresencePolicy.js";
 import {
   buildPaymentTermsAnalysis,
   buildSupplierPaymentTermsDetail,
@@ -101,13 +102,17 @@ export async function loadPaymentTermsOrders(
   to.setUTCDate(to.getUTCDate() + 2);
   const supplierFilter =
     range.supplierExternalId != null ? Prisma.sql`AND "supplierExternalId" = ${range.supplierExternalId}` : Prisma.empty;
+  // "Ausente no Nomus — confirmado" fora do PMP (flag operacional); em verificação continua contando.
+  const presenceFilter = isNomusOpsExcludeMissingPurchaseOrdersEnabled()
+    ? Prisma.sql`AND "sourcePresenceStatus" <> 'MISSING_CONFIRMED'`
+    : Prisma.empty;
   const rows = await db.$queryRaw<ProjectionRow[]>`
     SELECT "id", "externalId", "orderNumber", "supplierExternalId", "supplierName", "supplierTaxId",
            "issuedAt", "stage", "canceled", "totalAmount", "paymentTerms",
            "rawPayload"->'parcelas' AS "parcelas",
            "rawPayload"->>'idPessoaComprador' AS "buyer"
     FROM "NomusPurchaseOrder"
-    WHERE "issuedAt" >= ${from} AND "issuedAt" < ${to} ${supplierFilter}`;
+    WHERE "issuedAt" >= ${from} AND "issuedAt" < ${to} ${supplierFilter} ${presenceFilter}`;
   const names = await resolvePurchaseOrderSupplierDisplayNames(rows);
   return rows.map((r) => {
     const buyer = r.buyer != null && /^-?\d+$/.test(r.buyer.trim()) ? Number(r.buyer.trim()) : null;

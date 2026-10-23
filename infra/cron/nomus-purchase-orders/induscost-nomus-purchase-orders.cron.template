@@ -1,0 +1,20 @@
+# /etc/cron.d/induscost-nomus-purchase-orders — Pedidos de Compra Nomus (agenda própria).
+# Gerado por scripts/installNomusPurchaseOrdersCron.sh a partir de
+# infra/cron/nomus-purchase-orders/induscost-nomus-purchase-orders.cron.template. Não editar à mão.
+#
+# Fonte única de agendamento: NOMUS_PO_SCHEDULE_SOURCE no .env do app.
+#   chain       → estas linhas disparam, o serviço registra SKIPPED (encadeamento após CR continua ativo);
+#   independent → estas linhas executam, o encadeamento após CR registra SKIPPED.
+# Nunca há duas fontes executando: a decisão é do serviço canônico, não do cron.
+#
+# Fuso do host detectado na instalação: __HOST_TZ__ (offset __HOST_OFFSET__).
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+# Incremental horário — minuto 37, janela de 45 dias por emissão (upsert; nunca avalia ausência).
+37 * * * * __RUN_AS__ NOMUS_PO_TRIGGER=SCHEDULED_HOURLY INDUSCOST_APP_DIR=__APP_DIR__ __APP_DIR__/scripts/runNomusPurchaseOrdersSync.sh apply incremental >> __LOG_FILE__ 2>&1
+
+# Reconciliação diária — 03:37 America/Sao_Paulo (hora do host: __DAILY_HOUR__), universo completo sem filtro de datas.
+# Ausência só é avaliada com NOMUS_SOURCE_RECONCILE_PURCHASE_ORDERS_ENABLED=1 e só é gravada com
+# NOMUS_PO_RECONCILE_PREVIEW_ONLY=0; confirmação exige NOMUS_PO_RECONCILE_APPLY_CONFIRMED_ENABLED=1.
+37 __DAILY_HOUR__ * * * __RUN_AS__ NOMUS_PO_TRIGGER=SCHEDULED_DAILY INDUSCOST_APP_DIR=__APP_DIR__ __APP_DIR__/scripts/runNomusPurchaseOrdersSync.sh apply reconcile >> __LOG_FILE__ 2>&1

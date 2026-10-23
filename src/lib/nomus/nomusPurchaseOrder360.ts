@@ -721,6 +721,9 @@ export type NomusPurchaseOrderListRowDto = {
   excludedPayableCount?: number;
   /** Prazo de pagamento: PMP desde a emissão (motor purchasePaymentTerms). */
   paymentTerms: import("@/src/lib/purchasing/purchasePaymentTermsAnalysis").PaymentTermsCellDto;
+  /** Presença no Nomus: ausência nunca é cancelamento (ver nomusPurchaseOrderSyncUi). */
+  sourcePresenceStatus?: string;
+  missingSince?: string | null;
   overdue: boolean;
   open: boolean;
   syncedAt: string;

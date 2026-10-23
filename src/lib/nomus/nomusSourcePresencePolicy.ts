@@ -18,6 +18,9 @@ export const NOMUS_OPS_EXCLUDE_MISSING_AR_ENV =
   "NOMUS_OPS_EXCLUDE_MISSING_AR_ENABLED";
 export const NOMUS_OPS_EXCLUDE_MISSING_AP_ENV =
   "NOMUS_OPS_EXCLUDE_MISSING_AP_ENABLED";
+/** Pedidos de Compra: tira MISSING_CONFIRMED da carteira/KPIs operacionais (histórico preservado). */
+export const NOMUS_OPS_EXCLUDE_MISSING_PURCHASE_ORDERS_ENV =
+  "NOMUS_OPS_EXCLUDE_MISSING_PURCHASE_ORDERS_ENABLED";
 
 const ENABLED_VALUES = new Set(["1", "true", "yes", "on", "enabled"]);
 
@@ -45,6 +48,12 @@ export function isNomusOpsExcludeMissingApEnabled(
   env: Record<string, string | undefined> = process.env
 ): boolean {
   return isEnvFlagEnabled(env, NOMUS_OPS_EXCLUDE_MISSING_AP_ENV);
+}
+
+export function isNomusOpsExcludeMissingPurchaseOrdersEnabled(
+  env: Record<string, string | undefined> = process.env
+): boolean {
+  return isEnvFlagEnabled(env, NOMUS_OPS_EXCLUDE_MISSING_PURCHASE_ORDERS_ENV);
 }
 
 /**
@@ -166,6 +175,23 @@ export function mergeAccountsPayableOperationalPresenceWhere<T extends object>(
   if (options?.includeConfirmedMissing) return where;
   if (options?.openOperationalUniverse === false) return where;
   if (!isNomusOpsExcludeMissingApEnabled(options?.env)) return where;
+  return mergePrismaWhereWithOperationalPresence(where, true);
+}
+
+/**
+ * Pedidos de Compra Nomus: carteira, KPIs, indicadores de compras e desempenho de fornecedor
+ * deixam de contar MISSING_CONFIRMED (flag ligada). MISSING_CANDIDATE continua operacional.
+ * Histórico/auditoria: `includeConfirmedMissing`.
+ */
+export function mergePurchaseOrderOperationalPresenceWhere<T extends object>(
+  where: T,
+  options?: {
+    includeConfirmedMissing?: boolean;
+    env?: Record<string, string | undefined>;
+  }
+): T | ReturnType<typeof mergePrismaWhereWithOperationalPresence<T>> {
+  if (options?.includeConfirmedMissing) return where;
+  if (!isNomusOpsExcludeMissingPurchaseOrdersEnabled(options?.env)) return where;
   return mergePrismaWhereWithOperationalPresence(where, true);
 }
 

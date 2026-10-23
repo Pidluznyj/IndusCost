@@ -36,6 +36,7 @@ import { CnpjWeeklyRefreshAdminPanel } from "@/src/components/settings/CnpjWeekl
 import { NomusSourceReconciliationObservabilityCard } from "@/src/components/NomusSourceReconciliationObservabilityCard";
 import { NomusAccountsReceivableSyncCard } from "@/src/components/NomusAccountsReceivableSyncCard";
 import { NomusAccountsPayableSyncCard } from "@/src/components/NomusAccountsPayableSyncCard";
+import { NomusPurchaseOrdersSyncCard } from "@/src/components/NomusPurchaseOrdersSyncCard";
 import { SalesMarginNomusConfigPanel } from "@/src/components/settings/SalesMarginNomusConfigPanel";
 import { SettingsApplyHhHmSimulationSection } from "@/src/components/settings/SettingsApplyHhHmSimulationSection";
 import { useAdminStepUp } from "@/src/components/settings/useAdminStepUp";
@@ -1817,6 +1818,11 @@ export const SettingsModule = () => {
               <NomusAccountsPayableSyncCard
                 canRun={canRunNomusDailySync}
                 onLogsRefresh={() => setNomusReloadSeq((prev) => prev + 1)}
+              />
+
+              <NomusPurchaseOrdersSyncCard
+                canRun={canRunNomusDailySync}
+                canAuthorize={auth.isSuperAdmin()}
               />
 
               <NomusSourceReconciliationObservabilityCard />

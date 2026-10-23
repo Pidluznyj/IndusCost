@@ -46,6 +46,10 @@ export type PurchaseOrderMirrorHeader = {
   remainingQuantity: DecimalLike;
   syncedAt: Date;
   lastSeenAt: Date;
+  /** Presença na fonte (PRESENT | MISSING_CANDIDATE | MISSING_CONFIRMED). */
+  sourcePresenceStatus?: string | null;
+  missingSince?: Date | null;
+  sourceRemovedAt?: Date | null;
   firstSeenAt?: Date;
   payloadHash?: string;
   paymentTerms?: string | null;
@@ -464,6 +468,8 @@ export async function enrichNomusPurchaseOrderListRows(
       overdue: isNomusPurchaseOrderOverdue({ stage, expectedAt: order.expectedAt, now }),
       open: isNomusPurchaseOrderOpenStage(stage),
       syncedAt: order.syncedAt.toISOString(),
+      sourcePresenceStatus: order.sourcePresenceStatus ?? "PRESENT",
+      missingSince: iso(order.missingSince ?? null),
     };
   });
 }

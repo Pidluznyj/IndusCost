@@ -42,6 +42,7 @@ import {
   type SupplierEvaluationListSummaryDto,
 } from "./supplierPerformance.js";
 import type { SupplierPerformanceDetailCsvRow } from "./supplierPerformanceCsv.js";
+import { isNomusOpsExcludeMissingPurchaseOrdersEnabled } from "@/src/lib/nomus/nomusSourcePresencePolicy.js";
 import {
   isSupplierIdentitySafeForEvaluation,
   NOMUS_SUPPLIER_EVALUATION_SAFE_CONFIDENCE,
@@ -975,7 +976,12 @@ export async function loadSupplierEvaluationListSummaries(
       ? []
       : await prisma.nomusPurchaseOrder.groupBy({
           by: ["supplierExternalId"],
-          where: { supplierExternalId: { in: externalIds } },
+          where: {
+            supplierExternalId: { in: externalIds },
+            ...(isNomusOpsExcludeMissingPurchaseOrdersEnabled()
+              ? { sourcePresenceStatus: { not: "MISSING_CONFIRMED" as const } }
+              : {}),
+          },
           _count: { _all: true },
         });
 

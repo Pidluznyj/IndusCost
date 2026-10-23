@@ -439,6 +439,38 @@ export async function runNomusAccountsPayableSync(
   return runCanonicalEntitySync(full, impl);
 }
 
+/**
+ * Pedidos de Compra — serviço canônico único (agendamento horário/diário, cadeia legada após CR,
+ * painel e CLI). Delegate padrão: `executeNomusPurchaseOrdersSync` (src/lib/nomus).
+ */
+export async function runNomusPurchaseOrdersSync(
+  request: Omit<NomusCanonicalSyncRequest, "entity"> & {
+    entity?: "PURCHASE_ORDER";
+  },
+  delegate?: NomusCanonicalSyncDelegate
+): Promise<NomusCanonicalSyncResult> {
+  const full: NomusCanonicalSyncRequest = {
+    ...request,
+    entity: "PURCHASE_ORDER",
+    scope: request.scope ?? {
+      kind:
+        request.strategy === "RECENT_WINDOW"
+          ? "purchase_orders_issue_date_window"
+          : "purchase_orders_full_universe",
+      strategy: request.strategy,
+    },
+  };
+
+  const impl =
+    delegate ??
+    (async (execution) => {
+      const mod = await import("./nomusPurchaseOrderSyncService.server.js");
+      return mod.executeNomusPurchaseOrdersSync(execution);
+    });
+
+  return runCanonicalEntitySync(full, impl);
+}
+
 export function resolveSourceTriggerFromEnv(
   env: NodeJS.ProcessEnv = process.env
 ): NomusCanonicalSyncRequest["sourceTrigger"] {
@@ -450,6 +482,7 @@ export function resolveSourceTriggerFromEnv(
     "CLI",
     "ORCHESTRATOR",
     "TARGETED_AUDIT",
+    "CHAIN_AFTER_AR",
   ]);
   if (allowed.has(raw)) {
     return raw as NomusCanonicalSyncRequest["sourceTrigger"];

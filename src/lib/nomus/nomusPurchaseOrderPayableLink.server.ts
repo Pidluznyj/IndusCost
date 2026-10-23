@@ -190,7 +190,7 @@ export type PurchaseOrderIdentityRow = {
   supplierTaxId: string | null;
 };
 
-type OrderRow = PurchaseOrderIdentityRow & { rawPayload: unknown };
+type OrderRow = PurchaseOrderIdentityRow & { rawPayload: unknown; sourcePresenceStatus?: string | null };
 
 const ORDER_SELECT = {
   id: true,
@@ -199,6 +199,7 @@ const ORDER_SELECT = {
   supplierExternalId: true,
   supplierTaxId: true,
   rawPayload: true,
+  sourcePresenceStatus: true,
 } as const;
 
 function identityFromOrder(order: OrderRow): PurchaseOrderLinkIdentity {
@@ -875,6 +876,14 @@ export async function confirmPurchaseOrderPayableLink(
 ): Promise<PurchaseOrderPayableReconciliation> {
   const db = options.db ?? defaultPrisma;
   const order = await findOrderOrThrow(db, orderId);
+  if (order.sourcePresenceStatus === "MISSING_CONFIRMED") {
+    // Pedido ausente no Nomus não recebe vínculo novo por inferência; os existentes ficam intactos.
+    throw new PurchaseOrderPayableLinkError(
+      "PURCHASE_ORDER_MISSING_IN_NOMUS",
+      "Pedido ausente no Nomus (confirmado): não é possível criar vínculo novo. Os vínculos existentes foram preservados.",
+      409
+    );
+  }
   const context = await loadPurchaseOrderPayableContext(db, order);
   const payload = parseConfirmPayableLinkPayload(body, { installmentCount: context.installments.length });
 

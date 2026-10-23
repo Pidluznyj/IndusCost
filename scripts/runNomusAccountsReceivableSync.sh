@@ -78,8 +78,10 @@ echo "=== RESULTADO AR ==="
 echo "EXIT_CODE=$EXIT_CODE"
 echo "FINISHED_AT=$(date -Iseconds)"
 
-# Encadeamento AR → Pedido de Compra Nomus.
+# Encadeamento AR → Pedido de Compra Nomus (fonte legada de agendamento).
 # Só inicia se AR terminou com sucesso técnico. Falha de PO não altera EXIT_CODE do AR.
+# Com NOMUS_PO_SCHEDULE_SOURCE=independent o serviço de Compras registra o disparo como SKIPPED
+# (agenda própria em /etc/cron.d/induscost-nomus-purchase-orders); NOMUS_PO_CHAIN_AFTER_AR=0 remove o encadeamento.
 PO_CHAIN_ENABLED="${NOMUS_PO_CHAIN_AFTER_AR:-1}"
 if [[ "$EXIT_CODE" -ne 0 ]]; then
   echo "[nomus-accounts-receivable-runner] PO_CHAIN=SKIPPED reason=AR_TECHNICAL_FAILURE"
@@ -89,7 +91,7 @@ else
   echo
   echo "=== ENCADEAMENTO PEDIDOS DE COMPRA NOMUS ==="
   set +e
-  bash "$APP_DIR/scripts/runNomusPurchaseOrdersSync.sh" "$MODE" incremental
+  NOMUS_PO_TRIGGER=CHAIN_AFTER_AR bash "$APP_DIR/scripts/runNomusPurchaseOrdersSync.sh" "$MODE" incremental
   PO_EXIT_CODE=$?
   set -e
   echo "[nomus-accounts-receivable-runner] PO_CHAIN=DONE PO_EXIT_CODE=$PO_EXIT_CODE AR_EXIT_CODE=$EXIT_CODE"

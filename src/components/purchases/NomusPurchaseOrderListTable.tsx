@@ -14,6 +14,7 @@ import {
   nomusPurchaseOrderStageTone,
 } from "@/src/lib/nomus/nomusPurchaseOrderUi";
 import { OverlayBadge } from "@/src/components/ui/overlay";
+import { purchaseOrderPresenceBadge } from "@/src/lib/nomus/nomusPurchaseOrderSyncUi";
 import "@/src/components/sales/sales-order-list-table.css";
 import "./nomus-purchase-order-list-table.css";
 
@@ -124,6 +125,20 @@ const NomusPurchaseOrderListTableRow = memo(function NomusPurchaseOrderListTable
         <OverlayBadge tone={nomusPurchaseOrderStageTone(row.stage)}>
           {nomusPurchaseOrderStageLabel(row.stage)}
         </OverlayBadge>
+        {(() => {
+          // Ausência no Nomus ≠ cancelamento: selo próprio ao lado da fase oficial.
+          const presence = purchaseOrderPresenceBadge(row);
+          return presence ? (
+            <OverlayBadge
+              tone={presence.tone === "danger" ? "rose" : "amber"}
+              className="ml-1"
+              testId="npo-list-presence"
+              title={row.missingSince ? `Ausente desde ${formatDate(row.missingSince)}` : undefined}
+            >
+              {presence.label}
+            </OverlayBadge>
+          ) : null;
+        })()}
       </td>
       <td>
         <span className="so-cell-invoice-number" title={invoice.title} data-testid="npo-list-nf">

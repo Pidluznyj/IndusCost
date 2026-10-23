@@ -339,7 +339,12 @@ export function createTreasuryDailyClosingPreviewFactsRepository(
       });
 
       const lastSync = await prisma.nomusSourceSyncRun.findFirst({
-        where: { status: "SUCCESS" },
+        // Frescor financeiro: só as entidades que alimentam a tesouraria (Pedidos de Compra
+        // rodam de hora em hora e mascarariam um CR/CP parado).
+        where: {
+          status: "SUCCESS",
+          entityType: { in: ["SALES_ORDER", "ACCOUNTS_RECEIVABLE", "ACCOUNTS_PAYABLE"] },
+        },
         orderBy: { finishedAt: "desc" },
         select: { finishedAt: true },
       });
