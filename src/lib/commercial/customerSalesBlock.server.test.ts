@@ -278,4 +278,38 @@ describe("customer sales block server — identidade pelo Customer.nomusExternal
     assert.equal(rows[2].Customer?.salesBlock?.reason, "FINANCIAL_IDENTITY_UNRESOLVED");
     assert.equal(rows[2].Customer?.salesBlock?.nomusPersonId, null);
   });
+
+  it("lista e efetivação: D+3 não bloqueia a venda; D+4 bloqueia o boleto em aberto", async () => {
+    const now = new Date("2026-10-24T15:00:00.000Z");
+    const within = await createFakePrisma({
+      customers: [{ id: CUSTOMER_A, nomusExternalPersonId: 100 }],
+      orders: [{ customerId: CUSTOMER_A, externalCustomerId: 100 }],
+      ar: [arTitle({ dueDate: new Date("2026-10-21T15:00:00.000Z"), syncedAt: now })],
+    });
+    const listed = await attachCustomerSalesBlocks(
+      within.prisma,
+      [{ id: CUSTOMER_A, nomusExternalPersonId: 100 }],
+      { includeFinancialDetails: true, now }
+    );
+    assert.equal(listed[0].salesBlock.blocked, false);
+    await assertCustomerSalesAllowed(within.prisma, CUSTOMER_A, now);
+
+    const past = await createFakePrisma({
+      customers: [{ id: CUSTOMER_A, nomusExternalPersonId: 100 }],
+      orders: [{ customerId: CUSTOMER_A, externalCustomerId: 100 }],
+      ar: [arTitle({ dueDate: new Date("2026-10-20T15:00:00.000Z"), syncedAt: now })],
+    });
+    const blockedList = await attachCustomerSalesBlocks(
+      past.prisma,
+      [{ id: CUSTOMER_A, nomusExternalPersonId: 100 }],
+      { includeFinancialDetails: true, now }
+    );
+    assert.equal(blockedList[0].salesBlock.blocked, true);
+    assert.equal(blockedList[0].salesBlock.reason, "OVERDUE_BOLETO");
+    assert.equal(blockedList[0].salesBlock.maxDaysOverdue, 4);
+    await assert.rejects(
+      () => assertCustomerSalesAllowed(past.prisma, CUSTOMER_A, now),
+      (error: unknown) => error instanceof CustomerSalesBlockedError && error.reason === "OVERDUE_BOLETO"
+    );
+  });
 });

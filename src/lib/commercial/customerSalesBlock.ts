@@ -15,14 +15,22 @@
  *
  * Identidade não validável ⇒ fail closed para criação de venda, sem afirmar
  * inadimplência. Sem persistência em Customer.status. Sem matching por nome.
+ *
+ * Atraso: a população vencida continua sendo a do motor oficial. A trava de
+ * venda só trata boleto como bloqueante a partir de D+4, pela mesma folga
+ * comercial da inadimplência (`applyCommercialDelinquencyCalendarTolerance`).
+ * D+1..D+3 não bloqueiam venda só por atraso. O vencimento do título não muda.
  */
 
 import {
-  computeDaysOverdue,
   roundMoney,
   type FinanceArDashboardFilters,
   type FinanceArDashboardRow,
 } from "@/src/lib/financeAccountsReceivableDashboard.js";
+import {
+  applyCommercialDelinquencyCalendarTolerance,
+  commercialCalendarDaysOverdue,
+} from "./commercialDelinquencyTolerance.js";
 import { filterOfficialArOverdueTitles } from "@/src/lib/financeAccountsReceivableRulesEngine.js";
 import type { NomusArReportSyncCutoff } from "@/src/lib/financeNomusArReportFreshness.js";
 import {
@@ -218,7 +226,8 @@ export function buildCustomerSalesBlockStatus(input: {
     input.syncCutoff
   ) as CustomerSalesBlockArTitle[];
 
-  const boletos = officialOverdue.filter((row) => isOfficialArBoletoPaymentMethod(row));
+  const officialBoletos = officialOverdue.filter((row) => isOfficialArBoletoPaymentMethod(row));
+  const boletos = applyCommercialDelinquencyCalendarTolerance(officialBoletos, input.today);
   if (boletos.length > 0) {
     const overdueOpenBalance = roundMoney(
       boletos.reduce((sum, row) => sum + row.balanceReceivable, 0)
@@ -228,7 +237,7 @@ export function buildCustomerSalesBlockStatus(input: {
     for (const row of boletos) {
       if (!row.dueDate) continue;
       if (!oldest || row.dueDate.getTime() < oldest.getTime()) oldest = row.dueDate;
-      maxDaysOverdue = Math.max(maxDaysOverdue, computeDaysOverdue(row.dueDate, input.today));
+      maxDaysOverdue = Math.max(maxDaysOverdue, commercialCalendarDaysOverdue(row.dueDate, input.today));
     }
     return {
       blocked: true,

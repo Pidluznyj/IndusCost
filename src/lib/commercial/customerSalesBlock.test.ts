@@ -163,11 +163,11 @@ describe("buildCustomerSalesBlockStatus", () => {
     assert.equal(evaluate([title({ dueDate: new Date(2026, 8, 7) })]).blocked, false);
   });
 
-  it("TEST D: boleto venceu ontem com saldo > 0 → blocked=true", () => {
+  it("TEST D: boleto em D+1 com saldo > 0 permanece na folga comercial → blocked=false", () => {
     const status = evaluate([title({ dueDate: new Date(2026, 8, 6), balanceReceivable: 150 })]);
-    assert.equal(status.blocked, true);
-    assert.equal(status.reason, "OVERDUE_BOLETO");
-    assert.equal(status.overdueOpenBalance, 150);
+    assert.equal(status.blocked, false);
+    assert.equal(status.reason, null);
+    assert.equal(status.overdueOpenBalance, 0);
   });
 
   it("TEST E: boleto vencido com balanceReceivable = 0 → blocked=false", () => {
@@ -178,7 +178,14 @@ describe("buildCustomerSalesBlockStatus", () => {
   });
 
   it("TEST F: pagamento parcial usa o saldo canônico", () => {
-    const status = evaluate([title({ amountReceivable: 10000, amountReceived: 8000, balanceReceivable: 2000 })]);
+    const status = evaluate([
+      title({
+        dueDate: new Date(2026, 8, 1),
+        amountReceivable: 10000,
+        amountReceived: 8000,
+        balanceReceivable: 2000,
+      }),
+    ]);
     assert.equal(status.blocked, true);
     assert.equal(status.overdueOpenBalance, 2000);
   });
@@ -196,7 +203,13 @@ describe("buildCustomerSalesBlockStatus", () => {
   });
 
   it("TEST I: duplicata/previsão substituída pelo motor oficial não conta duas vezes", () => {
-    const withNf = title({ externalId: 10, sourceInvoiceId: 900, sourceInvoiceNumber: "NF-900", description: "Pedido 10" });
+    const withNf = title({
+      externalId: 10,
+      dueDate: new Date(2026, 8, 1),
+      sourceInvoiceId: 900,
+      sourceInvoiceNumber: "NF-900",
+      description: "Pedido 10",
+    });
     const preNf = title({ externalId: 11, sourceInvoiceId: null, sourceInvoiceNumber: null, description: "Pedido 10" });
     const status = evaluate([withNf, preNf]);
     assert.equal(status.blocked, true);
@@ -205,7 +218,7 @@ describe("buildCustomerSalesBlockStatus", () => {
 
   it("TEST J: dois boletos vencidos somam quantidade e saldo", () => {
     const status = evaluate([
-      title({ externalId: 1, balanceReceivable: 1000, amountReceivable: 1000 }),
+      title({ externalId: 1, dueDate: new Date(2026, 8, 2), balanceReceivable: 1000, amountReceivable: 1000 }),
       title({ externalId: 2, balanceReceivable: 2500, amountReceivable: 2500, dueDate: new Date(2026, 8, 1) }),
     ]);
     assert.equal(status.blocked, true);
@@ -216,7 +229,7 @@ describe("buildCustomerSalesBlockStatus", () => {
   });
 
   it("TEST K: após quitação o bloqueio some", () => {
-    assert.equal(evaluate([title({ balanceReceivable: 2000 })]).blocked, true);
+    assert.equal(evaluate([title({ dueDate: new Date(2026, 8, 1), balanceReceivable: 2000 })]).blocked, true);
     assert.equal(
       evaluate([title({ balanceReceivable: 0, amountReceived: 2000, settlementDate: new Date(2026, 8, 7) })]).blocked,
       false
@@ -254,7 +267,7 @@ describe("cliente sem pedido (identidade só pelo Customer)", () => {
   });
 
   it("TEST R: nomusExternalPersonId=100, sem SalesOrder, boleto ID 10 vencido → BLOCKED_OVERDUE_BOLETO", () => {
-    const status = evaluate([title()], { customer: 100, orders: [] });
+    const status = evaluate([title({ dueDate: new Date(2026, 8, 1) })], { customer: 100, orders: [] });
     assert.equal(status.blocked, true);
     assert.equal(status.reason, "OVERDUE_BOLETO");
     assert.equal(status.resolution, "RESOLVED");
@@ -353,7 +366,9 @@ describe("casos reais da homologação (fixtures equivalentes)", () => {
 
 describe("toPublicCustomerSalesBlock / tooltip", () => {
   it("omite valores financeiros sem permissão AR", () => {
-    const status = evaluate([title({ balanceReceivable: 18450, amountReceivable: 18450 })]);
+    const status = evaluate([
+      title({ dueDate: new Date(2026, 8, 3), balanceReceivable: 18450, amountReceivable: 18450 }),
+    ]);
     const publicBlock = toPublicCustomerSalesBlock(status, false);
     assert.equal(publicBlock.blocked, true);
     assert.equal(publicBlock.reason, "OVERDUE_BOLETO");
@@ -363,12 +378,14 @@ describe("toPublicCustomerSalesBlock / tooltip", () => {
   });
 
   it("com permissão AR explica quantidade, saldo e data", () => {
-    const status = evaluate([title({ balanceReceivable: 18450, amountReceivable: 18450 })]);
+    const status = evaluate([
+      title({ dueDate: new Date(2026, 8, 3), balanceReceivable: 18450, amountReceivable: 18450 }),
+    ]);
     const publicBlock = toPublicCustomerSalesBlock(status, true);
     const tip = customerSalesBlockTooltip(publicBlock, true);
     assert.match(tip, /1 boleto vencido/);
     assert.match(tip, /18\.450,00/);
-    assert.match(tip, /06\/09\/2026/);
+    assert.match(tip, /03\/09\/2026/);
   });
 
   it("erro de boleto vencido mantém código e mensagem originais", () => {

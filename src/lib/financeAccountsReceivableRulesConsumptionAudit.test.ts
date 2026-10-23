@@ -70,6 +70,7 @@ describe("financeAccountsReceivableRulesConsumptionAudit", () => {
     assert.match(commercial, /applyCommercialDelinquencyCalendarTolerance/);
     const salesBlock = read("src/lib/commercial/customerSalesBlock.ts");
     assert.match(salesBlock, /filterOfficialArOverdueTitles/);
+    assert.match(salesBlock, /applyCommercialDelinquencyCalendarTolerance/);
   });
 
   it("script de auditoria AR existe", () => {

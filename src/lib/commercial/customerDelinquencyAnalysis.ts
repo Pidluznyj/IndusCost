@@ -4,8 +4,8 @@
  * Fonte única: títulos já sincronizados em `NomusAccountsReceivable`.
  * A população de CRs efetivamente vencidos é a do motor oficial de Contas a
  * Receber (`filterOfficialArOverdueTitles`). Esta camada aplica a política
- * comercial sobre essa população: 3 dias corridos de tolerância bloqueante,
- * protesto, identidade e sincronização.
+ * comercial sobre essa população: 3 dias corridos de tolerância bloqueante
+ * em America/Sao_Paulo, protesto, identidade e sincronização.
  *
  * Não grava título, não cria ledger e não aplica a tolerância de 3 dias
  * úteis da conciliação de baixa (`financeSettlementReconciliation`) nem a
@@ -17,7 +17,6 @@
 
 import { isValidCnpj, normalizeCnpj } from "@/src/lib/companyCnpjFormat.js";
 import {
-  computeDaysOverdue,
   decimalFieldToNumber,
   isFinanceArReceivedOrSettled,
   roundMoney,
@@ -35,17 +34,20 @@ import {
 } from "@/src/lib/financeNomusArReportFreshness.js";
 import { asBoolean, toInt } from "@/src/lib/nomusAccountsReceivableParser.js";
 import {
+  applyCommercialDelinquencyCalendarTolerance,
+  COMMERCIAL_DELINQUENCY_TOLERANCE_DAYS,
+  commercialCalendarDaysOverdue,
+} from "./commercialDelinquencyTolerance.js";
+import {
   resolveCustomerFinancialIdentity,
   type CustomerFinancialIdentityResolution,
 } from "./customerSalesBlock.js";
 
-/**
- * Folga comercial bloqueante, em dias corridos, após o CR efetivo do motor
- * oficial. D+1..D+3 podem aparecer como vencidos no Financeiro; a partir de
- * D+4 integram a inadimplência comercial. Distinta da conciliação de baixa
- * (3 dias úteis) e da janela visual da Tesouraria.
- */
-export const COMMERCIAL_DELINQUENCY_TOLERANCE_DAYS = 3;
+export {
+  applyCommercialDelinquencyCalendarTolerance,
+  COMMERCIAL_DELINQUENCY_TOLERANCE_DAYS,
+  commercialCalendarDaysOverdue,
+} from "./commercialDelinquencyTolerance.js";
 
 /** Filtro neutro: a decisão comercial não recorta mês/status da carteira oficial. */
 export const COMMERCIAL_OFFICIAL_AR_OVERDUE_FILTERS: FinanceArDashboardFilters = {
@@ -372,18 +374,6 @@ export function selectOfficialArOverdueForCommercial(
   );
 }
 
-/** Aplica a tolerância comercial de 3 dias corridos sobre CRs já classificados pelo motor oficial. */
-export function applyCommercialDelinquencyCalendarTolerance(
-  officialOverdue: readonly FinanceArDashboardRow[],
-  referenceDate: Date
-): FinanceArDashboardRow[] {
-  return officialOverdue.filter(
-    (row) =>
-      row.dueDate != null &&
-      computeDaysOverdue(row.dueDate, referenceDate) > COMMERCIAL_DELINQUENCY_TOLERANCE_DAYS
-  );
-}
-
 function collapseDuplicateExternalIds(
   titles: readonly CommercialDelinquencyTitleInput[]
 ): { rows: CommercialDelinquencyTitleInput[]; exclusions: CommercialDelinquencyEvidence["exclusions"] } {
@@ -620,7 +610,7 @@ function metricsResult(
 ): CommercialDelinquencyAnalysis {
   let maxDays = 0;
   for (const row of overdue) {
-    maxDays = Math.max(maxDays, computeDaysOverdue(row.dueDate, referenceDate));
+    maxDays = Math.max(maxDays, commercialCalendarDaysOverdue(row.dueDate, referenceDate));
   }
   return {
     status,
@@ -647,7 +637,7 @@ function presentOverdueTitles(
       description: row.description,
       sourceInvoiceNumber: row.sourceInvoiceNumber,
       dueDate: row.dueDate ? civilDateKey(row.dueDate) : null,
-      daysOverdue: computeDaysOverdue(row.dueDate, referenceDate),
+      daysOverdue: commercialCalendarDaysOverdue(row.dueDate, referenceDate),
       balanceReceivable: roundMoney(row.balanceReceivable),
       protested: protested.has(row.externalId),
     }))
