@@ -18,7 +18,9 @@ import {
   formatCustomerCadastralStatus,
 } from "./customerSalesBlockView.js";
 
-const TODAY = new Date(2026, 8, 7); // 7 set 2026
+// Meio-dia: 7 set 2026 em São Paulo com o processo em UTC ou em São Paulo (a folga
+// comercial vira o dia à meia-noite de São Paulo, não à do processo).
+const TODAY = new Date(2026, 8, 7, 12); // 7 set 2026
 const LATEST_SYNC = new Date("2026-09-07T10:00:00.000Z");
 const STALE_SYNC = new Date("2026-09-01T10:00:00.000Z");
 const PERSON = 100;

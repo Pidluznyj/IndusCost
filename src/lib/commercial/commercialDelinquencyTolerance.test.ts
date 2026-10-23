@@ -16,6 +16,7 @@ import {
   type CommercialDelinquencyTitleInput,
 } from "./customerDelinquencyAnalysis.js";
 import { buildCustomerSalesBlockStatus } from "./customerSalesBlock.js";
+import { parseNomusBrDate } from "@/src/lib/nomusAccountsReceivableParser.js";
 import {
   officialCreditDeniesTermSale,
   operationBlockedByOfficialCredit,
@@ -216,5 +217,17 @@ describe("folga comercial de boleto em America/Sao_Paulo", () => {
     assert.equal(credit.customerStatus, "BLOQUEADO");
     assert.equal(credit.reason, "EXTERNAL_PROTEST");
     assert.equal(officialCreditDeniesTermSale(credit), true);
+  });
+});
+
+describe("vencimento como a sincronização grava (meia-noite do processo)", () => {
+  // parseNomusBrDate grava 00:00Z com o servidor em UTC e 03:00Z em São Paulo. Lido no fuso
+  // de São Paulo, 00:00Z do dia 20 virava o dia 19 e o bloqueio saía em D+3.
+  const due = parseNomusBrDate("20/10/2026");
+  it("D+3 ainda não bloqueia e D+4 bloqueia, com o processo em UTC ou em São Paulo", () => {
+    assert.equal(commercialCalendarDaysOverdue(due, new Date("2026-10-20T23:59:00-03:00")), 0);
+    assert.equal(commercialCalendarDaysOverdue(due, new Date("2026-10-23T12:00:00-03:00")), 3);
+    assert.equal(commercialCalendarDaysOverdue(due, new Date("2026-10-23T23:59:00-03:00")), 3, "21:00 em diante já é o dia seguinte em UTC, ainda D+3 em São Paulo");
+    assert.equal(commercialCalendarDaysOverdue(due, new Date("2026-10-24T00:01:00-03:00")), 4);
   });
 });

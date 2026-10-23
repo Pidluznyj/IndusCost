@@ -6,8 +6,13 @@
  * e D+3 não bloqueiam por atraso; D+4 bloqueia se o título seguir elegível e
  * com saldo em aberto.
  *
- * O dia civil é America/Sao_Paulo. A virada é meia-noite nesse fuso, não a
- * meia-noite UTC do servidor.
+ * O dia civil de HOJE é America/Sao_Paulo: a virada é meia-noite nesse fuso, não a
+ * meia-noite UTC do servidor. O VENCIMENTO é uma data (sem hora): a sincronização
+ * grava a meia-noite do processo (`parseNomusBrDate`) — 00:00Z com o servidor em UTC,
+ * 03:00Z em São Paulo. Lido no fuso de São Paulo, 00:00Z do dia 20 viraria o dia 19 e
+ * o bloqueio sairia em D+3; por isso o dia do vencimento é lido no calendário local do
+ * processo, o inverso exato de quem o gravou (mesma convenção do `computeDaysOverdue`
+ * do motor oficial).
  */
 
 import type { FinanceArDashboardRow } from "@/src/lib/financeAccountsReceivableDashboard.js";
@@ -31,13 +36,21 @@ export function commercialSaoPauloCivilDate(instant: Date): string | null {
   return CIVIL_DATE.test(formatted) ? formatted : null;
 }
 
+/** Data civil `YYYY-MM-DD` de uma data gravada à meia-noite do processo (vencimento). */
+function processLocalCivilDate(value: Date): string | null {
+  if (!(value instanceof Date) || Number.isNaN(value.getTime())) return null;
+  const month = String(value.getMonth() + 1).padStart(2, "0");
+  const day = String(value.getDate()).padStart(2, "0");
+  return `${value.getFullYear()}-${month}-${day}`;
+}
+
 /**
  * Dias corridos de atraso comercial. Zero no dia do vencimento e antes dele.
  * Não regrava a data do título.
  */
 export function commercialCalendarDaysOverdue(dueDate: Date | null, referenceDate: Date): number {
   if (!dueDate) return 0;
-  const due = commercialSaoPauloCivilDate(dueDate);
+  const due = processLocalCivilDate(dueDate);
   const reference = commercialSaoPauloCivilDate(referenceDate);
   if (!due || !reference) return 0;
   const dueMs = Date.parse(`${due}T00:00:00.000Z`);

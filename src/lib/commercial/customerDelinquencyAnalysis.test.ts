@@ -131,9 +131,11 @@ describe("inadimplência comercial — tolerância de 3 dias corridos", () => {
   });
 
   it("vira o dia civil: no vencimento ainda não venceu; no quarto dia corrido seguinte bloqueia", () => {
+    // "Hoje" em São Paulo explícito (-03:00): a virada é a meia-noite de São Paulo, com o
+    // processo em UTC ou em São Paulo. O vencimento é a data gravada pelo processo.
     const stillDue = analyzeCommercialDelinquency(
       input({
-        referenceDate: new Date(2026, 9, 18, 23, 30, 0),
+        referenceDate: new Date("2026-10-18T23:30:00-03:00"),
         titles: [title({ dueDate: new Date(2026, 9, 18, 8, 0, 0) })],
       })
     );
@@ -141,7 +143,7 @@ describe("inadimplência comercial — tolerância de 3 dias corridos", () => {
 
     const nextMorning = analyzeCommercialDelinquency(
       input({
-        referenceDate: new Date(2026, 9, 19, 0, 30, 0),
+        referenceDate: new Date("2026-10-19T00:30:00-03:00"),
         titles: [title({ dueDate: new Date(2026, 9, 18, 23, 30, 0) })],
       })
     );
@@ -151,7 +153,7 @@ describe("inadimplência comercial — tolerância de 3 dias corridos", () => {
 
     const fourthDay = analyzeCommercialDelinquency(
       input({
-        referenceDate: new Date(2026, 9, 19, 0, 30, 0),
+        referenceDate: new Date("2026-10-19T00:30:00-03:00"),
         titles: [title({ dueDate: new Date(2026, 9, 15, 23, 30, 0) })],
       })
     );
