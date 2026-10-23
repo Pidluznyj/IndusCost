@@ -6,8 +6,8 @@ Registro do trabalho executado. Arquitetura e operação:
 | | |
 |---|---|
 | Classificação | **IMPLEMENTADO E PRONTO PARA HOMOLOGAÇÃO** |
-| Branch | `fix/nomus-purchase-orders-sync-lifecycle` (worktree `C:/Dev/induscost-nomus-po-sync`), commit local, sem push |
-| Commit-base | `9d46d87a` (`origin/main` em 23/10/2026) |
+| Branch | `fix/nomus-purchase-orders-sync-lifecycle` (`3829d683` + `db972f1f`), integrada localmente em `integrate/nomus-po-sync` sobre `origin/main` `b842e31d`; sem push |
+| Commit-base | `9d46d87a` (desenvolvimento) → `b842e31d` (integração, 23/10/2026) |
 | Caso real | PC00637 · ID Nomus 638 · emitido 22/10/2026 · excluído no Nomus em 22/10, visível como Aprovado em 23/10 |
 | Restrições cumpridas | sem produção, sem AWS, nenhuma migration em banco real, registro 638 intocado, Nomus não alterado, sem push/merge |
 
@@ -25,8 +25,27 @@ Registro do trabalho executado. Arquitetura e operação:
 | B — ciclo de vida | Migration aditiva `20261101120000` (6 colunas, tabela de eventos, enum `PURCHASE_ORDER`/`SKIPPED` com `IF NOT EXISTS`, inicialização conservadora); adapter puro sobre o motor canônico com completude, idempotência por run, intervalo mínimo, guarda de volume, consulta por ID com 404 só confiável sob flag, reativação e eventos de transição; nada apagado, ausência não cancela; pedido confirmado ausente não recebe vínculo novo de CP. |
 | C — UI e painel | Lista com filtro de presença (padrão exclui confirmados; KPIs/total/paginação no mesmo `where`), selo ao lado da fase, banner e histórico no detalhe; painel em Configurações com status/STALE, flags, presença, métricas 24 h, execuções, ausentes, incremental manual, prévia e autorização (execute + Super Admin + frase); observabilidade SYNC-09 inclui Compras e ignora pulos/prévias; logs sem URL, credencial ou valores. |
 | D — auditoria 638 | `npm run nomus:purchase-orders:audit-presence -- --external-id=638 [--nomus-lookup] [--nomus-scan] [--show-amounts]`, somente leitura. |
-| E — testes | 48 unitários/contrato + 19 de integração em PostgreSQL 17 (Nomus falso). |
+| E — testes | 51 unitários/contrato + 33 de integração em PostgreSQL 17 (19 do caso PC00637 + 14 de resiliência com o cliente HTTP real). |
 | F — flags e rollout | Todas desligadas/conservadoras por padrão; implantação em etapas e rollback sem exclusão física documentados. |
+
+## 2b. Rodada 2 (missão "correção definitiva", 23/10/2026)
+
+- **Defeito encontrado no próprio desenho e corrigido**: uma página HTTP 200 que não é lista (ex.: objeto de erro)
+  era lida como página vazia e encerrava a paginação como completa — numa reconciliação, todo pedido viraria
+  candidato. Agora: corpo sem lista reconhecível → `INCONCLUSIVE` (`MALFORMED_PAYLOAD_INCOMPLETE_SNAPSHOT`);
+  universo vazio com pedidos locais → `INCONCLUSIVE` (`EMPTY_UNIVERSE_WITH_LOCAL_RECORDS`); ausências **novas**
+  acima do limite numa varredura não gravam nada (`MASS_ABSENCE_CANDIDATES_BLOCKED`, alerta crítico).
+- **Cenários exigidos e cobertos** (suíte `nomusPurchaseOrderSyncResilience.pg17.integration.test.ts`, cliente
+  `fetchNomusJson` real sobre `fetch` simulado): pedido novo, alterado (cabeçalho e itens), cancelado (fase
+  `CANCELED`, continua `PRESENT`), temporariamente ausente (candidata → reativada sem confirmar), excluído e
+  confirmado, resposta inválida, universo vazio, paginação interrompida (500 na página 2), 429 recuperado e
+  persistente, 401 (sem retry e sem vazar o token em log ou run), falha de banco ao ler o espelho e banco fora
+  antes de registrar o run (lock liberado), reexecução idempotente, agenda de Compras rodando com CR falhado.
+  Concorrência entre execuções: teste 13 da suíte PC00637.
+- **Diagnóstico individual**: [`purchase-orders-pc00637-diagnosis.md`](purchase-orders-pc00637-diagnosis.md).
+- **Integração com a `main` atual** (`b842e31d`, permissões): um conflito de linhas adjacentes em
+  `src/lib/adminSettingsAccess.ts` — mantidas as rotas `admin.settings.system` da `main` e acrescentadas as de
+  Compras.
 
 ## 3. Decisões e desvios
 
@@ -54,10 +73,11 @@ Registro do trabalho executado. Arquitetura e operação:
 
 | Gate | Resultado |
 |---|---|
-| Testes novos — unitários/contrato | 48/48 (`npm run test:nomus:purchase-orders:sync`) |
-| Integração PostgreSQL 17 (Nomus falso) | 19/19 (`COMMISSION_PG17_BIN=… npm run test:nomus:purchase-orders:pg`) |
-| Regressão por identidade (grafo de importação + guards estáticos) | 528 arquivos; base 6.874 testes/42 falhas × cabeça 6.922/42 — **0 regressões**, mesmas 42 falhas pré-existentes |
-| `tsc` por identidade | base 1.368 × cabeça 1.368 — **0 novos**, nenhum nos arquivos tocados |
+| Testes novos — unitários/contrato | 51/51 (`npm run test:nomus:purchase-orders:sync`) |
+| Integração PostgreSQL 17 (Nomus falso) | 33/33 (`COMMISSION_PG17_BIN=… npm run test:nomus:purchase-orders:pg`) |
+| Regressão por identidade (grafo de importação + guards estáticos), tree integrado × `origin/main` `b842e31d` | 530 arquivos; base 6.899 testes/47 falhas × cabeça 6.950/47 — **0 regressões**, mesmas 47 falhas pré-existentes na `main` |
+| `tsc --noEmit` (= `npm run lint`) por identidade, tree integrado × `b842e31d` | 1.368 × 1.368 — **0 novos**, nenhum nos arquivos tocados |
+| Arquivos de teste alterados (gate do deploy de homologação) | 105/105 com flags de presença desligadas e ligadas, `NODE_ENV=production`, `TZ=UTC` |
 | `prisma validate` | ok |
 | Ensaio da migration (PG17 descartável) | 11/11: aplica sobre o schema da base, preserva pedidos/itens/avaliação/vínculo, 638 `PRESENT`, drift zero, FK Restrict, rollback técnico sem apagar pedidos, reaplicação após rollback |
 | `vite build` + `check:browser-bundle` + `check:frontend-server-imports` + `check:server-imports` | ok (base também ok) |

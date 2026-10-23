@@ -117,7 +117,7 @@ Estados do run (`NomusSourceSyncRun`, `entityType=PURCHASE_ORDER`):
 |---|---|---|---|
 | `RUNNING` | em execução (preso > 2 h = STALE no painel) | — | — |
 | `SUCCESS` | todas as páginas lidas, sem falha | sim (se não for prévia) | 0 |
-| `INCONCLUSIVE` | parcial: limite de páginas, registro sem ID, erro de persistência | não | 3 |
+| `INCONCLUSIVE` | parcial ou anômala: limite de páginas, registro sem ID, página HTTP 200 sem lista (`MALFORMED_PAYLOAD_INCOMPLETE_SNAPSHOT`), universo vazio com pedidos locais (`EMPTY_UNIVERSE_WITH_LOCAL_RECORDS`), erro de persistência | não | 3 |
 | `FAILED` | falha HTTP/rede não recuperada, erro inesperado | não | 1 |
 | `SKIPPED` | lock ocupado, espera do global esgotada, fonte inativa | não | 0 |
 
@@ -153,9 +153,14 @@ Transições:
 - **Consulta por ID** (opcional, `NOMUS_PO_DIRECTED_LOOKUP_ENABLED=1`): 200 com o mesmo ID protege o pedido
   (e sinaliza que a listagem omitiu um pedido existente); 404 só confirma com
   `NOMUS_PO_DIRECTED_LOOKUP_TRUST_404=1`, depois de validada em homologação; qualquer outra resposta é inconclusiva.
-- **Guarda de volume**: confirmações acima de `min(NOMUS_PO_MAX_CONFIRMATIONS_PER_RUN=20,
-  ceil(NOMUS_PO_MAX_CONFIRMATIONS_RATIO=5% × universo))` → todas ficam candidatas e o run gera o alerta crítico
-  `MASS_ABSENCE_GUARD_TRIGGERED`.
+- **Guarda de volume** — limite = `min(NOMUS_PO_MAX_CONFIRMATIONS_PER_RUN=20,
+  ceil(NOMUS_PO_MAX_CONFIRMATIONS_RATIO=5% × universo))`, mínimo 1:
+  - ausências **novas** (PRESENT → candidata) acima do limite numa mesma varredura: **nada é gravado** (nem
+    candidata) e o run gera o alerta crítico `MASS_ABSENCE_CANDIDATES_BLOCKED` — sumiço em massa é sinal de
+    resposta anômala da API, não de exclusões;
+  - confirmações acima do limite: todas ficam candidatas e o run gera o alerta crítico
+    `MASS_ABSENCE_GUARD_TRIGGERED`.
+  Uma exclusão em massa legítima exige subir o limite temporariamente, de forma consciente.
 - **Reaparecimento** → `REACTIVATE`: volta a `PRESENT`, zera contadores, histórico preservado.
 - Run `FAILED`/`INCONCLUSIVE`: presença intocada; nada é incrementado.
 
@@ -230,9 +235,22 @@ run `RUNNING` preso há mais de 2 h. A observabilidade SYNC-09 passou a incluir 
 
 ## 9. Implantação em etapas
 
-1. **Homologação — schema**: `npx prisma migrate deploy` (migration `20261101120000`, aditiva: 2 valores de
-   enum, 6 colunas, 1 tabela; pedidos existentes ficam `PRESENT` com `presentInLastPayload=false` até a próxima
-   leitura). Depois, o código.
+Processos oficiais (não há passo manual de migration: os dois aplicam `prisma migrate deploy` antes de subir o
+código novo, o que já garante a ordem migration → código):
+
+- **Homologação** (servidor-01): `induscost-deploy-homologacao`. O gate do deploy executa por completo todos os
+  arquivos de teste alterados; os desta entrega passam 100% com as flags de presença ligadas e desligadas, e as duas
+  suítes PostgreSQL 17 ficam puladas sem `COMMISSION_PG17_BIN`.
+- **Produção** (AWS, `/opt/induscost`): `cd /opt/induscost && bash scripts/deploy-induscost.sh` (pull
+  fast-forward da `main`, `prisma validate`, `prisma migrate deploy`, `prisma generate`, build e reinício em
+  `NODE_ENV=production`). Fazer backup antes, como no checklist de release:
+  `runuser -u postgres -- pg_dump -Fc -d <banco> -f /tmp/backup_pre_po_sync_$(date +%Y%m%d%H%M).dump`.
+
+Antes de cada deploy, anotar o commit em execução (`git -C /opt/induscost log -1 --oneline`) para o rollback.
+
+1. **Homologação — schema + código**: deploy oficial (migration `20261101120000`, aditiva: 2 valores de enum,
+   6 colunas, 1 tabela; pedidos existentes ficam `PRESENT` com `presentInLastPayload=false` até a próxima
+   leitura). Conferir `npx prisma migrate status` sem pendências.
 2. **Homologação — leitura**: `npm run nomus:purchase-orders:audit-presence -- --external-id=638 --nomus-lookup
    --nomus-scan` (somente leitura) para registrar o estado real do 638, o comportamento do GET por ID para pedido
    excluído e o número de páginas do universo.
@@ -256,8 +274,23 @@ Operacional (preferido, sem tocar em dados):
 - um pedido marcado por engano volta a `PRESENT` sozinho na próxima leitura em que o Nomus o devolver.
 
 Código: o código anterior ignora as colunas novas (todas com padrão), então reverter o deploy é seguro com a
-migration aplicada. Schema: `docs/nomus/rollback/20261101120000_…rollback.sql` é último recurso (exporta o
-histórico antes; remove só colunas/tabela novas; nenhum pedido é apagado).
+migration aplicada — **não** restaurar backup do banco por causa desta entrega (a migration é aditiva e o restore
+descartaria dados gravados depois). Reversão de código em produção, seguindo o checklist de release:
+
+```bash
+cd /opt/induscost
+git log --oneline -5                      # localizar o commit anotado antes do deploy
+git checkout <commit_anterior>
+npm install && npx prisma generate && NODE_ENV=production npm run build
+# reiniciar como em scripts/deploy-server-main-update.sh (passo 14)
+```
+
+Depois, se a agenda própria estiver instalada: `sudo bash scripts/installNomusPurchaseOrdersCron.sh uninstall`
+(o arquivo vai para `/var/backups/induscost-cron/`) — o código anterior não conhece o CLI novo. Para voltar à
+`main`, `git checkout main && git pull --ff-only` no próximo deploy oficial.
+
+Schema: `docs/nomus/rollback/20261101120000_…rollback.sql` é último recurso (exporta o histórico antes; remove só
+colunas/tabela novas; nenhum pedido é apagado).
 
 ## 11. Validações pendentes de homologação
 
@@ -267,3 +300,5 @@ histórico antes; remove só colunas/tabela novas; nenhum pedido é apagado).
   `NOMUS_PO_DATE_FILTER_VALIDATED` podem ser usados.
 - Tamanho real do universo e duração da varredura completa (limite de 200 páginas).
 - Taxa de 429 no minuto 37 compartilhado com Propostas.
+
+Diagnóstico individual do caso de referência: [`purchase-orders-pc00637-diagnosis.md`](purchase-orders-pc00637-diagnosis.md).
