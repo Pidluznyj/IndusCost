@@ -61,7 +61,7 @@ function homologated(classification: "OFFICIAL" | "TEST") {
   for (const to of ["CONSOLIDATION", "CALIBRATION"] as const) {
     db = must(transitionCycle(db, { cycleId: open.cycleId, to, actorUserId: "rh", reversalReason: null, acceptPending: true, scope: hrScope }, openOptions)).db;
   }
-  for (const id of ["ana", "bia", "semlider", "otavio"]) {
+  for (const id of ["ana", "bia", "semlider", "otavio", "afastado"]) {
     const pid = participantOf(db, id).id;
     const r = db.results.find((x) => x.participantId === pid && x.active)!;
     if (r.technicalValidation === "PENDING_VALIDATION") db = must(validateTechnical(db, { participantId: pid, decision: "VALIDATED", note: "Padrão da função conferido.", actorUserId: "rh", scope: hrScope }, openOptions)).db;

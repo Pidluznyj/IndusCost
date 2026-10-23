@@ -90,9 +90,9 @@ export const ELIGIBILITY_STATES = ["ELIGIBLE", "NOT_ELIGIBLE", "INSUFFICIENT_EVI
 export type EligibilityState = (typeof ELIGIBILITY_STATES)[number];
 
 export const ELIGIBILITY_LABELS: Record<EligibilityState, string> = {
-  ELIGIBLE: "Elegível",
-  NOT_ELIGIBLE: "Não elegível",
-  INSUFFICIENT_EVIDENCE: "Evidência insuficiente",
+  ELIGIBLE: "Participa",
+  NOT_ELIGIBLE: "Não participa",
+  INSUFFICIENT_EVIDENCE: "Classificação anterior",
 };
 
 /** SELF/LEADER = avaliação individual; LEADERSHIP_* = 180° de liderança (ver performanceLeadership.ts). */
@@ -332,6 +332,8 @@ export type EmployeeSnapshotSource = {
   admissionDate: Date | null;
   terminationDate: Date | null;
   registration: string | null;
+  /** CLT, PJ ou outro rótulo do cadastro. Ausente não presume contrato de experiência. */
+  contractType?: string | null;
 };
 
 /** CADASTRO = gestor da ficha; ORGANOGRAMA = líder da unidade pela hierarquia; RH = exceção justificada; TOPO = sem superior (topo). */
@@ -345,11 +347,16 @@ export const MANAGER_SOURCE_TEXT: Record<ParticipantManagerSource, string> = {
 };
 
 export type EligibilityInput = {
-  employee: Pick<EmployeeSnapshotSource, "status" | "admissionDate" | "terminationDate">;
+  employee: Pick<EmployeeSnapshotSource, "status" | "admissionDate" | "terminationDate" | "contractType">;
   asOf: Date;
+  /** Período mínimo do ciclo. Não há um segundo mínimo fixo. */
   minObservationDays: number;
+  /** Afastamento vigente na data de referência. */
   absenceOverlapsReference: boolean;
+  /** Afastamento que cruzou a janela e já terminou. */
+  endedAbsenceInWindow?: boolean;
   roleChangedInsideWindow: boolean;
+  managerChangedInsideWindow?: boolean;
   exceptionReason: string | null;
 };
 
@@ -358,11 +365,78 @@ export type EligibilityDecision = {
   reason: string;
 };
 
-const MS_PER_DAY = 86_400_000;
+export type EligibilitySignals = {
+  /** Afastamento vigente. */
+  absenceIds: readonly string[];
+  roleChangeIds: readonly string[];
+  endedAbsenceIds?: readonly string[];
+  managerChangeIds?: readonly string[];
+};
 
+const MS_PER_DAY = 86_400_000;
+const INACTIVE_STATUSES = new Set(["INACTIVE", "TERMINATED", "DESLIGADO", "ENCERRADO", "RESCINDED", "DEMITIDO", "DISMISSED"]);
+const LEAVE_STATUSES = new Set(["AFASTADO", "ON_LEAVE", "LEAVE", "AFASTAMENTO"]);
+
+/** PJ usa o início documentado da prestação e o mesmo período do ciclo. Não há experiência CLT presumida. */
+export function isServiceContract(contractType: string | null | undefined): boolean {
+  const value = (contractType ?? "").trim().toUpperCase();
+  if (!value) return false;
+  return value === "PJ" || value.includes("PESSOA JUR") || value === "PRESTADOR";
+}
+
+export function historyRoleOrSectorChanged(row: {
+  previousRoleId?: string | null;
+  newRoleId?: string | null;
+  previousDepartmentId?: string | null;
+  newDepartmentId?: string | null;
+  previousDepartment?: string | null;
+  newDepartment?: string | null;
+}): boolean {
+  return (
+    (row.newRoleId != null && row.previousRoleId != null && row.newRoleId !== row.previousRoleId) ||
+    (row.newDepartmentId != null && row.previousDepartmentId != null && row.newDepartmentId !== row.previousDepartmentId) ||
+    (row.newDepartment != null && row.previousDepartment != null && row.newDepartment !== row.previousDepartment)
+  );
+}
+
+export function historyManagerChanged(row: { previousManagerId?: string | null; newManagerId?: string | null }): boolean {
+  return row.previousManagerId != null && row.newManagerId != null && row.previousManagerId !== row.newManagerId;
+}
+
+/** Afastamento já iniciado. Encerrado quando há retorno real ou a data final já passou. */
+export function classifyAbsenceSignal(row: { endDate: Date | null; actualReturn: Date | null }, now: Date): "CURRENT" | "ENDED" {
+  const returned = row.actualReturn != null && row.actualReturn.getTime() <= now.getTime();
+  const closed = row.endDate != null && row.endDate.getTime() < now.getTime();
+  return returned || closed ? "ENDED" : "CURRENT";
+}
+
+export function classifyFromSignals(input: {
+  employee: EmployeeSnapshotSource;
+  asOf: Date;
+  minObservationDays: number;
+  signals: EligibilitySignals;
+  exceptionReason: string | null;
+}): EligibilityDecision {
+  return classifyEligibility({
+    employee: input.employee,
+    asOf: input.asOf,
+    minObservationDays: input.minObservationDays,
+    absenceOverlapsReference: input.signals.absenceIds.includes(input.employee.id),
+    endedAbsenceInWindow: (input.signals.endedAbsenceIds ?? []).includes(input.employee.id),
+    roleChangedInsideWindow: input.signals.roleChangeIds.includes(input.employee.id),
+    managerChangedInsideWindow: (input.signals.managerChangeIds ?? []).includes(input.employee.id),
+    exceptionReason: input.exceptionReason,
+  });
+}
+
+/**
+ * Participação no questionário. Mudança de cargo, setor, liderança e afastamento encerrado
+ * não excluem quem está ativo e já cumpriu o período do ciclo. A homologação do resultado
+ * continua nas regras de evidência — e, sem data inicial, espera validação do RH.
+ */
 export function classifyEligibility(input: EligibilityInput): EligibilityDecision {
   const status = (input.employee.status ?? "ACTIVE").toUpperCase();
-  const terminated = input.employee.terminationDate != null || status === "INACTIVE" || status === "TERMINATED" || status === "DESLIGADO";
+  const terminated = input.employee.terminationDate != null || INACTIVE_STATUSES.has(status);
   if (terminated) {
     return { state: "NOT_ELIGIBLE", reason: "Vínculo inativo ou desligado. Exceção não reabre convite." };
   }
@@ -370,26 +444,81 @@ export function classifyEligibility(input: EligibilityInput): EligibilityDecisio
   if (exception.length > 0) {
     return { state: "ELIGIBLE", reason: `Exceção de RH: ${exception}` };
   }
-  if (status !== "ACTIVE") {
-    return { state: "INSUFFICIENT_EVIDENCE", reason: "Situação do cadastro diferente de ativo. Exige leitura do RH." };
+  const pj = isServiceContract(input.employee.contractType);
+  const observations: string[] = [];
+  const currentAbsence = input.absenceOverlapsReference || LEAVE_STATUSES.has(status);
+  if (status !== "ACTIVE" && !LEAVE_STATUSES.has(status)) {
+    observations.push("Situação do cadastro diferente de ativo. A pessoa participa; o RH confirma o vínculo antes de homologar o resultado.");
   }
   if (!input.employee.admissionDate) {
-    return { state: "INSUFFICIENT_EVIDENCE", reason: "Sem data de admissão para medir o período observável." };
+    observations.push("Cadastro ativo sem data inicial. A pessoa participa. O resultado fica pendente até o RH validar o tempo mínimo.");
+  } else {
+    const days = Math.floor((input.asOf.getTime() - input.employee.admissionDate.getTime()) / MS_PER_DAY);
+    if (days < input.minObservationDays) {
+      const start = pj
+        ? "a partir do início documentado da prestação de serviços, sem presumir contrato de experiência CLT"
+        : "a partir do início documentado do vínculo";
+      return {
+        state: "NOT_ELIGIBLE",
+        reason: `Em período inicial: ${days} dia(s). O ciclo pede ${input.minObservationDays} dia(s) ${start}.`,
+      };
+    }
   }
-  const days = Math.floor((input.asOf.getTime() - input.employee.admissionDate.getTime()) / MS_PER_DAY);
-  if (days < input.minObservationDays) {
+  if (currentAbsence) observations.push("Afastamento vigente. A pessoa participa; o convite do lote espera o retorno.");
+  if (input.endedAbsenceInWindow) observations.push("Afastamento já encerrado. A pessoa participa; a ocorrência fica como observação do RH.");
+  if (input.roleChangedInsideWindow) {
+    observations.push("Mudança de função, setor ou departamento no período. A pessoa participa; o RH registra a observação, sem tirar o questionário.");
+  }
+  if (input.managerChangedInsideWindow) observations.push("Mudança de liderança no período. A pessoa participa; o RH confirma o avaliador.");
+  if (observations.length > 0) return { state: "ELIGIBLE", reason: observations.join(" ") };
+  if (pj) return { state: "ELIGIBLE", reason: "Vínculo ativo. Período de observação cumprido a partir do início documentado da prestação de serviços." };
+  return { state: "ELIGIBLE", reason: "Vínculo ativo com o período mínimo do ciclo cumprido." };
+}
+
+/** Rótulo da participação. A observação fica no motivo, em segundo nível. */
+export function participationHeadline(input: { eligibility: string; reason?: string | null }): { label: string; observation: string | null } {
+  const reason = (input.reason ?? "").trim();
+  if (input.eligibility === "NOT_ELIGIBLE") {
+    const initial = /período inicial|Admissão há|Mínimo proposto/i.test(reason);
+    return { label: initial ? "Em período inicial" : "Vínculo inativo", observation: reason || null };
+  }
+  if (input.eligibility === "INSUFFICIENT_EVIDENCE") {
     return {
-      state: "NOT_ELIGIBLE",
-      reason: `Admissão há ${days} dia(s). Mínimo proposto: ${input.minObservationDays}. Não é pendência de resposta.`,
+      label: "Classificação anterior",
+      observation: reason || "Este ciclo foi classificado pela regra anterior. Em rascunho ou preparado, o RH pode reclassificar.",
     };
   }
-  if (input.absenceOverlapsReference) {
-    return { state: "INSUFFICIENT_EVIDENCE", reason: "Afastamento no período de referência. Não é falta de resposta." };
-  }
-  if (input.roleChangedInsideWindow) {
-    return { state: "INSUFFICIENT_EVIDENCE", reason: "Mudança de função ou setor no período. Exige leitura do RH." };
-  }
-  return { state: "ELIGIBLE", reason: "Período observável suficiente na proposta vigente." };
+  const review = /Mudança de |Afastamento |sem data inicial|Situação do cadastro|antes de homologar|observação do RH/i.test(reason);
+  if (review) return { label: "Participa — revisão de RH", observation: reason || null };
+  return { label: "Apto para participar", observation: reason.startsWith("Exceção de RH") ? reason : null };
+}
+
+/** Sem data inicial, ou com vínculo ainda não confirmado, o resultado não homologa. */
+export function resultPendingTenureValidation(participant: { admissionDate: string | null; eligibilityException: string | null; eligibilityReason: string }): boolean {
+  if (participant.eligibilityException?.trim()) return false;
+  if (!participant.admissionDate) return true;
+  return participant.eligibilityReason.includes("antes de homologar");
+}
+
+export type SurveyTaskPlan = { self: boolean; upward: boolean; leadershipSelf: boolean };
+
+/** Tarefas da pesquisa antes da abertura. Topo não ganha avaliação de um superior inexistente. */
+export function planSurveyTasks(input: { participates: boolean; hasSuperior: boolean; isLeader: boolean; leadershipModel: boolean }): SurveyTaskPlan {
+  if (!input.participates) return { self: false, upward: false, leadershipSelf: false };
+  return {
+    self: true,
+    upward: input.leadershipModel && input.hasSuperior,
+    leadershipSelf: input.leadershipModel && input.isLeader,
+  };
+}
+
+export function surveyTaskSummary(plan: SurveyTaskPlan, top = false): string {
+  const parts: string[] = [];
+  if (plan.self) parts.push("Autoavaliação");
+  if (plan.upward) parts.push("Avalia o superior");
+  if (plan.leadershipSelf) parts.push("Autoavaliação de liderança");
+  if (top && plan.self) parts.push("Sem tarefa de avaliar um superior");
+  return parts.length > 0 ? parts.join(" · ") : "Sem tarefas neste ciclo";
 }
 
 const FORWARD: Record<CycleStatus, CycleStatus | null> = {

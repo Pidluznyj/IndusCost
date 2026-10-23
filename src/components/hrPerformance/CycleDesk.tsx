@@ -9,7 +9,7 @@ import { CheckCircle2, ClipboardCopy, FileDown, Network, Pencil, Printer, QrCode
 import { CycleGovernanceBadges, CycleLifecycleOverlay } from "./CycleLifecyclePanel";
 import { LeadershipStatusBadge } from "./PerformanceLeadershipUi";
 import { OverlayBadge, OverlayField, OverlayFieldGrid, OverlayInput, OverlaySelect, OverlayTextarea } from "@/src/components/ui/overlay";
-import { CYCLE_STATUSES, CYCLE_STATUS_LABELS, ELIGIBILITY_LABELS, forwardStatus, reversalStatus, type CycleStatus } from "@/src/lib/hrPerformance/performanceDomain";
+import { CYCLE_STATUSES, CYCLE_STATUS_LABELS, ELIGIBILITY_LABELS, forwardStatus, planSurveyTasks, reversalStatus, surveyTaskSummary, type CycleStatus } from "@/src/lib/hrPerformance/performanceDomain";
 import {
   fetchCycleWorkspace,
   issuePerformanceInvite,
@@ -20,6 +20,7 @@ import {
   performanceReportPrintUrl,
   previewPerformanceParticipants,
   reassignPerformanceLeader,
+  reclassifyPerformanceParticipants,
   removePerformanceParticipant,
   revokePerformanceInvite,
   savePerformanceParticipants,
@@ -115,6 +116,7 @@ export function CycleDesk({ cycleId, me: realMe, onToast, onChanged }: { cycleId
   const [error, setError] = useState<string | null>(null);
   const [dialog, setDialog] = useState<Dialog>(null);
   const [issued, setIssued] = useState<IssuedInvite[]>([]);
+  const [reclassifyRows, setReclassifyRows] = useState<{ name: string; beforeReason: string; afterReason: string }[]>([]);
   const [filters, setFilters] = useState({ text: "", department: "", role: "", manager: "", state: "" });
   const [lifecycleOpen, setLifecycleOpen] = useState(false);
   const [readinessBlocked, setReadinessBlocked] = useState(false);
@@ -186,7 +188,9 @@ export function CycleDesk({ cycleId, me: realMe, onToast, onChanged }: { cycleId
       const result = await issuePerformanceInvitesBatch(cycleId, { onlyMissing: true });
       rememberCards(ws.cycle.name, result.issued);
       setIssued((current) => [...result.issued, ...current.filter((c) => !result.issued.some((n) => n.participantId === c.participantId))]);
-      onToast(result.issued.length ? `${result.issued.length} convite(s) gerado(s)` : "Todos já têm convite ativo ou já responderam");
+      const deferred = result.deferred ?? 0;
+      const base = result.issued.length ? `${result.issued.length} convite(s) gerado(s)` : "Todos já têm convite ativo ou já responderam";
+      onToast(deferred ? `${base}. ${deferred} ficam para o retorno do afastamento.` : base);
       await reload();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Não foi possível gerar os convites.");
@@ -204,6 +208,19 @@ export function CycleDesk({ cycleId, me: realMe, onToast, onChanged }: { cycleId
       await reload();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Não foi possível atualizar os líderes.");
+    }
+  };
+
+  const reclassify = async () => {
+    setError(null);
+    try {
+      const result = await reclassifyPerformanceParticipants(cycleId);
+      setReclassifyRows(result.rows);
+      onToast(result.changed ? `${result.changed} pessoa(s) reclassificada(s)` : "A classificação já está na regra atual");
+      await reload();
+      onChanged();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Não foi possível reclassificar.");
     }
   };
 
@@ -258,6 +275,17 @@ export function CycleDesk({ cycleId, me: realMe, onToast, onChanged }: { cycleId
                   data-testid="perf-sync-leaders"
                 >
                   <Network className="h-4 w-4" aria-hidden /> Atualizar líderes pelo organograma
+                </button>
+              ) : null}
+              {canCycles && preOpen ? (
+                <button
+                  type="button"
+                  className={BTN_GHOST}
+                  onClick={() => void reclassify()}
+                  title="Aplica a regra de participação neste rascunho ou ciclo preparado. Não altera ciclo aberto, resposta enviada nem exceção do RH."
+                  data-testid="perf-reclassify"
+                >
+                  <RotateCcw className="h-4 w-4" aria-hidden /> Reclassificar participação
                 </button>
               ) : null}
               {/* Reabrir resultado homologado é decisão de homologação (o servidor também exige). */}
@@ -335,13 +363,22 @@ export function CycleDesk({ cycleId, me: realMe, onToast, onChanged }: { cycleId
           {status === "DRAFT" ? "Agora: inclua as pessoas e confira a prontidão. Os números do ciclo aparecem depois da abertura." : "Agora: confira a prontidão e abra o ciclo. A lista congela na abertura."}
         </p>
       ) : null}
+      {reclassifyRows.length > 0 ? (
+        <ul className="space-y-1 rounded-lg border border-border bg-card p-3 text-xs" data-testid="perf-reclassify-result">
+          {reclassifyRows.slice(0, 8).map((row) => (
+            <li key={row.name}>
+              <span className="font-medium">{row.name}.</span> Antes: {row.beforeReason} Agora: {row.afterReason}
+            </li>
+          ))}
+        </ul>
+      ) : null}
       {status === "OPEN" ? (
         <p className="text-sm text-muted-foreground" data-testid="perf-stage-hint">
           Agora: gere e entregue os convites. Quem concluiu, quem falta e os prazos ficam na aba <strong>Acompanhamento</strong>.
         </p>
       ) : null}
       <div className={cn("grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6", preOpen && "hidden")} data-testid="perf-cycle-kpis">
-        <KpiTile label="Elegíveis" value={counts.eligible} hint={`${counts.notEligible} não elegíveis · ${counts.insufficient} evidência insuficiente`} />
+        <KpiTile label="Participam" value={counts.eligible} hint={`${counts.notEligible} fora do questionário · ${counts.insufficient} na classificação anterior`} />
         <KpiTile label="Convidados" value={counts.invited} hint={rateText(counts.rates.invited)} />
         <KpiTile label="Autoavaliações" value={counts.selfSubmitted} hint={rateText(counts.rates.selfSubmitted)} />
         <KpiTile label="Avaliações do líder" value={counts.leaderSubmitted} hint={`${rateText(counts.rates.leaderSubmitted)}${counts.withoutLeader ? ` · ${counts.withoutLeader} sem líder` : ""}`} tone={counts.withoutLeader ? "warning" : "neutral"} />
@@ -440,7 +477,15 @@ export function CycleDesk({ cycleId, me: realMe, onToast, onChanged }: { cycleId
               <tbody className="divide-y divide-border">
                 {visible.map((item) => (
                   <React.Fragment key={item.participant.id}>
-                    <PersonRow item={item} status={status} me={me} cycleId={cycleId} onIssue={() => void issueOne(item)} onDialog={(d) => setDialog(d)} />
+                    <PersonRow
+                      item={item}
+                      status={status}
+                      me={me}
+                      cycleId={cycleId}
+                      hasLeadershipModel={Boolean(ws?.cycle.leadershipModelId)}
+                      onIssue={() => void issueOne(item)}
+                      onDialog={(d) => setDialog(d)}
+                    />
                   </React.Fragment>
                 ))}
                 {visible.length === 0 ? (
@@ -603,6 +648,7 @@ function PersonRow({
   status,
   me,
   cycleId,
+  hasLeadershipModel,
   onIssue,
   onDialog,
 }: {
@@ -610,6 +656,7 @@ function PersonRow({
   status: CycleStatus;
   me: PerformanceMe;
   cycleId: string;
+  hasLeadershipModel: boolean;
   onIssue: () => void;
   onDialog: (dialog: Dialog) => void;
 }) {
@@ -643,6 +690,19 @@ function PersonRow({
       <td className="px-2 py-3">
         <EligibilityBadge state={p.eligibility} title={p.eligibilityReason} />
         <p className="mt-1 max-w-[220px] text-xs text-muted-foreground">{p.eligibilityReason}</p>
+        {preOpen ? (
+          <p className="mt-1 max-w-[240px] text-xs text-foreground" data-testid={`perf-tasks-${p.employeeName}`}>
+            {surveyTaskSummary(
+              planSurveyTasks({
+                participates: p.eligibility === "ELIGIBLE",
+                hasSuperior: Boolean(p.managerId) && p.managerSource !== "TOPO",
+                isLeader: p.isLeader,
+                leadershipModel: hasLeadershipModel,
+              }),
+              p.managerSource === "TOPO" && !p.managerId
+            )}
+          </p>
+        ) : null}
       </td>
       <td className="px-2 py-3">
         <p className="text-sm">{p.managerName ?? <span className="text-amber-700">Sem líder</span>}</p>
@@ -658,7 +718,7 @@ function PersonRow({
             {item.self?.assisted ? <span className="text-xs text-muted-foreground">com assistência</span> : null}
           </div>
         ) : (
-          <span className="text-xs text-muted-foreground">Não se aplica</span>
+          <span className="text-xs text-muted-foreground">{p.eligibility === "ELIGIBLE" ? "—" : "Fora do questionário"}</span>
         )}
       </td>
       <td className="px-2 py-3">
@@ -703,7 +763,7 @@ function PersonRow({
           {!removed && caps.invites && status === "OPEN" && selfOpen ? (
             <>
               <button type="button" className={BTN_GHOST} onClick={onIssue} data-testid={`perf-invite-${p.employeeName}`}>
-                <QrCode className="h-3.5 w-3.5" aria-hidden /> {item.invite.status === "NONE" ? "Gerar convite" : "Reemitir"}
+                <QrCode className="h-3.5 w-3.5" aria-hidden /> {item.invite.status === "NONE" ? (p.absenceInWindow ? "Gerar convite agora" : "Gerar convite") : "Reemitir"}
               </button>
               {item.invite.status === "ACTIVE" ? (
                 <button type="button" className={BTN_GHOST} onClick={() => onDialog({ kind: "revoke", person: item })}>
@@ -910,7 +970,7 @@ function EditCycleDialog({ ws, onClose, onDone }: { ws: CycleWorkspace; onClose:
   );
 }
 
-type Preview = { employeeId: string; name: string; eligibility: string; reason: string; alreadyInCycle: boolean; managerName: string | null };
+type Preview = { employeeId: string; name: string; eligibility: string; reason: string; taskSummary?: string; alreadyInCycle: boolean; managerName: string | null };
 
 function AddPeopleDialog({ ws, onClose, onDone }: { ws: CycleWorkspace; onClose: () => void; onDone: (message: string) => void }) {
   const [query, setQuery] = useState("");
@@ -1073,6 +1133,7 @@ function AddPeopleDialog({ ws, onClose, onDone }: { ws: CycleWorkspace; onClose:
                   <EligibilityBadge state={row.eligibility} />
                 </div>
                 <p className="text-xs text-muted-foreground">{row.reason}</p>
+                {row.taskSummary ? <p className="text-xs">{row.taskSummary}</p> : null}
                 {row.eligibility !== "ELIGIBLE" ? (
                   <OverlayField label="Exceção do RH (opcional)" description="Só se houver motivo real. Desligado não volta por exceção.">
                     {(p) => (

@@ -12,7 +12,7 @@
  *   muda entre a prévia e a confirmação, a confirmação é recusada e pede nova prévia.
  */
 import { createHash } from "node:crypto";
-import { classifyEligibility, type EligibilityState, type EmployeeSnapshotSource } from "./performanceDomain.js";
+import { classifyFromSignals, planSurveyTasks, surveyTaskSummary, type EligibilityState, type EmployeeSnapshotSource, type EligibilitySignals } from "./performanceDomain.js";
 import type { CycleRecord, PerformanceDatabase } from "./performanceState.js";
 
 export const INCLUSION_MODES = ["DIRECT", "TREE", "REPORTS_ONLY", "INDIVIDUAL", "ALL"] as const;
@@ -71,6 +71,8 @@ export type HierarchyPreviewRow = {
   directReportCount: number;
   eligibility: EligibilityState;
   reason: string;
+  /** Resumo das tarefas da pesquisa, antes da abertura. */
+  taskSummary: string;
   /** NEW = entra agora; ALREADY = já participa; REACTIVATE = estava retirado e volta. */
   inclusion: "NEW" | "ALREADY" | "REACTIVATE";
   /** Superior efetivo existe mas não está no ciclo nem na prévia. */
@@ -106,7 +108,7 @@ export function buildHierarchyPreview(input: {
   directorateOf: (departmentId: string | null, departmentName: string) => string | null;
   /** Liderados diretos ativos de cada pessoa, pela organização inteira. */
   directReports: Readonly<Record<string, { directReportIds: readonly string[] }>>;
-  signals: { absenceIds: readonly string[]; roleChangeIds: readonly string[] };
+  signals: EligibilitySignals;
   now: Date;
 }): HierarchyPreview {
   const { db, cycle, employees } = input;
@@ -115,16 +117,22 @@ export function buildHierarchyPreview(input: {
   const removed = new Set(db.participants.filter((p) => p.cycleId === cycle.id && p.removedAt).map((p) => p.employeeId));
   const rows: HierarchyPreviewRow[] = employees
     .map((e) => {
-      const decision = classifyEligibility({
+      const decision = classifyFromSignals({
         employee: e,
         asOf: input.now,
         minObservationDays: cycle.minObservationDays,
-        absenceOverlapsReference: input.signals.absenceIds.includes(e.id),
-        roleChangedInsideWindow: input.signals.roleChangeIds.includes(e.id),
+        signals: input.signals,
         exceptionReason: null,
       });
       const managerId = e.managerId && e.managerId !== e.id ? e.managerId : null;
       const reports = input.directReports[e.id]?.directReportIds.length ?? 0;
+      const top = (e.managerSource ?? "CADASTRO") === "TOPO" && !managerId;
+      const tasks = planSurveyTasks({
+        participates: decision.state === "ELIGIBLE",
+        hasSuperior: Boolean(managerId) && !top,
+        isLeader: reports > 0,
+        leadershipModel: Boolean(cycle.leadershipModelId),
+      });
       return {
         employeeId: e.id,
         name: e.name,
@@ -139,6 +147,7 @@ export function buildHierarchyPreview(input: {
         directReportCount: reports,
         eligibility: decision.state,
         reason: decision.reason,
+        taskSummary: surveyTaskSummary(tasks, top),
         inclusion: inCycle.has(e.id) ? "ALREADY" : removed.has(e.id) ? "REACTIVATE" : "NEW",
         leaderOutside: Boolean(managerId) && !inCycle.has(managerId!) && !inPreview.has(managerId!),
       } satisfies HierarchyPreviewRow;

@@ -82,7 +82,7 @@ function homologatedCycle() {
   db = submitLeader(db, "bia", 3);
   db = must(transitionCycle(db, { cycleId: open.cycleId, to: "CONSOLIDATION", actorUserId: "rh", reversalReason: null, acceptPending: true, scope: hrScope }, openOptions)).db;
   db = must(transitionCycle(db, { cycleId: open.cycleId, to: "CALIBRATION", actorUserId: "rh", reversalReason: null, scope: hrScope }, openOptions)).db;
-  for (const employeeId of ["ana", "bia", "semlider", "otavio"]) {
+  for (const employeeId of ["ana", "bia", "semlider", "otavio", "afastado"]) {
     const participant = participantOf(db, employeeId);
     const result = db.results.find((r) => r.participantId === participant.id && r.active)!;
     if (result.technicalValidation === "PENDING_VALIDATION") {
@@ -148,15 +148,15 @@ describe("modelos", () => {
 describe("ciclo, participantes e elegibilidade", () => {
   it("classifica, não duplica, remove sem apagar e aplica exceção justificada", () => {
     const draft = draftCycle();
-    assert.equal(draft.counts.eligible, 4);
+    assert.equal(draft.counts.eligible, 5, "afastamento vigente participa; o lote de convites é que espera o retorno");
     assert.equal(draft.counts.notEligible, 2);
-    assert.equal(draft.counts.insufficient, 1);
+    assert.equal(draft.counts.insufficient, 0);
     const again = must(applyParticipants(draft.db, { cycleId: draft.cycleId, employees: [ana], selectedIds: ["ana", "fantasma"], exceptions: {}, absenceIds: [], roleChangeIds: [], actorUserId: "rh", scope: hrScope }, openOptions));
     assert.equal(again.value.duplicates, 1);
     assert.equal(again.value.missing, 1);
     assert.equal(again.db.participants.filter((p) => p.employeeId === "ana").length, 1);
     const recem = participantOf(draft.db, "recem");
-    assert.match(recem.eligibilityReason, /Mínimo proposto: 90/);
+    assert.match(recem.eligibilityReason, /O ciclo pede 90 dia/);
     const shortReason = setEligibilityException(draft.db, { participantId: recem.id, reason: "curta", actorUserId: "rh", scope: hrScope }, openOptions);
     assert.equal(shortReason.ok === false && shortReason.code, "NOTE_REQUIRED");
     let db = must(setEligibilityException(draft.db, { participantId: recem.id, reason: "Veio transferido com 2 anos na outra unidade.", actorUserId: "rh", scope: hrScope }, openOptions)).db;
@@ -206,8 +206,8 @@ describe("ciclo, participantes e elegibilidade", () => {
     assert.equal(opened.db.audits.some((a) => a.action === "PILOT_OPEN"), true);
     const selfTasks = opened.db.assignments.filter((a) => a.kind === "SELF");
     const leaderTasks = opened.db.assignments.filter((a) => a.kind === "LEADER");
-    assert.deepEqual(selfTasks.map((a) => a.employeeId).sort(), ["ana", "bia", "otavio", "semlider"]);
-    assert.deepEqual(leaderTasks.map((a) => a.employeeId).sort(), ["ana", "bia", "otavio", "semlider"], "todo elegível tem tarefa da liderança");
+    assert.deepEqual(selfTasks.map((a) => a.employeeId).sort(), ["afastado", "ana", "bia", "otavio", "semlider"]);
+    assert.deepEqual(leaderTasks.map((a) => a.employeeId).sort(), ["afastado", "ana", "bia", "otavio", "semlider"], "todo elegível tem tarefa da liderança");
     assert.equal(leaderTasks.find((a) => a.employeeId === "semlider")!.evaluatorEmployeeId, "carla", "a tarefa vai para o id do colaborador avaliador");
     assert.equal(opened.db.answers.length, (selfTasks.length + leaderTasks.length) * 12);
     const frozen = applyParticipants(opened.db, { cycleId: draft.cycleId, employees: [ana], selectedIds: ["ana"], exceptions: {}, absenceIds: [], roleChangeIds: [], actorUserId: "rh", scope: hrScope }, openOptions);
@@ -319,7 +319,7 @@ describe("liderança", () => {
     const open = openCycle();
     let db = submitSelf(open.db, "ana", 4);
     const queue = leaderQueue(db, brunoScope, "bruno");
-    assert.deepEqual(queue.map((q) => q.employeeName).sort(), ["Ana Operadora", "Bia Operadora"]);
+    assert.deepEqual(queue.map((q) => q.employeeName).sort(), ["Ana Operadora", "Bia Operadora", "Eva Afastada"]);
     assert.equal(leaderQueue(db, marcosScope, "marcos").map((q) => q.employeeName).join(), "Otávio Manutenção");
     const anaLeader = assignmentOf(db, "ana", "LEADER");
     assert.equal(readLeaderForm(db, anaLeader.id, marcosScope, "marcos").ok, false, "líder de outro setor não abre");
@@ -434,7 +434,7 @@ describe("cálculo, cultura, calibração e homologação", () => {
   it("homologa só com permissão, tudo calibrado e sem revisão aberta; reabrir exige motivo", () => {
     const flow = homologatedCycle();
     assert.equal(flow.db.cycles[0]!.status, "HOMOLOGATED");
-    assert.equal(flow.db.results.filter((r) => r.active && r.official).length, 4);
+    assert.equal(flow.db.results.filter((r) => r.active && r.official).length, 5);
     const reopenNoReason = transitionCycle(flow.db, { cycleId: flow.cycleId, to: "CALIBRATION", actorUserId: "rh", reversalReason: null, scope: hrScope }, openOptions);
     assert.equal(reopenNoReason.ok === false && reopenNoReason.code, "NOTE_REQUIRED");
     const reopened = must(transitionCycle(flow.db, { cycleId: flow.cycleId, to: "CALIBRATION", actorUserId: "rh", reversalReason: "Erro de digitação apontado pelo líder.", canHomologate: true, scope: hrScope }, openOptions));
@@ -511,7 +511,7 @@ describe("devolutiva, PDI, encerramento e relatórios", () => {
     const pending = transitionCycle(flow.db, { cycleId: flow.cycleId, to: "CLOSED", actorUserId: "rh", reversalReason: null, scope: hrScope }, openOptions);
     assert.equal(pending.ok === false && pending.code, "PENDING_FEEDBACK");
     const closed = must(transitionCycle(flow.db, { cycleId: flow.cycleId, to: "CLOSED", actorUserId: "rh", reversalReason: null, acceptPending: true, scope: hrScope }, openOptions));
-    assert.equal(closed.value.pending, 4);
+    assert.equal(closed.value.pending, 5);
     const history = employeeHistory(closed.db, "ana", brunoScope, false);
     assert.ok(history.ok);
     if (history.ok) {
@@ -542,16 +542,16 @@ describe("devolutiva, PDI, encerramento e relatórios", () => {
     const open = openCycle();
     const db = submitSelf(open.db, "ana", 3);
     const counts = dashboardCounts(db, open.cycleId, hrScope, undefined, NOW);
-    assert.equal(counts.eligible, 4);
+    assert.equal(counts.eligible, 5);
     assert.equal(counts.notEligible, 2);
-    assert.equal(counts.insufficient, 1);
+    assert.equal(counts.insufficient, 0);
     assert.equal(counts.selfSubmitted, 1);
-    assert.deepEqual(counts.rates.selfSubmitted, { numerator: 1, denominator: 4, ratio: 0.25 });
-    assert.equal(counts.rates.leaderSubmitted.denominator, 4, "todo elegível tem líder antes da abertura");
+    assert.deepEqual(counts.rates.selfSubmitted, { numerator: 1, denominator: 5, ratio: 0.2 });
+    assert.equal(counts.rates.leaderSubmitted.denominator, 5, "todo elegível tem líder antes da abertura");
     const filtered = dashboardCounts(db, open.cycleId, hrScope, { department: "Manutenção" }, NOW);
     assert.equal(filtered.eligible, 1);
     const team = dashboardCounts(db, open.cycleId, brunoScope, undefined, NOW);
-    assert.equal(team.eligible, 2, "escopo do líder");
+    assert.equal(team.eligible, 3, "escopo do líder, incluindo quem está afastado e participa");
     const workspace = describeCycle(db, open.cycleId, brunoScope, NOW)!;
     assert.equal(workspace.people.some((p) => p.participant.employeeName === "Otávio Manutenção"), false);
     const planned = must(planReminders(db, { cycleId: open.cycleId, actorUserId: "rh" }, openOptions));
@@ -638,7 +638,7 @@ describe("reabertura e exportação (RFC-028/038)", () => {
     for (const to of ["CONSOLIDATION", "CALIBRATION"] as const) {
       db = must(transitionCycle(db, { cycleId: open.cycleId, to, actorUserId: "rh", reversalReason: null, acceptPending: true, scope: hrScope }, openOptions)).db;
     }
-    for (const id of ["ana", "bia", "semlider", "otavio"]) {
+    for (const id of ["ana", "bia", "semlider", "otavio", "afastado"]) {
       const pid = participantOf(db, id).id;
       const r = db.results.find((x) => x.participantId === pid && x.active);
       if (r?.technicalValidation === "PENDING_VALIDATION") db = must(validateTechnical(db, { participantId: pid, decision: "VALIDATED", note: "Padrão da função conferido.", actorUserId: "rh", scope: hrScope }, openOptions)).db;
@@ -690,7 +690,7 @@ describe("hierarquia efetiva no ciclo", () => {
     db = submitSelf(db, "semlider", 3);
     const blocked = transitionCycle(db, { cycleId: open.cycleId, to: "CONSOLIDATION", actorUserId: "rh", reversalReason: null, scope: hrScope }, openOptions);
     assert.equal(blocked.ok === false && blocked.code, "PENDING_ASSIGNMENTS");
-    assert.match(blocked.ok === false ? blocked.message : "", /4 pessoa/);
+    assert.match(blocked.ok === false ? blocked.message : "", /5 pessoa/);
   });
 
   it("calibrar sem avaliação do líder exige exceção explícita, não posiciona e fica auditado; homologação confere", () => {

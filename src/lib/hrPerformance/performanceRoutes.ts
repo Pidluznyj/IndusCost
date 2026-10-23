@@ -18,7 +18,7 @@ import { cycleExceptions } from "./performanceExceptions.js";
 import { buildHierarchyPreview, isInclusionMode, resolveInclusionScope, type HierarchyReader, type InclusionMode } from "./performanceHierarchyInclusion.js";
 import { cycleReadiness, readinessBlocked, type ReadinessContext } from "./performanceReadiness.js";
 import { OBLIGATION_STATUSES, trackingBoard, trackingCsv, type ObligationStatus, type OrgUnits, type TrackingModality } from "./performanceTracking.js";
-import { classifyEligibility, isCycleStatus, isNineBoxBand, parseAnswer, parseRules, type EmployeeSnapshotSource } from "./performanceDomain.js";
+import { classifyFromSignals, isCycleStatus, isNineBoxBand, parseAnswer, parseRules, participationHeadline, planSurveyTasks, surveyTaskSummary, type EmployeeSnapshotSource } from "./performanceDomain.js";
 import { requirePerformanceCycleEnabled } from "./performanceFeatureFlags.js";
 import {
   calibrationQueue,
@@ -80,6 +80,7 @@ import {
   readLeaderForm,
   recordExport,
   reassignLeader,
+  reclassifyPreparedParticipants,
   syncParticipantLeaders,
   recordConduct,
   removeParticipant,
@@ -131,8 +132,11 @@ export type PerformanceRouteDeps = {
   loadScope: (req: express.Request) => Promise<{ accessScope: PerformanceAccessScope; actorEmployeeId: string | null; teamIds: string[] }>;
   loadEmployees: (ids: string[]) => Promise<EmployeeSnapshotSource[]>;
   searchEmployees?: (query: string) => Promise<EmployeeSnapshotSource[]>;
-  /** Afastamento e mudança de função/setor no período de referência, do cadastro oficial. */
-  loadEligibilitySignals?: (employeeIds: string[], since: Date) => Promise<{ absenceIds: string[]; roleChangeIds: string[] }>;
+  /** Afastamento vigente, afastamento encerrado e mudança de função, setor ou liderança. */
+  loadEligibilitySignals?: (
+    employeeIds: string[],
+    since: Date
+  ) => Promise<{ absenceIds: string[]; roleChangeIds: string[]; endedAbsenceIds?: string[]; managerChangeIds?: string[] }>;
   actorUserId: (req: express.Request) => Promise<string | null>;
   actorName?: (req: express.Request) => Promise<string | null>;
   /** Mesma decisão do guard (deny > allow), para a tela esconder o que o servidor recusaria. */
@@ -658,9 +662,16 @@ export function registerPerformanceRoutes(expressApp: express.Application, deps:
   });
 
   const signalsFor = async (ids: string[], cycleMinDays: number) => {
-    if (!deps.loadEligibilitySignals || ids.length === 0) return { absenceIds: [] as string[], roleChangeIds: [] as string[] };
+    const empty = { absenceIds: [] as string[], roleChangeIds: [] as string[], endedAbsenceIds: [] as string[], managerChangeIds: [] as string[] };
+    if (!deps.loadEligibilitySignals || ids.length === 0) return empty;
     const windowDays = Math.max(180, cycleMinDays);
-    return deps.loadEligibilitySignals(ids, new Date(now().getTime() - windowDays * 86_400_000));
+    const raw = await deps.loadEligibilitySignals(ids, new Date(now().getTime() - windowDays * 86_400_000));
+    return {
+      absenceIds: raw.absenceIds,
+      roleChangeIds: raw.roleChangeIds,
+      endedAbsenceIds: raw.endedAbsenceIds ?? [],
+      managerChangeIds: raw.managerChangeIds ?? [],
+    };
   };
 
   app.post("/api/hr/performance/cycles/:id/participants/preview", ...manage, async (req, res) => {
@@ -673,20 +684,29 @@ export function registerPerformanceRoutes(expressApp: express.Application, deps:
     const signals = await signalsFor(ids, cycle.minObservationDays);
     res.json({
       people: employees.map((employee) => {
-        const decision = classifyEligibility({
+        const decision = classifyFromSignals({
           employee,
           asOf: now(),
           minObservationDays: cycle.minObservationDays,
-          absenceOverlapsReference: signals.absenceIds.includes(employee.id),
-          roleChangedInsideWindow: signals.roleChangeIds.includes(employee.id),
+          signals,
           exceptionReason: null,
         });
         const existing = db.participants.find((p) => p.cycleId === cycle.id && p.employeeId === employee.id && !p.removedAt);
+        const managerId = employee.managerId && employee.managerId !== employee.id ? employee.managerId : null;
+        const top = (employee.managerSource ?? "CADASTRO") === "TOPO" && !managerId;
+        const tasks = planSurveyTasks({
+          participates: decision.state === "ELIGIBLE",
+          hasSuperior: Boolean(managerId) && !top,
+          isLeader: false,
+          leadershipModel: Boolean(cycle.leadershipModelId),
+        });
         return {
           employeeId: employee.id,
           name: employee.name,
           eligibility: decision.state,
           reason: decision.reason,
+          label: participationHeadline({ eligibility: decision.state, reason: decision.reason }).label,
+          taskSummary: surveyTaskSummary(tasks, top),
           alreadyInCycle: Boolean(existing),
           managerName: employee.managerName,
           managerSource: employee.managerSource ?? "CADASTRO",
@@ -795,6 +815,8 @@ export function registerPerformanceRoutes(expressApp: express.Application, deps:
             exceptions,
             absenceIds: out.signals.absenceIds,
             roleChangeIds: out.signals.roleChangeIds,
+            endedAbsenceIds: out.signals.endedAbsenceIds,
+            managerChangeIds: out.signals.managerChangeIds,
             actorUserId,
             scope,
             leadershipSnapshot: out.directReports,
@@ -815,7 +837,19 @@ export function registerPerformanceRoutes(expressApp: express.Application, deps:
     await mutateAdmin(deps.store, res, (db) =>
       applyParticipants(
         db,
-        { cycleId: req.params.id, employees, selectedIds: ids, exceptions, absenceIds: signals.absenceIds, roleChangeIds: signals.roleChangeIds, actorUserId, scope, leadershipSnapshot },
+        {
+          cycleId: req.params.id,
+          employees,
+          selectedIds: ids,
+          exceptions,
+          absenceIds: signals.absenceIds,
+          roleChangeIds: signals.roleChangeIds,
+          endedAbsenceIds: signals.endedAbsenceIds,
+          managerChangeIds: signals.managerChangeIds,
+          actorUserId,
+          scope,
+          leadershipSnapshot,
+        },
         deps.options
       )
     );
@@ -910,7 +944,47 @@ export function registerPerformanceRoutes(expressApp: express.Application, deps:
     const employees = await deps.loadEmployees(ids);
     const signals = await signalsFor(ids, cycle.minObservationDays ?? 90);
     await mutateAdmin(deps.store, res, (db) =>
-      applyParticipants(db, { cycleId: cycle.id, employees, selectedIds: ids, exceptions: {}, absenceIds: signals.absenceIds, roleChangeIds: signals.roleChangeIds, actorUserId, scope }, deps.options)
+      applyParticipants(
+        db,
+        {
+          cycleId: cycle.id,
+          employees,
+          selectedIds: ids,
+          exceptions: {},
+          absenceIds: signals.absenceIds,
+          roleChangeIds: signals.roleChangeIds,
+          endedAbsenceIds: signals.endedAbsenceIds,
+          managerChangeIds: signals.managerChangeIds,
+          actorUserId,
+          scope,
+        },
+        deps.options
+      )
+    );
+  });
+
+  app.post("/api/hr/performance/cycles/:id/participants/reclassify", ...manage, async (req, res) => {
+    const actorUserId = await deps.actorUserId(req);
+    const { scope } = await scopeOf(req);
+    const first = await deps.store.read();
+    const ids = first.participants.filter((p) => p.cycleId === req.params.id && !p.removedAt).map((p) => p.employeeId);
+    const cycle = first.cycles.find((c) => c.id === req.params.id);
+    const [employees, signals] = await Promise.all([deps.loadEmployees(ids), signalsFor(ids, cycle?.minObservationDays ?? 90)]);
+    await mutateAdmin(deps.store, res, (db) =>
+      reclassifyPreparedParticipants(
+        db,
+        {
+          cycleId: req.params.id,
+          employees,
+          absenceIds: signals.absenceIds,
+          roleChangeIds: signals.roleChangeIds,
+          endedAbsenceIds: signals.endedAbsenceIds,
+          managerChangeIds: signals.managerChangeIds,
+          actorUserId,
+          scope,
+        },
+        deps.options
+      )
     );
   });
 

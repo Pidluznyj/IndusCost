@@ -7,6 +7,7 @@
  * comentário, evidência, quadrante, faixa ou índice: a função não toca `answers` nem os campos de
  * pontuação dos resultados. Nenhum filtro é por nota, então filtrar não revela resultado.
  */
+import { participationHeadline } from "./performanceDomain.js";
 import { activeAssignment, activeResult, eligibleParticipants, liveParticipants } from "./performanceService.js";
 import { activeKind, activeLeadershipResult, journeyOf } from "./performanceLeadershipService.js";
 import type { AssignmentRecord, CycleRecord, ParticipantRecord, PerformanceDatabase } from "./performanceState.js";
@@ -124,7 +125,8 @@ function nameOf(db: PerformanceDatabase, cycleId: string, employeeId: string | n
 
 export function participantObligations(db: PerformanceDatabase, cycle: CycleRecord, participant: ParticipantRecord, today: string): Obligation[] {
   const eligible = participant.eligibility === "ELIGIBLE" && !participant.removedAt;
-  const na = (key: ObligationKey): Obligation => ({ key, status: "NOT_APPLICABLE", responsible: null, dueAt: null, reason: eligible ? null : "Não elegível no ciclo", at: null });
+  const outside = participationHeadline({ eligibility: participant.eligibility, reason: participant.eligibilityReason }).label;
+  const na = (key: ObligationKey): Obligation => ({ key, status: "NOT_APPLICABLE", responsible: null, dueAt: null, reason: eligible ? null : outside, at: null });
   if (!eligible) return OBLIGATION_KEYS.map(na);
   const opened = stage(cycle) >= ORDER.indexOf("OPEN");
   const self = activeAssignment(db, participant.id, "SELF");

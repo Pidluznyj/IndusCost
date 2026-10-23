@@ -17,6 +17,7 @@ import {
   findDivergences,
   formatPillarMean,
   neutralizeSpreadsheetCell,
+  participationHeadline,
   type CultureBand,
   type NineBoxBand,
   type Pillar,
@@ -610,7 +611,12 @@ export function reportRows(db: PerformanceDatabase, cycleId: string, scope: Perf
         role: neutralizeSpreadsheetCell(participant.roleName),
         department: neutralizeSpreadsheetCell(participant.departmentName),
         eligibility: participant.eligibility,
-        quadrant: participant.eligibility !== "ELIGIBLE" ? "não se aplica" : result?.official ? neutralizeSpreadsheetCell(result.quadrant) : "preliminar",
+        quadrant:
+          participant.eligibility !== "ELIGIBLE"
+            ? participationHeadline({ eligibility: participant.eligibility, reason: participant.eligibilityReason }).label
+            : result?.official
+              ? neutralizeSpreadsheetCell(result.quadrant)
+              : "preliminar",
         culture: result?.official ? result.cultureBand : "",
       };
     });

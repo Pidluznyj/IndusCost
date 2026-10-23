@@ -8,13 +8,13 @@ export const GLOSSARY = {
   calibrar: ["Calibrar", "Conferir a nota preliminar com fatos e, se for o caso, ajustar com justificativa. Nada muda sem motivo registrado."],
   homologar: ["Tornar oficial", "Depois de todos calibrados, o resultado vira oficial e congela. Só uma revisão formal reabre."],
   consolidacao: ["Fechar a coleta", "Encerra o prazo das respostas. A partir daqui o sistema calcula o resultado preliminar."],
-  elegibilidade: ["Elegibilidade", "Quem pode ser avaliado neste ciclo: ativo, com tempo mínimo de observação, sem afastamento ou troca recente de função."],
+  elegibilidade: ["Elegibilidade", "Quem responde neste ciclo: vínculo ativo e período mínimo do ciclo cumprido. Mudança de cargo, setor ou liderança vira observação do RH e não tira o questionário."],
   ascendente: ["Avaliação do seu líder", "A equipe avalia como a pessoa lidera. Só a média aparece, e só com 5 ou mais respostas."],
-  evidencia: ["Evidência insuficiente", "Houve afastamento ou mudança no período: não dá para avaliar com segurança. Não é nota baixa."],
+  evidencia: ["Evidência da resposta", "Nota extrema do líder pede um relato curto. Sem respostas válidas o bastante, o resultado não é homologado. Não é nota baixa."],
   ninebox: ["Nine-Box", "Quadro de nove posições que cruza desempenho técnico com potencial. A cultura fica fora dele."],
   devolutiva: ["Devolutiva", "A conversa do líder com a pessoa sobre o resultado, registrada no sistema e com ciência dela."],
   pdi: ["PDI", "Plano de desenvolvimento individual: ações ligadas a competências, com prazo e acompanhamento."],
-  topo: ["Topo da estrutura", "Pessoa sem superior no organograma. Ninguém a avalia individualmente, salvo avaliador definido pelo RH."],
+  topo: ["Topo da estrutura", "Pessoa sem superior no organograma. Faz as autoavaliações e é avaliada pela equipe. Não avalia um superior inexistente."],
 } as const;
 
 export type GlossaryKey = keyof typeof GLOSSARY;

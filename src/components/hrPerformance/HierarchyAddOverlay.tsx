@@ -7,7 +7,7 @@
 import React, { useMemo, useState } from "react";
 import { AlertTriangle, Network, ShieldAlert } from "lucide-react";
 import { OverlayBadge, OverlayField, OverlayInput } from "@/src/components/ui/overlay";
-import { ELIGIBILITY_LABELS, MANAGER_SOURCE_TEXT, type EligibilityState, type ParticipantManagerSource } from "@/src/lib/hrPerformance/performanceDomain";
+import { ELIGIBILITY_LABELS, MANAGER_SOURCE_TEXT, type ParticipantManagerSource } from "@/src/lib/hrPerformance/performanceDomain";
 import { confirmHierarchyInclusion, previewHierarchyInclusion, type CycleWorkspace, type DirectoryPerson, type HierarchyPreview, type InclusionMode, type PerformanceCapabilities } from "@/src/lib/hrPerformance/performanceClient";
 import { BTN_GHOST, EligibilityBadge, EmployeePicker, ErrorBanner, InfoBanner, KpiTile, PerformanceModal, TableScroll } from "./performanceUi";
 import { cn } from "@/src/lib/utils";
@@ -171,6 +171,7 @@ export function HierarchyAddOverlay({ ws, caps, onClose, onDone }: { ws: CycleWo
                     <td className="py-2 pr-2">
                       <EligibilityBadge state={r.eligibility} title={r.reason} />
                       <p className="text-xs text-muted-foreground">{r.reason}</p>
+                      <p className="text-xs" data-testid={`perf-hierarchy-tasks-${r.name}`}>{r.taskSummary}</p>
                       {r.inclusion !== "ALREADY" && r.eligibility !== "ELIGIBLE" ? (
                         <OverlayInput
                           className="mt-1"
@@ -199,7 +200,7 @@ export function HierarchyAddOverlay({ ws, caps, onClose, onDone }: { ws: CycleWo
             Voltar e mudar a seleção
           </button>
           <p className="text-xs text-muted-foreground">
-            Elegibilidade: {Object.entries(ELIGIBILITY_LABELS).map(([k, v]) => `${v}${k === ("ELIGIBLE" satisfies EligibilityState) ? " (recebe convite)" : ""}`).join(" · ")}. Quem não é elegível entra na lista com o motivo e não recebe convite; uma exceção do RH, com motivo, torna a pessoa elegível e fica auditada.
+            Participação: {Object.entries(ELIGIBILITY_LABELS).map(([k, v]) => v).join(" · ")}. Quem está em período inicial ou com vínculo inativo entra na lista com o motivo e não recebe tarefa. Mudança de cargo, setor ou liderança não tira o questionário. Afastamento vigente fica de fora do lote de convites. Uma exceção do RH, com motivo, fica auditada e não reabre desligamento.
           </p>
         </div>
       )}

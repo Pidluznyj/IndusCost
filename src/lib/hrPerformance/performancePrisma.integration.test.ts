@@ -96,8 +96,18 @@ describe("persistência Prisma em PostgreSQL local", { skip }, () => {
         }));
       },
       loadEligibilitySignals: async (list, since) => {
-        const absences = await prisma.hrAbsence.findMany({ where: { employeeId: { in: list }, OR: [{ endDate: null }, { endDate: { gte: since } }] } });
-        return { absenceIds: absences.map((a) => a.employeeId), roleChangeIds: [] };
+        const absences = await prisma.hrAbsence.findMany({
+          where: { employeeId: { in: list }, OR: [{ endDate: null }, { endDate: { gte: since } }] },
+          select: { employeeId: true, endDate: true, actualReturn: true },
+        });
+        const asOf = new Date("2026-10-16T15:00:00.000Z");
+        const current: string[] = [];
+        const ended: string[] = [];
+        for (const row of absences) {
+          const closed = (row.actualReturn != null && row.actualReturn <= asOf) || (row.endDate != null && row.endDate < asOf);
+          (closed ? ended : current).push(row.employeeId);
+        }
+        return { absenceIds: current, endedAbsenceIds: ended, roleChangeIds: [], managerChangeIds: [] };
       },
       actorUserId: async (req) => (actorOf(req) === "leader" ? LEADER_USER : HR_USER),
       actorName: async () => "RH de teste",
@@ -125,8 +135,8 @@ describe("persistência Prisma em PostgreSQL local", { skip }, () => {
     const cycle = await call("POST", "/api/hr/performance/cycles", { name: "Ciclo PG", periodLabel: "2026-S2", modelId: model.json.modelId, selfDueAt: "2026-11-15", leaderDueAt: "2026-11-30", classification: "OFFICIAL" });
     const cycleId = cycle.json.cycleId;
     const added = await call("POST", `/api/hr/performance/cycles/${cycleId}/participants`, { employeeIds: [ids.ana, ids.bia, ids.caio] });
-    assert.equal(added.json.eligible, 1);
-    assert.equal(added.json.insufficient, 1, "afastamento real do cadastro vira evidência insuficiente");
+    assert.equal(added.json.eligible, 2, "afastamento já encerrado não tira a participação");
+    assert.equal(added.json.insufficient, 0);
     assert.equal(added.json.notEligible, 1);
     const biaRow = await prisma.hrPerformanceParticipant.findFirst({ where: { employeeId: ids.bia } });
     assert.equal((await call("POST", `/api/hr/performance/participants/${biaRow!.id}/eligibility`, { reason: "Afastamento curto, já observada no semestre." })).status, 200);

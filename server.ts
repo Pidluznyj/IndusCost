@@ -269,6 +269,7 @@ import { registerHrOrgStructureRoutes } from "./src/lib/hrOrgStructureRoutes.js"
 import { registerEmployeesDashboardRoutes } from "./src/lib/employeesDashboardRoutes.js";
 import { registerCompetencyRoutes } from "./src/lib/competencies/competencyRoutes.js";
 import { registerPerformanceRoutes } from "./src/lib/hrPerformance/performanceRoutes.js";
+import { classifyAbsenceSignal, historyManagerChanged, historyRoleOrSectorChanged } from "./src/lib/hrPerformance/performanceDomain.js";
 import { STRICT_PERFORMANCE_RESOURCES } from "./src/lib/hrPerformance/performancePermissions.js";
 import { createPrismaPerformanceStore } from "./src/lib/hrPerformance/performancePrisma.js";
 import { createPerformancePublicHostGuard } from "./src/lib/hrPerformance/performancePublicSurface.js";
@@ -15629,6 +15630,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
           managerName: true,
           admissionDate: true,
           terminationDate: true,
+          contractType: true,
           Role: { select: { name: true } },
         },
       });
@@ -15644,6 +15646,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
         departmentName: row.department,
         admissionDate: row.admissionDate,
         terminationDate: row.terminationDate,
+        contractType: row.contractType,
         registration: null,
       }));
     },
@@ -15673,6 +15676,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
           managerName: true,
           admissionDate: true,
           terminationDate: true,
+          contractType: true,
           Role: { select: { name: true } },
         },
       });
@@ -15688,6 +15692,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
         departmentName: row.department,
         admissionDate: row.admissionDate,
         terminationDate: row.terminationDate,
+        contractType: row.contractType,
         registration: null,
       }));
     },
@@ -15740,31 +15745,49 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     // Afastamento (HrAbsence) e mudança de função/setor (HrEmployeeHistory) no período de
     // referência vêm do cadastro oficial; a tela não informa isso à mão.
     loadEligibilitySignals: async (employeeIds, since) => {
-      if (employeeIds.length === 0) return { absenceIds: [], roleChangeIds: [] };
+      if (employeeIds.length === 0) return { absenceIds: [], roleChangeIds: [], endedAbsenceIds: [], managerChangeIds: [] };
+      const now = new Date();
       const [absences, history] = await Promise.all([
         prisma.hrAbsence.findMany({
           where: {
             employeeId: { in: employeeIds },
             status: { notIn: ["CANCELLED", "CANCELED"] },
-            startDate: { lte: new Date() },
-            OR: [{ endDate: null }, { endDate: { gte: since } }],
+            startDate: { lte: now },
+            OR: [{ endDate: null }, { endDate: { gte: since } }, { actualReturn: { gte: since } }],
           },
-          select: { employeeId: true },
+          select: { employeeId: true, endDate: true, actualReturn: true },
         }),
         prisma.hrEmployeeHistory.findMany({
           where: { employeeId: { in: employeeIds }, effectiveDate: { gte: since } },
-          select: { employeeId: true, previousRoleId: true, newRoleId: true, previousDepartmentId: true, newDepartmentId: true, previousDepartment: true, newDepartment: true },
+          select: {
+            employeeId: true,
+            previousRoleId: true,
+            newRoleId: true,
+            previousDepartmentId: true,
+            newDepartmentId: true,
+            previousDepartment: true,
+            newDepartment: true,
+            previousManagerId: true,
+            newManagerId: true,
+          },
         }),
       ]);
-      const roleChangeIds = history
-        .filter(
-          (row) =>
-            (row.newRoleId != null && row.previousRoleId != null && row.newRoleId !== row.previousRoleId) ||
-            (row.newDepartmentId != null && row.previousDepartmentId != null && row.newDepartmentId !== row.previousDepartmentId) ||
-            (row.newDepartment != null && row.previousDepartment != null && row.newDepartment !== row.previousDepartment)
-        )
-        .map((row) => row.employeeId);
-      return { absenceIds: [...new Set(absences.map((row) => row.employeeId))], roleChangeIds: [...new Set(roleChangeIds)] };
+      const current = new Set<string>();
+      const ended = new Set<string>();
+      for (const row of absences) {
+        const kind = classifyAbsenceSignal(row, now);
+        if (kind === "CURRENT") current.add(row.employeeId);
+        else ended.add(row.employeeId);
+      }
+      for (const id of current) ended.delete(id);
+      const roleChangeIds = history.filter((row) => historyRoleOrSectorChanged(row)).map((row) => row.employeeId);
+      const managerChangeIds = history.filter((row) => historyManagerChanged(row)).map((row) => row.employeeId);
+      return {
+        absenceIds: [...current],
+        endedAbsenceIds: [...ended],
+        roleChangeIds: [...new Set(roleChangeIds)],
+        managerChangeIds: [...new Set(managerChangeIds)],
+      };
     },
     // Mesma régua dos guards: grant oficial, ou editor de RH sem deny explícito
     // (conduta segue estrita, sem o atalho do editor de RH).

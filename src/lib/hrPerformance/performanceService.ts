@@ -17,6 +17,8 @@ import {
   UNCLASSIFIED_QUADRANT,
   aggregatePillar,
   classifyEligibility,
+  classifyFromSignals,
+  resultPendingTenureValidation,
   cultureBand,
   evidenceRequired,
   evidenceSatisfied,
@@ -635,6 +637,8 @@ export function applyParticipants(
     exceptions: Readonly<Record<string, string>>;
     absenceIds: readonly string[];
     roleChangeIds: readonly string[];
+    endedAbsenceIds?: readonly string[];
+    managerChangeIds?: readonly string[];
     actorUserId: string | null;
     scope?: PerformanceScope;
     /** Retrato de liderança na inclusão (liderados diretos ativos na organização). A abertura refaz o retrato. */
@@ -671,14 +675,20 @@ export function applyParticipants(
       continue;
     }
     const exception = cleanOrNull(input.exceptions[employee.id], 300);
+    const signals = {
+      absenceIds: input.absenceIds,
+      roleChangeIds: input.roleChangeIds,
+      endedAbsenceIds: input.endedAbsenceIds ?? [],
+      managerChangeIds: input.managerChangeIds ?? [],
+    };
     const snapshot: Omit<ParticipantRecord, "id" | "eligibility" | "eligibilityReason"> = {
       cycleId: cycle.id,
       employeeId: employee.id,
       employeeName: employee.name,
       employeeStatus: employee.terminationDate ? "INACTIVE" : employee.status ?? "ACTIVE",
       eligibilityException: exception,
-      absenceInWindow: input.absenceIds.includes(employee.id),
-      roleChangedInWindow: input.roleChangeIds.includes(employee.id),
+      absenceInWindow: signals.absenceIds.includes(employee.id),
+      roleChangedInWindow: signals.roleChangeIds.includes(employee.id) || signals.managerChangeIds.includes(employee.id),
       roleId: employee.roleId,
       roleName: employee.roleName,
       departmentId: employee.departmentId,
@@ -697,12 +707,11 @@ export function applyParticipants(
       directReportCount: input.leadershipSnapshot?.[employee.id]?.directReportIds.length ?? 0,
       leadershipSnapshotAt: input.leadershipSnapshot ? iso(now) : null,
     };
-    const decision = classifyEligibility({
+    const decision = classifyFromSignals({
       employee,
       asOf: now,
       minObservationDays: cycle.minObservationDays,
-      absenceOverlapsReference: snapshot.absenceInWindow,
-      roleChangedInsideWindow: snapshot.roleChangedInWindow,
+      signals,
       exceptionReason: exception,
     });
     if (existing) {
@@ -723,6 +732,98 @@ export function applyParticipants(
     ...(input.source ? { mode: input.source.mode, leaderEmployeeId: input.source.leaderEmployeeId, leaderName: input.source.leaderName, requested: input.source.requested, exceptions: Object.keys(input.exceptions).length } : {}),
   });
   return { ok: true, db, value: { ...counts, added, duplicates, reactivated, missing } };
+}
+
+/**
+ * Reclassifica quem já está em rascunho ou preparado. Não mexe em resposta, tarefa enviada,
+ * exceção do RH nem em ciclo aberto, homologado ou encerrado.
+ */
+export function reclassifyPreparedParticipants(
+  source: PerformanceDatabase,
+  input: {
+    cycleId: string;
+    employees: readonly EmployeeSnapshotSource[];
+    absenceIds: readonly string[];
+    roleChangeIds: readonly string[];
+    endedAbsenceIds?: readonly string[];
+    managerChangeIds?: readonly string[];
+    actorUserId: string | null;
+    scope: PerformanceScope;
+  },
+  options: ServiceOptions
+): ServiceResult<{
+  changed: number;
+  unchanged: number;
+  skippedSubmitted: number;
+  rows: { employeeId: string; name: string; before: string; after: string; beforeReason: string; afterReason: string }[];
+}> {
+  const denied = hrOnly(input.scope);
+  if (denied) return denied;
+  const db = cloneDb(source);
+  const cycle = db.cycles.find((c) => c.id === input.cycleId);
+  if (!cycle) return fail("NOT_FOUND", "Ciclo não encontrado.");
+  if (cycle.status === "HOMOLOGATED" || cycle.status === "CLOSED") {
+    return fail("CYCLE_FROZEN", "Ciclo homologado ou encerrado não muda.");
+  }
+  if (cycle.status !== "DRAFT" && cycle.status !== "PREPARED") {
+    return fail("CYCLE_STAGE", "Ciclo aberto não é reclassificado em silêncio. A classificação da abertura permanece.");
+  }
+  const byEmployee = new Map(input.employees.map((employee) => [employee.id, employee]));
+  const signals = {
+    absenceIds: input.absenceIds,
+    roleChangeIds: input.roleChangeIds,
+    endedAbsenceIds: input.endedAbsenceIds ?? [],
+    managerChangeIds: input.managerChangeIds ?? [],
+  };
+  const now = options.now();
+  const rows: { employeeId: string; name: string; before: string; after: string; beforeReason: string; afterReason: string }[] = [];
+  let unchanged = 0;
+  let skippedSubmitted = 0;
+  for (const participant of liveParticipants(db, cycle.id)) {
+    const submitted = db.assignments.some((assignment) => assignment.participantId === participant.id && assignment.status === "SUBMITTED");
+    if (submitted) {
+      skippedSubmitted += 1;
+      continue;
+    }
+    const employee = byEmployee.get(participant.employeeId);
+    if (!employee) {
+      unchanged += 1;
+      continue;
+    }
+    const decision = classifyFromSignals({
+      employee,
+      asOf: now,
+      minObservationDays: cycle.minObservationDays,
+      signals,
+      exceptionReason: participant.eligibilityException,
+    });
+    const before = participant.eligibility;
+    const beforeReason = participant.eligibilityReason;
+    const absenceInWindow = signals.absenceIds.includes(employee.id);
+    const roleChangedInWindow = signals.roleChangeIds.includes(employee.id) || signals.managerChangeIds.includes(employee.id);
+    if (before === decision.state && beforeReason === decision.reason && participant.absenceInWindow === absenceInWindow && participant.roleChangedInWindow === roleChangedInWindow) {
+      unchanged += 1;
+      continue;
+    }
+    participant.eligibility = decision.state;
+    participant.eligibilityReason = decision.reason;
+    participant.absenceInWindow = absenceInWindow;
+    participant.roleChangedInWindow = roleChangedInWindow;
+    participant.employeeStatus = employee.terminationDate ? "INACTIVE" : employee.status ?? "ACTIVE";
+    participant.admissionDate = employee.admissionDate ? iso(employee.admissionDate) : null;
+    rows.push({ employeeId: employee.id, name: employee.name, before, after: decision.state, beforeReason, afterReason: decision.reason });
+  }
+  audit(db, now, input.actorUserId, "PARTICIPANTS_RECLASSIFIED", cycle.id, {
+    changed: rows.length,
+    unchanged,
+    skippedSubmitted,
+    summary: rows
+      .slice(0, 40)
+      .map((row) => `${row.name}: ${row.before} → ${row.after}`)
+      .join(" | ")
+      .slice(0, 2000),
+  });
+  return { ok: true, db, value: { changed: rows.length, unchanged, skippedSubmitted, rows } };
 }
 
 /** Antes da abertura: tira a pessoa da lista. Depois: retira do ciclo com motivo, sem apagar o que já existe. */
@@ -1045,6 +1146,12 @@ export function transitionCycle(
       return fail("SELF_HOMOLOGATION", "Quem participa do ciclo não homologa o próprio resultado.");
     }
     for (const participant of eligible) {
+      if (resultPendingTenureValidation(participant)) {
+        return fail(
+          "TENURE_VALIDATION_REQUIRED",
+          `${participant.employeeName} participa, mas o resultado espera o RH validar o tempo mínimo ou confirmar o vínculo.`
+        );
+      }
       const leader = activeAssignment(db, participant.id, "LEADER");
       if (leader && (leader.status === "RETURNED" || (leader.status === "IN_PROGRESS" && leader.revision > 1))) {
         return fail("REVISION_OPEN", `A revisão do líder de ${participant.employeeName} ainda não voltou.`);
@@ -1584,7 +1691,7 @@ export function issueInvitesBatch(
   source: PerformanceDatabase,
   input: { cycleId: string; participantIds: readonly string[] | null; onlyMissing: boolean; actorUserId: string | null; scope: PerformanceScope },
   options: ServiceOptions
-): ServiceResult<{ issued: IssuedInvite[]; skipped: number }> {
+): ServiceResult<{ issued: IssuedInvite[]; skipped: number; deferred: number }> {
   const denied = hrOnly(input.scope);
   if (denied) return denied;
   const db = cloneDb(source);
@@ -1595,8 +1702,13 @@ export function issueInvitesBatch(
   const wanted = input.participantIds ? new Set(input.participantIds) : null;
   const issued: IssuedInvite[] = [];
   let skipped = 0;
+  let deferred = 0;
   for (const participant of eligibleParticipants(db, cycle.id)) {
     if (wanted && !wanted.has(participant.id)) continue;
+    if (participant.absenceInWindow && !participant.eligibilityException?.trim()) {
+      deferred += 1;
+      continue;
+    }
     const self = activeAssignment(db, participant.id, "SELF");
     if (!self || journeyDone(db, participant.id)) {
       skipped += 1;
@@ -1615,8 +1727,8 @@ export function issueInvitesBatch(
     if ("ok" in result) return result;
     issued.push(result);
   }
-  audit(db, now, input.actorUserId, "INVITES_BATCH", cycle.id, { issued: issued.length, skipped });
-  return { ok: true, db, value: { issued, skipped } };
+  audit(db, now, input.actorUserId, "INVITES_BATCH", cycle.id, { issued: issued.length, skipped, deferred });
+  return { ok: true, db, value: { issued, skipped, deferred } };
 }
 
 /** O RH registra que a folha do QR foi entregue em mãos. Vai para a auditoria; a central mostra "entregue". */

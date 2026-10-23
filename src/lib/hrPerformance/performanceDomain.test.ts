@@ -81,7 +81,8 @@ describe("elegibilidade", () => {
       roleChangedInsideWindow: false,
       exceptionReason: null,
     });
-    assert.equal(away.state, "INSUFFICIENT_EVIDENCE");
+    assert.equal(away.state, "ELIGIBLE");
+    assert.match(away.reason, /Afastamento vigente/);
 
     const inactive = classifyEligibility({
       employee: person({ status: "INACTIVE" }),

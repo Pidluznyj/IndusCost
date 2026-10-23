@@ -12,7 +12,7 @@ import {
   ASSIGNMENT_STATUS_LABELS,
   CULTURE_BAND_LABELS,
   CYCLE_STATUS_LABELS,
-  ELIGIBILITY_LABELS,
+  participationHeadline,
   PDI_STATUS_LABELS,
   TECHNICAL_VALIDATION_LABELS,
   UNCLASSIFIED_QUADRANT,
@@ -21,7 +21,6 @@ import {
   type AssignmentStatus,
   type CultureBand,
   type CycleStatus,
-  type EligibilityState,
   type PdiStatus,
   type TechnicalValidation,
 } from "@/src/lib/hrPerformance/performanceDomain";
@@ -78,9 +77,10 @@ export function AssignmentBadge({ status, testId }: { status: string | null | un
 const ELIGIBILITY_TONE: Record<string, OverlayBadgeTone> = { ELIGIBLE: "emerald", NOT_ELIGIBLE: "slate", INSUFFICIENT_EVIDENCE: "amber" };
 
 export function EligibilityBadge({ state, title }: { state: string; title?: string }) {
+  const headline = participationHeadline({ eligibility: state, reason: title });
   return (
-    <OverlayBadge tone={ELIGIBILITY_TONE[state] ?? "slate"} title={title}>
-      {ELIGIBILITY_LABELS[state as EligibilityState] ?? state}
+    <OverlayBadge tone={state === "ELIGIBLE" && headline.label.startsWith("Participa —") ? "amber" : (ELIGIBILITY_TONE[state] ?? "slate")} title={title}>
+      {headline.label}
     </OverlayBadge>
   );
 }

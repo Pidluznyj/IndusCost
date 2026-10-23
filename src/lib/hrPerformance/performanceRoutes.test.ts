@@ -264,7 +264,7 @@ describe("rotas de desempenho", () => {
       const csv = await hr.call("GET", `/api/hr/performance/cycles/${cycleId}/export`);
       assert.match(csv.text, /^nome,cargo,setor/);
       assert.match(csv.headers.get("content-disposition") ?? "", /attachment/);
-      assert.match(csv.text, /Caio Recém,[^,]*,[^,]*,NOT_ELIGIBLE,não se aplica,/, "não elegível não vira resultado");
+      assert.match(csv.text, /Caio Recém,[^,]*,[^,]*,NOT_ELIGIBLE,Em período inicial,/, "período inicial não vira resultado");
 
       const final = store.snapshot();
       assert.equal(final.audits.some((a) => a.action === "REPORT_ISSUED"), true);

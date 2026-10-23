@@ -300,6 +300,8 @@ export type WorkspacePerson = {
     managerName: string | null;
     managerSource: string;
     admissionDate: string | null;
+    isLeader: boolean;
+    absenceInWindow: boolean;
     removedAt: string | null;
     removedReason: string | null;
   };
@@ -364,6 +366,8 @@ export const previewPerformanceParticipants = (cycleId: string, employeeIds: str
       name: string;
       eligibility: string;
       reason: string;
+      label?: string;
+      taskSummary?: string;
       alreadyInCycle: boolean;
       managerName: string | null;
       /** CADASTRO | ORGANOGRAMA (hierarquia efetiva). */
@@ -391,6 +395,7 @@ export type HierarchyPreviewRow = {
   directReportCount: number;
   eligibility: string;
   reason: string;
+  taskSummary?: string;
   inclusion: "NEW" | "ALREADY" | "REACTIVATE";
   leaderOutside: boolean;
 };
@@ -421,7 +426,11 @@ export const reassignPerformanceLeader = (participantId: string, managerId: stri
 export type IssuedInvite = { participantId: string; employeeName: string; roleName: string; url: string; otp: string; inviteId: string; expiresAt: string };
 export const issuePerformanceInvite = (assignmentId: string) => post<IssuedInvite>(`${BASE}/assignments/${assignmentId}/invites`);
 export const issuePerformanceInvitesBatch = (cycleId: string, input: { participantIds?: string[]; onlyMissing: boolean }) =>
-  post<{ issued: IssuedInvite[]; skipped: number }>(`${BASE}/cycles/${cycleId}/invites`, input);
+  post<{ issued: IssuedInvite[]; skipped: number; deferred?: number }>(`${BASE}/cycles/${cycleId}/invites`, input);
+export const reclassifyPerformanceParticipants = (cycleId: string) =>
+  post<{ changed: number; unchanged: number; skippedSubmitted: number; rows: { employeeId: string; name: string; before: string; after: string; beforeReason: string; afterReason: string }[] }>(
+    `${BASE}/cycles/${cycleId}/participants/reclassify`
+  );
 export const markPerformanceInviteDelivered = (assignmentId: string) => post<{ inviteId: string }>(`${BASE}/assignments/${assignmentId}/invites/delivered`);
 export type CycleException = { at: string; kind: string; label: string; person: string | null; reason: string | null; actorUserId: string | null };
 export const fetchCycleExceptions = (cycleId: string) => json<{ exceptions: CycleException[] }>(`${BASE}/cycles/${cycleId}/exceptions`);

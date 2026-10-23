@@ -164,7 +164,7 @@ export function cycleReadiness(db: PerformanceDatabase, cycle: CycleRecord, ctx:
       code: "TOP_WITHOUT_EVALUATOR",
       severity: "WARN",
       title: "Topo da estrutura sem avaliador",
-      message: "Ninguém avalia o topo individualmente nem como líder. Defina um avaliador (sócio, conselho) ou siga: o resultado será calibrado com exceção registrada.",
+      message: "O topo faz a autoavaliação individual e, se lidera, a autoavaliação de liderança. A equipe direta avalia a liderança. Não há tarefa de avaliar um superior. A calibração individual usa exceção registrada.",
       action: "SET_EVALUATOR",
       people: tops.map((p) => person(p)),
     });
@@ -185,7 +185,7 @@ export function cycleReadiness(db: PerformanceDatabase, cycle: CycleRecord, ctx:
       code: "RECENT_LEADER_CHANGE",
       severity: "WARN",
       title: `${recent.length} pessoa(s) com o líder atual há menos de ${minDays} dias`,
-      message: "O líder novo conhece pouco o trabalho no período. Mantenha, ou troque o avaliador para o líder anterior.",
+      message: "A pessoa participa. O líder novo conhece pouco o trabalho no período: mantenha o avaliador ou troque para o líder anterior, com motivo.",
       action: "REVIEW_LEADER",
       people: recent,
     });
