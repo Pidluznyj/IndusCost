@@ -11,7 +11,16 @@ export const NOMUS_SOURCE_RECONCILIATION_OBSERVABILITY_ENTITIES = [
   "SALES_ORDER",
   "ACCOUNTS_RECEIVABLE",
   "ACCOUNTS_PAYABLE",
+  "PURCHASE_ORDER",
 ] as const;
+
+/**
+ * Runs que não representam uma sincronização efetiva: pulos (lock/fonte inativa) e prévias.
+ * Nunca viram "última execução" para frequência/alertas — um pulo não atualiza o último sucesso.
+ */
+export function isObservabilityIgnoredRun(run: { status: string; strategy: string }): boolean {
+  return run.status === "SKIPPED" || String(run.strategy ?? "").endsWith("_PREVIEW");
+}
 
 export type NomusSourceObservabilityEntityType =
   (typeof NOMUS_SOURCE_RECONCILIATION_OBSERVABILITY_ENTITIES)[number];
@@ -157,6 +166,8 @@ export function entityTypeLabel(entityType: string): string {
       return "Contas a Receber";
     case "ACCOUNTS_PAYABLE":
       return "Contas a Pagar";
+    case "PURCHASE_ORDER":
+      return "Pedidos de Compra";
     default:
       return entityType;
   }
@@ -215,6 +226,7 @@ function pickLatestPerEntity(
   for (const run of sorted) {
     const entity = run.entityType as NomusSourceObservabilityEntityType;
     if (!map.has(entity)) continue;
+    if (isObservabilityIgnoredRun(run)) continue;
     map.get(entity)!.push(run);
   }
   return map;

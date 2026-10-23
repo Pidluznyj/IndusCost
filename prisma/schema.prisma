@@ -4979,11 +4979,22 @@ model NomusPurchaseOrder {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
+  /// Ciclo de vida na origem (contrato canônico SYNC-02). Ausência na API ≠ cancelamento oficial.
+  sourcePresenceStatus   NomusSourcePresenceStatus @default(PRESENT)
+  presentInLastPayload   Boolean                   @default(true)
+  missingSince           DateTime?
+  missingConsecutiveRuns Int                       @default(0)
+  sourceRemovedAt        DateTime?
+  lastSyncRunId          String?                   @db.Uuid
+  lastSourceSyncRun      NomusSourceSyncRun?       @relation("PoLastSourceSyncRun", fields: [lastSyncRunId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
   items NomusPurchaseOrderItem[]
   /// Avaliação local do IndusCost — não é o PurchaseOrder interno e não vai ao Nomus.
   supplierEvaluation NomusPurchaseOrderSupplierEvaluation?
   /// Vínculos locais com títulos de Contas a Pagar (baixa do pedido derivada dos títulos). Sem writeback Nomus.
   payableLinks NomusPurchaseOrderPayableLink[]
+  /// Histórico das mudanças de presença na origem (ausência candidata/confirmada, reativação).
+  presenceEvents NomusPurchaseOrderPresenceEvent[]
 
   @@index([orderNumber])
   @@index([supplierExternalId])
@@ -4997,6 +5008,36 @@ model NomusPurchaseOrder {
   @@index([syncedAt])
   @@index([lastSeenAt])
   @@index([payloadHash])
+  @@index([sourcePresenceStatus])
+  @@index([lastSyncRunId])
+}
+
+/// Evento de presença do Pedido de Compra Nomus na origem (append-only). Não é cancelamento oficial:
+/// registra o que a reconciliação concluiu, com a execução e a evidência que sustentaram a decisão.
+model NomusPurchaseOrderPresenceEvent {
+  id                     String                     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  purchaseOrderId        String
+  /// ID oficial Nomus (redundante de propósito: rastreio mesmo sem o join).
+  externalId             Int
+  syncRunId              String?                    @db.Uuid
+  /// MISSING_CANDIDATE | MISSING_CONFIRMED | REACTIVATE
+  action                 String
+  fromStatus             NomusSourcePresenceStatus?
+  toStatus               NomusSourcePresenceStatus
+  reason                 String
+  missingConsecutiveRuns Int                        @default(0)
+  occurredAt             DateTime
+  /// Escopo, completude e guardas da execução (sem payload financeiro).
+  evidenceJson           Json?
+  createdAt              DateTime                   @default(now())
+
+  purchaseOrder NomusPurchaseOrder  @relation(fields: [purchaseOrderId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  syncRun       NomusSourceSyncRun? @relation("PoPresenceEventRun", fields: [syncRunId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([purchaseOrderId, occurredAt])
+  @@index([externalId])
+  @@index([syncRunId])
+  @@index([action])
 }
 
 model NomusPurchaseOrderItem {
@@ -5164,6 +5205,7 @@ enum NomusSourceSyncEntityType {
   SALES_ORDER
   ACCOUNTS_RECEIVABLE
   ACCOUNTS_PAYABLE
+  PURCHASE_ORDER
 }
 
 enum NomusSourceSyncRunStatus {
@@ -5171,6 +5213,8 @@ enum NomusSourceSyncRunStatus {
   SUCCESS
   FAILED
   INCONCLUSIVE
+  /// Execução pulada (lock ocupado, fonte de agendamento inativa). Não é sucesso.
+  SKIPPED
 }
 
 /// SYNC-02 — execução tipada de sync Nomus para reconciliação de presença.
@@ -5210,6 +5254,8 @@ model NomusSourceSyncRun {
   salesOrdersLastSeen        SalesOrder[]              @relation("SalesOrderLastSourceSyncRun")
   accountsReceivableLastSeen NomusAccountsReceivable[] @relation("ArLastSourceSyncRun")
   accountsPayableLastSeen    NomusAccountsPayable[]    @relation("ApLastSourceSyncRun")
+  purchaseOrdersLastSeen     NomusPurchaseOrder[]      @relation("PoLastSourceSyncRun")
+  purchaseOrderPresenceEvents NomusPurchaseOrderPresenceEvent[] @relation("PoPresenceEventRun")
 
   @@index([entityType, status, startedAt])
   @@index([status])

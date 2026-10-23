@@ -1,14 +1,23 @@
 #!/usr/bin/env bash
-# Runner oficial do espelho de Pedidos de Compra Nomus (`GET /rest/pedidoscompra`).
-# Read-only no ERP. Lock global Nomus + lock próprio para evitar sobreposição.
+# Runner oficial do espelho de Pedidos de Compra Nomus (`GET /rest/pedidoscompra`). Read-only no ERP.
+#
+# Fino de propósito: valida argumentos e chama o CLI, que usa o serviço canônico
+# runNomusPurchaseOrdersSync (lock de entidade /tmp/induscost-nomus-purchase-orders.canonical.lock,
+# espera pelo lock global sem adquiri-lo, run registrado, completude e presença).
+# Nenhuma regra de negócio aqui.
+#
+# Uso: runNomusPurchaseOrdersSync.sh <apply|preview|dry> <incremental|reconcile|backfill>
+#   NOMUS_PO_TRIGGER=SCHEDULED_HOURLY|SCHEDULED_DAILY|CHAIN_AFTER_AR|ADMIN_PANEL|CLI (padrão CLI)
+#
+# Fonte única de agendamento: NOMUS_PO_SCHEDULE_SOURCE=chain|independent (.env do app).
+# Disparo da fonte inativa termina como SKIPPED registrado (exit 0), nunca roda duas vezes.
 set -Eeuo pipefail
 
 APP_DIR="${INDUSCOST_APP_DIR:-/opt/induscost}"
 LOG_DIR="${NOMUS_SYNC_LOG_DIR:-/tmp/induscost-nomus-sync}"
-GLOBAL_LOCK_FILE="${NOMUS_SYNC_LOCK_FILE:-/tmp/induscost-nomus-sync-global.lock}"
-LOCK_FILE="${NOMUS_PO_SYNC_LOCK_FILE:-/tmp/induscost-nomus-purchase-orders.lock}"
 MODE="${1:-apply}"
 STRATEGY="${2:-incremental}"
+TRIGGER="${NOMUS_PO_TRIGGER:-CLI}"
 
 case "$MODE" in
   preview|apply|dry)
@@ -24,10 +33,11 @@ if [[ "$MODE" == "dry" ]]; then
 fi
 
 case "$STRATEGY" in
-  incremental|backfill)
+  incremental|reconcile|backfill)
     ;;
   *)
-    STRATEGY="incremental"
+    echo "[nomus-purchase-orders-runner] ERRO: estratégia inválida: $STRATEGY. Use: incremental|reconcile|backfill."
+    exit 2
     ;;
 esac
 
@@ -41,51 +51,21 @@ exec > >(tee -a "$RUN_LOG") 2>&1
 echo "=== NOMUS PURCHASE ORDERS RUNNER ==="
 echo "MODE=$MODE"
 echo "STRATEGY=$STRATEGY"
+echo "TRIGGER=$TRIGGER"
 echo "APP_DIR=$APP_DIR"
-echo "LOG_DIR=$LOG_DIR"
 echo "RUN_LOG=$RUN_LOG"
 echo "STARTED_AT=$(date -Iseconds)"
 
 cd "$APP_DIR"
 
-echo
-echo "=== LOCK GLOBAL NOMUS ==="
-exec 8>"$GLOBAL_LOCK_FILE"
-if ! flock -n 8; then
-  echo "[nomus-purchase-orders-runner] SKIPPED: lock global Nomus ocupado ($GLOBAL_LOCK_FILE)."
-  echo "FINISHED_AT=$(date -Iseconds)"
-  echo "EXIT_CODE=0"
-  exit 0
-fi
-echo "[nomus-purchase-orders-runner] Lock global adquirido: $GLOBAL_LOCK_FILE"
-
-echo
-echo "=== LOCK (Pedidos de Compra) ==="
-exec 9>"$LOCK_FILE"
-if ! flock -n 9; then
-  echo "[nomus-purchase-orders-runner] SKIPPED: outra execução de Pedidos de Compra ainda está em andamento."
-  echo "FINISHED_AT=$(date -Iseconds)"
-  echo "EXIT_CODE=0"
-  exit 0
-fi
-echo "[nomus-purchase-orders-runner] Lock próprio adquirido: $LOCK_FILE"
-
-echo
-echo "=== CONFIGURAÇÃO ==="
 export NOMUS_SYNC_LOG_DIR="$LOG_DIR"
 export NOMUS_PO_RUNNER_LOG="$RUN_LOG"
-if [[ "$STRATEGY" == "incremental" ]]; then
-  export NOMUS_PO_INCREMENTAL=1
-fi
+export NOMUS_PO_TRIGGER="$TRIGGER"
 
 echo
 echo "=== EXECUÇÃO ==="
 set +e
-if [[ "$STRATEGY" == "backfill" ]]; then
-  npm run "nomus:purchase-orders:backfill:${MODE}"
-else
-  npm run "nomus:purchase-orders:${MODE}"
-fi
+npm run "nomus:purchase-orders:${STRATEGY}:${MODE}" -- "--trigger=${TRIGGER}"
 EXIT_CODE=$?
 set -e
 

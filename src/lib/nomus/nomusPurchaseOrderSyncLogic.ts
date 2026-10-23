@@ -143,6 +143,32 @@ export function computePurchaseOrderPaginationPlan(options: PurchaseOrderSyncCli
   };
 }
 
+/**
+ * A página veio numa forma conhecida? Array na raiz (formato atual da API) ou objeto com uma das
+ * chaves de lista aceitas por `pickPurchaseOrderArray`. Objeto sem lista (ex.: erro com HTTP 200)
+ * não é "página vazia".
+ */
+export function isRecognizedPurchaseOrderPagePayload(payload: unknown): boolean {
+  if (Array.isArray(payload)) return true;
+  if (!payload || typeof payload !== "object") return false;
+  const data = payload as Record<string, unknown>;
+  const nested = data.data && typeof data.data === "object" && !Array.isArray(data.data) ? (data.data as Record<string, unknown>) : undefined;
+  return [
+    data.pedidoscompra,
+    data.pedidosCompra,
+    data.pedidos_compra,
+    data.dados,
+    data.data,
+    data.results,
+    data.items,
+    data.itens,
+    nested?.pedidoscompra,
+    nested?.pedidosCompra,
+    nested?.dados,
+    nested?.items,
+  ].some((candidate) => Array.isArray(candidate));
+}
+
 export function pickPurchaseOrderPageItems(payload: unknown): Record<string, unknown>[] {
   return pickPurchaseOrderArray(payload).filter(
     (item): item is Record<string, unknown> =>

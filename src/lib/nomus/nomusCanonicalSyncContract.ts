@@ -10,12 +10,14 @@ import type { NomusSourceSyncEntityType } from "./nomusSourceLifecycleContract.j
 import {
   NOMUS_SOURCE_RECONCILE_AP_ENV,
   NOMUS_SOURCE_RECONCILE_AR_ENV,
+  NOMUS_SOURCE_RECONCILE_PURCHASE_ORDERS_ENV,
   NOMUS_SOURCE_RECONCILE_SALES_ORDERS_ENV,
   isNomusAbsenceReconciliationEnabledForEntity,
 } from "./nomusSourceReconciliationFlags.js";
 import {
   NOMUS_OPS_EXCLUDE_MISSING_AP_ENV,
   NOMUS_OPS_EXCLUDE_MISSING_AR_ENV,
+  NOMUS_OPS_EXCLUDE_MISSING_PURCHASE_ORDERS_ENV,
   NOMUS_OPS_EXCLUDE_MISSING_SALES_ORDERS_ENV,
 } from "./nomusSourcePresencePolicy.js";
 
@@ -35,6 +37,8 @@ export const NOMUS_CANONICAL_SOURCE_TRIGGERS = [
   "CLI",
   "ORCHESTRATOR",
   "TARGETED_AUDIT",
+  /** Encadeamento legado CR → Pedidos de Compra (runNomusAccountsReceivableSync.sh). */
+  "CHAIN_AFTER_AR",
 ] as const;
 
 export type NomusCanonicalSourceTrigger =
@@ -45,7 +49,8 @@ export type NomusCanonicalSyncMode = "preview" | "apply";
 export type NomusCanonicalSyncEntity =
   | "SALES_ORDER"
   | "ACCOUNTS_RECEIVABLE"
-  | "ACCOUNTS_PAYABLE";
+  | "ACCOUNTS_PAYABLE"
+  | "PURCHASE_ORDER";
 
 export type NomusCanonicalSyncRequest = {
   entity: NomusCanonicalSyncEntity;
@@ -67,6 +72,7 @@ export type NomusCanonicalSyncLockName =
   | "nomus-sales-orders"
   | "nomus-accounts-receivable"
   | "nomus-accounts-payable"
+  | "nomus-purchase-orders"
   | "nomus-orchestrator-global";
 
 export type NomusCanonicalSyncResultStatus =
@@ -75,7 +81,9 @@ export type NomusCanonicalSyncResultStatus =
   | "FAILED"
   | "INCONCLUSIVE"
   | "SKIPPED_LOCKED"
-  | "SKIPPED_FLAG";
+  | "SKIPPED_FLAG"
+  /** Pedidos de Compra: disparo de uma fonte de agendamento que não é a ativa. */
+  | "SKIPPED_SCHEDULE_SOURCE";
 
 export type NomusCanonicalSyncCounters = {
   pagesRead: number;
@@ -137,6 +145,7 @@ export const ENTITY_LOCK_NAME: Record<
   SALES_ORDER: "nomus-sales-orders",
   ACCOUNTS_RECEIVABLE: "nomus-accounts-receivable",
   ACCOUNTS_PAYABLE: "nomus-accounts-payable",
+  PURCHASE_ORDER: "nomus-purchase-orders",
 };
 
 /**
@@ -150,6 +159,8 @@ export const ENTITY_LOCK_FILE_DEFAULT: Record<NomusCanonicalSyncLockName, string
       "/tmp/induscost-nomus-accounts-receivable.canonical.lock",
     "nomus-accounts-payable":
       "/tmp/induscost-nomus-accounts-payable.canonical.lock",
+    // OP-04: path próprio, distinto do flock do runner legado (/tmp/induscost-nomus-purchase-orders.lock).
+    "nomus-purchase-orders": "/tmp/induscost-nomus-purchase-orders.canonical.lock",
     "nomus-orchestrator-global": "/tmp/induscost-nomus-sync-global.lock",
   };
 
@@ -169,6 +180,7 @@ export const ENTITY_CANONICAL_LOCK_ENV: Partial<
   "nomus-sales-orders": "NOMUS_SALES_ORDERS_SYNC_LOCK_FILE",
   "nomus-accounts-receivable": "NOMUS_ACCOUNTS_RECEIVABLE_CANONICAL_LOCK_FILE",
   "nomus-accounts-payable": "NOMUS_ACCOUNTS_PAYABLE_CANONICAL_LOCK_FILE",
+  "nomus-purchase-orders": "NOMUS_PURCHASE_ORDERS_CANONICAL_LOCK_FILE",
   "nomus-orchestrator-global": "NOMUS_SYNC_GLOBAL_LOCK_FILE",
 };
 
@@ -178,6 +190,7 @@ export const CANONICAL_SYNC_SERVICE_NAMES = {
   SALES_ORDER: "runNomusSalesOrdersSync",
   ACCOUNTS_RECEIVABLE: "runNomusAccountsReceivableSync",
   ACCOUNTS_PAYABLE: "runNomusAccountsPayableSync",
+  PURCHASE_ORDER: "runNomusPurchaseOrdersSync",
 } as const;
 
 export const POST_SYNC_HOOK_NAMES = [
@@ -322,7 +335,13 @@ export function buildCanonicalSyncExecution(
             missingConfirmationEnv: NOMUS_SOURCE_RECONCILE_AR_ENV,
             operationalExclusionEnv: NOMUS_OPS_EXCLUDE_MISSING_AR_ENV,
           }
-        : {
+        : request.entity === "PURCHASE_ORDER"
+          ? {
+              missingDetectionEnv: NOMUS_SOURCE_RECONCILE_PURCHASE_ORDERS_ENV,
+              missingConfirmationEnv: NOMUS_SOURCE_RECONCILE_PURCHASE_ORDERS_ENV,
+              operationalExclusionEnv: NOMUS_OPS_EXCLUDE_MISSING_PURCHASE_ORDERS_ENV,
+            }
+          : {
             missingDetectionEnv: NOMUS_SOURCE_RECONCILE_AP_ENV,
             missingConfirmationEnv: NOMUS_SOURCE_RECONCILE_AP_ENV,
             operationalExclusionEnv: NOMUS_OPS_EXCLUDE_MISSING_AP_ENV,
@@ -351,7 +370,11 @@ export function buildCanonicalSyncExecution(
     legacyStrategyLabel:
       request.entity === "SALES_ORDER"
         ? toLegacySalesOrderStrategyLabel(request.strategy)
-        : "full_refresh_upsert",
+        : request.entity === "PURCHASE_ORDER"
+          ? request.strategy === "RECENT_WINDOW"
+            ? "sliding_window_upsert"
+            : "full_universe_reconciliation"
+          : "full_refresh_upsert",
   };
 }
 
@@ -501,6 +524,57 @@ export const NOMUS_AUTOMATIC_SYNC_ROUTINES = [
     allowMissingDetection: false,
     allowMissingConfirmation: false,
   },
+  {
+    entity: "PURCHASE_ORDER" as const,
+    trigger: "SCHEDULED_HOURLY",
+    frequency: "37 * * * * (/etc/cron.d/induscost-nomus-purchase-orders)",
+    script: "scripts/runNomusPurchaseOrdersSync.sh apply incremental",
+    strategy: "RECENT_WINDOW" as const,
+    writes: true,
+    lock: "nomus-purchase-orders (wx, PID) + espera pelo lock global (sonda, não adquire)",
+    canonicalService: CANONICAL_SYNC_SERVICE_NAMES.PURCHASE_ORDER,
+    allowMissingDetection: false,
+    allowMissingConfirmation: false,
+    note: "Só roda com NOMUS_PO_SCHEDULE_SOURCE=independent; senão SKIPPED_SCHEDULE_SOURCE",
+  },
+  {
+    entity: "PURCHASE_ORDER" as const,
+    trigger: "SCHEDULED_DAILY",
+    frequency: "37 3 * * * America/Sao_Paulo (/etc/cron.d/induscost-nomus-purchase-orders)",
+    script: "scripts/runNomusPurchaseOrdersSync.sh apply reconcile",
+    strategy: "FULL_RECONCILIATION" as const,
+    writes: true,
+    lock: "nomus-purchase-orders + espera pelo lock global",
+    canonicalService: CANONICAL_SYNC_SERVICE_NAMES.PURCHASE_ORDER,
+    allowMissingDetection: true,
+    allowMissingConfirmation: true,
+    note: "Universo inteiro sem filtro de datas; ausência só com flag + completude + 2 execuções distintas",
+  },
+  {
+    entity: "PURCHASE_ORDER" as const,
+    trigger: "CHAIN_AFTER_AR",
+    frequency: "após CR (legado, 17 */2)",
+    script: "scripts/runNomusAccountsReceivableSync.sh → runNomusPurchaseOrdersSync.sh",
+    strategy: "RECENT_WINDOW" as const,
+    writes: true,
+    lock: "nomus-purchase-orders + espera pelo lock global",
+    canonicalService: CANONICAL_SYNC_SERVICE_NAMES.PURCHASE_ORDER,
+    allowMissingDetection: false,
+    allowMissingConfirmation: false,
+    note: "Só roda com NOMUS_PO_SCHEDULE_SOURCE=chain (padrão até a transição)",
+  },
+  {
+    entity: "PURCHASE_ORDER" as const,
+    trigger: "ADMIN_PANEL",
+    frequency: "on demand",
+    script: "nomusPurchaseOrdersSyncRunner → mesmo shell",
+    strategy: "RECENT_WINDOW" as const,
+    writes: true,
+    lock: "nomus-purchase-orders + espera pelo lock global",
+    canonicalService: CANONICAL_SYNC_SERVICE_NAMES.PURCHASE_ORDER,
+    allowMissingDetection: false,
+    allowMissingConfirmation: false,
+  },
 ] as const;
 
 export const ENTRY_POINTS_MUST_CALL_CANONICAL = [
@@ -513,6 +587,9 @@ export const ENTRY_POINTS_MUST_CALL_CANONICAL = [
   "scripts/runNomusSalesOrdersSync.sh",
   "scripts/runNomusAccountsReceivableSync.sh",
   "scripts/runNomusAccountsPayableSync.sh",
+  "scripts/nomusPurchaseOrdersSync.ts",
+  "scripts/runNomusPurchaseOrdersSync.sh",
+  "src/lib/nomusPurchaseOrdersSyncRunner.ts",
 ] as const;
 
 /** Shell runners não podem conter upsert/lifecycle. */

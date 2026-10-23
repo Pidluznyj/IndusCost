@@ -24,12 +24,54 @@ import {
   nomusPurchaseOrderStageLabel,
   nomusPurchaseOrderStageTone,
 } from "@/src/lib/nomus/nomusPurchaseOrderUi";
+import {
+  PURCHASE_ORDER_PRESENCE_EVENT_LABEL,
+  purchaseOrderPresenceBadge,
+} from "@/src/lib/nomus/nomusPurchaseOrderSyncUi";
 
 const DETAIL_PRINT_BODY_CLASS = "npo-detail-print-route";
 
 type DetailTabId = "geral" | "itens" | "fiscal" | "financeiro" | "nomus";
 
-type Detail360 = NomusPurchaseOrder360Detail;
+/** Presença no Nomus (rota de detalhe): ausência nunca é cancelamento; histórico preservado. */
+type PurchaseOrderPresenceDetail = {
+  status: string;
+  missingSince: string | null;
+  sourceRemovedAt: string | null;
+  missingConsecutiveRuns: number;
+  lastSeenAt: string;
+  events: Array<{
+    id: string;
+    action: string;
+    fromStatus: string | null;
+    toStatus: string;
+    reason: string;
+    occurredAt: string;
+    syncRunId: string | null;
+  }>;
+};
+
+type Detail360 = NomusPurchaseOrder360Detail & { presence?: PurchaseOrderPresenceDetail };
+
+function PresenceBanner({ presence }: { presence?: PurchaseOrderPresenceDetail }) {
+  const badge = purchaseOrderPresenceBadge({ sourcePresenceStatus: presence?.status });
+  if (!presence || !badge) return null;
+  return (
+    <div
+      data-testid="npo-presence-banner"
+      className={cn(
+        "rounded-lg border px-3 py-2 text-sm",
+        badge.tone === "danger" ? "border-rose-300 bg-rose-50 text-rose-900" : "border-amber-300 bg-amber-50 text-amber-900"
+      )}
+    >
+      <strong>{badge.label}.</strong>{" "}
+      {badge.key === "MISSING_CONFIRMED"
+        ? "O pedido não existe mais na API do Nomus. Itens, NF-e, parcelas, vínculos de contas a pagar e avaliações foram preservados; nada foi cancelado por inferência."
+        : "O pedido não apareceu na última varredura completa do Nomus. Continua na carteira até a confirmação em uma segunda varredura."}
+      {presence.missingSince ? ` Ausente desde ${formatDateTime(presence.missingSince)}.` : ""}
+    </div>
+  );
+}
 
 function formatDate(value: string | null | undefined): string {
   if (!value) return "—";
@@ -323,6 +365,7 @@ function GeralTab({ payload }: { payload: Detail360 }) {
   const header = order.header ?? {};
   return (
     <div className="space-y-5" data-testid="npo-tab-panel-geral">
+      <PresenceBanner presence={payload.presence} />
       <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
         <SummaryCard label="Pedido" value={order.orderNumber ?? `Nomus #${order.externalId}`} />
         <SummaryCard
@@ -731,7 +774,26 @@ function NomusTab({ payload, canSeeRaw }: { payload: Detail360; canSeeRaw: boole
         <Field label="Modificado no Nomus" value={formatDateTime(payload.syncMetadata.modifiedAtNomus)} />
         <Field label="payloadHash" value={display(payload.syncMetadata.payloadHash)} />
         <Field label="Stage canônico" value={nomusPurchaseOrderStageLabel(payload.order.stage)} />
+        <Field
+          label="Presença no Nomus"
+          value={purchaseOrderPresenceBadge({ sourcePresenceStatus: payload.presence?.status })?.label ?? "Presente no Nomus"}
+        />
       </dl>
+      <section data-testid="npo-presence-history">
+        <h2 className="mb-2 text-xs font-bold uppercase tracking-wide text-[#1e3a8a]">Histórico de presença no Nomus</h2>
+        {payload.presence?.events?.length ? (
+          <ul className="space-y-1 text-sm text-slate-700">
+            {payload.presence.events.map((event) => (
+              <li key={event.id}>
+                {formatDateTime(event.occurredAt)} — {PURCHASE_ORDER_PRESENCE_EVENT_LABEL[event.action] ?? event.action}{" "}
+                <span className="text-xs text-slate-500">({event.reason})</span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-sm text-slate-500">Sempre presente nas consultas ao Nomus.</p>
+        )}
+      </section>
       <section>
         <h2 className="mb-2 text-xs font-bold uppercase tracking-wide text-[#1e3a8a]">Evidência dos vínculos</h2>
         <ul className="space-y-1 text-sm text-slate-700">

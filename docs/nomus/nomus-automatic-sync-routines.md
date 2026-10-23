@@ -43,7 +43,15 @@
 | Recebimentos | SCHEDULED_DAILY | `50 3 * * *` | `runNomusReceivableReceiptsSync.sh` | full scan página 1→fim (endpoint sem parâmetro de janela comprovado) | sim | recebimentos (entity) | `nomusReceivableReceiptsSync.ts` (`sync:nomus:receipts:fullscan:apply`) |
 | Recebimentos | SCHEDULED_HOURLY | `15 7-20 * * *` | `runNomusReceivableReceiptsRecentSync.sh` | best-effort, primeiras `NOMUS_RECEIPTS_RECENT_MAX_PAGES` páginas (não prova cobertura) | sim | recebimentos (entity) — **mesmo lock** do full scan | idem (`sync:nomus:receipts:recent:apply`) |
 
+| Pedidos de Compra | CHAIN_AFTER_AR | após CR (`17 */2`) | `runNomusAccountsReceivableSync.sh` → `runNomusPurchaseOrdersSync.sh` | RECENT_WINDOW (45 dias) | sim | compras (entity) + espera pelo lock global | `runNomusPurchaseOrdersSync` — só com `NOMUS_PO_SCHEDULE_SOURCE=chain` (padrão) |
+| Pedidos de Compra | SCHEDULED_HOURLY | `37 * * * *` | `/etc/cron.d/induscost-nomus-purchase-orders` → `runNomusPurchaseOrdersSync.sh apply incremental` | RECENT_WINDOW (45 dias) | sim | idem | idem — só com `NOMUS_PO_SCHEDULE_SOURCE=independent` |
+| Pedidos de Compra | SCHEDULED_DAILY | 03:37 America/Sao_Paulo | idem → `apply reconcile` | FULL_RECONCILIATION (universo sem filtro de datas) | sim | idem | idem — ausência só com flags; ver doc própria |
+| Pedidos de Compra | ADMIN_PANEL | on demand | painel → mesmo shell | incremental / prévia / reconciliação autorizada | sim | idem | idem |
+
 \* Label legado `full_refresh_upsert` **não** prova completude.
+
+Pedidos de Compra: arquitetura, fonte única de agendamento, ciclo de vida de presença e implantação em
+[`purchase-orders-independent-sync-and-reconciliation.md`](purchase-orders-independent-sync-and-reconciliation.md).
 
 ---
 

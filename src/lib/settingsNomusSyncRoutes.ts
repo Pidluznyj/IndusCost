@@ -39,6 +39,7 @@ import {
   buildNomusSourceReconciliationObservabilityStatus,
   loadNomusSourcePresenceDrilldown,
 } from "@/src/lib/nomus/nomusSourceReconciliationObservability.server.js";
+import { registerNomusPurchaseOrdersSyncAdminRoutes } from "@/src/lib/nomusPurchaseOrdersSyncAdminRoutes.js";
 
 export type NomusSyncLogSummary = {
   fileName: string;
@@ -113,6 +114,12 @@ export function registerSettingsNomusSyncRoutes(
     isBootstrap,
     ADMIN_SETTINGS_RESOURCE_KEYS.nomusSync,
     ADMIN_SETTINGS_ACTIONS.view
+  );
+
+  registerNomusPurchaseOrdersSyncAdminRoutes(
+    app,
+    { requireBootstrapOrResource: auth.requireBootstrapOrResource, isBootstrapAdminRequest: isBootstrap },
+    { prisma }
   );
 
   app.get(

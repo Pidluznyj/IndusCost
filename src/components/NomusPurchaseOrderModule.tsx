@@ -11,6 +11,7 @@ import {
 import type { PaymentTermsSort } from "@/src/components/purchases/NomusPurchaseOrderListTable";
 import { NomusPurchaseOrderListTable } from "@/src/components/purchases/NomusPurchaseOrderListTable";
 import type { NomusPurchaseOrderListRowDto } from "@/src/lib/nomus/nomusPurchaseOrder360";
+import { PURCHASE_ORDER_PRESENCE_FILTERS } from "@/src/lib/nomus/nomusPurchaseOrderSyncUi";
 
 const NomusPurchaseOrderDetailDialog = React.lazy(() =>
   import("@/src/components/purchases/NomusPurchaseOrderDetailDialog").then((mod) => ({
@@ -77,6 +78,7 @@ function NomusPurchaseOrderList({ initialDetailId }: { initialDetailId: string |
   const [paymentTermsBucket, setPaymentTermsBucket] = useState("");
   const [paymentTermsTarget, setPaymentTermsTarget] = useState("");
   const [sort, setSort] = useState<PaymentTermsSort>(null);
+  const [presence, setPresence] = useState("ACTIVE");
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -100,6 +102,7 @@ function NomusPurchaseOrderList({ initialDetailId }: { initialDetailId: string |
     if (paymentTermsBucket) params.set("paymentTermsBucket", paymentTermsBucket);
     if (paymentTermsTarget) params.set("paymentTermsTarget", paymentTermsTarget);
     if (sort) params.set("sort", sort);
+    if (presence !== "ACTIVE") params.set("presence", presence);
     params.set("page", String(page));
     params.set("pageSize", "25");
     try {
@@ -110,7 +113,7 @@ function NomusPurchaseOrderList({ initialDetailId }: { initialDetailId: string |
     } finally {
       setLoading(false);
     }
-  }, [q, stage, fiscalStatus, financialStatus, openOnly, overdueOnly, paymentTermsBucket, paymentTermsTarget, sort, page]);
+  }, [q, stage, fiscalStatus, financialStatus, openOnly, overdueOnly, paymentTermsBucket, paymentTermsTarget, sort, presence, page]);
 
   useEffect(() => {
     void load();
@@ -257,6 +260,24 @@ function NomusPurchaseOrderList({ initialDetailId }: { initialDetailId: string |
             </select>
           </label>
         ) : null}
+        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+          Presença no Nomus
+          <select
+            value={presence}
+            onChange={(e) => {
+              setPage(1);
+              setPresence(e.target.value);
+            }}
+            className="rounded-md border border-border bg-white px-3 py-2 text-sm text-foreground"
+            data-testid="npo-filter-presence"
+          >
+            {PURCHASE_ORDER_PRESENCE_FILTERS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={openOnly} onChange={(e) => { setPage(1); setOpenOnly(e.target.checked); }} />
           Somente abertos

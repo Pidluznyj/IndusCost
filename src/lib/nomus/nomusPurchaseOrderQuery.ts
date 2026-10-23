@@ -3,6 +3,7 @@ import { isNomusPurchaseOrderOpenStage, isNomusPurchaseOrderOverdue } from "./no
 import type { PurchaseOrderFinancialStatus } from "./nomusPurchaseOrder360.js";
 import type { NomusPurchaseOrderStage } from "./nomusPurchaseOrderTypes.js";
 import { PAYMENT_TERMS_BUCKETS, type PaymentTermsBucket } from "@/src/lib/purchasing/purchasePaymentTerms.js";
+import { parsePurchaseOrderPresenceFilter, type PurchaseOrderPresenceFilter } from "./nomusPurchaseOrderSyncUi.js";
 import type { PaymentTermsCellDto } from "@/src/lib/purchasing/purchasePaymentTermsAnalysis.js";
 
 /** Filtros e ordenação do Prazo de Pagamento sobre linhas já calculadas (mesmo motor). */
@@ -60,6 +61,11 @@ export type NomusPurchaseOrderListFilters = {
   paymentTermsTarget?: "BELOW" | "MEETS" | null;
   /** Ordenação pelo PMP em dias (não identificados sempre ao final). */
   sort?: "pmp_asc" | "pmp_desc" | null;
+  /**
+   * Presença no Nomus. Padrão ACTIVE: carteira sem "Ausente no Nomus — confirmado"
+   * (histórico só com MISSING_CONFIRMED/ALL). Em verificação continua na carteira.
+   */
+  presence?: PurchaseOrderPresenceFilter;
   page?: number;
   pageSize?: number;
 };
@@ -129,9 +135,28 @@ export function parseNomusPurchaseOrderListFilters(
     openOnly: flag("openOnly") || flag("somenteAbertos"),
     overdueOnly: flag("overdueOnly") || flag("somenteAtrasados"),
     canceledOnly: flag("canceledOnly") || flag("somenteCancelados"),
+    presence: parsePurchaseOrderPresenceFilter(query.presence ?? query.presenca),
     page,
     pageSize,
   };
+}
+
+/** Filtro de presença no Nomus — o mesmo where alimenta lista, KPIs, total e paginação. */
+export function buildPurchaseOrderPresenceWhere(
+  presence: PurchaseOrderPresenceFilter | null | undefined
+): Prisma.NomusPurchaseOrderWhereInput | null {
+  switch (presence ?? "ACTIVE") {
+    case "ALL":
+      return null;
+    case "MISSING":
+      return { sourcePresenceStatus: { in: ["MISSING_CANDIDATE", "MISSING_CONFIRMED"] } };
+    case "MISSING_CANDIDATE":
+      return { sourcePresenceStatus: "MISSING_CANDIDATE" };
+    case "MISSING_CONFIRMED":
+      return { sourcePresenceStatus: "MISSING_CONFIRMED" };
+    default:
+      return { sourcePresenceStatus: { not: "MISSING_CONFIRMED" } };
+  }
 }
 
 export function buildNomusPurchaseOrderWhere(
@@ -139,6 +164,9 @@ export function buildNomusPurchaseOrderWhere(
   now: Date = new Date()
 ): Prisma.NomusPurchaseOrderWhereInput {
   const AND: Prisma.NomusPurchaseOrderWhereInput[] = [];
+
+  const presenceWhere = buildPurchaseOrderPresenceWhere(filters.presence);
+  if (presenceWhere) AND.push(presenceWhere);
 
   if (filters.q) {
     const numericId = /^\d+$/.test(filters.q) ? Number(filters.q) : null;
@@ -239,6 +267,8 @@ export function serializeNomusPurchaseOrderListRow(row: {
   remainingQuantity: { toString(): string } | null;
   syncedAt: Date;
   lastSeenAt: Date;
+  sourcePresenceStatus?: string | null;
+  missingSince?: Date | null;
 }, now: Date = new Date()) {
   const stage = row.stage as NomusPurchaseOrderStage;
   return {
@@ -262,6 +292,8 @@ export function serializeNomusPurchaseOrderListRow(row: {
     open: isNomusPurchaseOrderOpenStage(stage),
     syncedAt: row.syncedAt.toISOString(),
     lastSeenAt: row.lastSeenAt.toISOString(),
+    sourcePresenceStatus: row.sourcePresenceStatus ?? "PRESENT",
+    missingSince: row.missingSince?.toISOString() ?? null,
   };
 }
 

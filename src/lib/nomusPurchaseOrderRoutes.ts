@@ -58,6 +58,8 @@ const LIST_SELECT = {
   remainingQuantity: true,
   syncedAt: true,
   lastSeenAt: true,
+  sourcePresenceStatus: true,
+  missingSince: true,
   rawPayload: true,
 } as const;
 
@@ -67,14 +69,17 @@ export function registerNomusPurchaseOrderRoutes(app: express.Express, auth: Aut
 
   app.get("/api/nomus/purchase-orders/health", ...viewGuard, async (_req, res) => {
     try {
-      const [total, last, maxExternal] = await Promise.all([
+      const [total, last, maxExternal, presenceGroups] = await Promise.all([
         prisma.nomusPurchaseOrder.count(),
         prisma.nomusPurchaseOrder.findFirst({
           orderBy: { syncedAt: "desc" },
           select: { syncedAt: true, lastSeenAt: true, externalId: true },
         }),
         prisma.nomusPurchaseOrder.aggregate({ _max: { externalId: true } }),
+        prisma.nomusPurchaseOrder.groupBy({ by: ["sourcePresenceStatus"], _count: { _all: true } }),
       ]);
+      const presence: Record<string, number> = { PRESENT: 0, MISSING_CANDIDATE: 0, MISSING_CONFIRMED: 0 };
+      for (const g of presenceGroups) presence[g.sourcePresenceStatus] = g._count._all;
       const lastSync = last?.syncedAt ?? null;
       return res.json({
         total,
@@ -83,6 +88,7 @@ export function registerNomusPurchaseOrderRoutes(app: express.Express, auth: Aut
         maxExternalId: maxExternal._max.externalId,
         lagMs: lastSync ? Date.now() - lastSync.getTime() : null,
         ok: lastSync != null,
+        presence,
       });
     } catch (error) {
       console.error("GET /api/nomus/purchase-orders/health", error);
@@ -229,14 +235,32 @@ export function registerNomusPurchaseOrderRoutes(app: express.Express, auth: Aut
       if (!row) return res.status(404).json({ error: "Pedido de compra Nomus não encontrado." });
 
       const includeRaw = String(req.query.includeRaw ?? "").trim() === "1" && canSeeRawPayload(user);
-      const paymentTermsSettings = await loadPaymentTermsSettings(prisma);
-      return res.json(
-        await buildNomusPurchaseOrder360({
-          order: row,
-          includeRaw,
-          paymentTermsTargetDays: paymentTermsSettings.targetPmpDays,
-        })
-      );
+      const [paymentTermsSettings, presenceEvents] = await Promise.all([
+        loadPaymentTermsSettings(prisma),
+        prisma.nomusPurchaseOrderPresenceEvent.findMany({
+          where: { purchaseOrderId: row.id },
+          orderBy: { occurredAt: "desc" },
+          take: 50,
+          select: { id: true, action: true, fromStatus: true, toStatus: true, reason: true, occurredAt: true, syncRunId: true },
+        }),
+      ]);
+      const detail = await buildNomusPurchaseOrder360({
+        order: row,
+        includeRaw,
+        paymentTermsTargetDays: paymentTermsSettings.targetPmpDays,
+      });
+      return res.json({
+        ...detail,
+        // Presença no Nomus (independente de cancelamento): histórico preservado, nunca apagado.
+        presence: {
+          status: row.sourcePresenceStatus,
+          missingSince: row.missingSince?.toISOString() ?? null,
+          sourceRemovedAt: row.sourceRemovedAt?.toISOString() ?? null,
+          missingConsecutiveRuns: row.missingConsecutiveRuns,
+          lastSeenAt: row.lastSeenAt.toISOString(),
+          events: presenceEvents.map((e) => ({ ...e, occurredAt: e.occurredAt.toISOString() })),
+        },
+      });
     } catch (error) {
       console.error("GET /api/nomus/purchase-orders/:id", error);
       return res.status(500).json({ error: "Erro ao carregar pedido de compra Nomus." });

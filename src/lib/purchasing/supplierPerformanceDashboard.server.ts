@@ -14,6 +14,7 @@ import type { Prisma, PrismaClient } from "@prisma/client";
 import { resolveNomusOrderSuppliersBatch } from "@/src/lib/nomus/nomusPurchaseOrder360.server.js";
 import type { ResolvedPurchaseOrderSupplier } from "@/src/lib/nomus/nomusPurchaseOrder360.js";
 import { isSupplyChainSupplierPerformanceEnabled } from "@/src/lib/supply-chain/supplyChainFeatureFlags.js";
+import { isNomusOpsExcludeMissingPurchaseOrdersEnabled } from "@/src/lib/nomus/nomusSourcePresencePolicy.js";
 import { isSupplierIdentitySafeForEvaluation } from "./nomusPurchaseOrderEvaluation.js";
 import { periodWhere } from "./nomusPurchaseOrderEvaluation.server.js";
 import {
@@ -132,6 +133,8 @@ export function buildDashboardOrderWhere(
   const period = periodWhere(filters.period);
   if (period) parts.push(period);
   if (!filters.includeCanceled) parts.push(notCanceledWhere());
+  // Pedido "Ausente no Nomus — confirmado" sai dos indicadores (flag operacional; histórico preservado).
+  if (isNomusOpsExcludeMissingPurchaseOrdersEnabled()) parts.push({ sourcePresenceStatus: { not: "MISSING_CONFIRMED" } });
   return parts.length ? { AND: parts } : {};
 }
 

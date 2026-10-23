@@ -514,10 +514,16 @@ describe("nomusPurchaseOrder integration wiring", () => {
     assert.match(sh, /AR_TECHNICAL_FAILURE/);
   });
 
-  it("PO runner usa lock global e lock próprio", () => {
+  it("PO runner delega ao serviço canônico: lock próprio + espera pelo lock global (sem adquiri-lo)", () => {
     const sh = readFileSync("scripts/runNomusPurchaseOrdersSync.sh", "utf8");
-    assert.match(sh, /induscost-nomus-sync-global\.lock/);
-    assert.match(sh, /induscost-nomus-purchase-orders\.lock/);
+    // O shell não adquire mais o lock global com flock -n (isso pulava Propostas/Pedidos de Venda).
+    assert.doesNotMatch(sh, /flock/);
+    assert.match(sh, /induscost-nomus-purchase-orders\.canonical\.lock/);
+    const cli = readFileSync("scripts/nomusPurchaseOrdersSync.ts", "utf8");
+    assert.match(cli, /runNomusPurchaseOrdersSync/);
+    const service = readFileSync("src/lib/nomus/nomusPurchaseOrderSyncService.server.ts", "utf8");
+    assert.match(service, /probeGlobalNomusSyncLockHeld/);
+    assert.match(service, /waitForGlobalNomusSyncLockToFree/);
   });
 
   it("UI e rotas permanecem separadas de PurchaseRequest", () => {

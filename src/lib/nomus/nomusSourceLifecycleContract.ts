@@ -19,6 +19,7 @@ export const NOMUS_SOURCE_SYNC_ENTITY_TYPES = [
   "SALES_ORDER",
   "ACCOUNTS_RECEIVABLE",
   "ACCOUNTS_PAYABLE",
+  "PURCHASE_ORDER",
 ] as const;
 
 export type NomusSourceSyncEntityType =
@@ -29,6 +30,8 @@ export const NOMUS_SOURCE_SYNC_RUN_STATUSES = [
   "SUCCESS",
   "FAILED",
   "INCONCLUSIVE",
+  /** Execução pulada (lock ocupado, fonte de agendamento inativa) — nunca é sucesso. */
+  "SKIPPED",
 ] as const;
 
 export type NomusSourceSyncRunStatus =
@@ -98,7 +101,7 @@ export function parseNomusSourceSyncEntityType(
     return value as NomusSourceSyncEntityType;
   }
   throw new Error(
-    `NomusSourceSyncEntityType inválido: ${String(value)}. Use SALES_ORDER | ACCOUNTS_RECEIVABLE | ACCOUNTS_PAYABLE.`
+    `NomusSourceSyncEntityType inválido: ${String(value)}. Use SALES_ORDER | ACCOUNTS_RECEIVABLE | ACCOUNTS_PAYABLE | PURCHASE_ORDER.`
   );
 }
 
@@ -112,7 +115,7 @@ export function parseNomusSourceSyncRunStatus(
     return value as NomusSourceSyncRunStatus;
   }
   throw new Error(
-    `NomusSourceSyncRunStatus inválido: ${String(value)}. Use RUNNING | SUCCESS | FAILED | INCONCLUSIVE.`
+    `NomusSourceSyncRunStatus inválido: ${String(value)}. Use RUNNING | SUCCESS | FAILED | INCONCLUSIVE | SKIPPED.`
   );
 }
 
@@ -202,6 +205,26 @@ export function buildAccountsReceivableDueDateScope(input: {
     to: input.to,
     onlyPending: input.onlyPending,
     strategy: input.strategy,
+  };
+}
+
+/**
+ * Pedidos de Compra Nomus. `kind`:
+ *   - purchase_orders_full_universe — varredura sem filtro de datas (universo inteiro da API);
+ *   - purchase_orders_issue_date_window — janela por emissão (só vale com filtro comprovado).
+ */
+export function buildPurchaseOrderScope(input: {
+  kind: "purchase_orders_full_universe" | "purchase_orders_issue_date_window";
+  from?: string | null;
+  to?: string | null;
+  strategy: string;
+}): NomusSourceSyncScope {
+  return {
+    kind: input.kind,
+    from: input.kind === "purchase_orders_full_universe" ? null : (input.from ?? null),
+    to: input.kind === "purchase_orders_full_universe" ? null : (input.to ?? null),
+    strategy: input.strategy,
+    onlyPending: null,
   };
 }
 

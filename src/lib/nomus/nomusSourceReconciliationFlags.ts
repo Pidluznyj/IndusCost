@@ -13,6 +13,8 @@ export const NOMUS_SOURCE_RECONCILE_AR_ENV =
   "NOMUS_SOURCE_RECONCILE_AR_ENABLED";
 export const NOMUS_SOURCE_RECONCILE_AP_ENV =
   "NOMUS_SOURCE_RECONCILE_AP_ENABLED";
+export const NOMUS_SOURCE_RECONCILE_PURCHASE_ORDERS_ENV =
+  "NOMUS_SOURCE_RECONCILE_PURCHASE_ORDERS_ENABLED";
 
 const ENABLED_VALUES = new Set(["1", "true", "yes", "on", "enabled"]);
 
@@ -42,6 +44,12 @@ export function isNomusAccountsPayableAbsenceReconciliationEnabled(
   return isEnvFlagEnabled(env, NOMUS_SOURCE_RECONCILE_AP_ENV);
 }
 
+export function isNomusPurchaseOrderAbsenceReconciliationEnabled(
+  env: Record<string, string | undefined> = process.env
+): boolean {
+  return isEnvFlagEnabled(env, NOMUS_SOURCE_RECONCILE_PURCHASE_ORDERS_ENV);
+}
+
 export function isNomusAbsenceReconciliationEnabledForEntity(
   entityType: NomusSourceSyncEntityType,
   env: Record<string, string | undefined> = process.env
@@ -53,6 +61,8 @@ export function isNomusAbsenceReconciliationEnabledForEntity(
       return isNomusAccountsReceivableAbsenceReconciliationEnabled(env);
     case "ACCOUNTS_PAYABLE":
       return isNomusAccountsPayableAbsenceReconciliationEnabled(env);
+    case "PURCHASE_ORDER":
+      return isNomusPurchaseOrderAbsenceReconciliationEnabled(env);
     default: {
       const _exhaustive: never = entityType;
       void _exhaustive;

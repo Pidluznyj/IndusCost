@@ -1,186 +1,133 @@
+/**
+ * CLI oficial do espelho de Pedidos de Compra Nomus (`GET /rest/pedidoscompra`). Read-only no ERP.
+ *
+ * Só monta a requisição e chama o serviço canônico `runNomusPurchaseOrdersSync`
+ * (lock de entidade, run em NomusSourceSyncRun, completude, presença). Sem lógica de negócio aqui.
+ *
+ *   tsx scripts/nomusPurchaseOrdersSync.ts <preview|apply> [--incremental|--reconcile|--backfill|--lookup=<id>]
+ *       [--trigger=SCHEDULED_HOURLY|SCHEDULED_DAILY|CHAIN_AFTER_AR|ADMIN_PANEL|CLI|TARGETED_AUDIT]
+ *
+ * Saída: 0 sucesso ou pulado (registrado como SKIPPED), 3 inconclusivo, 1 falha.
+ */
 import "dotenv/config";
-import { PrismaClient } from "@prisma/client";
+import { runNomusPurchaseOrdersSync } from "@/src/lib/nomus/nomusCanonicalSync.server.js";
 import {
-  buildNomusUrl,
-  describeNomusCredential,
-  fetchNomusJson,
-  redactHeadersForLog,
-  redactNomusUrlForLog,
-} from "@/src/lib/nomusRestClient.js";
-import { mapNomusPurchaseOrderPayload } from "@/src/lib/nomus/nomusPurchaseOrderMapper.js";
-import { applyNomusPurchaseOrderRows } from "@/src/lib/nomus/nomusPurchaseOrderPersist.js";
+  NOMUS_CANONICAL_SOURCE_TRIGGERS,
+  type NomusCanonicalSourceTrigger,
+  type NomusCanonicalSyncStrategy,
+} from "@/src/lib/nomus/nomusCanonicalSyncContract.js";
 import {
-  NOMUS_PURCHASE_ORDER_RESOURCE,
-  buildPurchaseOrderPageParams,
-  computePurchaseOrderPaginationPlan,
-  hasNextPurchaseOrderPage,
-  parsePurchaseOrderSyncCli,
-  pickPurchaseOrderPageItems,
-  resolvePurchaseOrderPageSize,
-  resolvePurchaseOrderWindow,
-} from "@/src/lib/nomus/nomusPurchaseOrderSyncLogic.js";
-import type { MappedNomusPurchaseOrder } from "@/src/lib/nomus/nomusPurchaseOrderTypes.js";
+  disconnectPurchaseOrderSyncPrisma,
+  purchaseOrderSyncExitCode,
+  recordPurchaseOrderSkippedRun,
+} from "@/src/lib/nomus/nomusPurchaseOrderSyncService.server.js";
 
-const prisma = new PrismaClient();
 const LOG_PREFIX = "[nomus-purchase-orders]";
 
-function getRequiredEnv(name: string): string {
-  const value = (process.env[name] ?? "").trim();
-  if (!value) throw new Error(`Variável obrigatória ausente: ${name}`);
-  return value;
-}
+export type PurchaseOrderCliRequest = {
+  mode: "preview" | "apply";
+  strategy: NomusCanonicalSyncStrategy;
+  trigger: NomusCanonicalSourceTrigger;
+  allowMissingDetection: boolean;
+  allowMissingConfirmation: boolean;
+  targetExternalId: number | null;
+};
 
-async function fetchAllPages(
-  baseUrl: string,
-  options: ReturnType<typeof parsePurchaseOrderSyncCli>,
-  window: { startDate: string; endDate: string }
-) {
-  const pageSize = resolvePurchaseOrderPageSize(process.env);
-  const { firstPage, lastPage } = computePurchaseOrderPaginationPlan(options);
-  const rows: MappedNomusPurchaseOrder[] = [];
-  let pagesRead = 0;
-  let recordsRead = 0;
-  let mapErrors = 0;
-  let http429Count = 0;
-  let stoppedBecauseEmpty = false;
-  let stoppedBecauseNoNext = false;
-  let stoppedBecauseMaxPages = false;
+export function parsePurchaseOrderCliRequest(
+  argv: string[],
+  env: NodeJS.ProcessEnv = process.env
+): PurchaseOrderCliRequest {
+  const mode = argv.includes("apply") || argv.includes("--apply") ? "apply" : "preview";
+  const lookupArg = argv.find((a) => a.startsWith("--lookup="));
+  const targetExternalId = lookupArg ? Number.parseInt(lookupArg.slice("--lookup=".length), 10) || null : null;
+  const reconcile = argv.includes("--reconcile") || argv.includes("reconcile");
+  const backfill = argv.includes("--backfill") || argv.includes("backfill");
 
-  for (let page = firstPage; page <= lastPage; page += 1) {
-    const url = buildNomusUrl(
-      baseUrl,
-      NOMUS_PURCHASE_ORDER_RESOURCE,
-      buildPurchaseOrderPageParams(page, pageSize, window)
-    );
-    const payload = await fetchNomusJson(url, {
-      logPrefix: LOG_PREFIX,
-      logContext: { resource: NOMUS_PURCHASE_ORDER_RESOURCE, page },
-      onRetryableStatus: ({ status }) => {
-        if (status === 429) http429Count += 1;
-      },
-    });
-    const items = pickPurchaseOrderPageItems(payload);
-    pagesRead += 1;
-    recordsRead += items.length;
-    console.warn(`${LOG_PREFIX} página ${page} lida: ${items.length} registros.`);
+  const strategy: NomusCanonicalSyncStrategy = targetExternalId
+    ? "TARGETED_LOOKUP"
+    : reconcile || backfill
+      ? "FULL_RECONCILIATION"
+      : "RECENT_WINDOW";
 
-    for (const item of items) {
-      const mapped = mapNomusPurchaseOrderPayload(item);
-      if (!mapped.ok) {
-        mapErrors += 1;
-        continue;
-      }
-      rows.push(mapped.row);
-    }
-
-    if (items.length === 0) {
-      stoppedBecauseEmpty = true;
-      break;
-    }
-    if (options.singlePage != null) {
-      stoppedBecauseMaxPages = true;
-      break;
-    }
-    if (!hasNextPurchaseOrderPage(payload, page, items.length, pageSize)) {
-      stoppedBecauseNoNext = true;
-      break;
-    }
-    if (page >= lastPage) {
-      stoppedBecauseMaxPages = true;
-      break;
-    }
-  }
+  // Trigger explícito por argumento ou NOMUS_PO_TRIGGER (o runner de CR exporta
+  // NOMUS_CANONICAL_SOURCE_TRIGGER para si; não herdamos aquele valor).
+  const triggerArg = argv.find((a) => a.startsWith("--trigger="))?.slice("--trigger=".length);
+  const rawTrigger = (triggerArg ?? env.NOMUS_PO_TRIGGER ?? "CLI").trim().toUpperCase();
+  const trigger = (NOMUS_CANONICAL_SOURCE_TRIGGERS as readonly string[]).includes(rawTrigger)
+    ? (rawTrigger as NomusCanonicalSourceTrigger)
+    : "CLI";
 
   return {
-    pagesRead,
-    recordsRead,
-    rows,
-    mapErrors,
-    http429Count,
-    stoppedBecauseEmpty,
-    stoppedBecauseNoNext,
-    stoppedBecauseMaxPages,
+    mode,
+    strategy,
+    trigger,
+    // Backfill = upsert do universo sem avaliar ausência; reconcile = avaliação (ainda sujeita às flags).
+    allowMissingDetection: reconcile,
+    allowMissingConfirmation: reconcile,
+    targetExternalId,
   };
 }
 
 async function main() {
-  const startedMs = Date.now();
-  const options = parsePurchaseOrderSyncCli(process.argv.slice(2));
-  const window = resolvePurchaseOrderWindow({
-    incremental: options.incremental,
-    backfill: options.backfill || !options.incremental,
-    startDate: process.env.NOMUS_PO_START_DATE,
-    endDate: process.env.NOMUS_PO_END_DATE,
-  });
-  const baseUrl = getRequiredEnv("NOMUS_BASE_URL");
-  const pageSize = resolvePurchaseOrderPageSize(process.env);
-
-  const envForLog = redactHeadersForLog(
-    Object.fromEntries(
-      Object.entries(process.env)
-        .filter(([key]) => key.startsWith("NOMUS_"))
-        .map(([key, value]) => [key, value ?? ""])
-    )
-  );
-
+  const request = parsePurchaseOrderCliRequest(process.argv.slice(2));
   console.warn(
-    `${LOG_PREFIX} start mode=${options.mode} strategy=${options.syncStrategy} incremental=${options.incremental} backfill=${options.backfill} window=${window.startDate}..${window.endDate}`
-  );
-  console.warn(`${LOG_PREFIX} env Nomus (redigido): ${JSON.stringify(envForLog)}`);
-  console.warn(
-    `${LOG_PREFIX} credencial: ${JSON.stringify(describeNomusCredential(process.env.NOMUS_AUTH_HEADER_VALUE || process.env.NOMUS_TOKEN))}`
-  );
-  console.warn(
-    `${LOG_PREFIX} endpoint=${redactNomusUrlForLog(buildNomusUrl(baseUrl, NOMUS_PURCHASE_ORDER_RESOURCE, buildPurchaseOrderPageParams(1, pageSize, window)))}`
+    `${LOG_PREFIX} start mode=${request.mode} strategy=${request.strategy} trigger=${request.trigger}${
+      request.targetExternalId ? ` target=${request.targetExternalId}` : ""
+    }`
   );
 
-  let exitCode = 0;
-  let errorMessage: string | null = null;
-  let fetched: Awaited<ReturnType<typeof fetchAllPages>> | null = null;
-  let applied = { created: 0, updated: 0, unchanged: 0, errors: 0 };
-
+  let exitCode = 1;
   try {
-    fetched = await fetchAllPages(baseUrl, options, window);
-    if (options.mode === "apply") {
-      applied = await applyNomusPurchaseOrderRows(prisma, fetched.rows, new Date());
+    const result = await runNomusPurchaseOrdersSync({
+      strategy: request.strategy,
+      mode: request.mode,
+      scope: undefined,
+      sourceTrigger: request.trigger,
+      allowMissingDetection: request.allowMissingDetection,
+      allowMissingConfirmation: request.allowMissingConfirmation,
+      requestedBy: process.env.NOMUS_PO_REQUESTED_BY ?? null,
+      correlationId: process.env.NOMUS_PO_CORRELATION_ID ?? null,
+      targetExternalId: request.targetExternalId,
+    });
+
+    let runId = result.runId;
+    if (result.status === "SKIPPED_LOCKED" && !runId) {
+      // Lock de entidade ocupado: outra execução de Pedidos de Compra em andamento.
+      // Registra o pulo (nunca conta como sucesso nem atualiza "último sucesso").
+      const { PrismaClient } = await import("@prisma/client");
+      const prisma = new PrismaClient();
+      try {
+        runId = await recordPurchaseOrderSkippedRun({
+          prisma,
+          strategy: request.mode === "preview" ? `${request.strategy}_PREVIEW` : request.strategy,
+          trigger: request.trigger,
+          reason: "ENTITY_LOCK_HELD",
+          startedAt: new Date(result.startedAt),
+          correlationId: result.correlationId,
+        });
+      } finally {
+        await prisma.$disconnect();
+      }
     }
+
+    console.warn(
+      `${LOG_PREFIX} summary ${JSON.stringify({
+        status: result.status,
+        runId,
+        payloadComplete: result.payloadComplete,
+        counters: result.counters,
+        message: result.message ?? null,
+      })}`
+    );
+    exitCode = purchaseOrderSyncExitCode(result.status);
   } catch (error) {
+    console.error(`${LOG_PREFIX} falha`, error instanceof Error ? error.message : String(error));
     exitCode = 1;
-    errorMessage = error instanceof Error ? error.message : String(error);
-    console.error(`${LOG_PREFIX} falha`, errorMessage);
+  } finally {
+    await disconnectPurchaseOrderSyncPrisma();
   }
-
-  const canceled = fetched?.rows.filter((row) => row.stage === "CANCELED").length ?? 0;
-  const summary = {
-    mode: options.mode,
-    strategy: options.syncStrategy,
-    window,
-    pages: fetched?.pagesRead ?? 0,
-    recordsRead: fetched?.recordsRead ?? 0,
-    mapped: fetched?.rows.length ?? 0,
-    created: options.mode === "apply" ? applied.created : 0,
-    updated: options.mode === "apply" ? applied.updated : 0,
-    unchanged: options.mode === "apply" ? applied.unchanged : 0,
-    previewWouldCreate: options.mode === "preview" ? (fetched?.rows.length ?? 0) : 0,
-    canceled,
-    mapErrors: fetched?.mapErrors ?? 0,
-    applyErrors: applied.errors,
-    http429Count: fetched?.http429Count ?? 0,
-    stoppedBecauseEmpty: fetched?.stoppedBecauseEmpty ?? false,
-    stoppedBecauseNoNext: fetched?.stoppedBecauseNoNext ?? false,
-    stoppedBecauseMaxPages: fetched?.stoppedBecauseMaxPages ?? false,
-    durationMs: Date.now() - startedMs,
-    persisted: options.mode === "apply",
-    error: errorMessage,
-  };
-
-  console.warn(`${LOG_PREFIX} summary ${JSON.stringify(summary)}`);
-  if (options.mode === "preview") {
-    console.warn(`${LOG_PREFIX} preview não grava.`);
-  }
-
-  await prisma.$disconnect();
   process.exit(exitCode);
 }
 
-void main();
+const invokedDirectly = (process.argv[1] ?? "").replace(/\\/g, "/").endsWith("scripts/nomusPurchaseOrdersSync.ts");
+if (invokedDirectly) void main();

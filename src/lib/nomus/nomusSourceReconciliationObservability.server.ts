@@ -36,11 +36,13 @@ export async function loadNomusSourceSyncRunsForObservability(
     "SALES_ORDER",
     "ACCOUNTS_RECEIVABLE",
     "ACCOUNTS_PAYABLE",
+    "PURCHASE_ORDER",
   ];
   const rows: NomusSourceSyncRunObservabilityRow[] = [];
   for (const entityType of entities) {
     const found = await prisma.nomusSourceSyncRun.findMany({
-      where: { entityType },
+      // Pulos e prévias não contam como execução (ver isObservabilityIgnoredRun).
+      where: { entityType, status: { not: "SKIPPED" }, NOT: { strategy: { endsWith: "_PREVIEW" } } },
       orderBy: { startedAt: "desc" },
       take,
       select: {
