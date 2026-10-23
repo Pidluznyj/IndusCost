@@ -171,10 +171,16 @@ describe("operação comercial de crédito", () => {
       filter: "under_review",
       now: new Date(2026, 9, 19),
     });
-    assert.deepEqual(blocked.matches, []);
+    assert.deepEqual(blocked.matches, [
+      {
+        customerId: "11111111-1111-4111-8111-111111111111",
+        situationLabel: "BLOQUEADO",
+        reason: "Crédito bloqueado: cadastro financeiro incompleto ou indisponível. Não libera prazo.",
+      },
+    ]);
     assert.equal(blocked.failed, 0);
     assert.equal(blocked.writes, "NONE");
-    assert.equal(review.matches.length, 1);
+    assert.deepEqual(review.matches, []);
     assert.equal(review.writes, "NONE");
   });
 
