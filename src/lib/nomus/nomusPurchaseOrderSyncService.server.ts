@@ -29,6 +29,7 @@ import {
   NOMUS_PURCHASE_ORDER_RESOURCE,
   buildPurchaseOrderPageParams,
   hasNextPurchaseOrderPage,
+  isRecognizedPurchaseOrderPagePayload,
   pickPurchaseOrderPageItems,
   resolvePurchaseOrderPageSize,
   resolvePurchaseOrderWindow,
@@ -252,6 +253,7 @@ async function fetchPurchaseOrderUniverse(args: {
     duplicateRecords: 0,
     returnedOutsideWindow: 0,
     dateFilterValidated: args.dateFilterValidated,
+    malformedPages: 0,
   };
   const byId = new Map<number, MappedNomusPurchaseOrder>();
   const unmapped = new Set<number>();
@@ -272,6 +274,12 @@ async function fetchPurchaseOrderUniverse(args: {
           if (status === 429) meta.http429Count += 1;
         },
       });
+      if (!isRecognizedPurchaseOrderPagePayload(payload)) {
+        // Corpo inesperado: nunca tratar como fim da paginação.
+        meta.pagesRead += 1;
+        meta.malformedPages = (meta.malformedPages ?? 0) + 1;
+        break;
+      }
       const items = pickPurchaseOrderPageItems(payload);
       meta.pagesRead += 1;
       meta.recordsRead += items.length;
@@ -673,6 +681,15 @@ export async function executeNomusPurchaseOrdersSync(
 
     const locals = await loadPurchaseOrderLifecycleLocals(prisma);
     const localsById = new Map(locals.map((l) => [l.localId, l]));
+    if (strategy === "FULL_RECONCILIATION" && fetched.meta.recordsRead === 0 && locals.length > 0 && completeness.payloadComplete) {
+      // Universo vazio com pedidos locais: resposta anômala, nunca evidência de exclusão.
+      completeness = {
+        ...completeness,
+        payloadComplete: false,
+        runStatus: "INCONCLUSIVE",
+        reasons: [...new Set([...completeness.reasons, "EMPTY_UNIVERSE_WITH_LOCAL_RECORDS", "ABSENCE_CONFIRMATION_BLOCKED"])],
+      };
+    }
     const foundRecords = [
       ...fetched.rows.map((r) => ({ externalId: r.externalId, payloadHash: r.payloadHash })),
       // Sem conteúdo mapeável: hash vazio (nunca "inalterado"), presença comprovada.

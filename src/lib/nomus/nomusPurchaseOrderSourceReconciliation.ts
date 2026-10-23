@@ -64,6 +64,11 @@ export type PurchaseOrderFetchMeta = {
    * pedidos emitidos na janela.
    */
   dateFilterValidated?: boolean;
+  /**
+   * Páginas com HTTP 200 cujo corpo não é uma lista reconhecível (ex.: objeto de erro). Sem esta
+   * contagem, um corpo inválido viraria "página vazia" e encerraria a paginação como completa.
+   */
+  malformedPages?: number;
 };
 
 export type PurchaseOrderFetchCompleteness = {
@@ -85,6 +90,8 @@ export function assessPurchaseOrderFetchCompleteness(meta: PurchaseOrderFetchMet
   const drained = meta.stoppedBecauseEmpty || meta.stoppedBecauseNoNext;
   if (!drained && !meta.fetchFailed) reasons.push("UNIVERSE_NOT_DRAINED");
   if (meta.unidentifiedRecords > 0) reasons.push("UNIDENTIFIED_RECORDS_IN_PAYLOAD");
+  const malformed = (meta.malformedPages ?? 0) > 0;
+  if (malformed) reasons.push("MALFORMED_PAYLOAD_INCOMPLETE_SNAPSHOT");
   if (meta.mapErrorsIdentified > 0) reasons.push("MAP_ERRORS_WITH_OFFICIAL_ID");
   if (meta.duplicateRecords > 0) reasons.push("DUPLICATE_RECORDS_IN_PAYLOAD");
 
@@ -95,7 +102,12 @@ export function assessPurchaseOrderFetchCompleteness(meta: PurchaseOrderFetchMet
   if (meta.requestedWindow != null && meta.dateFilterValidated !== true) reasons.push("DATE_FILTER_SEMANTICS_NOT_VALIDATED");
 
   const technicalComplete =
-    !meta.fetchFailed && meta.startPage === 1 && drained && !meta.stoppedBecauseMaxPages && meta.unidentifiedRecords === 0;
+    !meta.fetchFailed &&
+    meta.startPage === 1 &&
+    drained &&
+    !meta.stoppedBecauseMaxPages &&
+    meta.unidentifiedRecords === 0 &&
+    !malformed;
   // Filtro ignorado/ambíguo ou não validado: o universo coberto não é o declarado → nunca autoriza
   // ausência. A execução em si (todas as páginas lidas) continua tecnicamente bem-sucedida.
   const windowProven = meta.requestedWindow == null || (dateFilter === "CONSISTENT" && meta.dateFilterValidated === true);
@@ -190,11 +202,13 @@ export type PurchaseOrderReconciliationGuards = {
   heldByInterval: number;
   heldByConfirmationDisabled: number;
   massGuardTriggered: boolean;
+  /** Novas ausências (PRESENT → candidata) bloqueadas pelo limite de volume desta execução. */
+  candidatesBlocked: number;
   confirmationLimit: number;
 };
 
 export type PurchaseOrderReconciliationAlert = {
-  code: "MASS_ABSENCE_GUARD_TRIGGERED" | "MASS_ABSENCE_CANDIDATES" | "ABSENCE_EVALUATION_SKIPPED";
+  code: "MASS_ABSENCE_GUARD_TRIGGERED" | "MASS_ABSENCE_CANDIDATES_BLOCKED" | "ABSENCE_EVALUATION_SKIPPED";
   severity: "warning" | "critical";
   message: string;
 };
@@ -338,6 +352,33 @@ export function buildPurchaseOrderSourceReconciliationPlan(args: {
     });
   }
 
+  const confirmationLimit = purchaseOrderConfirmationLimit(policy, universeSize);
+
+  // --- Guarda de volume das NOVAS ausências: sumiço em massa numa varredura é sinal de resposta
+  // anômala da API, não de exclusões. Nada é gravado; o run registra o alerta para revisão. ---
+  let candidatesBlocked = 0;
+  const newCandidates = plan.missingCandidates.filter((item) => item.previousPresenceStatus === "PRESENT");
+  if (newCandidates.length > confirmationLimit) {
+    candidatesBlocked = newCandidates.length;
+    const blocked = new Set(newCandidates);
+    plan.missingCandidates = plan.missingCandidates.filter((item) => !blocked.has(item));
+    for (const item of newCandidates) {
+      plan.inconclusive.push({
+        ...item,
+        action: "INCONCLUSIVE",
+        reason: "MASS_ABSENCE_CANDIDATES_BLOCKED",
+        nextPresenceStatus: item.previousPresenceStatus,
+        lifecyclePatch: null,
+      });
+    }
+    plan.counters.inconclusive = plan.inconclusive.length;
+    alerts.push({
+      code: "MASS_ABSENCE_CANDIDATES_BLOCKED",
+      severity: "critical",
+      message: `${newCandidates.length} pedido(s) sumiram de uma vez (limite ${confirmationLimit}, universo ${universeSize}): nenhuma ausência gravada; revisar a resposta da API antes de reconciliar.`,
+    });
+  }
+
   // --- Pós-processamento das confirmações (intervalo, permissão, volume) ---
   let heldByInterval = 0;
   let heldByConfirmationDisabled = 0;
@@ -372,7 +413,6 @@ export function buildPurchaseOrderSourceReconciliationPlan(args: {
     keptConfirmed.push(item);
   }
 
-  const confirmationLimit = purchaseOrderConfirmationLimit(policy, universeSize);
   let massGuardTriggered = false;
   if (keptConfirmed.length > confirmationLimit) {
     massGuardTriggered = true;
@@ -389,14 +429,6 @@ export function buildPurchaseOrderSourceReconciliationPlan(args: {
   }
   const requested = keptConfirmed.length + heldByInterval + heldByConfirmationDisabled;
   plan.missingConfirmed = [...stillConfirmed, ...keptConfirmed];
-
-  if (plan.missingCandidates.length > confirmationLimit) {
-    alerts.push({
-      code: "MASS_ABSENCE_CANDIDATES",
-      severity: "warning",
-      message: `${plan.missingCandidates.length} pedido(s) ausente(s) em verificação (limite de alerta ${confirmationLimit}).`,
-    });
-  }
 
   plan.counters.missingCandidates = plan.missingCandidates.length;
   plan.counters.missingConfirmed = plan.missingConfirmed.length;
@@ -415,6 +447,7 @@ export function buildPurchaseOrderSourceReconciliationPlan(args: {
       heldByInterval,
       heldByConfirmationDisabled,
       massGuardTriggered,
+      candidatesBlocked,
       confirmationLimit,
     },
     alerts,

@@ -331,6 +331,31 @@ describe("proteções", () => {
   });
 });
 
+describe("respostas anômalas da API", () => {
+  it("26a. página HTTP 200 sem lista reconhecível = INCONCLUSIVE (não é fim da paginação)", () => {
+    const c = assessPurchaseOrderFetchCompleteness(meta({ stoppedBecauseNoNext: false, malformedPages: 1 }));
+    assert.equal(c.runStatus, "INCONCLUSIVE");
+    assert.equal(c.payloadComplete, false);
+    assert.ok(c.reasons.includes("MALFORMED_PAYLOAD_INCOMPLETE_SNAPSHOT"));
+  });
+
+  it("26b. muitas ausências NOVAS numa varredura não gravam nada (nem candidata) + alerta crítico", () => {
+    const locals = Array.from({ length: 40 }, (_, i) => local(2000 + i));
+    const r = plan({ locals, found: [] });
+    assert.equal(r.plan.missingCandidates.length, 0);
+    assert.equal(r.guards.candidatesBlocked, 40);
+    assert.ok(r.plan.inconclusive.every((i) => i.lifecyclePatch === null && i.reason === "MASS_ABSENCE_CANDIDATES_BLOCKED"));
+    assert.ok(r.alerts.some((a) => a.code === "MASS_ABSENCE_CANDIDATES_BLOCKED" && a.severity === "critical"));
+  });
+
+  it("26c. ausências novas dentro do limite seguem normalmente", () => {
+    const present = Array.from({ length: 60 }, (_, i) => local(3000 + i));
+    const r = plan({ locals: present, found: present.slice(2).map((l) => l.externalId) });
+    assert.equal(r.plan.missingCandidates.length, 2);
+    assert.equal(r.guards.candidatesBlocked, 0);
+  });
+});
+
 describe("rótulos", () => {
   it("27. ausência ≠ cancelamento ≠ exclusão comprovada", () => {
     assert.equal(describePurchaseOrderPresence({ sourcePresenceStatus: "MISSING_CONFIRMED", stage: "APPROVED" }).label, "Ausente no Nomus — confirmado");

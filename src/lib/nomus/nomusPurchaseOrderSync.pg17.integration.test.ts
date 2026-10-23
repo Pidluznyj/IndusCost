@@ -415,21 +415,24 @@ describe("Pedidos de Compra Nomus — presença no PostgreSQL 17", { skip: SKIP 
     assert.deepEqual(row.presenceEvents.map((e) => e.action), ["MISSING_CANDIDATE", "MISSING_CONFIRMED", "REACTIVATE"]);
   });
 
-  it("17. guarda de volume: sumiço em massa não confirma ninguém", async () => {
+  it("17. guarda de volume: sumiço em massa não grava ausência nenhuma (nem candidata)", async () => {
     for (let id = 1000; id < 1040; id += 1) nomus.orders.set(id, nomusOrder(id, { codigoPedido: `PCM${id}` }));
     now = new Date(T0.getTime() + 40 * H);
     await sync({ strategy: "RECENT_WINDOW" });
     for (let id = 1000; id < 1040; id += 1) nomus.orders.delete(id);
-    now = new Date(T0.getTime() + 41 * H);
-    await sync({ strategy: "FULL_RECONCILIATION" });
-    now = new Date(T0.getTime() + 66 * H);
-    const second = await sync({ strategy: "FULL_RECONCILIATION" });
-    const run = await prisma.nomusSourceSyncRun.findUniqueOrThrow({ where: { id: second.runId! } });
-    const summary = run.summaryJson as { guards: { massGuardTriggered: boolean }; alerts: Array<{ code: string }> };
-    assert.equal(summary.guards.massGuardTriggered, true);
-    assert.ok(summary.alerts.some((a) => a.code === "MASS_ABSENCE_GUARD_TRIGGERED"));
-    assert.equal(await prisma.nomusPurchaseOrder.count({ where: { externalId: { gte: 1000 }, sourcePresenceStatus: "MISSING_CONFIRMED" } }), 0);
-    assert.ok(logs.some((l) => l.includes("ALERT code=MASS_ABSENCE_GUARD_TRIGGERED")));
+    for (const hours of [41, 66]) {
+      now = new Date(T0.getTime() + hours * H);
+      const result = await sync({ strategy: "FULL_RECONCILIATION" });
+      const run = await prisma.nomusSourceSyncRun.findUniqueOrThrow({ where: { id: result.runId! } });
+      const summary = run.summaryJson as { guards: { candidatesBlocked: number }; alerts: Array<{ code: string }> };
+      assert.equal(summary.guards.candidatesBlocked, 40);
+      assert.ok(summary.alerts.some((a) => a.code === "MASS_ABSENCE_CANDIDATES_BLOCKED"));
+    }
+    assert.equal(
+      await prisma.nomusPurchaseOrder.count({ where: { externalId: { gte: 1000 }, sourcePresenceStatus: { not: "PRESENT" } } }),
+      0
+    );
+    assert.ok(logs.some((l) => l.includes("ALERT code=MASS_ABSENCE_CANDIDATES_BLOCKED")));
   });
 
   it("18. consulta por ID (TARGETED_LOOKUP) atualiza só o próprio pedido e nunca prova ausência", async () => {
@@ -438,7 +441,7 @@ describe("Pedidos de Compra Nomus — presença no PostgreSQL 17", { skip: SKIP 
     assert.equal(found.payloadComplete, false);
     const missing = await sync({ strategy: "TARGETED_LOOKUP", target: 1001, trigger: "CLI" });
     assert.notEqual(missing.status, "SUCCESS");
-    assert.equal((await po(1001)).sourcePresenceStatus, "MISSING_CANDIDATE");
+    assert.equal((await po(1001)).sourcePresenceStatus, "PRESENT", "404 sem semântica validada não altera presença");
   });
 
   it("19. nenhuma linha de pedido foi apagada fisicamente em todo o ciclo", async () => {
