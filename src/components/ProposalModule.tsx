@@ -46,6 +46,7 @@ import {
 import { Product } from "@/src/types/product";
 import { motion, AnimatePresence } from "motion/react";
 import { STORAGE_OPEN_PROPOSAL_KEY } from "@/src/lib/salesFunnel";
+import { formatSalesOrderDisplayCode } from "@/src/lib/salesOrderListUi";
 import { CalculatedValue } from "./shared/CalculatedValue";
 import {
   calculateProposalLineMargin,
@@ -2924,7 +2925,12 @@ export const ProposalModule = () => {
                 >
                   Margem
                 </th>
-                <th className="p-4 font-semibold text-sm">Status</th>
+                <th
+                  className="p-4 font-semibold text-sm"
+                  title="Status da proposta. Quando existe pedido de venda, mostra o número do pedido."
+                >
+                  Status
+                </th>
                 <th className="p-4 font-semibold text-sm text-right">Ações</th>
               </tr>
             </thead>
@@ -3022,12 +3028,24 @@ export const ProposalModule = () => {
                       )}
                     </td>
                     <td className="p-4">
-                      <div className={cn(
-                        "inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider",
-                        STATUS_CONFIG[p.status]?.color
-                      )}>
-                        {STATUS_CONFIG[p.status]?.label}
-                      </div>
+                      {p.salesOrder?.id && p.salesOrder.orderCode?.trim() ? (
+                        <button
+                          type="button"
+                          onClick={() => void handleSalesOrderFromProposal(p)}
+                          className="font-mono text-sm font-semibold text-primary hover:underline"
+                          title={`Pedido de venda ${formatSalesOrderDisplayCode(p.salesOrder.orderCode)}. Status da proposta: ${STATUS_CONFIG[p.status]?.label ?? p.status}.`}
+                          data-testid={`proposal-list-sales-order-${p.id}`}
+                        >
+                          {formatSalesOrderDisplayCode(p.salesOrder.orderCode)}
+                        </button>
+                      ) : (
+                        <div className={cn(
+                          "inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider",
+                          STATUS_CONFIG[p.status]?.color
+                        )}>
+                          {STATUS_CONFIG[p.status]?.label}
+                        </div>
+                      )}
                     </td>
                     <td className="p-4 text-right whitespace-nowrap align-middle">
                       <div className="inline-flex flex-shrink-0 items-center justify-end gap-1.5">

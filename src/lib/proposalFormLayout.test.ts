@@ -85,6 +85,8 @@ describe("proposal form layout", () => {
   it("listagem de propostas exibe somente margem % (sem valor R$ de contribuição)", () => {
     const mod = read("src/components/ProposalModule.tsx");
     assert.match(mod, /data-testid=\{`proposal-list-margin-\$\{p\.id\}`\}/);
+    assert.match(mod, /data-testid=\{`proposal-list-sales-order-\$\{p\.id\}`\}/);
+    assert.match(mod, /formatSalesOrderDisplayCode\(p\.salesOrder\.orderCode\)/);
     assert.match(mod, /formatPercentDisplay\(p\.totalMarginPerc\)/);
     assert.doesNotMatch(mod, /formatMoneyDisplay\(p\.totalMarginValue\)/);
     assert.doesNotMatch(mod, /proposal-total-margin-value/);
