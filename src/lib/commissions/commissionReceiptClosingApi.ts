@@ -5,6 +5,19 @@ export * from "./commissionReceiptClosingApi.shared.js";
 
 import { roundMoney } from "./commission-money.js";
 import {
+  attributedReceivedAmountOf,
+  isSharedFinancialAnchorLine,
+} from "./commissionReceiptFinancialAnchor.shared.js";
+
+/** Recebido que a linha do ledger representa (parcela do pedido em título compartilhado). */
+function ledgerLineReceivedShare(line: {
+  receivedAmount: number;
+  financialAnchorShared?: boolean;
+  attributedReceivedAmount?: number;
+}): number {
+  return line.financialAnchorShared ? line.attributedReceivedAmount ?? 0 : line.receivedAmount;
+}
+import {
   mapReceiptClosingLineToExportSellerColumns,
   receiptClosingSellerGroupLabelFromLine,
 } from "./commissionReceiptSeller.js";
@@ -244,10 +257,23 @@ export function markReceivableReceivedAnchors(
   lines: ReceiptClosingApiLine[]
 ): ReceiptClosingApiLine[] {
   const seen = new Set<string>();
+  // Título de N pedidos com lastro: cada linha mostra a parcela do seu pedido
+  // (Σ das linhas = recebido do título). Sem lastro: a primeira linha leva o
+  // título inteiro, as demais zero (nunca replicado).
+  const attributedAnchors = new Set<string>();
+  for (const line of lines) {
+    const anchor = receiptClosingReceivedAnchorKey(line);
+    if (anchor != null && isSharedFinancialAnchorLine(line) && line.financialAnchorAttribution === "ATTRIBUTED") {
+      attributedAnchors.add(anchor);
+    }
+  }
   return lines.map((line) => {
     const anchor = receiptClosingReceivedAnchorKey(line);
     if (anchor == null) {
       return { ...line, uniqueReceivedAmount: line.receivedAmount };
+    }
+    if (attributedAnchors.has(anchor)) {
+      return { ...line, uniqueReceivedAmount: attributedReceivedAmountOf(line) };
     }
     if (seen.has(anchor)) {
       return { ...line, uniqueReceivedAmount: 0 };
@@ -713,10 +739,24 @@ export function mapPreviewLineToApiLine(line: CommissionReceiptPreviewLine): Rec
     sellerResolutionStatus: line.sellerResolutionStatus,
     receivedAmount: line.receivedAmount,
     uniqueReceivedAmount: line.receivedAmount,
+    ...(isSharedFinancialAnchorLine(line)
+      ? {
+          financialAnchorShared: true,
+          financialAnchorOrderCount: line.financialAnchorOrderCount ?? null,
+          financialAnchorAttribution: line.financialAnchorAttribution ?? "UNATTRIBUTED",
+          attributedReceivedAmount: attributedReceivedAmountOf(line),
+        }
+      : {}),
+    ...(line.nomusOrderId != null ? { nomusOrderId: line.nomusOrderId } : {}),
+    ...(line.rightResolution && line.rightResolution !== "SCHEDULED"
+      ? { rightResolution: line.rightResolution }
+      : {}),
     receivableOriginalAmount: line.receivableAmount,
     commissionPrincipalAmount:
       line.commissionPrincipalAmount ?? line.commissionableBaseAmount,
-    ignoredFinancialChargesAmount: line.ignoredFinancialChargesAmount ?? 0,
+    ignoredFinancialChargesAmount: isSharedFinancialAnchorLine(line)
+      ? roundMoney(Math.max(0, attributedReceivedAmountOf(line) - line.commissionableBaseAmount))
+      : line.ignoredFinancialChargesAmount ?? 0,
     auditFlags: line.auditFlags ?? [],
     commissionableBaseAmount: line.commissionableBaseAmount,
     ratePercent: line.ratePercent,
@@ -789,14 +829,22 @@ export function mapLedgerLineToApiLine(
     sellerResolutionStatus: null,
     receivedAmount: line.receivedAmount,
     uniqueReceivedAmount: line.receivedAmount,
+    ...(line.financialAnchorShared
+      ? {
+          financialAnchorShared: true,
+          financialAnchorAttribution: line.financialAnchorAttribution ?? "UNATTRIBUTED",
+          attributedReceivedAmount: line.attributedReceivedAmount ?? 0,
+        }
+      : {}),
     // Ledger snapshot: allocatedCommercialBase já é o principal (pós-correção).
     receivableOriginalAmount: undefined,
     commissionPrincipalAmount: line.allocatedCommercialBase,
+    // Título compartilhado: encargos comparam a parcela do pedido com a base do pedido.
     ignoredFinancialChargesAmount: roundMoney(
-      Math.max(0, line.receivedAmount - line.allocatedCommercialBase)
+      Math.max(0, ledgerLineReceivedShare(line) - line.allocatedCommercialBase)
     ),
     auditFlags:
-      line.receivedAmount > line.allocatedCommercialBase + 0.009
+      ledgerLineReceivedShare(line) > line.allocatedCommercialBase + 0.009
         ? ["RECEIPT_AMOUNT_GREATER_THAN_RECEIVABLE_ORIGINAL"]
         : [],
     commissionableBaseAmount: line.allocatedCommercialBase,
@@ -853,7 +901,15 @@ export function buildReceiptClosingBySeller(
     };
 
     const anchor = receiptClosingReceivedAnchorKey(line);
-    if (anchor != null) {
+    if (isSharedFinancialAnchorLine(line)) {
+      // Título de N pedidos: cada vendedor recebe só a parcela atribuível ao seu
+      // pedido — nunca o integral do título replicado por vendedor.
+      row.receivedAmount = round2(row.receivedAmount + attributedReceivedAmountOf(line));
+      if (anchor != null && !row.seenReceivables.has(anchor)) {
+        row.seenReceivables.add(anchor);
+        row.receivableCount += 1;
+      }
+    } else if (anchor != null) {
       if (!row.seenReceivables.has(anchor)) {
         row.seenReceivables.add(anchor);
         row.receivedAmount = round2(row.receivedAmount + line.receivedAmount);

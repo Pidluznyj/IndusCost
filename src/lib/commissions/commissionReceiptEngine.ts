@@ -67,6 +67,23 @@ import {
   isCommissionInternalGroupReceivable,
 } from "./commissionInternalGroupExclusion.js";
 import { COMMISSION_RECEIPT_AMBIGUOUS_SALES_LINK_REASON } from "./commissionSalesOrderNfeLinkResolution.js";
+import {
+  attributeFinancialAnchorAmount,
+  COMMISSION_RIGHT_MULTI_ORDER_WITHOUT_EVIDENCE_REASON,
+  COMMISSION_RIGHT_OVER_ALLOCATED_FLAG,
+  COMMISSION_RIGHT_SHARED_ANCHOR_UNATTRIBUTED_FLAG,
+  detectOrdersOverAllocatedAcrossNfes,
+  resolveOrderAttributionWeight,
+  resolveReceivableOrderRights,
+  type ReceivableOrderRight,
+  type ReceivableOrderRightResolution,
+  type VigentOrderSnapshotFact,
+} from "./commissionReceivableOrderRights.js";
+import {
+  attributedReceivedAmountOf,
+  isSharedFinancialAnchorLine,
+  type FinancialAnchorAttribution,
+} from "./commissionReceiptFinancialAnchor.shared.js";
 
 import type { VisualAuditRow } from "./commissionVisualAudit.js";
 
@@ -134,6 +151,14 @@ export type MaterializedReceivableScheduleInput = {
   /** Comissão final do CommissionOrderSnapshot ligado ao schedule (fonte oficial da Auditoria 360º). */
   orderSnapshotFinalCommissionAmount?: number;
   orderSnapshotStatus?: string | null;
+  /** Base vendida do snapshot pai (peso de atribuição do título entre pedidos). */
+  orderSnapshotSoldAmount?: number | null;
+  /** Id do pedido no Nomus (rastreabilidade no ledger). */
+  nomusOrderId?: number | null;
+  /** Base do snapshot pai (B5): pedido inteiro, faturado na NF-e ou alocação pendente. */
+  orderSnapshotAllocationBasis?: string | null;
+  /** Por que a alocação do snapshot ficou pendente (retenção justificada). */
+  orderSnapshotAllocationReason?: string | null;
 };
 
 export function resolveMaterializedItemExclusionMeta(
@@ -220,8 +245,30 @@ export type CommissionReceiptPreviewContext = {
   includeExceptions?: boolean;
   receivables: CommissionReceiptReceivableInput[];
   ordersByNfeId: Map<number, CommissionOrderSourceBundle>;
-  /** NFEs ligadas a 2+ pedidos — não resolver automaticamente. */
+  /**
+   * NF-e ligadas a 2+ pedidos. Com schedules materializados, N pedidos não é
+   * ambiguidade: cada pedido vinculado vira seu próprio direito (ver
+   * commissionReceivableOrderRights). Sem schedules (caminho legado), segue sem
+   * resolver automaticamente.
+   */
   ambiguousNfeIds?: Set<number>;
+  /**
+   * Todos os pedidos vinculados a cada NF-e do escopo (SalesOrderNfeLink),
+   * inclusive NF-e de vários pedidos. Entrada presente com lista vazia = NF-e sem
+   * vínculo (evidência negativa). Ausente = sem evidência carregada.
+   */
+  orderBundlesByNfeId?: Map<number, CommissionOrderSourceBundle[]>;
+  /** Snapshots ACTIVE por pedido (todas as NF-e) — lastro de atribuição e guarda R1. */
+  vigentOrderSnapshotsBySalesOrderId?: Map<string, VigentOrderSnapshotFact[]>;
+  /**
+   * Cobertura por DIREITO já gravada (B4): recebimento → pedidos cujo direito naquele
+   * evento já foi contemplado por outro fechamento. O pedido não volta a liberar esses
+   * eventos (contam como anteriores no cap); os demais pedidos do evento seguem.
+   * Cobertura do evento inteiro continua saindo antes, pelo recorte de eventos.
+   */
+  coveredRightsByReceiptId?: ReadonlyMap<number, ReadonlySet<string>>;
+  /** Valor de cada evento do período (necessário quando há cobertura por direito). */
+  receiptAmountsById?: ReadonlyMap<number, number>;
   persistedAuditRows?: VisualAuditRow[];
   /** Schedules materializados por receivableId — quando definido, fechamento usa schedule (não recalcula itens). */
   materializedSchedulesByReceivableId?: Map<number, MaterializedReceivableScheduleInput[]>;
@@ -329,6 +376,23 @@ export type CommissionReceiptPreviewLine = {
   naturalMonth?: number;
   /** Por que a linha entrou no fechamento (ausente = NORMAL). */
   inclusionType?: "NORMAL" | "LATE_CARRYOVER" | "LEGACY_CARRYOVER" | "MANUAL_ADJUSTMENT";
+  /** Id do pedido no Nomus (quando conhecido). */
+  nomusOrderId?: number | null;
+  /** Snapshot vigente que originou o schedule da linha. */
+  orderSnapshotId?: string | null;
+  /**
+   * Pedido da linha de exceção quando o título tem mais de um direito: entra na
+   * chave do ledger só nesse caso (títulos de um pedido mantêm a chave histórica).
+   */
+  rightKeyOrderId?: string | null;
+  /** Como o direito do pedido foi resolvido no título (N:N). */
+  rightResolution?: ReceivableOrderRightResolution | null;
+  /** Título compartilhado por mais de um pedido — recebido atribuído por pedido. */
+  financialAnchorShared?: boolean;
+  financialAnchorOrderCount?: number;
+  financialAnchorAttribution?: FinancialAnchorAttribution;
+  /** Parcela do recebido do título atribuível ao pedido da linha. */
+  attributedReceivedAmount?: number;
 };
 
 export type CommissionReceiptPreviewBucket = {
@@ -352,6 +416,13 @@ export type CommissionReceiptPreviewResult = {
   totalExcludedAmount: number;
   totalExceptionAmount: number;
   countByStatus: Record<CommissionReceiptLedgerLineStatus, number>;
+  /**
+   * Recebido de títulos compartilhados sem lastro para repartir entre pedidos:
+   * está em totalReceivedAmount, mas em nenhum vendedor (Σ vendedores + este = total).
+   */
+  totalUnattributedSharedReceivedAmount?: number;
+  /** Títulos com mais de um pedido na competência. */
+  sharedFinancialAnchorCount?: number;
   bySeller: CommissionReceiptPreviewBucket[];
   byCustomer: Array<{
     customerExternalId: number | null;
@@ -821,7 +892,12 @@ export function mapMaterializedScheduleToLedgerStatus(
   if (schedule.scheduleStatus === "ERROR") {
     return {
       status: "ERROR",
-      reason: "Erro na materialização do schedule",
+      reason:
+        schedule.orderSnapshotAllocationBasis === "ALLOCATION_PENDING"
+          ? schedule.orderSnapshotAllocationReason
+            ? `Comissão retida até a alocação por NF-e — ${schedule.orderSnapshotAllocationReason}`
+            : "Faturamento do pedido nesta NF-e sem evidência por item (documento de saída): comissão retida até a alocação."
+          : "Erro na materialização do schedule",
     };
   }
   if (schedule.scheduleStatus !== "ACTIVE") {
@@ -1289,6 +1365,8 @@ function previewLineFromMaterializedSchedule(
     orderSnapshotCommissionAmount: normalizeCommissionLedgerMoney(
       schedule.orderSnapshotFinalCommissionAmount ?? 0
     ),
+    orderSnapshotId: schedule.orderSnapshotId,
+    nomusOrderId: schedule.nomusOrderId ?? order?.nomusOrderId ?? null,
   };
 }
 
@@ -1633,6 +1711,427 @@ function buildLinesForReceivableWithMaterializedSchedule(input: {
   ];
 }
 
+/* ------------------------------------------------------------------ */
+/*  N:N — um direito por pedido no título                              */
+/* ------------------------------------------------------------------ */
+
+/** Status de linha para direito retido sem lastro (R1): exceção não final, não bloqueia o resto do mês. */
+const COMMISSION_RIGHT_HELD_STATUS: CommissionReceiptLedgerLineStatus = "ERROR";
+/** Status de linha para vínculo contraditório/duplicado: exige rematerializar antes de fechar. */
+const COMMISSION_RIGHT_CONTRADICTION_STATUS: CommissionReceiptLedgerLineStatus = "STALE_SCHEDULE";
+
+function withOrderScopedLedgerKey(
+  line: CommissionReceiptPreviewLine,
+  salesOrderId: string
+): CommissionReceiptPreviewLine {
+  return {
+    ...line,
+    rightKeyOrderId: salesOrderId,
+    ledgerLineKey: buildCommissionReceiptLedgerLineKey({
+      year: line.year,
+      month: line.month,
+      nomusReceivableId: line.nomusReceivableId,
+      commissionRecordId: line.commissionRecordId,
+      commissionPaymentScheduleId: line.commissionPaymentScheduleId,
+      commissionReceivableScheduleId: line.commissionReceivableScheduleId,
+      installmentNumber: line.installmentNumber,
+      nomusOrderItemId: line.nomusOrderItemId,
+      ruleId: line.ruleId,
+      rightOrderId: salesOrderId,
+    }),
+  };
+}
+
+function withHeldRight(
+  line: CommissionReceiptPreviewLine,
+  status: CommissionReceiptLedgerLineStatus,
+  reason: string,
+  flag?: string
+): CommissionReceiptPreviewLine {
+  return {
+    ...line,
+    status,
+    statusReason: reason,
+    // Valor que o schedule daria fica só para auditoria; nada é previsto nem liberado.
+    grossCommissionAmount:
+      status === COMMISSION_RIGHT_HELD_STATUS ? line.expectedCommissionAmount : 0,
+    expectedCommissionAmount: 0,
+    releasedCommissionAmount: 0,
+    auditFlags: flag ? [...(line.auditFlags ?? []), flag] : line.auditFlags,
+  };
+}
+
+function snapshotDiagnosisForOrder(input: {
+  salesOrderId: string;
+  nfeId: number | null;
+  snapshotsByOrderId?: Map<string, VigentOrderSnapshotFact[]>;
+}): CommissionOrderSnapshotDiagnosis | undefined {
+  const fact = (input.snapshotsByOrderId?.get(input.salesOrderId) ?? []).find(
+    (row) => input.nfeId != null && row.nfeId === input.nfeId
+  );
+  if (!fact) return undefined;
+  return {
+    exists: true,
+    itemStatuses: fact.itemStatuses,
+    totalFinalCommissionAmount: fact.totalFinalCommissionAmount,
+  };
+}
+
+function previewLineForOrderRight(input: {
+  right: ReceivableOrderRight<MaterializedReceivableScheduleInput>;
+  receivable: CommissionReceiptReceivableInput;
+  year: number;
+  month: number;
+  exclusionRules: CustomerExclusionRuleSnapshot[];
+  identityCtx: CommissionSellerIdentityContext;
+  commissionMode: "released" | "forecast";
+  snapshotsByOrderId?: Map<string, VigentOrderSnapshotFact[]>;
+}): CommissionReceiptPreviewLine {
+  const { right, receivable } = input;
+  const order = right.order ?? undefined;
+  let line: CommissionReceiptPreviewLine;
+
+  if (right.resolution === "MISSING_SCHEDULE" || !right.schedule) {
+    const [exceptionLine] = buildLinesForReceivableWithMaterializedSchedule({
+      receivable,
+      schedules: [],
+      year: input.year,
+      month: input.month,
+      exclusionRules: input.exclusionRules,
+      order,
+      orderSnapshotDiagnosis: snapshotDiagnosisForOrder({
+        salesOrderId: right.salesOrderId,
+        nfeId: receivable.nomusNfeId ?? null,
+        snapshotsByOrderId: input.snapshotsByOrderId,
+      }),
+      identityCtx: input.identityCtx,
+      // CommissionRecord por NF-e não identifica o pedido numa NF-e de vários:
+      // o vendedor vem do pedido oficial (bundle).
+      commissionRecord: null,
+      commissionMode: input.commissionMode,
+    });
+    line = {
+      ...exceptionLine!,
+      orderCode: order?.orderCode ?? right.orderCode ?? exceptionLine!.orderCode,
+      localOrderId: right.salesOrderId,
+      nomusOrderId: order?.nomusOrderId ?? null,
+    };
+  } else {
+    line = previewLineFromMaterializedSchedule(
+      right.schedule,
+      receivable,
+      input.year,
+      input.month,
+      input.exclusionRules,
+      order,
+      input.identityCtx,
+      input.commissionMode
+    );
+    const excludedByRule = line.status === "CUSTOMER_EXCLUDED" || line.status === "GROUP_COMPANY_EXCLUDED";
+    if (
+      (right.resolution === "CONTRADICTORY_LINK" || right.resolution === "DUPLICATE_SCHEDULE") &&
+      !excludedByRule
+    ) {
+      line = withHeldRight(line, COMMISSION_RIGHT_CONTRADICTION_STATUS, right.reason ?? "Vínculo contraditório");
+    } else if (
+      right.resolution === "OVER_ALLOCATED_ACROSS_NFE" &&
+      (line.status === "COMMISSIONABLE" || line.status === "COMMISSION_SOURCE_MISMATCH")
+    ) {
+      line = withHeldRight(
+        line,
+        COMMISSION_RIGHT_HELD_STATUS,
+        right.reason ?? "Comissão do pedido sobrealocada entre NF-e",
+        COMMISSION_RIGHT_OVER_ALLOCATED_FLAG
+      );
+    }
+  }
+  return { ...line, rightResolution: right.resolution };
+}
+
+/**
+ * Título compartilhado por mais de um pedido: o recebido e a base do título são
+ * repartidos pelo valor vendido oficial de cada pedido (resto exato). Sem lastro
+ * (R1, peso ausente) nada é repartido — fica "não atribuído", nunca replicado.
+ */
+function attributeSharedFinancialAnchor(input: {
+  lines: CommissionReceiptPreviewLine[];
+  rights: ReceivableOrderRight<MaterializedReceivableScheduleInput>[];
+  receivableNfeId: number | null;
+  snapshotsByOrderId?: Map<string, VigentOrderSnapshotFact[]>;
+}): CommissionReceiptPreviewLine[] {
+  const linkedIndexes = input.rights
+    .map((right, index) => ({ right, index }))
+    .filter(({ right }) => right.resolution !== "CONTRADICTORY_LINK");
+  const orderCount = linkedIndexes.length;
+  const reference = input.lines[linkedIndexes[0]?.index ?? 0] ?? input.lines[0]!;
+  const anchorReceived = normalizeCommissionLedgerMoney(reference.receivedAmount);
+  const anchorBase = normalizeCommissionLedgerMoney(
+    Math.max(...linkedIndexes.map(({ index }) => input.lines[index]!.commissionableBaseAmount), 0)
+  );
+
+  const weights = linkedIndexes.map(({ right }) => ({
+    key: right.salesOrderId,
+    weight:
+      orderCount === 1
+        ? 1
+        : resolveOrderAttributionWeight({
+            right,
+            receivableNfeId: input.receivableNfeId,
+            snapshotsByOrderId: input.snapshotsByOrderId,
+          }),
+  }));
+  const received = attributeFinancialAnchorAmount({ amount: anchorReceived, weights });
+  const base = attributeFinancialAnchorAmount({ amount: anchorBase, weights });
+  const attribution: FinancialAnchorAttribution = received.attribution;
+
+  return input.lines.map((line, index) => {
+    const right = input.rights[index]!;
+    const linked = right.resolution !== "CONTRADICTORY_LINK";
+    const lineAttribution: FinancialAnchorAttribution = linked ? attribution : "UNATTRIBUTED";
+    const attributedReceived = linked ? received.amounts.get(right.salesOrderId) ?? 0 : 0;
+    const attributedBase = linked ? base.amounts.get(right.salesOrderId) ?? 0 : 0;
+    const keepsBase = line.commissionableBaseAmount > 0;
+    const commissionableBaseAmount = keepsBase ? attributedBase : line.commissionableBaseAmount;
+    const ratePercent =
+      line.status === "COMMISSIONABLE" && commissionableBaseAmount > 0
+        ? roundMoney((line.expectedCommissionAmount / commissionableBaseAmount) * 100)
+        : line.ratePercent;
+    return {
+      ...line,
+      financialAnchorShared: true,
+      financialAnchorOrderCount: orderCount,
+      financialAnchorAttribution: lineAttribution,
+      attributedReceivedAmount: attributedReceived,
+      commissionableBaseAmount,
+      commissionPrincipalAmount: keepsBase ? attributedBase : line.commissionPrincipalAmount,
+      ratePercent,
+      auditFlags:
+        lineAttribution === "UNATTRIBUTED" && linked
+          ? [...(line.auditFlags ?? []), COMMISSION_RIGHT_SHARED_ANCHOR_UNATTRIBUTED_FLAG]
+          : line.auditFlags,
+    };
+  });
+}
+
+/**
+ * Recorte da competência do título para UM pedido: eventos já cobertos para esse
+ * direito saem do período e passam a contar como anteriores (cap incremental),
+ * exatamente como o recorte de eventos faz para cobertura do evento inteiro.
+ * `null` = nada coberto para o pedido; `"FULLY_COVERED"` = nada a liberar.
+ */
+function restrictReceivableToUncoveredRight(input: {
+  receivable: CommissionReceiptReceivableInput;
+  salesOrderId: string;
+  coveredRightsByReceiptId?: ReadonlyMap<number, ReadonlySet<string>>;
+  receiptAmountsById?: ReadonlyMap<number, number>;
+}): CommissionReceiptReceivableInput | "FULLY_COVERED" | null {
+  const competence = input.receivable.receiptCompetence;
+  if (!competence || !input.coveredRightsByReceiptId || input.coveredRightsByReceiptId.size === 0) return null;
+  const covered = competence.receiptIds.filter((id) =>
+    input.coveredRightsByReceiptId!.get(id)?.has(input.salesOrderId)
+  );
+  if (covered.length === 0) return null;
+  const remaining = competence.receiptIds.filter((id) => !covered.includes(id));
+  if (remaining.length === 0) return "FULLY_COVERED";
+  const amountOf = (id: number) => {
+    const amount = input.receiptAmountsById?.get(id);
+    if (amount == null) {
+      throw new Error(
+        `Recebimento ${id} com cobertura parcial por direito sem valor carregado — gere a prévia novamente.`
+      );
+    }
+    return amount;
+  };
+  const coveredAmount = roundMoney(covered.reduce((sum, id) => sum + amountOf(id), 0));
+  const periodReceivedAmount = roundMoney(remaining.reduce((sum, id) => sum + amountOf(id), 0));
+  return {
+    ...input.receivable,
+    receiptCompetence: {
+      ...competence,
+      receiptIds: remaining,
+      periodReceivedAmount,
+      priorReceivedAmount: roundMoney(competence.priorReceivedAmount + coveredAmount),
+      cumulativeReceivedAmount: competence.cumulativeReceivedAmount,
+    },
+  };
+}
+
+/**
+ * Linhas de um título com schedules materializados — um direito por pedido.
+ *
+ * Título de um pedido só: exatamente o caminho histórico (mesmas linhas, mesmas
+ * chaves). Vários pedidos: uma linha por pedido vinculado (vendedor e exclusões
+ * do próprio pedido), vínculo contraditório ou duplicado vira exceção que exige
+ * rematerializar, pedido sobrealocado entre NF-e (R1) fica retido, e o recebido
+ * do título é atribuído por pedido sem nunca ser multiplicado.
+ */
+function buildLinesForReceivableOrderRights(input: {
+  receivable: CommissionReceiptReceivableInput;
+  schedules: MaterializedReceivableScheduleInput[];
+  year: number;
+  month: number;
+  exclusionRules: CustomerExclusionRuleSnapshot[];
+  identityCtx: CommissionSellerIdentityContext;
+  commissionMode: "released" | "forecast";
+  linkedOrders: CommissionOrderSourceBundle[] | null;
+  multiOrderNfe: boolean;
+  overAllocatedOrderIds: ReadonlySet<string>;
+  snapshotsByOrderId?: Map<string, VigentOrderSnapshotFact[]>;
+  /** Contexto do caminho histórico (título de um pedido). */
+  singleOrder?: CommissionOrderSourceBundle;
+  singleOrderSnapshotDiagnosis?: CommissionOrderSnapshotDiagnosis;
+  commissionRecord?: CommissionReceiptSellerRecordInput | null;
+  coveredRightsByReceiptId?: ReadonlyMap<number, ReadonlySet<string>>;
+  receiptAmountsById?: ReadonlyMap<number, number>;
+}): CommissionReceiptPreviewLine[] {
+  const nfeId = input.receivable.nomusNfeId ?? null;
+  const restrictFor = (salesOrderId: string) =>
+    restrictReceivableToUncoveredRight({
+      receivable: input.receivable,
+      salesOrderId,
+      coveredRightsByReceiptId: input.coveredRightsByReceiptId,
+      receiptAmountsById: input.receiptAmountsById,
+    });
+  const rights = resolveReceivableOrderRights({
+    receivableNfeId: nfeId,
+    schedules: input.schedules,
+    linkedOrders: input.linkedOrders,
+    multiOrderNfe: input.multiOrderNfe,
+    overAllocatedOrderIds: input.overAllocatedOrderIds,
+  });
+
+  const legacy = (order?: CommissionOrderSourceBundle, receivable = input.receivable) =>
+    buildLinesForReceivableWithMaterializedSchedule({
+      receivable,
+      schedules: input.schedules,
+      year: input.year,
+      month: input.month,
+      exclusionRules: input.exclusionRules,
+      order,
+      orderSnapshotDiagnosis: input.singleOrderSnapshotDiagnosis,
+      identityCtx: input.identityCtx,
+      commissionRecord: input.commissionRecord,
+      commissionMode: input.commissionMode,
+    });
+
+  if (rights.length === 0) {
+    if (input.multiOrderNfe) {
+      // NF-e de vários pedidos sem vínculos carregados nem schedule: há direitos
+      // não reconhecidos — nunca "sem vínculo de venda" (que cobriria o evento).
+      return [
+        {
+          ...buildExceptionLine({
+            receivable: input.receivable,
+            year: input.year,
+            month: input.month,
+            status: "NO_SCHEDULE",
+            statusReason: COMMISSION_RIGHT_MULTI_ORDER_WITHOUT_EVIDENCE_REASON,
+          }),
+          orderCode: null,
+          localOrderId: null,
+          linkResolutionSource: "AMBIGUOUS",
+          linkResolutionStatus: "AMBIGUOUS",
+        },
+      ];
+    }
+    return legacy(input.singleOrder);
+  }
+
+  if (rights.length === 1) {
+    const [right] = rights;
+    // Direito já contemplado em todos os eventos do período: nada a liberar de novo.
+    const restricted = restrictFor(right!.salesOrderId);
+    if (restricted === "FULLY_COVERED") return [];
+    const receivable = restricted ?? input.receivable;
+    if (right!.resolution === "SCHEDULED" || right!.resolution === "MISSING_SCHEDULE") {
+      const lines = legacy(right!.order ?? input.singleOrder, receivable);
+      return lines.map((line) => ({
+        ...line,
+        rightResolution: right!.resolution,
+        nomusOrderId: line.nomusOrderId ?? right!.order?.nomusOrderId ?? input.singleOrder?.nomusOrderId ?? null,
+      }));
+    }
+    return [
+      previewLineForOrderRight({
+        right: right!,
+        receivable,
+        year: input.year,
+        month: input.month,
+        exclusionRules: input.exclusionRules,
+        identityCtx: input.identityCtx,
+        commissionMode: input.commissionMode,
+        snapshotsByOrderId: input.snapshotsByOrderId,
+      }),
+    ];
+  }
+
+  const lines = rights.map((right) => {
+    const line = previewLineForOrderRight({
+      right,
+      receivable: input.receivable,
+      year: input.year,
+      month: input.month,
+      exclusionRules: input.exclusionRules,
+      identityCtx: input.identityCtx,
+      commissionMode: input.commissionMode,
+      snapshotsByOrderId: input.snapshotsByOrderId,
+    });
+    // Exceção sem schedule: a chave precisa do pedido para não colidir com a do
+    // outro pedido do mesmo título. Linhas de schedule já são únicas pelo schedule.
+    return line.commissionReceivableScheduleId ? line : withOrderScopedLedgerKey(line, right.salesOrderId);
+  });
+  // Atribuição do título sobre TODOS os direitos (inclusive os já contemplados em
+  // outro fechamento): a parcela de cada pedido não muda porque outro pedido já foi
+  // coberto. Só depois saem os direitos já contemplados.
+  const attributed = attributeSharedFinancialAnchor({
+    lines,
+    rights,
+    receivableNfeId: nfeId,
+    snapshotsByOrderId: input.snapshotsByOrderId,
+  });
+  const out: CommissionReceiptPreviewLine[] = [];
+  attributed.forEach((line, index) => {
+    const right = rights[index]!;
+    const restricted = restrictFor(right.salesOrderId);
+    if (restricted === "FULLY_COVERED") return;
+    if (!restricted) {
+      out.push(line);
+      return;
+    }
+    // Parte dos eventos do período já contemplada para este pedido: recalcula com o
+    // recorte e mantém a mesma fração do título atribuída ao pedido.
+    const rebuilt = previewLineForOrderRight({
+      right,
+      receivable: restricted,
+      year: input.year,
+      month: input.month,
+      exclusionRules: input.exclusionRules,
+      identityCtx: input.identityCtx,
+      commissionMode: input.commissionMode,
+      snapshotsByOrderId: input.snapshotsByOrderId,
+    });
+    const keyed = rebuilt.commissionReceivableScheduleId ? rebuilt : withOrderScopedLedgerKey(rebuilt, right.salesOrderId);
+    const receivedShare = line.receivedAmount > 0 ? (line.attributedReceivedAmount ?? 0) / line.receivedAmount : 0;
+    const fullBase = lines[index]!.commissionableBaseAmount;
+    const baseShare = fullBase > 0 ? line.commissionableBaseAmount / fullBase : 0;
+    const commissionableBaseAmount = roundMoney(keyed.commissionableBaseAmount * baseShare);
+    out.push({
+      ...keyed,
+      financialAnchorShared: line.financialAnchorShared,
+      financialAnchorOrderCount: line.financialAnchorOrderCount,
+      financialAnchorAttribution: line.financialAnchorAttribution,
+      attributedReceivedAmount: roundMoney(keyed.receivedAmount * receivedShare),
+      commissionableBaseAmount,
+      commissionPrincipalAmount: commissionableBaseAmount,
+      ratePercent:
+        keyed.status === "COMMISSIONABLE" && commissionableBaseAmount > 0
+          ? roundMoney((keyed.expectedCommissionAmount / commissionableBaseAmount) * 100)
+          : keyed.ratePercent,
+    });
+  });
+  return out;
+}
+
 function calculatePreviewLinesForReceivable(input: {
   receivable: CommissionReceiptReceivableInput;
   order: CommissionOrderSourceBundle;
@@ -1867,6 +2366,11 @@ export function aggregateCommissionReceiptPreview(
   const seenReceivableForReceived = new Set<number>();
   const seenSellerReceivableReceived = new Set<string>();
   const seenCustomerReceivableReceived = new Set<string>();
+  /** Títulos compartilhados por N pedidos: recebido do título e Σ atribuído por pedido. */
+  const sharedAnchors = new Map<
+    number,
+    { received: number; attributed: number; hasCountedException: boolean; attributedAnchor: boolean }
+  >();
 
   for (const line of lines) {
     countByStatus[line.status] = (countByStatus[line.status] ?? 0) + 1;
@@ -1876,22 +2380,38 @@ export function aggregateCommissionReceiptPreview(
     const isException = isExceptionStatus(line.status);
     const countsForTotals =
       (includeExcluded || !isExcluded) && (includeExceptions || !isException);
+    const shared = isSharedFinancialAnchorLine(line);
+    // Recebido que a linha representa fora do total do título: parcela atribuída
+    // ao pedido (título compartilhado) ou o próprio recebido (título de um pedido).
+    const lineReceivedShare = shared ? attributedReceivedAmountOf(line) : line.receivedAmount;
 
-    if (!seenReceivableForReceived.has(line.nomusReceivableId)) {
+    if (!shared && !seenReceivableForReceived.has(line.nomusReceivableId)) {
       seenReceivableForReceived.add(line.nomusReceivableId);
       totalReceivedAmount = roundMoney(totalReceivedAmount + line.receivedAmount);
+    }
+    if (shared) {
+      const anchor = sharedAnchors.get(line.nomusReceivableId) ?? {
+        received: normalizeCommissionLedgerMoney(line.receivedAmount),
+        attributed: 0,
+        hasCountedException: false,
+        attributedAnchor: false,
+      };
+      anchor.attributed = roundMoney(anchor.attributed + attributedReceivedAmountOf(line));
+      if (line.financialAnchorAttribution === "ATTRIBUTED") anchor.attributedAnchor = true;
+      if (isException && countsForTotals) anchor.hasCountedException = true;
+      sharedAnchors.set(line.nomusReceivableId, anchor);
     }
 
     if (countsForTotals) {
       if (isExcluded) {
         totalExcludedAmount = roundMoney(
           totalExcludedAmount +
-            (isGroupExcluded ? line.receivedAmount : line.commissionableBaseAmount)
+            (isGroupExcluded ? lineReceivedShare : line.commissionableBaseAmount)
         );
       }
       if (isException) {
         totalExceptionAmount = roundMoney(
-          totalExceptionAmount + line.receivedAmount
+          totalExceptionAmount + lineReceivedShare
         );
       }
       if (line.status === "COMMISSIONABLE") {
@@ -1918,7 +2438,10 @@ export function aggregateCommissionReceiptPreview(
       expectedCommission: 0,
       releasedCommission: 0,
     };
-    if (!seenSellerReceivableReceived.has(sellerReceivableKey)) {
+    if (shared) {
+      // Nunca o integral do título para cada vendedor: só a parcela do pedido.
+      sellerBucket.receivedAmount = roundMoney(sellerBucket.receivedAmount + lineReceivedShare);
+    } else if (!seenSellerReceivableReceived.has(sellerReceivableKey)) {
       seenSellerReceivableReceived.add(sellerReceivableKey);
       sellerBucket.receivedAmount = roundMoney(
         sellerBucket.receivedAmount + line.receivedAmount
@@ -1968,6 +2491,23 @@ export function aggregateCommissionReceiptPreview(
     customerMap.set(customerKey, customerBucket);
   }
 
+  let totalUnattributedSharedReceivedAmount = 0;
+  for (const anchor of sharedAnchors.values()) {
+    // Com lastro: soma das parcelas presentes (direitos já contemplados em outro
+    // fechamento não voltam ao total). Sem lastro: o título inteiro, uma vez.
+    totalReceivedAmount = roundMoney(
+      totalReceivedAmount + (anchor.attributedAnchor ? anchor.attributed : anchor.received)
+    );
+    if (anchor.attributedAnchor) continue;
+    const unattributed = roundMoney(Math.max(0, anchor.received - anchor.attributed));
+    if (unattributed <= 0) continue;
+    totalUnattributedSharedReceivedAmount = roundMoney(totalUnattributedSharedReceivedAmount + unattributed);
+    // Título sem lastro com exceção: o recebido não atribuído também é exceção.
+    if (anchor.hasCountedException) {
+      totalExceptionAmount = roundMoney(totalExceptionAmount + unattributed);
+    }
+  }
+
   const bySeller = [...sellerMap.values()].sort((a, b) =>
     (a.sellerName ?? "").localeCompare(b.sellerName ?? "", "pt-BR")
   );
@@ -1985,6 +2525,12 @@ export function aggregateCommissionReceiptPreview(
     totalReleasedCommission: roundMoney(totalReleasedCommission),
     totalExcludedAmount: roundMoney(totalExcludedAmount),
     totalExceptionAmount: roundMoney(totalExceptionAmount),
+    ...(sharedAnchors.size > 0
+      ? {
+          totalUnattributedSharedReceivedAmount,
+          sharedFinancialAnchorCount: sharedAnchors.size,
+        }
+      : {}),
     countByStatus,
     bySeller: bySeller.map((row) => ({
       ...row,
@@ -2010,6 +2556,24 @@ function applyOpenForecastAmountsToLine(
   };
 }
 
+/** Pedidos cuja comissão está sobrealocada entre NF-e (R1) — retidos até haver alocação por NF-e. */
+function resolveOverAllocatedOrderIds(input: CommissionReceiptPreviewContext): Set<string> {
+  const snapshots = input.vigentOrderSnapshotsBySalesOrderId;
+  if (!snapshots || snapshots.size === 0) return new Set();
+  const bundlesByOrderId = new Map<string, CommissionOrderSourceBundle>();
+  for (const list of input.orderBundlesByNfeId?.values() ?? []) {
+    for (const bundle of list) bundlesByOrderId.set(bundle.localOrderId, bundle);
+  }
+  for (const bundle of input.ordersByNfeId.values()) bundlesByOrderId.set(bundle.localOrderId, bundle);
+  return new Set(
+    detectOrdersOverAllocatedAcrossNfes({
+      orderIds: snapshots.keys(),
+      snapshotsByOrderId: snapshots,
+      bundlesByOrderId,
+    }).keys()
+  );
+}
+
 export function buildCommissionReceiptPreview(
   input: CommissionReceiptPreviewContext
 ): CommissionReceiptPreviewResult {
@@ -2022,6 +2586,7 @@ export function buildCommissionReceiptPreview(
   const useMaterializedSchedules = input.materializedSchedulesByReceivableId !== undefined;
   const auditByReceivable = groupAuditRowsByReceivable(input.persistedAuditRows ?? []);
   const lines: CommissionReceiptPreviewLine[] = [];
+  const overAllocatedOrderIds = resolveOverAllocatedOrderIds(input);
 
   for (const receivable of scoped) {
     if (
@@ -2045,7 +2610,9 @@ export function buildCommissionReceiptPreview(
     }
 
     const nfeIdForLink = receivable.nomusNfeId ?? null;
-    if (nfeIdForLink != null && ambiguousNfeIds.has(nfeIdForLink)) {
+    // Caminho legado (sem schedules): NF-e de vários pedidos não é resolvida.
+    // Com schedules, N pedidos é cardinalidade legítima (um direito por pedido).
+    if (!useMaterializedSchedules && nfeIdForLink != null && ambiguousNfeIds.has(nfeIdForLink)) {
       const line: CommissionReceiptPreviewLine = {
         ...buildExceptionLine({
           receivable,
@@ -2070,24 +2637,36 @@ export function buildCommissionReceiptPreview(
       const order = nfeId != null ? ordersByNfeId.get(nfeId) : undefined;
       const commissionRecord =
         nfeId != null ? input.commissionRecordsByNfeId?.get(nfeId) : undefined;
-      const scheduleLines = buildLinesForReceivableWithMaterializedSchedule({
+      const linkedOrders =
+        nfeId != null && input.orderBundlesByNfeId ? input.orderBundlesByNfeId.get(nfeId) ?? [] : null;
+      const scheduleLines = buildLinesForReceivableOrderRights({
         receivable,
         schedules,
         year: input.year,
         month: input.month,
         exclusionRules: input.exclusionRules,
-        order,
-        orderSnapshotDiagnosis:
-          nfeId != null ? input.orderSnapshotDiagnosisByNfeId?.get(nfeId) : undefined,
         identityCtx: input.identityCtx,
-        commissionRecord,
         commissionMode,
+        linkedOrders,
+        multiOrderNfe:
+          nfeId != null && (ambiguousNfeIds.has(nfeId) || (linkedOrders?.length ?? 0) > 1),
+        overAllocatedOrderIds,
+        snapshotsByOrderId: input.vigentOrderSnapshotsBySalesOrderId,
+        singleOrder: order,
+        singleOrderSnapshotDiagnosis:
+          nfeId != null ? input.orderSnapshotDiagnosisByNfeId?.get(nfeId) : undefined,
+        commissionRecord,
+        coveredRightsByReceiptId: input.coveredRightsByReceiptId,
+        receiptAmountsById: input.receiptAmountsById,
       }).map((line) =>
-        line.commissionReceivableScheduleId
+        line.linkResolutionStatus === "AMBIGUOUS"
+          ? line
+          : line.commissionReceivableScheduleId
           ? {
               ...line,
               linkResolutionSource: "SCHEDULE" as const,
-              linkResolutionStatus: "OK" as const,
+              linkResolutionStatus:
+                line.rightResolution === "CONTRADICTORY_LINK" ? ("UNRESOLVED" as const) : ("OK" as const),
             }
           : {
               ...line,

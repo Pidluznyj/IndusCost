@@ -9,6 +9,10 @@ import {
   type NomusReceiptReconciliationReport,
 } from "./commissionNomusReceiptReconciliation.js";
 import { roundMoney } from "./commission-money.js";
+import {
+  attributedReceivedAmountOf,
+  isSharedFinancialAnchorLine,
+} from "./commissionReceiptFinancialAnchor.shared.js";
 
 export type PayableSummarySnapshot = {
   reportSource: string;
@@ -340,6 +344,7 @@ export function buildBreakdownBySeller(
   }
 
   const map = new Map<string, SellerBreakdownRow>();
+  const seenSellerReceivable = new Set<string>();
   for (const line of lines) {
     const sellerKey = line.canonicalSellerId ?? line.canonicalSellerName ?? line.rawSellerName ?? "—";
     const sellerName = line.canonicalSellerName ?? line.rawSellerName ?? "—";
@@ -354,7 +359,13 @@ export function buildBreakdownBySeller(
       differenceAmount: null,
     };
     row.lineCount += 1;
-    row.receivedAmount = roundMoney(row.receivedAmount + line.receivedAmount);
+    // Recebido do título uma vez por vendedor; título de N pedidos: parcela do pedido.
+    if (isSharedFinancialAnchorLine(line)) {
+      row.receivedAmount = roundMoney(row.receivedAmount + attributedReceivedAmountOf(line));
+    } else if (!seenSellerReceivable.has(`${sellerKey}|${line.nomusReceivableId}`)) {
+      seenSellerReceivable.add(`${sellerKey}|${line.nomusReceivableId}`);
+      row.receivedAmount = roundMoney(row.receivedAmount + line.receivedAmount);
+    }
     if (line.status === "COMMISSIONABLE") {
       row.allocatedBase = roundMoney(row.allocatedBase + line.commissionableBaseAmount);
       row.newCommissionAmount = roundMoney(row.newCommissionAmount + line.releasedCommissionAmount);
@@ -395,6 +406,7 @@ export function buildBreakdownByCustomer(
   }
 
   const map = new Map<string, CustomerBreakdownRow>();
+  const seenCustomerReceivable = new Set<string>();
   for (const line of lines) {
     const customerKey = (line.customerName ?? "—").toLowerCase();
     const customerName = line.customerName ?? "—";
@@ -409,7 +421,11 @@ export function buildBreakdownByCustomer(
       differenceAmount: null,
     };
     row.lineCount += 1;
-    row.receivedAmount = roundMoney(row.receivedAmount + line.receivedAmount);
+    // O cliente pagou o título uma vez, quantos pedidos/linhas ele tenha.
+    if (!seenCustomerReceivable.has(`${customerKey}|${line.nomusReceivableId}`)) {
+      seenCustomerReceivable.add(`${customerKey}|${line.nomusReceivableId}`);
+      row.receivedAmount = roundMoney(row.receivedAmount + line.receivedAmount);
+    }
     if (line.status === "COMMISSIONABLE") {
       row.allocatedBase = roundMoney(row.allocatedBase + line.commissionableBaseAmount);
       row.newCommissionAmount = roundMoney(row.newCommissionAmount + line.releasedCommissionAmount);

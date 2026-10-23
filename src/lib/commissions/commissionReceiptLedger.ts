@@ -87,13 +87,20 @@ export type CommissionReceiptLedgerLineKeyInput = {
     naturalMonth: number;
     inclusionType: string;
   } | null;
+  /**
+   * Pedido do direito em linha de exceção (sem schedule) de título com mais de um
+   * pedido. Entra na chave SÓ nesse caso — títulos de um pedido mantêm a chave.
+   */
+  rightOrderId?: string | null;
 };
 
 /** Sufixo da chave só para pendências (linhas normais mantêm a chave histórica). */
 function carryoverKeyParts(input: CommissionReceiptLedgerLineKeyInput): string[] {
   const carryover = input.carryover;
-  if (!carryover || carryover.inclusionType === "NORMAL") return [];
+  const orderParts = input.rightOrderId ? ["order", input.rightOrderId] : [];
+  if (!carryover || carryover.inclusionType === "NORMAL") return orderParts;
   return [
+    ...orderParts,
     "carryover",
     carryover.inclusionType,
     String(carryover.naturalYear),

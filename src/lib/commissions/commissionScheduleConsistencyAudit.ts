@@ -124,17 +124,22 @@ export function auditCommissionScheduleConsistency(input: {
     });
   }
 
-  // 2. Mesmo título com conjunto efetivo em mais de um snapshot ACTIVE.
-  const effectiveByReceivable = new Map<number, ScheduleAuditScheduleRow[]>();
+  // 2. Mesmo PEDIDO com conjunto efetivo em mais de um snapshot ACTIVE no título.
+  // NF-e com N pedidos tem N schedules vigentes no mesmo título por construção
+  // (um direito por pedido) — isso não é ambiguidade. Ambiguidade é o mesmo
+  // pedido com duas versões vigentes no título.
+  const effectiveByReceivable = new Map<string, ScheduleAuditScheduleRow[]>();
   for (const sch of input.schedules) {
     if (sch.status !== "ACTIVE") continue;
     const snap = snapshotById.get(sch.orderSnapshotId);
     if (!snap || snap.status !== "ACTIVE") continue;
-    const list = effectiveByReceivable.get(sch.receivableId) ?? [];
+    const key = `${sch.receivableId}|${sch.salesOrderId}`;
+    const list = effectiveByReceivable.get(key) ?? [];
     list.push(sch);
-    effectiveByReceivable.set(sch.receivableId, list);
+    effectiveByReceivable.set(key, list);
   }
-  for (const [receivableId, list] of effectiveByReceivable) {
+  for (const list of effectiveByReceivable.values()) {
+    const receivableId = list[0]!.receivableId;
     const distinctSnapshots = new Set(list.map((s) => s.orderSnapshotId));
     if (distinctSnapshots.size <= 1) continue;
     findings.push({
@@ -145,7 +150,7 @@ export function auditCommissionScheduleConsistency(input: {
       snapshotId: null,
       scheduleIds: list.map((s) => s.scheduleId),
       receivableId,
-      detail: `Título ${receivableId} com schedule vigente em ${distinctSnapshots.size} snapshots ACTIVE.`,
+      detail: `Título ${receivableId}: o mesmo pedido tem schedule vigente em ${distinctSnapshots.size} snapshots ACTIVE.`,
       suggestedAction:
         "Ambiguidade real: o fechamento não tem fonte única. Investigar antes de fechar o mês.",
     });

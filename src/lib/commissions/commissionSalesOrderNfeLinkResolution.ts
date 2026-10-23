@@ -149,6 +149,37 @@ export function indexUniqueOrderBundlesByNfeId<
 }
 
 /**
+ * Todos os pedidos vinculados a cada NF-e pedida (N:N), sem descartar nenhum.
+ * Toda NF-e de `nfeIds` ganha entrada — lista vazia é evidência de "sem vínculo".
+ * Ordem determinística: código do pedido, depois id.
+ */
+export function indexAllOrderBundlesByNfeId<
+  T extends {
+    localOrderId: string;
+    orderCode?: string | null;
+    linkedNfes: Array<{ nfeExternalId: number }>;
+  },
+>(bundles: T[], nfeIds: Iterable<number>): Map<number, T[]> {
+  const out = new Map<number, T[]>();
+  for (const nfeId of nfeIds) out.set(nfeId, []);
+  for (const bundle of bundles) {
+    for (const nfe of bundle.linkedNfes) {
+      const list = out.get(nfe.nfeExternalId);
+      if (!list || list.some((row) => row.localOrderId === bundle.localOrderId)) continue;
+      list.push(bundle);
+    }
+  }
+  for (const list of out.values()) {
+    list.sort(
+      (a, b) =>
+        (a.orderCode ?? "").localeCompare(b.orderCode ?? "", "pt-BR", { numeric: true }) ||
+        a.localOrderId.localeCompare(b.localOrderId)
+    );
+  }
+  return out;
+}
+
+/**
  * @deprecated Prefer indexUniqueOrderBundlesByNfeId — mantido como alias que descarta ambíguos.
  * Não escolhe o primeiro pedido quando a NF é compartilhada.
  */

@@ -16,17 +16,20 @@ import {
 import {
   buildInduscostCoverageRows,
   collectCoveredReceiptIdsFromLines,
+  collectCoveredRightsFromLines,
+  type CoveredReceiptRight,
   findReceiptsInMultipleAnchors,
   mergeCarryoverLinesIntoPreview,
   type ReceiptEventForCoverage,
 } from "./commissionReceiptCoverage.js";
 import {
   loadCoveredReceiptIdsForCompetence,
+  loadCoveredRightsForCompetence,
   loadReceiptClosingCarryovers,
   type CoverageDb,
   type ReceiptClosingCarryoverEvaluation,
 } from "./commissionReceiptCoverage.server.js";
-import { COMMISSION_COVERAGE_SOURCE_LABELS } from "./commissionReceiptCoverage.shared.js";
+import { COMMISSION_COVERAGE_SOURCE_LABELS, isCoverageFinalLineStatus } from "./commissionReceiptCoverage.shared.js";
 import { toCivilDateKey } from "../financeCivilDate.js";
 import { decimalToNumber } from "./commission-money.js";
 import {
@@ -240,13 +243,43 @@ export type ReceiptClosingEngineDeps = {
     db: Pick<PrismaClient, "nomusReceivableReceipt">,
     receiptExternalIds: readonly number[]
   ) => Promise<Map<number, ReceiptEventForCoverage>>;
+  /** Cobertura por DIREITO já gravada: recebimento → pedidos contemplados (B4). */
+  loadCoveredRights?: (
+    db: Pick<PrismaClient, "commissionReceiptCoverage">,
+    year: number,
+    month: number,
+    options: { excludeClosingId?: string | null }
+  ) => Promise<Map<number, Set<string>>>;
 };
+
+/**
+ * Recorte de eventos de uma competência oficial: cobertura do evento inteiro sai
+ * dos eventos; cobertura por direito tira só aquele pedido do evento.
+ */
+async function loadCompetenceCoverageScope(
+  db: ClosingWithCoverageDb,
+  deps: ReceiptClosingEngineDeps,
+  year: number,
+  month: number,
+  excludeClosingId: string | null
+): Promise<CommissionReceiptEventScope | null> {
+  const eventCovered = await deps.loadCoveredReceiptIds(db, year, month, { excludeClosingId });
+  const rights = deps.loadCoveredRights
+    ? await deps.loadCoveredRights(db, year, month, { excludeClosingId })
+    : new Map<number, Set<string>>();
+  if (eventCovered.length === 0 && rights.size === 0) return null;
+  return {
+    ...(eventCovered.length > 0 ? { excludeReceiptExternalIds: eventCovered } : {}),
+    ...(rights.size > 0 ? { coveredRightsByReceiptId: rights } : {}),
+  };
+}
 
 export const defaultReceiptClosingEngineDeps: ReceiptClosingEngineDeps = {
   loadPreview: loadReceiptClosingPreviewWithMaterialization,
   loadCarryovers: (db, input) => loadReceiptClosingCarryovers(db, input),
   loadCoveredReceiptIds: loadCoveredReceiptIdsForCompetence,
   loadReceiptEvents: loadReceiptEventsForCoverage,
+  loadCoveredRights: loadCoveredRightsForCompetence,
 };
 
 export async function previewCommissionReceiptClosing(
@@ -268,15 +301,10 @@ export async function previewCommissionReceiptClosing(
   // Competência oficial no IndusCost: eventos já cobertos por OUTRO fechamento
   // (ex.: pendência incluída depois) ficam fora das linhas normais. Antes do
   // cutover a prévia segue idêntica (comparação com o Nomus).
-  const coveredElsewhere = official
-    ? await deps.loadCoveredReceiptIds(db, filters.year, filters.month, {
-        excludeClosingId: existingClosing?.closingId ?? null,
-      })
-    : [];
-  const normal = await deps.loadPreview(
-    filters,
-    coveredElsewhere.length > 0 ? { excludeReceiptExternalIds: coveredElsewhere } : null
-  );
+  const coverageScope = official
+    ? await loadCompetenceCoverageScope(db, deps, filters.year, filters.month, existingClosing?.closingId ?? null)
+    : null;
+  const normal = await deps.loadPreview(filters, coverageScope);
   const carryover =
     official && !existingClosing && options.includeCarryover === true
       ? await deps.loadCarryovers(db, {
@@ -310,6 +338,8 @@ type ClosingContent = {
   preview: CommissionReceiptPreviewResult;
   calculationHash: string;
   coveredReceiptIds: number[];
+  /** Direitos (evento, pedido) que o fechamento cobre de forma final. */
+  coveredRights: CoveredReceiptRight[];
   receiptEvents: Map<number, ReceiptEventForCoverage>;
   carryoverLineCount: number;
 };
@@ -344,13 +374,8 @@ async function buildReceiptClosingContent(
       COMMISSION_PRE_CUTOVER_CLOSING_BLOCKED_REASON
     );
   }
-  const coveredElsewhere = await deps.loadCoveredReceiptIds(db, year, month, {
-    excludeClosingId: input.excludeCoverageClosingId,
-  });
-  const normal = await deps.loadPreview(
-    input.filters,
-    coveredElsewhere.length > 0 ? { excludeReceiptExternalIds: coveredElsewhere } : null
-  );
+  const coverageScope = await loadCompetenceCoverageScope(db, deps, year, month, input.excludeCoverageClosingId);
+  const normal = await deps.loadPreview(input.filters, coverageScope);
   validateReceiptClosingPreviewForApply(normal);
 
   let carryoverLines: CommissionReceiptPreviewResult["lines"] = [];
@@ -400,6 +425,7 @@ async function buildReceiptClosingContent(
     preview,
     calculationHash: buildReceiptClosingHashFromPreview(preview),
     coveredReceiptIds,
+    coveredRights: collectCoveredRightsFromLines(preview.lines),
     receiptEvents,
     carryoverLineCount: carryoverLines.length,
   };
@@ -423,19 +449,41 @@ type ClosingTx = Pick<
  */
 async function assertReceiptsNotCovered(
   tx: Pick<PrismaClient, "commissionReceiptCoverage" | "commissionReceiptLedgerLine">,
-  receiptIds: readonly number[]
+  rights: readonly CoveredReceiptRight[]
 ): Promise<void> {
-  if (receiptIds.length === 0) return;
+  if (rights.length === 0) return;
+  const receiptIds = [...new Set(rights.map((right) => right.receiptExternalId))];
+  const wantedByReceipt = new Map<number, Set<string | null>>();
+  for (const right of rights) {
+    const set = wantedByReceipt.get(right.receiptExternalId) ?? new Set<string | null>();
+    set.add(right.salesOrderId);
+    wantedByReceipt.set(right.receiptExternalId, set);
+  }
+  // Conflita se: cobertura/linha do evento inteiro (pedido nulo) de um lado, ou o
+  // mesmo (evento, pedido) dos dois lados. Pedidos diferentes do mesmo evento convivem.
+  const conflictsWith = (receiptId: number, existingOrder: string | null) => {
+    const wanted = wantedByReceipt.get(receiptId);
+    if (!wanted) return false;
+    if (existingOrder == null || wanted.has(null)) return true;
+    return wanted.has(existingOrder);
+  };
+
   const closedLines = await tx.commissionReceiptLedgerLine.findMany({
     where: { receiptExternalIds: { hasSome: [...receiptIds] }, closing: { status: "CLOSED" } },
-    select: { closingId: true, year: true, month: true, receiptExternalIds: true },
+    select: { closingId: true, year: true, month: true, receiptExternalIds: true, salesOrderId: true, status: true },
   });
-  if (closedLines.length > 0) {
-    const wanted = new Set(receiptIds);
-    const detail = closedLines
+  const ledgerConflicts = closedLines.filter(
+    (line) =>
+      // Linha não final (status conhecido) de fechamento anterior não consumiu o
+      // evento; sem status, conservador: conta como consumido.
+      (line.status == null || isCoverageFinalLineStatus(line.status)) &&
+      (line.receiptExternalIds ?? []).some((id) => conflictsWith(id, line.salesOrderId ?? null))
+  );
+  if (ledgerConflicts.length > 0) {
+    const detail = ledgerConflicts
       .slice(0, 5)
       .map((line) => {
-        const ids = (line.receiptExternalIds ?? []).filter((id) => wanted.has(id)).join(", ");
+        const ids = (line.receiptExternalIds ?? []).filter((id) => wantedByReceipt.has(id)).join(", ");
         return `recebimento ${ids} já está no fechamento CLOSED de ${formatCommissionYearMonthLabel({
           year: line.year,
           month: line.month,
@@ -444,10 +492,10 @@ async function assertReceiptsNotCovered(
       .join("; ");
     throw new ReceiptClosingValidationError(
       "RECEIPT_ALREADY_COVERED",
-      `Duplicidade bloqueada: ${detail}${closedLines.length > 5 ? ` (+${closedLines.length - 5})` : ""}.`
+      `Duplicidade bloqueada: ${detail}${ledgerConflicts.length > 5 ? ` (+${ledgerConflicts.length - 5})` : ""}.`
     );
   }
-  const conflicts = await tx.commissionReceiptCoverage.findMany({
+  const coverage = await tx.commissionReceiptCoverage.findMany({
     where: { coverageStatus: "COVERED", receiptExternalId: { in: [...receiptIds] } },
     select: {
       receiptExternalId: true,
@@ -455,8 +503,12 @@ async function assertReceiptsNotCovered(
       coveredYear: true,
       coveredMonth: true,
       closingId: true,
+      salesOrderId: true,
     },
   });
+  const conflicts = coverage.filter(
+    (row) => row.receiptExternalId != null && conflictsWith(row.receiptExternalId, row.salesOrderId ?? null)
+  );
   if (conflicts.length === 0) return;
   const detail = conflicts
     .slice(0, 5)
@@ -465,7 +517,8 @@ async function assertReceiptsNotCovered(
         row.coveredYear && row.coveredMonth
           ? ` em ${formatCommissionYearMonthLabel({ year: row.coveredYear, month: row.coveredMonth })}`
           : "";
-      return `recebimento ${row.receiptExternalId} já coberto por ${COMMISSION_COVERAGE_SOURCE_LABELS[row.coverageSource]}${where}`;
+      const scope = row.salesOrderId ? " (direito do pedido)" : "";
+      return `recebimento ${row.receiptExternalId}${scope} já coberto por ${COMMISSION_COVERAGE_SOURCE_LABELS[row.coverageSource]}${where}`;
     })
     .join("; ");
   throw new ReceiptClosingValidationError(
@@ -482,11 +535,14 @@ async function createClosingWithLines(
     notes?: string | null;
     calculationHash: string;
     coveredReceiptIds: readonly number[];
+    coveredRights: readonly CoveredReceiptRight[];
     receiptEvents: ReadonlyMap<number, ReceiptEventForCoverage>;
     carryoverLineCount: number;
   }
 ): Promise<ReceiptClosingApplyResult> {
-  await assertReceiptsNotCovered(tx, input.coveredReceiptIds);
+  // Revalidação DENTRO da transação (não confia só na prévia mostrada na tela).
+  validateReceiptClosingPreviewForApply(input.preview);
+  await assertReceiptsNotCovered(tx, input.coveredRights);
 
   const closing = await tx.commissionMonthlyClosing.create({
     data: {
@@ -550,6 +606,10 @@ async function createClosingWithLines(
         status: input.preview.lines[index]?.status ?? row.status,
         releasedCommissionAmount: Number(row.releasedCommissionAmount ?? 0),
         inclusionType: row.inclusionType ?? "NORMAL",
+        salesOrderId: row.salesOrderId ?? null,
+        commissionReceivableScheduleId: row.commissionReceivableScheduleId ?? null,
+        allocatedReceivedAmount: row.allocatedReceivedAmount != null ? Number(row.allocatedReceivedAmount) : null,
+        receivedAmount: row.receivedAmount != null ? Number(row.receivedAmount) : null,
       })),
       receiptEvents: input.receiptEvents,
     });
@@ -642,6 +702,7 @@ export async function applyCommissionReceiptClosing(
         notes: input.notes,
         calculationHash: content.calculationHash,
         coveredReceiptIds: content.coveredReceiptIds,
+        coveredRights: content.coveredRights,
         receiptEvents: content.receiptEvents,
         carryoverLineCount: content.carryoverLineCount,
       });
@@ -837,6 +898,7 @@ export async function reprocessCommissionReceiptClosingApply(
         notes: formatReceiptClosingReprocessNote(input.userId, reason, "pending"),
         calculationHash: content.calculationHash,
         coveredReceiptIds: content.coveredReceiptIds,
+        coveredRights: content.coveredRights,
         receiptEvents: content.receiptEvents,
         carryoverLineCount: content.carryoverLineCount,
       });

@@ -13,15 +13,16 @@ import { isCommissionInternalGroupReceivable } from "./commissionInternalGroupEx
 import { loadCommissionCompetenceReceivableIdsForPeriod } from "./commissionReceiptCompetence.server.js";
 import type { CommissionReceivableScheduleRebuildResult } from "./commissionReceivableScheduler.js";
 import {
+  createCommissionMaterializationRunCache,
   materializeCommissionForSalesOrder,
   SalesOrderCustomerMissingError,
   SalesOrderNotFoundError,
+  type CommissionMaterializationRunCache,
 } from "./commissionOrderMaterializer.server.js";
 import {
   OrderSnapshotNotFoundError,
   rebuildCommissionReceivableSchedule,
 } from "./commissionReceivableScheduler.server.js";
-import { resolveUniqueSalesOrderFromNfeLinkCandidates } from "./commissionSalesOrderNfeLinkResolution.js";
 
 export type RebuildCommissionMaterializationInput = {
   since?: Date | null;
@@ -623,6 +624,7 @@ async function ensureSchedulesForReceivableRefList(
     dryRun: boolean;
     processedPairs: Set<string>;
     deps: MaterializationOrchestratorDeps;
+    runCache?: CommissionMaterializationRunCache;
   }
 ): Promise<{
   receivablesChecked: number;
@@ -654,98 +656,124 @@ async function ensureSchedulesForReceivableRefList(
     },
     select: {
       receivableId: true,
+      salesOrderId: true,
       scheduledCommissionAmount: true,
       orderSnapshot: { select: { totalFinalCommissionAmount: true, status: true } },
     },
   });
-  /** Vigente com comissão zerada mas snapshot oficial > 0 → precisa rebuild (não só "ensure missing"). */
-  const staleZeroAgainstSnapshot = new Set(
-    activeSchedules
-      .filter((row) => {
-        const scheduled = Number(row.scheduledCommissionAmount);
-        const snapFinal = Number(row.orderSnapshot.totalFinalCommissionAmount);
-        return (
-          Number.isFinite(scheduled) &&
-          scheduled <= 0 &&
-          Number.isFinite(snapFinal) &&
-          snapFinal > 0
-        );
-      })
-      .map((row) => row.receivableId)
-  );
-  const scheduledOk = new Set(
-    activeSchedules
-      .filter((row) => !staleZeroAgainstSnapshot.has(row.receivableId))
-      .map((row) => row.receivableId)
-  );
-  const missing = receivables.filter(
-    (row) => !scheduledOk.has(row.receivableId) || staleZeroAgainstSnapshot.has(row.receivableId)
-  );
+  // Cobertura é por (título, pedido): NF-e com N pedidos precisa de N schedules.
+  // Vigente com comissão zerada mas snapshot oficial > 0 → precisa rebuild.
+  const pairKey = (receivableId: number, salesOrderId: string) => `${receivableId}|${salesOrderId}`;
+  const scheduledPairs = new Set<string>();
+  const staleZeroPairs = new Set<string>();
+  const scheduledReceivables = new Set<number>();
+  for (const row of activeSchedules) {
+    const scheduled = Number(row.scheduledCommissionAmount);
+    const snapFinal = Number(row.orderSnapshot.totalFinalCommissionAmount);
+    const key = pairKey(row.receivableId, row.salesOrderId);
+    if (Number.isFinite(scheduled) && scheduled <= 0 && Number.isFinite(snapFinal) && snapFinal > 0) {
+      staleZeroPairs.add(key);
+      continue;
+    }
+    scheduledPairs.add(key);
+    scheduledReceivables.add(row.receivableId);
+  }
 
+  // Todos os pedidos vinculados à NF-e de cada título (uma consulta).
+  const nfeIds = [
+    ...new Set(
+      receivables
+        .map((row) => row.sourceInvoiceId)
+        .filter((id): id is number => id != null && Number.isFinite(id) && id > 0)
+    ),
+  ];
+  const links =
+    nfeIds.length > 0
+      ? await db.salesOrderNfeLink.findMany({
+          where: { nfeExternalId: { in: nfeIds } },
+          select: { salesOrderId: true, nfeExternalId: true, orderCode: true },
+        })
+      : [];
+  const ordersByNfe = new Map<number, string[]>();
+  for (const link of links) {
+    const list = ordersByNfe.get(link.nfeExternalId) ?? [];
+    if (!list.includes(link.salesOrderId)) list.push(link.salesOrderId);
+    ordersByNfe.set(link.nfeExternalId, list);
+  }
+
+  let receivablesMissingBefore = 0;
   let schedulesEnsured = 0;
   let unlinkedReceivables = 0;
   const errors: Array<{ receivableId: number; message: string }> = [];
 
-  for (const receivable of missing) {
-    if (receivable.sourceInvoiceId == null) {
-      unlinkedReceivables += 1;
-      continue;
-    }
-
-    const links = await db.salesOrderNfeLink.findMany({
-      where: { nfeExternalId: receivable.sourceInvoiceId },
-      select: { salesOrderId: true, nfeExternalId: true, orderCode: true },
+  for (const receivable of receivables) {
+    const linkedOrders =
+      receivable.sourceInvoiceId != null ? [...(ordersByNfe.get(receivable.sourceInvoiceId) ?? [])].sort() : [];
+    const pendingOrders = linkedOrders.filter((salesOrderId) => {
+      const key = pairKey(receivable.receivableId, salesOrderId);
+      return !scheduledPairs.has(key) || staleZeroPairs.has(key);
     });
-    const resolution = resolveUniqueSalesOrderFromNfeLinkCandidates(links);
-    if (resolution.status !== "OK" || !resolution.salesOrderId) {
-      unlinkedReceivables += 1;
+    const hasStaleZero = [...staleZeroPairs].some((key) => key.startsWith(`${receivable.receivableId}|`));
+    if (linkedOrders.length === 0) {
+      // Sem pedido vinculado: só conta como "sem vínculo" se nada cobre o título.
+      if (!scheduledReceivables.has(receivable.receivableId) || hasStaleZero) {
+        receivablesMissingBefore += 1;
+        unlinkedReceivables += 1;
+      }
       continue;
     }
+    if (pendingOrders.length === 0) continue;
+    receivablesMissingBefore += 1;
 
-    const pairKey = `${resolution.salesOrderId}|${receivable.sourceInvoiceId}`;
-    input.processedPairs.add(pairKey);
-
-    try {
-      const snapshot = await input.deps.materialize(db, {
-        salesOrderId: resolution.salesOrderId,
-        nfeId: receivable.sourceInvoiceId,
-        dryRun: input.dryRun,
-      });
-      const schedule = await rebuildScheduleAfterMaterialize(db, input.deps, {
-        salesOrderId: resolution.salesOrderId,
-        requestedNfeId: receivable.sourceInvoiceId,
-        materializedNfeId: snapshot.preview.nfeId,
-        dryRun: input.dryRun,
-      });
-      if (schedule && schedule.schedulesCreated > 0) {
-        schedulesEnsured += 1;
-        continue;
-      }
-
-      const after = await db.commissionReceivableSchedule.findFirst({
-        where: {
-          receivableId: receivable.receivableId,
-          status: "ACTIVE",
-          ...commissionActiveSnapshotWhere(),
-        },
-        select: { id: true },
-      });
-      if (after) schedulesEnsured += 1;
-    } catch (error) {
-      const message =
-        error instanceof SalesOrderNotFoundError ||
-        error instanceof SalesOrderCustomerMissingError
-          ? error.message
-          : error instanceof Error
+    let ensured = false;
+    let failed = false;
+    for (const salesOrderId of pendingOrders) {
+      input.processedPairs.add(`${salesOrderId}|${receivable.sourceInvoiceId}`);
+      try {
+        const snapshot = await input.deps.materialize(db, {
+          salesOrderId,
+          nfeId: receivable.sourceInvoiceId,
+          dryRun: input.dryRun,
+          ...(input.runCache ? { runCache: input.runCache } : {}),
+        });
+        const schedule = await rebuildScheduleAfterMaterialize(db, input.deps, {
+          salesOrderId,
+          requestedNfeId: receivable.sourceInvoiceId,
+          materializedNfeId: snapshot.preview.nfeId,
+          dryRun: input.dryRun,
+        });
+        if (schedule && schedule.schedulesCreated > 0) ensured = true;
+      } catch (error) {
+        failed = true;
+        const message =
+          error instanceof SalesOrderNotFoundError ||
+          error instanceof SalesOrderCustomerMissingError
             ? error.message
-            : String(error);
-      errors.push({ receivableId: receivable.receivableId, message });
+            : error instanceof Error
+              ? error.message
+              : String(error);
+        errors.push({ receivableId: receivable.receivableId, message });
+      }
     }
+    if (ensured) {
+      schedulesEnsured += 1;
+      continue;
+    }
+    if (failed) continue;
+    const after = await db.commissionReceivableSchedule.findFirst({
+      where: {
+        receivableId: receivable.receivableId,
+        status: "ACTIVE",
+        ...commissionActiveSnapshotWhere(),
+      },
+      select: { id: true },
+    });
+    if (after) schedulesEnsured += 1;
   }
 
   return {
     receivablesChecked: receivables.length,
-    receivablesMissingBefore: missing.length,
+    receivablesMissingBefore,
     schedulesEnsured,
     unlinkedReceivables,
     errors,
@@ -760,6 +788,7 @@ async function ensureReceiptMonthReceivableSchedules(
     dryRun: boolean;
     processedPairs: Set<string>;
     deps: MaterializationOrchestratorDeps;
+    runCache?: CommissionMaterializationRunCache;
   }
 ): Promise<{
   receivablesChecked: number;
@@ -780,7 +809,8 @@ async function processSalesOrderMaterialization(
   db: PrismaClient,
   ref: AffectedSalesOrderRef,
   dryRun: boolean,
-  deps: MaterializationOrchestratorDeps
+  deps: MaterializationOrchestratorDeps,
+  runCache?: CommissionMaterializationRunCache
 ): Promise<CommissionMaterializationOrderResult> {
   try {
     const targetNfeIds = await resolveTargetNfeIdsForMaterialization(db, ref);
@@ -793,6 +823,7 @@ async function processSalesOrderMaterialization(
         salesOrderId: ref.salesOrderId,
         ...(nfeId != null ? { nfeId } : {}),
         dryRun,
+        ...(runCache ? { runCache } : {}),
       });
       lastSnapshot = snapshot;
 
@@ -862,11 +893,13 @@ export async function rebuildCommissionMaterializationForAffectedSales(
 
   const orders: CommissionMaterializationOrderResult[] = [];
   const processedPairs = new Set<string>();
+  // Uma memória por execução: origem, regras e alocação de cada pedido carregadas uma vez.
+  const runCache = createCommissionMaterializationRunCache();
   for (const ref of affected) {
     for (const nfeId of ref.nfeIds ?? []) {
       processedPairs.add(`${ref.salesOrderId}|${nfeId}`);
     }
-    orders.push(await processSalesOrderMaterialization(db, ref, dryRun, deps));
+    orders.push(await processSalesOrderMaterialization(db, ref, dryRun, deps, runCache));
   }
 
   let receiptMonthPass: Awaited<ReturnType<typeof ensureReceiptMonthReceivableSchedules>> | null =
@@ -878,6 +911,7 @@ export async function rebuildCommissionMaterializationForAffectedSales(
       dryRun,
       processedPairs,
       deps,
+      runCache,
     });
   }
 
@@ -941,6 +975,7 @@ export async function ensureCommissionMaterializationForReceiptMonth(
     dryRun: input.apply !== true,
     processedPairs: new Set<string>(),
     deps,
+    runCache: createCommissionMaterializationRunCache(),
   });
 }
 
@@ -955,5 +990,6 @@ export async function ensureCommissionMaterializationForReceivableRefs(
     dryRun: input?.apply !== true,
     processedPairs: new Set<string>(),
     deps,
+    runCache: createCommissionMaterializationRunCache(),
   });
 }

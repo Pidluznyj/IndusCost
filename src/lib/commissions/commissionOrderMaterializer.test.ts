@@ -189,6 +189,17 @@ function createMockMaterializerDb() {
         }
         return null;
       },
+      findUnique: async ({ where }: { where: { sourceHash: string } }) => {
+        for (const snap of snapshots.values()) {
+          if (snap.sourceHash === where.sourceHash) return { id: snap.id, salesOrderId: snap.salesOrderId, nfeId: snap.nfeId };
+        }
+        return null;
+      },
+      update: async ({ where, data }: { where: { id: string }; data: { status: string } }) => {
+        const snap = snapshots.get(where.id)!;
+        snap.status = data.status;
+        return { id: snap.id };
+      },
       updateMany: async ({
         where,
         data,
@@ -329,6 +340,47 @@ describe("commissionOrderMaterializer", () => {
     assert.equal(oldSnap?.status, "SUPERSEDED");
     assert.equal(newSnap?.status, "ACTIVE");
     assert.equal(newSnap?.sourceHash, draftV2.sourceHash);
+  });
+
+  it("corrida entre processos: quem perde o sourceHash aceita o snapshot idêntico ACTIVE do vencedor (sem erro)", async () => {
+    const draft = buildDraft({});
+    const uniqueViolation = Object.assign(new Error("Unique constraint failed on the fields: (`sourceHash`)"), { code: "P2002" });
+    const winner = { id: "snap-vencedor", salesOrderId: draft.salesOrderId, nfeId: draft.nfeId, status: "ACTIVE" };
+    const racingDb = {
+      commissionOrderSnapshot: { findUnique: async () => winner },
+      $transaction: async () => {
+        throw uniqueViolation;
+      },
+    };
+    const result = await persistCommissionOrderMaterialization(racingDb as never, { draft, existingActive: null, dryRun: false });
+    assert.deepEqual([result.action, result.snapshotId], ["unchanged", "snap-vencedor"]);
+    // Snapshot com o mesmo hash que NÃO é o vigente deste (pedido, NF-e): o erro sobe.
+    const foreignDb = { ...racingDb, commissionOrderSnapshot: { findUnique: async () => ({ ...winner, status: "SUPERSEDED" }) } };
+    await assert.rejects(persistCommissionOrderMaterialization(foreignDb as never, { draft, existingActive: null, dryRun: false }), /Unique constraint/);
+  });
+
+  it("origem que volta ao estado anterior reativa o snapshot idêntico (sourceHash único), sem criar outro", async () => {
+    const db = createMockMaterializerDb();
+    const draftV1 = buildDraft({ order: orderBundle({ quantity: 1, unitPrice: 12, itemNetAmount: 12 }) });
+    const draftV2 = buildDraft({ order: orderBundle({ quantity: 1, unitPrice: 14, itemNetAmount: 14 }) });
+    const active = () =>
+      db.commissionOrderSnapshot.findFirst({ where: { salesOrderId: draftV1.salesOrderId, nfeId: draftV1.nfeId, status: "ACTIVE" } });
+
+    const first = await persistCommissionOrderMaterialization(db as never, { draft: draftV1, existingActive: null, dryRun: false });
+    const second = await persistCommissionOrderMaterialization(db as never, { draft: draftV2, existingActive: await active(), dryRun: false });
+    const third = await persistCommissionOrderMaterialization(db as never, { draft: draftV1, existingActive: await active(), dryRun: false });
+
+    assert.equal(third.action, "superseded");
+    assert.equal(third.snapshotId, first.snapshotId);
+    assert.equal(third.previousSnapshotId, second.snapshotId);
+    assert.equal(db.snapshots.size, 2);
+    assert.deepEqual(
+      [...db.snapshots.values()].map((snap) => [snap.id, snap.status]),
+      [
+        [first.snapshotId, "ACTIVE"],
+        [second.snapshotId, "SUPERSEDED"],
+      ]
+    );
   });
 
   it("cliente excluído fica registrado", () => {

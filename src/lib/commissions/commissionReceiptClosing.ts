@@ -14,10 +14,35 @@ import {
   type CommissionMonthlyClosingStatus,
   type CommissionReceiptLedgerLineStatus,
 } from "./commissionReceiptLedger.js";
-import type {
-  CommissionLedgerInclusionType,
-  ReceiptClosingCarryoverSection,
+import {
+  isCoverageFinalLineStatus,
+  type CommissionLedgerInclusionType,
+  type ReceiptClosingCarryoverSection,
 } from "./commissionReceiptCoverage.shared.js";
+import {
+  findReceiptRightConflicts,
+  formatReceiptRightConflicts,
+} from "./commissionReceivableOrderRights.js";
+import {
+  attributedReceivedAmountOf,
+  isSharedFinancialAnchorLine,
+  type FinancialAnchorAttribution,
+} from "./commissionReceiptFinancialAnchor.shared.js";
+
+/** Código da recusa quando cobrir um recebimento perderia direitos ainda pendentes. */
+export const RECEIPT_RIGHTS_UNRESOLVED_CODE = "RECEIPT_RIGHTS_UNRESOLVED";
+
+/** Âncora do recebido (título na competência; pendência = outro evento do título). */
+function receivedAnchorKeyOf(line: {
+  nomusReceivableId: number | null;
+  inclusionType?: string | null;
+  naturalYear?: number | null;
+  naturalMonth?: number | null;
+}): string | null {
+  if (line.nomusReceivableId == null) return null;
+  if (!line.inclusionType || line.inclusionType === "NORMAL") return String(line.nomusReceivableId);
+  return `${line.nomusReceivableId}|${line.inclusionType}|${line.naturalYear ?? ""}-${line.naturalMonth ?? ""}`;
+}
 
 /** Status de prévia sem valor no enum Prisma → persistência segura no ledger. */
 function toPersistedLedgerLineStatus(
@@ -191,6 +216,12 @@ export type ReceiptClosingLedgerLineSnapshot = {
   naturalYear?: number | null;
   naturalMonth?: number | null;
   inclusionType?: CommissionLedgerInclusionType;
+  /** Parcela do recebido do título atribuída à linha (= recebido em título de um pedido). */
+  allocatedReceivedAmount?: number;
+  /** Título compartilhado por N pedidos (de ruleSnapshotJson.financialAnchor). */
+  financialAnchorShared?: boolean;
+  financialAnchorAttribution?: FinancialAnchorAttribution;
+  attributedReceivedAmount?: number;
 };
 
 export type ReceiptClosingPreviewPayload = {
@@ -306,25 +337,35 @@ const RECEIPT_CLOSING_SCHEDULE_BLOCKING_STATUSES = new Set<CommissionReceiptLedg
 
 export function assessReceiptClosingApplyReadiness(
   preview: CommissionReceiptPreviewResult
-): { canApply: boolean; applyBlockedReason: string | null } {
-  const seenReceivable = new Set<number>();
-  let commercialWithoutSchedule = 0;
-
+): { canApply: boolean; applyBlockedReason: string | null; applyBlockedCode?: string } {
+  // Todas as linhas do título contam: com N pedidos (ou N itens) no mesmo título,
+  // um direito sem schedule não pode ficar escondido atrás da primeira linha.
+  const withoutSchedule = new Set<number>();
   for (const line of preview.lines) {
     if (line.nomusReceivableId == null) continue;
-    if (seenReceivable.has(line.nomusReceivableId)) continue;
-    seenReceivable.add(line.nomusReceivableId);
-
     if (RECEIPT_CLOSING_NON_BLOCKING_STATUSES.has(line.status)) continue;
     if (RECEIPT_CLOSING_SCHEDULE_BLOCKING_STATUSES.has(line.status)) {
-      commercialWithoutSchedule += 1;
+      withoutSchedule.add(line.nomusReceivableId);
     }
   }
 
-  if (commercialWithoutSchedule > 0) {
+  if (withoutSchedule.size > 0) {
     return {
       canApply: false,
-      applyBlockedReason: `${commercialWithoutSchedule} título(s) comercial(is) ainda sem schedule após materialização automática. Verifique vínculo pedido/NF ou reprocesse materialização.`,
+      applyBlockedReason: `${withoutSchedule.size} título(s) comercial(is) ainda sem schedule após materialização automática. Verifique vínculo pedido/NF ou reprocesse materialização.`,
+      applyBlockedCode: "COMMERCIAL_WITHOUT_SCHEDULE",
+    };
+  }
+
+  // Cobertura é por evento: cobrir um recebimento com um direito final e outro
+  // pendente perderia o pendente para sempre (D2). Bloqueia até a cobertura por
+  // direito (B4) existir.
+  const conflicts = findReceiptRightConflicts(preview.lines, isCoverageFinalLineStatus);
+  if (conflicts.length > 0) {
+    return {
+      canApply: false,
+      applyBlockedReason: formatReceiptRightConflicts(conflicts),
+      applyBlockedCode: RECEIPT_RIGHTS_UNRESOLVED_CODE,
     };
   }
 
@@ -337,7 +378,7 @@ export function validateReceiptClosingPreviewForApply(
   const readiness = assessReceiptClosingApplyReadiness(preview);
   if (!readiness.canApply && readiness.applyBlockedReason) {
     throw new ReceiptClosingValidationError(
-      "COMMERCIAL_WITHOUT_SCHEDULE",
+      readiness.applyBlockedCode ?? "COMMERCIAL_WITHOUT_SCHEDULE",
       readiness.applyBlockedReason
     );
   }
@@ -449,7 +490,30 @@ export function mapPreviewLineToLedgerCreateData(
             inclusionType: line.inclusionType,
           }
         : null,
+    rightOrderId: line.rightKeyOrderId ?? null,
   });
+
+  const shared = isSharedFinancialAnchorLine(line);
+  // Rastreabilidade do direito (campos JSON já existentes, sem migration):
+  // snapshot vigente, pedido local e, em título compartilhado, a atribuição.
+  const rightTrace = {
+    ...(line.orderSnapshotId ? { orderSnapshotId: line.orderSnapshotId } : {}),
+    ...(line.localOrderId ? { salesOrderId: line.localOrderId } : {}),
+    ...(line.rightResolution && line.rightResolution !== "SCHEDULED"
+      ? { rightResolution: line.rightResolution }
+      : {}),
+    ...(shared
+      ? {
+          financialAnchor: {
+            shared: true,
+            orderCount: line.financialAnchorOrderCount ?? null,
+            attribution: line.financialAnchorAttribution ?? "UNATTRIBUTED",
+            attributedReceivedAmount: attributedReceivedAmountOf(line),
+          },
+        }
+      : {}),
+  };
+  const needsTraceJson = shared || line.rightKeyOrderId != null;
 
   const ruleSnapshotJson =
     line.commissionReceivableScheduleId != null
@@ -458,6 +522,18 @@ export function mapPreviewLineToLedgerCreateData(
           ratePercent: line.ratePercent,
           source: line.source,
           exclusionRuleId: line.exclusionRuleId,
+          ...rightTrace,
+          capturedAt: new Date().toISOString(),
+        }
+      : needsTraceJson
+      ? {
+          ruleId: line.ruleId,
+          ruleName: line.ruleName,
+          ratePercent: line.ratePercent,
+          source: line.source,
+          exclusionRuleId: line.exclusionRuleId,
+          exclusionReason: line.exclusionReason,
+          ...rightTrace,
           capturedAt: new Date().toISOString(),
         }
       : line.ruleId != null || line.exclusionRuleId != null
@@ -501,6 +577,12 @@ export function mapPreviewLineToLedgerCreateData(
     customerId: line.customerId,
     customerExternalId: line.customerExternalId,
     customerNameSnapshot: line.customerName,
+    ...(line.nomusOrderId != null ? { nomusOrderId: line.nomusOrderId } : {}),
+    // Identidade do direito (B4): pedido e schedule em colunas próprias.
+    ...(line.localOrderId ? { salesOrderId: line.localOrderId } : {}),
+    ...(line.commissionReceivableScheduleId
+      ? { commissionReceivableScheduleId: line.commissionReceivableScheduleId }
+      : {}),
     orderCode: line.orderCode,
     nomusNfeId: line.nomusNfeId,
     nfeNumber: line.nfeNumber,
@@ -512,9 +594,11 @@ export function mapPreviewLineToLedgerCreateData(
     canonicalSellerId: line.canonicalSellerId,
     canonicalSellerName: line.canonicalSellerName,
     sellerResolutionStatus: line.sellerResolutionStatus,
+    // receivedAmount = fato financeiro do título; allocated = parcela do pedido
+    // (igual ao recebido quando o título é de um pedido só).
     receivedAmount: line.receivedAmount,
     receivableNominalAmount: line.receivableAmount,
-    allocatedReceivedAmount: line.receivedAmount,
+    allocatedReceivedAmount: shared ? attributedReceivedAmountOf(line) : line.receivedAmount,
     allocatedCommercialBase: line.commissionableBaseAmount,
     commissionRatePercent: line.ratePercent,
     expectedCommissionAmount: line.expectedCommissionAmount,
@@ -536,6 +620,21 @@ export function mapPreviewLineToLedgerCreateData(
     naturalYear: line.naturalYear ?? line.year,
     naturalMonth: line.naturalMonth ?? line.month,
     inclusionType: line.inclusionType ?? "NORMAL",
+  };
+}
+
+/** Atribuição de título compartilhado gravada em ruleSnapshotJson.financialAnchor. */
+export function readLedgerFinancialAnchor(
+  ruleSnapshotJson: unknown
+): { attribution: FinancialAnchorAttribution; attributedReceivedAmount: number } | null {
+  if (ruleSnapshotJson == null || typeof ruleSnapshotJson !== "object") return null;
+  const anchor = (ruleSnapshotJson as Record<string, unknown>).financialAnchor;
+  if (anchor == null || typeof anchor !== "object") return null;
+  const row = anchor as Record<string, unknown>;
+  if (row.shared !== true) return null;
+  return {
+    attribution: row.attribution === "ATTRIBUTED" ? "ATTRIBUTED" : "UNATTRIBUTED",
+    attributedReceivedAmount: normalizeCommissionLedgerMoney(Number(row.attributedReceivedAmount ?? 0)),
   };
 }
 
@@ -567,8 +666,22 @@ export function mapLedgerRowToSnapshot(row: {
   naturalYear?: number | null;
   naturalMonth?: number | null;
   inclusionType?: CommissionLedgerInclusionType | null;
+  allocatedReceivedAmount?: Prisma.Decimal | number | null;
 }): ReceiptClosingLedgerLineSnapshot {
+  const anchor = readLedgerFinancialAnchor(row.ruleSnapshotJson);
+  const allocatedReceived =
+    row.allocatedReceivedAmount != null
+      ? normalizeCommissionLedgerMoney(Number(row.allocatedReceivedAmount))
+      : null;
   return {
+    ...(allocatedReceived != null ? { allocatedReceivedAmount: allocatedReceived } : {}),
+    ...(anchor
+      ? {
+          financialAnchorShared: true,
+          financialAnchorAttribution: anchor.attribution,
+          attributedReceivedAmount: allocatedReceived ?? anchor.attributedReceivedAmount,
+        }
+      : {}),
     id: row.id,
     ledgerLineKey: row.ledgerLineKey,
     nomusReceivableId: row.nomusReceivableId,
@@ -683,8 +796,16 @@ export function aggregateMonthlyPayableFromReceiptPreview(
   let expectedCommissionAmountTotal = 0;
   let releasedCommissionAmountTotal = 0;
 
+  // Recebido é fato do título: conta uma vez por âncora, mesmo com N linhas
+  // (N pedidos ou N itens). Por vendedor: só a parcela atribuída ao pedido.
+  const seenReceivedAnchors = new Set<string>();
+  const seenSellerAnchors = new Set<string>();
   for (const row of filtered) {
-    receivedAmountTotal = roundMoney(receivedAmountTotal + row.receivedAmount);
+    const anchorKey = receivedAnchorKeyOf(row);
+    if (anchorKey == null || !seenReceivedAnchors.has(anchorKey)) {
+      if (anchorKey != null) seenReceivedAnchors.add(anchorKey);
+      receivedAmountTotal = roundMoney(receivedAmountTotal + row.receivedAmount);
+    }
     if (row.status === "COMMISSIONABLE") {
       allocatedBaseAmountTotal = roundMoney(
         allocatedBaseAmountTotal + row.commissionableBaseAmount
@@ -716,7 +837,12 @@ export function aggregateMonthlyPayableFromReceiptPreview(
       receivedVsBaseDiff: 0,
       warnings: [],
     };
-    seller.receivedAmount = roundMoney(seller.receivedAmount + row.receivedAmount);
+    if (isSharedFinancialAnchorLine(row)) {
+      seller.receivedAmount = roundMoney(seller.receivedAmount + attributedReceivedAmountOf(row));
+    } else if (anchorKey == null || !seenSellerAnchors.has(`${sellerKey}|${anchorKey}`)) {
+      if (anchorKey != null) seenSellerAnchors.add(`${sellerKey}|${anchorKey}`);
+      seller.receivedAmount = roundMoney(seller.receivedAmount + row.receivedAmount);
+    }
     if (row.status === "COMMISSIONABLE") {
       seller.allocatedBaseAmount = roundMoney(
         seller.allocatedBaseAmount + row.commissionableBaseAmount
@@ -856,8 +982,14 @@ export function aggregateMonthlyPayableFromLedgerLines(
   let expectedCommissionAmountTotal = 0;
   let releasedCommissionAmountTotal = 0;
 
+  const seenReceivedAnchors = new Set<string>();
+  const seenSellerAnchors = new Set<string>();
   for (const row of filtered) {
-    receivedAmountTotal = roundMoney(receivedAmountTotal + row.receivedAmount);
+    const anchorKey = receivedAnchorKeyOf(row);
+    if (anchorKey == null || !seenReceivedAnchors.has(anchorKey)) {
+      if (anchorKey != null) seenReceivedAnchors.add(anchorKey);
+      receivedAmountTotal = roundMoney(receivedAmountTotal + row.receivedAmount);
+    }
     if (row.status === "COMMISSIONABLE") {
       allocatedBaseAmountTotal = roundMoney(allocatedBaseAmountTotal + row.allocatedCommercialBase);
       expectedCommissionAmountTotal = roundMoney(
@@ -887,7 +1019,12 @@ export function aggregateMonthlyPayableFromLedgerLines(
       receivedVsBaseDiff: 0,
       warnings: [],
     };
-    seller.receivedAmount = roundMoney(seller.receivedAmount + row.receivedAmount);
+    if (isSharedFinancialAnchorLine(row)) {
+      seller.receivedAmount = roundMoney(seller.receivedAmount + attributedReceivedAmountOf(row));
+    } else if (anchorKey == null || !seenSellerAnchors.has(`${sellerKey}|${anchorKey}`)) {
+      if (anchorKey != null) seenSellerAnchors.add(`${sellerKey}|${anchorKey}`);
+      seller.receivedAmount = roundMoney(seller.receivedAmount + row.receivedAmount);
+    }
     if (row.status === "COMMISSIONABLE") {
       seller.allocatedBaseAmount = roundMoney(
         seller.allocatedBaseAmount + row.allocatedCommercialBase

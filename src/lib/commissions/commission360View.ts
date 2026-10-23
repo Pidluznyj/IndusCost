@@ -963,6 +963,9 @@ function crRow(
  * Com schedule vigente, vale a linha do motor da Previsão (nunca recalculada aqui).
  * Sem schedule, prova cada elo; o que não puder ser provado fica sem comissão estimada.
  */
+/** Título de NF-e com pedidos de vendedores diferentes: sem vendedor único para o legado. */
+export const COMMISSION_360_SHARED_TITLE_SELLER_KEY = "titulo-compartilhado";
+
 export function classifyCommission360Receivable(input: Commission360ReceivableInput): Commission360CrRow {
   if (input.openBalance == null) {
     return crRow(input, "FORA_UNIVERSO", "Título removido na origem (ausência confirmada): sem saldo oficial.");
@@ -972,25 +975,39 @@ export function classifyCommission360Receivable(input: Commission360ReceivableIn
 
   const counting = input.outlookLines.filter((line) => line.status !== "CANCELADA");
   if (counting.length > 0) {
+    // NF-e com N pedidos: o título tem uma linha por pedido. A conciliação
+    // reversa soma os N direitos (nunca só o primeiro pedido) e só aponta um
+    // vendedor quando todos os pedidos são do mesmo vendedor.
     const line = counting[0]!;
+    const total = (pick: (row: OutlookLine) => number) => roundMoney(counting.reduce((sum, row) => sum + pick(row), 0));
+    const sellerKeys = new Set(counting.map((row) => sellerKeyOf(row.canonicalSellerId, row.rawSellerId)));
+    const orderIds = [...new Set(counting.map((row) => row.salesOrderId))];
+    const overAllocations = orderIds
+      .map((orderId) => resolveCommission360OrderOverAllocation(input.orderAllocations?.get(orderId)))
+      .filter((value): value is number => value != null);
     const sellerExtra = {
-      orderCode: line.orderCode,
-      salesOrderId: line.salesOrderId,
-      canonicalSellerId: line.canonicalSellerId,
-      sellerName: lineSellerName(line),
-      allocatedCommission: line.allocatedCommission,
-      forecastCommission: line.forecastCommission,
-      realizedCommission: line.realizedCommission,
-      unreconciledCommission: line.unreconciledCommission,
-      orderOverAllocatedCommission: resolveCommission360OrderOverAllocation(input.orderAllocations?.get(line.salesOrderId)),
+      orderCode: orderIds.length === 1 ? line.orderCode : [...new Set(counting.map((row) => row.orderCode))].join(", "),
+      salesOrderId: orderIds.length === 1 ? line.salesOrderId : null,
+      canonicalSellerId: sellerKeys.size === 1 ? line.canonicalSellerId : null,
+      sellerName:
+        sellerKeys.size === 1 ? lineSellerName(line) : [...new Set(counting.map(lineSellerName))].join(", "),
+      allocatedCommission: total((row) => row.allocatedCommission),
+      forecastCommission: total((row) => row.forecastCommission),
+      realizedCommission: total((row) => row.realizedCommission),
+      unreconciledCommission: total((row) => row.unreconciledCommission),
+      orderOverAllocatedCommission: overAllocations.length > 0 ? roundMoney(overAllocations.reduce((sum, value) => sum + value, 0)) : null,
     };
-    if (line.status === "CUSTOMER_EXCLUDED") return crRow(input, "CLIENTE_EXCLUIDO", line.inconsistency, sellerExtra);
-    if (line.status === "SEM_VENDEDOR") return crRow(input, "VENDEDOR_NAO_COMISSIONAVEL", null, sellerExtra);
-    if (line.unreconciledCommission > 0 || line.status === "INCONSISTENCIA_SEM_RECEBIMENTO" || line.status === "TITULO_NAO_ENCONTRADO") {
-      return crRow(input, "DIVERGENCIA_ALOCACAO", line.inconsistency, sellerExtra);
+    const inconsistency = [...new Set(counting.map((row) => row.inconsistency).filter(Boolean))].join(" ") || null;
+    if (counting.every((row) => row.status === "CUSTOMER_EXCLUDED")) return crRow(input, "CLIENTE_EXCLUIDO", inconsistency, sellerExtra);
+    if (counting.every((row) => row.status === "SEM_VENDEDOR")) return crRow(input, "VENDEDOR_NAO_COMISSIONAVEL", null, sellerExtra);
+    if (
+      sellerExtra.unreconciledCommission > 0 ||
+      counting.some((row) => row.status === "INCONSISTENCIA_SEM_RECEBIMENTO" || row.status === "TITULO_NAO_ENCONTRADO")
+    ) {
+      return crRow(input, "DIVERGENCIA_ALOCACAO", inconsistency, sellerExtra);
     }
-    if (line.forecastCommission > 0) return crRow(input, "COBERTO_FUTURA", null, sellerExtra);
-    if (line.allocatedCommission <= 0) return crRow(input, "COBERTO_ZERADA", null, sellerExtra);
+    if (sellerExtra.forecastCommission > 0) return crRow(input, "COBERTO_FUTURA", null, sellerExtra);
+    if (sellerExtra.allocatedCommission <= 0) return crRow(input, "COBERTO_ZERADA", null, sellerExtra);
     return crRow(input, "COBERTO_REALIZADA", null, sellerExtra);
   }
   if (input.outlookLines.length > 0) {
@@ -1238,10 +1255,17 @@ export function buildCommission360View(facts: Commission360Facts, query: Commiss
   const todayMonth = today.slice(0, 7);
   const lines = filterCommission360OutlookLines(facts.outlookLines, query);
 
+  // Vendedor do título para o legado do Nomus (cobertura por evento, sem pedido):
+  // título de N pedidos de vendedores diferentes não é atribuído a nenhum deles.
   const sellerByReceivable = new Map<number, { key: string; name: string }>();
   for (const line of facts.outlookLines) {
-    if (line.status === "CANCELADA" || sellerByReceivable.has(line.receivableId)) continue;
-    sellerByReceivable.set(line.receivableId, { key: sellerKeyOf(line.canonicalSellerId, line.rawSellerId), name: lineSellerName(line) });
+    if (line.status === "CANCELADA") continue;
+    const seller = { key: sellerKeyOf(line.canonicalSellerId, line.rawSellerId), name: lineSellerName(line) };
+    const current = sellerByReceivable.get(line.receivableId);
+    if (!current) sellerByReceivable.set(line.receivableId, seller);
+    else if (current.key !== seller.key) {
+      sellerByReceivable.set(line.receivableId, { key: COMMISSION_360_SHARED_TITLE_SELLER_KEY, name: "Vários vendedores (NF-e com N pedidos)" });
+    }
   }
   const sellerFilter = query.canonicalSellerId;
   const batches = facts.batches.filter((batch) => !sellerFilter || batch.commissionPersonId === sellerFilter);

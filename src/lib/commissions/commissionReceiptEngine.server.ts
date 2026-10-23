@@ -29,6 +29,9 @@ import {
   indexUniqueOrderBundlesByNfeId,
   mapReceivableSource,
 } from "./commission-source-resolver.js";
+import { indexAllOrderBundlesByNfeId } from "./commissionSalesOrderNfeLinkResolution.js";
+import type { VigentOrderSnapshotFact } from "./commissionReceivableOrderRights.js";
+import type { CommissionOrderSourceBundle } from "./commission-types.js";
 import {
   COMMISSION_RECEIPT_AMBIGUOUS_SALES_LINK_REASON,
 } from "./commissionSalesOrderNfeLinkResolution.js";
@@ -39,12 +42,41 @@ import {
 import { loadCommissionSellerIdentityContext } from "./commissionSellerIdentity.server.js";
 import { ensureCommissionMaterializationForReceivableRefs } from "./commissionMaterializationOrchestrator.server.js";
 import { decimalToNumber } from "./commission-money.js";
+import { isCompetenceOfficialInIndusCost } from "./commissionCoverageCutover.js";
 import type { CommissionReceivableScheduleStatusValue } from "./commissionReceivableScheduler.js";
 import {
   enrichVisualAuditRowsWithSellerIdentity,
   filterRowsByAppraisalMode,
 } from "./commissionVisualAudit.js";
 import { listCommissionVisualAuditPage } from "./commissionVisualAudit.server.js";
+
+/** Motivo gravado nos itens do snapshot retido (`ALOCACAO_PENDENTE: …`). */
+function allocationPendingReasonOf(items: ReadonlyArray<{ exclusionReason: string | null }>): string | null {
+  const prefix = "ALOCACAO_PENDENTE: ";
+  const reason = items.find((item) => item.exclusionReason?.startsWith(prefix))?.exclusionReason;
+  return reason ? reason.slice(prefix.length) : null;
+}
+
+/**
+ * `NomusAccountsReceivable.status` é a BAIXA do título no Nomus (true = baixado,
+ * false = em aberto), não cancelamento: o Financeiro o rotula "Baixado/Em aberto
+ * (Nomus)", a sincronização grava `false` em título em aberto e a auditoria real de
+ * 30/09/2026 achou 125 títulos `false` com saldo integral e sem recebimento.
+ *
+ * Competência oficial (a partir do cutover): o recebimento é o fato que libera a
+ * comissão por parcela recebida — título ainda em aberto com recebimento parcial entra
+ * na prévia; a baixa não seleciona nem exclui nada. Antes do cutover a regra histórica
+ * fica idêntica (comparação com o Nomus). `COMMISSION_OPEN_RECEIVABLE_RELEASE_ENABLED=false`
+ * volta à regra antiga em todas as competências (alavanca de rollback sem deploy).
+ */
+function receivableStatusGateForCompetence(year: number, month: number): {
+  where: { OR?: Array<{ status: boolean | null }> };
+  excludes: (status: boolean | null | undefined) => boolean;
+} {
+  const enabled = (process.env.COMMISSION_OPEN_RECEIVABLE_RELEASE_ENABLED ?? "true").trim().toLowerCase() !== "false";
+  if (enabled && isCompetenceOfficialInIndusCost(year, month)) return { where: {}, excludes: () => false };
+  return { where: { OR: [{ status: null }, { status: true }] }, excludes: (status) => status === false };
+}
 
 const GLOBAL_SCOPE: CommissionAccessScope = {
   dataScope: "global",
@@ -111,6 +143,8 @@ export async function loadMaterializedSchedulesByReceivableId(
           sellerResolutionStatus: true,
           totalFinalCommissionAmount: true,
           totalGrossCommissionAmount: true,
+          totalSoldAmount: true,
+          allocationBasis: true,
           items: {
             select: {
               exclusionReason: true,
@@ -121,7 +155,7 @@ export async function loadMaterializedSchedulesByReceivableId(
           },
         },
       },
-      salesOrder: { select: { orderCode: true } },
+      salesOrder: { select: { orderCode: true, externalSalesOrderId: true } },
       canonicalSeller: { select: { id: true, name: true } },
     },
   });
@@ -161,11 +195,75 @@ export async function loadMaterializedSchedulesByReceivableId(
         row.orderSnapshot.totalFinalCommissionAmount
       ),
       orderSnapshotStatus: row.orderSnapshot.status,
+      orderSnapshotSoldAmount: decimalToNumber(row.orderSnapshot.totalSoldAmount),
+      orderSnapshotAllocationBasis: row.orderSnapshot.allocationBasis,
+      orderSnapshotAllocationReason: allocationPendingReasonOf(row.orderSnapshot.items),
+      nomusOrderId: row.salesOrder.externalSalesOrderId ?? null,
     });
     map.set(row.receivableId, list);
   }
 
   return map;
+}
+
+/**
+ * Snapshots ACTIVE de cada pedido, em TODAS as NF-e (não só as do mês): lastro
+ * de atribuição do título entre pedidos e guarda R1 (mesma venda em N NF-e).
+ */
+export async function loadVigentOrderSnapshotsBySalesOrderId(
+  salesOrderIds: Iterable<string>
+): Promise<Map<string, VigentOrderSnapshotFact[]>> {
+  const map = new Map<string, VigentOrderSnapshotFact[]>();
+  const ids = [...new Set(salesOrderIds)].filter(Boolean);
+  for (let index = 0; index < ids.length; index += 2000) {
+    const chunk = ids.slice(index, index + 2000);
+    const rows = await prisma.commissionOrderSnapshot.findMany({
+      where: { salesOrderId: { in: chunk }, status: "ACTIVE" },
+      select: {
+        id: true,
+        salesOrderId: true,
+        nfeId: true,
+        totalSoldAmount: true,
+        totalFinalCommissionAmount: true,
+        items: { select: { salesOrderItemId: true, soldAmount: true, status: true } },
+      },
+      orderBy: [{ createdAt: "desc" }, { id: "asc" }],
+    });
+    for (const row of rows) {
+      const list = map.get(row.salesOrderId) ?? [];
+      list.push({
+        snapshotId: row.id,
+        nfeId: row.nfeId,
+        totalSoldAmount: decimalToNumber(row.totalSoldAmount),
+        totalFinalCommissionAmount: decimalToNumber(row.totalFinalCommissionAmount),
+        itemStatuses: row.items.map((item) => item.status),
+        items: row.items.map((item) => ({
+          salesOrderItemId: item.salesOrderItemId,
+          soldAmount: decimalToNumber(item.soldAmount),
+        })),
+      });
+      map.set(row.salesOrderId, list);
+    }
+  }
+  return map;
+}
+
+/** Contexto N:N da prévia: todos os pedidos de cada NF-e + snapshots vigentes dos pedidos. */
+export async function loadReceivableOrderRightsContext(input: {
+  orderBundles: CommissionOrderSourceBundle[];
+  nfeIds: number[];
+  materializedSchedulesByReceivableId: Map<number, MaterializedReceivableScheduleInput[]>;
+}): Promise<{
+  orderBundlesByNfeId: Map<number, CommissionOrderSourceBundle[]>;
+  vigentOrderSnapshotsBySalesOrderId: Map<string, VigentOrderSnapshotFact[]>;
+}> {
+  const orderBundlesByNfeId = indexAllOrderBundlesByNfeId(input.orderBundles, input.nfeIds);
+  const orderIds = new Set<string>(input.orderBundles.map((bundle) => bundle.localOrderId));
+  for (const list of input.materializedSchedulesByReceivableId.values()) {
+    for (const row of list) orderIds.add(row.salesOrderId);
+  }
+  const vigentOrderSnapshotsBySalesOrderId = await loadVigentOrderSnapshotsBySalesOrderId(orderIds);
+  return { orderBundlesByNfeId, vigentOrderSnapshotsBySalesOrderId };
 }
 
 export async function loadCommissionRecordSellersByNfeId(
@@ -214,14 +312,30 @@ export async function loadCommissionReceiptPreview(
     ? await loadCommissionReceiptCompetenceForScope(prisma, input.year, input.month, input.receiptScope)
     : await loadCommissionReceiptCompetenceForPeriod(prisma, input.year, input.month);
   const competenceReceivableIds = [...competenceByReceivable.keys()];
+  // Cobertura por direito (B4): o motor recorta o evento por pedido e precisa do
+  // valor de cada evento do período para isso.
+  const coveredRightsByReceiptId = input.receiptScope?.coveredRightsByReceiptId ?? null;
+  const receiptAmountsById = new Map<number, number>();
+  if (coveredRightsByReceiptId && coveredRightsByReceiptId.size > 0) {
+    const periodReceiptIds = [...competenceByReceivable.values()].flatMap((row) => row.receiptIds);
+    const coveredIds = periodReceiptIds.filter((id) => coveredRightsByReceiptId.has(id));
+    if (coveredIds.length > 0) {
+      const rows = await prisma.nomusReceivableReceipt.findMany({
+        where: { externalId: { in: periodReceiptIds } },
+        select: { externalId: true, receivedAmount: true },
+      });
+      for (const row of rows) receiptAmountsById.set(row.externalId, decimalToNumber(row.receivedAmount));
+    }
+  }
 
+  const statusGate = receivableStatusGateForCompetence(input.year, input.month);
   const arPrismaRows =
     competenceReceivableIds.length > 0
       ? await prisma.nomusAccountsReceivable.findMany({
           where: {
             externalId: { in: competenceReceivableIds },
             suspendCollection: { not: true },
-            OR: [{ status: null }, { status: true }],
+            ...statusGate.where,
           },
           select: {
             externalId: true,
@@ -245,7 +359,7 @@ export async function loadCommissionReceiptPreview(
   const receivables = arPrismaRows
     .map((row) => {
       const source = mapReceivableSource(row);
-      if (row.status === false || row.suspendCollection === true) return null;
+      if (statusGate.excludes(row.status) || row.suspendCollection === true) return null;
       const receiptCompetence = competenceByReceivable.get(source.nomusReceivableId);
       if (!receiptCompetence) return null;
       return {
@@ -265,7 +379,7 @@ export async function loadCommissionReceiptPreview(
         customerId: null,
         customerName: row.personName,
         customerCnpj: row.personCnpj,
-        cancelled: row.status === false,
+        cancelled: statusGate.excludes(row.status),
         suspended: row.suspendCollection === true,
       };
     })
@@ -326,6 +440,11 @@ export async function loadCommissionReceiptPreview(
 
   const { byNfeId: ordersByNfeId, ambiguousNfeIds } =
     indexUniqueOrderBundlesByNfeId(orderBundles);
+  const rightsContext = await loadReceivableOrderRightsContext({
+    orderBundles,
+    nfeIds,
+    materializedSchedulesByReceivableId,
+  });
   const orderSnapshotDiagnosisByNfeId = new Map(
     snapshotRows
       .filter((row): row is typeof row & { nfeId: number } => row.nfeId != null)
@@ -355,6 +474,11 @@ export async function loadCommissionReceiptPreview(
     receivables,
     ordersByNfeId,
     ambiguousNfeIds,
+    orderBundlesByNfeId: rightsContext.orderBundlesByNfeId,
+    vigentOrderSnapshotsBySalesOrderId: rightsContext.vigentOrderSnapshotsBySalesOrderId,
+    ...(coveredRightsByReceiptId && coveredRightsByReceiptId.size > 0
+      ? { coveredRightsByReceiptId, receiptAmountsById }
+      : {}),
     materializedSchedulesByReceivableId,
     commissionRecordsByNfeId,
     orderSnapshotDiagnosisByNfeId,
@@ -455,7 +579,9 @@ function mapOpenNomusArRowToReceivableInput(row: {
   status?: boolean | null;
 }): CommissionReceiptReceivableInput | null {
   const source = mapReceivableSource(row);
-  if (row.status === false || row.suspendCollection === true) return null;
+  // Aberto = saldo > 0 e cobrança não suspensa; `status` é a baixa no Nomus (ver
+  // receivableStatusGateForCompetence) — título em aberto tem status false.
+  if (row.suspendCollection === true) return null;
   const balance = decimalToNumber(row.balanceReceivable) ?? 0;
   const open =
     balance > 0.009
@@ -477,7 +603,7 @@ function mapOpenNomusArRowToReceivableInput(row: {
     customerId: null,
     customerName: row.personName,
     customerCnpj: row.personCnpj ?? null,
-    cancelled: row.status === false,
+    cancelled: false,
     suspended: row.suspendCollection === true,
   };
 }
@@ -493,7 +619,6 @@ export async function loadCommissionReceivableForecastPreview(
     where: {
       balanceReceivable: { gt: 0 },
       suspendCollection: { not: true },
-      OR: [{ status: null }, { status: true }],
     },
     select: {
       externalId: true,
@@ -574,16 +699,22 @@ export async function loadCommissionReceivableForecastPreview(
 
   if (input.orderCode?.trim()) {
     const needle = input.orderCode.trim().toLowerCase();
-    const { byNfeId: ordersByNfeId } = indexUniqueOrderBundlesByNfeId(orderBundles);
+    // NF-e de vários pedidos: o título entra se QUALQUER pedido vinculado bater.
+    const allByNfeId = indexAllOrderBundlesByNfeId(orderBundles, nfeIds);
     receivables = receivables.filter((row) => {
       const nfeId = row.nomusNfeId ?? null;
-      const order = nfeId != null ? ordersByNfeId.get(nfeId) : undefined;
-      return (order?.orderCode ?? "").toLowerCase().includes(needle);
+      const orders = nfeId != null ? allByNfeId.get(nfeId) ?? [] : [];
+      return orders.some((order) => (order.orderCode ?? "").toLowerCase().includes(needle));
     });
   }
 
   const { byNfeId: ordersByNfeId, ambiguousNfeIds } =
     indexUniqueOrderBundlesByNfeId(orderBundles);
+  const rightsContext = await loadReceivableOrderRightsContext({
+    orderBundles,
+    nfeIds,
+    materializedSchedulesByReceivableId,
+  });
   const orderSnapshotDiagnosisByNfeId = new Map(
     snapshotRows
       .filter((row): row is typeof row & { nfeId: number } => row.nfeId != null)
@@ -605,6 +736,8 @@ export async function loadCommissionReceivableForecastPreview(
     receivables,
     ordersByNfeId,
     ambiguousNfeIds,
+    orderBundlesByNfeId: rightsContext.orderBundlesByNfeId,
+    vigentOrderSnapshotsBySalesOrderId: rightsContext.vigentOrderSnapshotsBySalesOrderId,
     materializedSchedulesByReceivableId,
     commissionRecordsByNfeId,
     orderSnapshotDiagnosisByNfeId,

@@ -300,8 +300,12 @@ export async function buildCommissionTraceAudit(
     // Seletor OFICIAL, não `[0]`: a escolha do schedule vigente é uma regra só,
     // e duplicá-la aqui fazia a auditoria depender da ordem da consulta —
     // podendo relatar versão diferente da que o fechamento usaria.
+    // NF-e com N pedidos: o título tem um schedule vigente por pedido — a
+    // auditoria deste pedido escolhe só entre os schedules DELE.
     const materialized = pickMaterializedScheduleForReceivable(
-      materializedByReceivableId.get(row.receivableId) ?? []
+      (materializedByReceivableId.get(row.receivableId) ?? []).filter(
+        (candidate) => candidate.salesOrderId === row.salesOrderId
+      )
     );
     const ledger = materialized
       ? mapMaterializedScheduleToLedgerStatus(materialized)
@@ -347,8 +351,12 @@ export async function buildCommissionTraceAudit(
     // Seletor OFICIAL, não `[0]`: a escolha do schedule vigente é uma regra só,
     // e duplicá-la aqui fazia a auditoria depender da ordem da consulta —
     // podendo relatar versão diferente da que o fechamento usaria.
+    // NF-e com N pedidos: o título tem um schedule vigente por pedido — a
+    // auditoria deste pedido escolhe só entre os schedules DELE.
     const materialized = pickMaterializedScheduleForReceivable(
-      materializedByReceivableId.get(row.receivableId) ?? []
+      (materializedByReceivableId.get(row.receivableId) ?? []).filter(
+        (candidate) => candidate.salesOrderId === row.salesOrderId
+      )
     );
     return buildCommissionTraceReceipt({ schedule: materialized, receivable: receivableInput });
   });

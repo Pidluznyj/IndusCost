@@ -4,6 +4,7 @@
  */
 import { roundMoney } from "./commission-money.js";
 import type { CommissionReceiptPreviewLine } from "./commissionReceiptEngine.js";
+import { isSharedFinancialAnchorLine } from "./commissionReceiptFinancialAnchor.shared.js";
 
 export type ExcludedCustomerReconciliationRow = {
   customerId: string | null;
@@ -146,6 +147,13 @@ export function detectDuplicateReceived(
   const duplicates: DuplicateReceivedRow[] = [];
   for (const [nomusReceivableId, group] of byReceivable) {
     if (group.length <= 1) continue;
+    // NF-e com N pedidos: uma linha por pedido no mesmo título é cardinalidade
+    // legítima (recebido atribuído por pedido, total contado uma vez). Duplicidade
+    // real é o MESMO pedido em mais de uma linha do título.
+    const distinctRights = new Set(group.map((line) => line.localOrderId ?? `line:${line.ledgerLineKey}`));
+    if (group.every((line) => isSharedFinancialAnchorLine(line)) && distinctRights.size === group.length) {
+      continue;
+    }
     const receivedPerLine = group[0]?.receivedAmount ?? 0;
     const allSameReceived = group.every(
       (line) => roundMoney(line.receivedAmount) === roundMoney(receivedPerLine)

@@ -8,6 +8,7 @@ import {
   COMMISSION_PRE_CUTOVER_PAYMENT_BLOCKED_REASON,
   isCommissionDateOfficialInIndusCost,
 } from "./commissionCoverageCutover.js";
+import { assertCommissionPaymentWithinOfficialClosing } from "./commissionPaymentClosingGuard.server.js";
 
 /**
  * Pagar comissão pelo IndusCost só vale para períodos oficiais (a partir do cutover):
@@ -109,11 +110,13 @@ export async function createCommissionPaymentBatch(
         id: true,
         releasedAmount: true,
         paidAmount: true,
+        nomusOrderId: true,
+        orderCode: true,
       },
     });
 
     let totalSelected = 0;
-    const items: Array<{ commissionRecordId: string; amountToPay: number }> = [];
+    const items: Array<{ commissionRecordId: string; amountToPay: number; nomusOrderId: number | null; orderCode: string | null }> = [];
 
     for (const record of records) {
       const released = decimalToNumber(record.releasedAmount);
@@ -121,12 +124,26 @@ export async function createCommissionPaymentBatch(
       const amountToPay = roundMoney(Math.max(0, released - paid));
       if (amountToPay <= 0) continue;
       totalSelected = roundMoney(totalSelected + amountToPay);
-      items.push({ commissionRecordId: record.id, amountToPay });
+      items.push({ commissionRecordId: record.id, amountToPay, nomusOrderId: record.nomusOrderId, orderCode: record.orderCode });
     }
 
     if (items.length === 0) {
       throw new Error("Nenhum registro com valor liberado disponível para pagamento.");
     }
+
+    // Teto pelo fechamento oficial: por (vendedor, pedido), nunca além do liberado no
+    // ledger CLOSED; competências do lote precisam estar fechadas.
+    await assertCommissionPaymentWithinOfficialClosing(tx, {
+      commissionPersonId: input.commissionPersonId,
+      periodStart: input.periodStart,
+      periodEnd: input.periodEnd,
+      requested: items.map((item) => ({
+        commissionRecordId: item.commissionRecordId,
+        nomusOrderId: item.nomusOrderId,
+        orderCode: item.orderCode,
+        amount: item.amountToPay,
+      })),
+    });
 
     const batch = await tx.commissionPaymentBatch.create({
       data: {
@@ -204,6 +221,7 @@ export async function markCommissionPaymentBatchPaid(
             commissionRecordId: true,
             amountToPay: true,
             amountPaid: true,
+            commissionRecord: { select: { nomusOrderId: true, orderCode: true } },
           },
         },
       },
@@ -219,6 +237,19 @@ export async function markCommissionPaymentBatchPaid(
     if (!settings.requireApprovalBeforePaid && batch.status !== "APPROVED" && batch.status !== "DRAFT") {
       throw new Error("Lote não está disponível para pagamento.");
     }
+    // Revalida no pagamento: outro lote pode ter consumido o liberado depois da criação.
+    await assertCommissionPaymentWithinOfficialClosing(tx, {
+      commissionPersonId: batch.commissionPersonId,
+      periodStart: batch.periodStart,
+      periodEnd: batch.periodEnd,
+      excludeBatchId: batch.id,
+      requested: batch.items.map((item) => ({
+        commissionRecordId: item.commissionRecordId,
+        nomusOrderId: item.commissionRecord.nomusOrderId,
+        orderCode: item.commissionRecord.orderCode,
+        amount: decimalToNumber(item.amountToPay),
+      })),
+    });
 
     let totalPaid = 0;
 

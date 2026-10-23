@@ -49,6 +49,11 @@ export type CommissionReceiptEventScope = {
   includeReceiptExternalIds?: readonly number[] | null;
   alreadyCoveredReceiptExternalIds?: readonly number[] | null;
   excludeReceiptExternalIds?: readonly number[] | null;
+  /**
+   * Cobertura por DIREITO (B4): recebimento → pedidos já contemplados. Não muda os
+   * eventos carregados — o motor tira só aquele pedido do evento.
+   */
+  coveredRightsByReceiptId?: ReadonlyMap<number, ReadonlySet<string>> | null;
 };
 
 async function loadReceiptEventsForPeriod(
