@@ -2915,7 +2915,7 @@ export const ProposalModule = () => {
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-accent/50 border-b border-border">
-                <th className="p-4 font-semibold text-sm">Nº / Título</th>
+                <th className="p-4 font-semibold text-sm">Proposta</th>
                 <th className="p-4 font-semibold text-sm">Cliente</th>
                 <th className="p-4 font-semibold text-sm">Data</th>
                 <th className="p-4 font-semibold text-sm">Valor Líquido</th>
@@ -2976,8 +2976,12 @@ export const ProposalModule = () => {
                           <FileText className="h-5 w-5" />
                         </div>
                         <div>
-                          <p className="font-bold text-sm">#{p.number}</p>
-                          <p className="text-xs text-muted-foreground truncate max-w-[150px]">{p.title || "Sem título"}</p>
+                          <p className="font-bold text-sm" data-testid={`proposal-list-code-${p.id}`}>
+                            {p.title?.trim() || `#${p.number}`}
+                          </p>
+                          {p.title?.trim() ? (
+                            <p className="text-[10px] text-muted-foreground">#{p.number}</p>
+                          ) : null}
                         </div>
                       </div>
                     </td>

@@ -86,6 +86,8 @@ describe("proposal form layout", () => {
     const mod = read("src/components/ProposalModule.tsx");
     assert.match(mod, /data-testid=\{`proposal-list-margin-\$\{p\.id\}`\}/);
     assert.match(mod, /data-testid=\{`proposal-list-sales-order-\$\{p\.id\}`\}/);
+    assert.match(mod, /data-testid=\{`proposal-list-code-\$\{p\.id\}`\}/);
+    assert.match(mod, /p\.title\?\.trim\(\) \|\| `#\$\{p\.number\}`/);
     assert.match(mod, /formatSalesOrderDisplayCode\(p\.salesOrder\.orderCode\)/);
     assert.match(mod, /formatPercentDisplay\(p\.totalMarginPerc\)/);
     assert.doesNotMatch(mod, /formatMoneyDisplay\(p\.totalMarginValue\)/);
