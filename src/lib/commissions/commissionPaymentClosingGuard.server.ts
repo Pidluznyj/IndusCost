@@ -23,6 +23,25 @@ export function isCommissionPaymentClosingGuardEnabled(env: NodeJS.ProcessEnv = 
   return (env.COMMISSION_PAYMENT_CLOSING_GUARD_ENABLED ?? "true").trim().toLowerCase() !== "false";
 }
 
+/** Folga nas bordas do período: maior que qualquer fuso do Brasil (−02:00 a −05:00). */
+const PERIOD_EDGE_TOLERANCE_MS = 12 * 60 * 60 * 1000;
+
+/**
+ * O lote chega com o período em UTC (filtro por mês: 01 00:00Z a 28 23:59Z) ou em hora
+ * local do navegador (filtro por datas: 23:59:59 −03:00 do dia 28 vira 02:59Z do dia 1º).
+ * Lido em UTC, o segundo puxaria a competência seguinte e exigiria um fechamento que não
+ * pertence ao lote. As bordas entram com 12 h de folga; período de um dia usa o meio.
+ */
+export function competenceBoundsOfPeriod(periodStart: Date, periodEnd: Date): { start: Date; end: Date } {
+  const startMs = periodStart.getTime();
+  const endMs = periodEnd.getTime();
+  const middle = startMs + (endMs - startMs) / 2;
+  return {
+    start: new Date(Math.min(startMs + PERIOD_EDGE_TOLERANCE_MS, middle)),
+    end: new Date(Math.max(endMs - PERIOD_EDGE_TOLERANCE_MS, middle)),
+  };
+}
+
 type GuardDb = Pick<
   PrismaClient | Prisma.TransactionClient,
   "commissionMonthlyClosing" | "commissionReceiptLedgerLine" | "commissionPaymentBatchItem"
@@ -39,8 +58,9 @@ export async function evaluateCommissionPaymentBatchAgainstClosing(
     excludeBatchId?: string | null;
   }
 ): Promise<PaymentGuardResult> {
-  const start = resolveReceiptNaturalYearMonth(input.periodStart);
-  const end = resolveReceiptNaturalYearMonth(input.periodEnd);
+  const bounds = competenceBoundsOfPeriod(input.periodStart, input.periodEnd);
+  const start = resolveReceiptNaturalYearMonth(bounds.start);
+  const end = resolveReceiptNaturalYearMonth(bounds.end);
   if (!start || !end) {
     return { ok: false, violations: ["período do lote inválido"], orders: [] };
   }

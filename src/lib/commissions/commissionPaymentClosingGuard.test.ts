@@ -9,6 +9,8 @@ import {
   paymentGuardOrderKey,
   type PaymentGuardLedgerLine,
 } from "./commissionPaymentClosingGuard.js";
+import { competenceBoundsOfPeriod, evaluateCommissionPaymentBatchAgainstClosing } from "./commissionPaymentClosingGuard.server.js";
+import { resolveCreateBatchPeriod } from "../../components/commissions/payments/commissionsPaymentsFilters.js";
 
 const SELLER_A = "person-a";
 const SELLER_B = "person-b";
@@ -152,5 +154,48 @@ describe("guarda de pagamento × fechamento oficial", () => {
       openCompetences: [],
     });
     assert.equal(byCode.ok, true, byCode.violations.join("; "));
+  });
+});
+
+describe("período do lote: mês em UTC ou datas no fuso do navegador apontam a mesma competência", () => {
+  // Banco simulado: só fevereiro/2027 fechado; R$ 100 liberados do pedido 1 ao vendedor.
+  const db = {
+    commissionMonthlyClosing: {
+      findMany: async ({ where }: { where: { OR: Array<{ year: number; month: number }> } }) =>
+        where.OR.filter((month) => month.year === 2027 && month.month === 2),
+    },
+    commissionReceiptLedgerLine: {
+      findMany: async () => [{ canonicalSellerId: "v", nomusOrderId: 1, orderCode: "1", status: "COMMISSIONABLE", releasedCommissionAmount: 100 }],
+    },
+    commissionPaymentBatchItem: { findMany: async () => [] },
+  } as unknown as Parameters<typeof evaluateCommissionPaymentBatchAgainstClosing>[0];
+  const evaluate = (period: { periodStart: string; periodEnd: string }) =>
+    evaluateCommissionPaymentBatchAgainstClosing(db, {
+      commissionPersonId: "v",
+      periodStart: new Date(period.periodStart),
+      periodEnd: new Date(period.periodEnd),
+      requested: [{ commissionRecordId: "r", nomusOrderId: 1, orderCode: "1", amount: 100 }],
+    });
+
+  it("filtro por mês (UTC) e por datas (23:59:59 −03:00 = 02:59Z do dia 1º) liberam fevereiro sem exigir março", async () => {
+    const byMonth = await evaluate(resolveCreateBatchPeriod({ from: "", to: "", year: "2027", month: "2" })!);
+    assert.equal(byMonth.ok, true, byMonth.violations.join("; "));
+    const byDates = await evaluate({ periodStart: "2027-02-01T03:00:00.000Z", periodEnd: "2027-03-01T02:59:59.000Z" });
+    assert.equal(byDates.ok, true, byDates.violations.join("; "));
+    // Um dia só, em hora local: continua na competência do dia.
+    const oneDay = await evaluate({ periodStart: "2027-02-10T03:00:00.000Z", periodEnd: "2027-02-11T02:59:59.000Z" });
+    assert.equal(oneDay.ok, true, oneDay.violations.join("; "));
+    // Período que entra de fato em março continua exigindo março fechado.
+    const intoMarch = await evaluate({ periodStart: "2027-02-01T03:00:00.000Z", periodEnd: "2027-03-02T02:59:59.000Z" });
+    assert.equal(intoMarch.ok, false);
+    assert.match(intoMarch.violations[0]!, /03\/2027 sem fechamento/);
+  });
+
+  it("bordas com 12 h de folga; período de um dia usa o meio", () => {
+    const bounds = competenceBoundsOfPeriod(new Date("2027-02-01T03:00:00.000Z"), new Date("2027-03-01T02:59:59.000Z"));
+    assert.deepEqual([bounds.start.toISOString(), bounds.end.toISOString()], ["2027-02-01T15:00:00.000Z", "2027-02-28T14:59:59.000Z"]);
+    const day = competenceBoundsOfPeriod(new Date("2027-02-10T03:00:00.000Z"), new Date("2027-02-11T02:59:59.000Z"));
+    assert.equal(day.start.toISOString().slice(0, 10), "2027-02-10");
+    assert.equal(day.end.toISOString().slice(0, 10), "2027-02-10");
   });
 });
