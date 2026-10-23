@@ -127,11 +127,38 @@ export function countPermissionTreeDecisions(
   return { allowed, denied, inherited, total };
 }
 
+export function foldPermissionSearch(value: string): string {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+}
+
+export function permissionTreeBreadcrumb(
+  nodes: readonly PermissionTreeNode[],
+  id: string
+): string[] {
+  const walk = (
+    list: readonly PermissionTreeNode[],
+    trail: string[]
+  ): string[] | null => {
+    for (const node of list) {
+      const next = [...trail, node.label];
+      if (node.id === id) return next;
+      const found = walk(node.children, next);
+      if (found) return found;
+    }
+    return null;
+  };
+  return walk(nodes, []) ?? [];
+}
+
 export function filterPermissionTreeNodes(
   nodes: readonly PermissionTreeNode[],
   filter: PermissionTreeFilterState
 ): PermissionTreeNode[] {
-  const q = filter.search.trim().toLowerCase();
+  const q = foldPermissionSearch(filter.search);
   if (!q) return nodes.map((n) => ({ ...n, children: n.children }));
 
   const apply = (list: readonly PermissionTreeNode[]): PermissionTreeNode[] => {
@@ -139,9 +166,9 @@ export function filterPermissionTreeNodes(
     for (const n of list) {
       const children = apply(n.children);
       const selfMatch =
-        n.label.toLowerCase().includes(q) ||
-        n.resourceKey.toLowerCase().includes(q) ||
-        n.originLabel.toLowerCase().includes(q);
+        foldPermissionSearch(n.label).includes(q) ||
+        foldPermissionSearch(n.resourceKey).includes(q) ||
+        foldPermissionSearch(n.originLabel).includes(q);
       if (selfMatch || children.length > 0) {
         out.push({ ...n, children: selfMatch ? n.children : children });
       }

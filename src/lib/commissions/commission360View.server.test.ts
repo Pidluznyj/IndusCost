@@ -561,7 +561,7 @@ describe("Visão 360° — T26: o motor oficial não é alterado nem chamado par
   it("as rotas da Visão 360° são só GET e usam o mesmo guard da Previsão", () => {
     const routes = read("src/lib/commissionsRoutes.ts");
     assert.doesNotMatch(routes, /app\.(post|put|patch|delete)\(\s*["']\/api\/commissions\/visao-360/);
-    assert.match(routes, /app\.get\("\/api\/commissions\/visao-360", \.\.\.reportsGuard/);
-    assert.match(routes, /app\.get\("\/api\/commissions\/visao-360\/conciliacao\.csv", \.\.\.reportsGuard/);
+    assert.match(routes, /app\.get\("\/api\/commissions\/visao-360", \.\.\.view360Guard/);
+    assert.match(routes, /app\.get\("\/api\/commissions\/visao-360\/conciliacao\.csv", \.\.\.view360ExportGuard/);
   });
 });

@@ -24,6 +24,12 @@ export const OPERATIONS_RESOURCE_KEYS = {
   inventoryWarehouses: "operations.inventory.warehouses",
   inventoryMovements: "operations.inventory.movements",
   inventoryCounts: "operations.inventory.counts",
+  inventoryBalances: "operations.inventory.balances",
+  inventoryImplantation: "operations.inventory.implantation",
+  inventoryCollectorDevices: "operations.inventory.collector_devices",
+  inventorySectors: "operations.inventory.sectors",
+  inventoryReservations: "operations.inventory.reservations",
+  inventoryAudit: "operations.inventory.audit",
   purchases: "operations.purchases",
   supplyChainPurchases: "operations.supply_chain.purchases",
   supplyChainInventory: "operations.supply_chain.inventory",
@@ -98,13 +104,13 @@ export const OPERATIONS_PILOT_ENDPOINTS = [
   {
     method: "POST",
     path: "/api/inventory/stock-sectors*",
-    resourceKey: "operations.inventory.warehouses",
+    resourceKey: "operations.inventory.sectors",
     action: "manage",
   },
   {
     method: "PATCH",
     path: "/api/inventory/stock-sectors*",
-    resourceKey: "operations.inventory.warehouses",
+    resourceKey: "operations.inventory.sectors",
     action: "manage",
   },
   {
@@ -134,31 +140,31 @@ export const OPERATIONS_PILOT_ENDPOINTS = [
   {
     method: "GET",
     path: "/api/inventory/initial-balances*",
-    resourceKey: "operations.inventory",
+    resourceKey: "operations.inventory.implantation",
     action: "view",
   },
   {
     method: "GET",
     path: "/api/inventory/balances/export",
-    resourceKey: "operations.inventory",
-    action: "view",
+    resourceKey: "operations.inventory.balances",
+    action: "export",
   },
   {
     method: "POST",
     path: "/api/inventory/balances/rebuild",
-    resourceKey: "operations.inventory",
+    resourceKey: "operations.inventory.balances",
     action: "manage",
   },
   {
     method: "POST",
     path: "/api/inventory/reservations*",
-    resourceKey: "operations.inventory",
+    resourceKey: "operations.inventory.reservations",
     action: "manage",
   },
   {
     method: "GET",
     path: "/api/inventory/reservations*",
-    resourceKey: "operations.inventory",
+    resourceKey: "operations.inventory.reservations",
     action: "view",
   },
   {
@@ -194,7 +200,7 @@ export const OPERATIONS_PILOT_ENDPOINTS = [
   {
     method: "POST",
     path: "/api/inventory/reservations*",
-    resourceKey: "operations.inventory",
+    resourceKey: "operations.inventory.reservations",
     action: "manage",
   },
 

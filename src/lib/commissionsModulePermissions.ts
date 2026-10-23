@@ -20,8 +20,8 @@ const LIVE_SECTION_RESOURCE: Partial<Record<CommissionsSectionId, string>> = {
   closings: TabResourceKeys.COMISSOES_FECHAMENTOS,
   customerExclusions: TabResourceKeys.COMISSOES_EXCECOES,
   orderProvision: TabResourceKeys.COMISSOES_PROVISAO_PEDIDO,
-  portfolioOutlook: TabResourceKeys.COMISSOES_RELATORIOS,
-  view360: TabResourceKeys.COMISSOES_RELATORIOS,
+  portfolioOutlook: TabResourceKeys.COMISSOES_PREVISAO,
+  view360: TabResourceKeys.COMISSOES_VISAO_360,
   reports: TabResourceKeys.COMISSOES_RELATORIOS,
   reprocess: TabResourceKeys.COMISSOES_REPROCESSAR,
 };
@@ -44,7 +44,7 @@ export function canViewCommissionsSection(
 
   const resourceKey = LIVE_SECTION_RESOURCE[sectionId];
   if (resourceKey && typeof check.canViewResource === "function") {
-    if (check.canViewResource(resourceKey)) return true;
+    return check.canViewResource(resourceKey);
   }
 
   if (sectionId === "monthlyClosing") {

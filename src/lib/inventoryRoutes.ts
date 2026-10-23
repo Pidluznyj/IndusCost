@@ -417,6 +417,58 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
     auth.requireAppAuth,
     auth.requireResource(OPERATIONS_RESOURCE_KEYS.inventoryCounts, OPERATIONS_ACTIONS.manage),
   ] as const;
+  const balancesView = [
+    auth.requireAppAuth,
+    auth.requireResource(OPERATIONS_RESOURCE_KEYS.inventoryBalances, "view"),
+  ] as const;
+  const balancesExport = [
+    auth.requireAppAuth,
+    auth.requireResource(OPERATIONS_RESOURCE_KEYS.inventoryBalances, "export"),
+  ] as const;
+  const balancesManage = [
+    auth.requireAppAuth,
+    auth.requireResource(OPERATIONS_RESOURCE_KEYS.inventoryBalances, "manage"),
+  ] as const;
+  const implantationView = [
+    auth.requireAppAuth,
+    auth.requireResource(OPERATIONS_RESOURCE_KEYS.inventoryImplantation, "view"),
+  ] as const;
+  const implantationCreate = [
+    auth.requireAppAuth,
+    auth.requireResource(OPERATIONS_RESOURCE_KEYS.inventoryImplantation, "create"),
+  ] as const;
+  const movementsView = [
+    auth.requireAppAuth,
+    auth.requireResource(OPERATIONS_RESOURCE_KEYS.inventoryMovements, "view"),
+  ] as const;
+  const sectorsView = [
+    auth.requireAppAuth,
+    auth.requireResource(OPERATIONS_RESOURCE_KEYS.inventorySectors, "view"),
+  ] as const;
+  const sectorsManage = [
+    auth.requireAppAuth,
+    auth.requireResource(OPERATIONS_RESOURCE_KEYS.inventorySectors, "manage"),
+  ] as const;
+  const reservationsView = [
+    auth.requireAppAuth,
+    auth.requireResource(OPERATIONS_RESOURCE_KEYS.inventoryReservations, "view"),
+  ] as const;
+  const reservationsManage = [
+    auth.requireAppAuth,
+    auth.requireResource(OPERATIONS_RESOURCE_KEYS.inventoryReservations, "manage"),
+  ] as const;
+  const auditView = [
+    auth.requireAppAuth,
+    auth.requireResource(OPERATIONS_RESOURCE_KEYS.inventoryAudit, "view"),
+  ] as const;
+  const devicesView = [
+    auth.requireAppAuth,
+    auth.requireResource(OPERATIONS_RESOURCE_KEYS.inventoryCollectorDevices, "view"),
+  ] as const;
+  const devicesManage = [
+    auth.requireAppAuth,
+    auth.requireResource(OPERATIONS_RESOURCE_KEYS.inventoryCollectorDevices, "manage"),
+  ] as const;
 
   app.get("/api/inventory/dashboard", ...view, async (_req, res) => {
     try {
@@ -1046,7 +1098,7 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
     }
   });
 
-  app.get("/api/inventory/stock-sectors", ...view, async (req, res) => {
+  app.get("/api/inventory/stock-sectors", ...sectorsView, async (req, res) => {
     try {
       const q = parseListInventoryStockSectorsQuery(req.query as Record<string, unknown>);
       res.json(await listInventoryStockSectors(prisma, q));
@@ -1084,7 +1136,7 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
     }
   });
 
-  app.get("/api/inventory/stock-sectors/:id", ...view, async (req, res) => {
+  app.get("/api/inventory/stock-sectors/:id", ...sectorsView, async (req, res) => {
     try {
       const { id } = req.params;
       const sector = await getInventoryStockSectorById(prisma, id);
@@ -1096,7 +1148,7 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
     }
   });
 
-  app.post("/api/inventory/stock-sectors", ...warehouseManage, async (req, res) => {
+  app.post("/api/inventory/stock-sectors", ...sectorsManage, async (req, res) => {
     try {
       const user = await auth.getCurrentAppUser(req);
       if (!user) return res.status(401).json(inventoryApiError("Autenticação necessária."));
@@ -1128,7 +1180,7 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
     }
   });
 
-  app.patch("/api/inventory/stock-sectors/:id", ...warehouseManage, async (req, res) => {
+  app.patch("/api/inventory/stock-sectors/:id", ...sectorsManage, async (req, res) => {
     try {
       const user = await auth.getCurrentAppUser(req);
       if (!user) return res.status(401).json(inventoryApiError("Autenticação necessária."));
@@ -1149,7 +1201,7 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
     }
   });
 
-  app.patch("/api/inventory/stock-sectors/:id/status", ...warehouseManage, async (req, res) => {
+  app.patch("/api/inventory/stock-sectors/:id/status", ...sectorsManage, async (req, res) => {
     try {
       const user = await auth.getCurrentAppUser(req);
       if (!user) return res.status(401).json(inventoryApiError("Autenticação necessária."));
@@ -1434,7 +1486,7 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
     }
   );
 
-  app.get("/api/inventory/balances", ...view, async (req, res) => {
+  app.get("/api/inventory/balances", ...balancesView, async (req, res) => {
     try {
       const q = parseInventoryBalancesListQuery(req.query as Record<string, unknown>);
       const where = buildInventoryBalancesWhere(q);
@@ -1498,7 +1550,7 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
 
   // Relatório de saldos para análise de compra (mesmos filtros da consulta; somente leitura).
   // `zeroBalanceMode` só vale nestas rotas; omitido = contrato legado.
-  app.get("/api/inventory/balances/report", ...view, async (req, res) => {
+  app.get("/api/inventory/balances/report", ...balancesView, async (req, res) => {
     try {
       const q = parseInventoryBalanceReportQuery(req.query as Record<string, unknown>);
       res.json(await loadInventoryBalanceReport(prisma, q, new Date()));
@@ -1508,7 +1560,7 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
     }
   });
 
-  app.get("/api/inventory/balances/report.xlsx", ...view, async (req, res) => {
+  app.get("/api/inventory/balances/report.xlsx", ...balancesExport, async (req, res) => {
     try {
       const q = parseInventoryBalanceReportQuery(req.query as Record<string, unknown>);
       const report = await loadInventoryBalanceReport(prisma, q, new Date());
@@ -1525,7 +1577,7 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
   // CSV operacional por almoxarifado/local: ledger de InventoryBalance, não o
   // relatório consolidado. Não inclui itens sem registro de saldo e ignora
   // `zeroBalanceMode` — contrato distinto do XLS/PDF, preservado para consumidores.
-  app.get("/api/inventory/balances/export", ...view, async (req, res) => {
+  app.get("/api/inventory/balances/export", ...balancesExport, async (req, res) => {
     try {
       const q = parseInventoryBalancesListQuery(req.query as Record<string, unknown>);
       const where: Prisma.InventoryBalanceWhereInput = {
@@ -1567,7 +1619,7 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
     }
   });
 
-  app.post("/api/inventory/balances/rebuild", ...manage, async (req, res) => {
+  app.post("/api/inventory/balances/rebuild", ...balancesManage, async (req, res) => {
     try {
       const user = await auth.getCurrentAppUser(req);
       if (!user) return res.status(401).json(inventoryApiError("Autenticação necessária."));
@@ -1591,7 +1643,7 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
     }
   });
 
-  app.get("/api/inventory/initial-balances", ...view, async (req, res) => {
+  app.get("/api/inventory/initial-balances", ...implantationView, async (req, res) => {
     try {
       const q = parseInventoryMovementsListQuery(req.query as Record<string, unknown>);
       const where: Prisma.InventoryMovementWhereInput = {
@@ -1644,7 +1696,7 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
     }
   });
 
-  app.get("/api/inventory/initial-balances/report", ...view, async (req, res) => {
+  app.get("/api/inventory/initial-balances/report", ...implantationView, async (req, res) => {
     try {
       const rows = await prisma.inventoryMovement.findMany({
         where: { movementType: "INITIAL_BALANCE" },
@@ -1685,7 +1737,7 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
     }
   });
 
-  app.post("/api/inventory/initial-balances", ...moveCreate, async (req, res) => {
+  app.post("/api/inventory/initial-balances", ...implantationCreate, async (req, res) => {
     try {
       const user = await auth.getCurrentAppUser(req);
       if (!user) return res.status(401).json(inventoryApiError("Autenticação necessária."));
@@ -1780,7 +1832,7 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
     }
   });
 
-  app.get("/api/inventory/movements", ...view, async (req, res) => {
+  app.get("/api/inventory/movements", ...movementsView, async (req, res) => {
     try {
       const q = parseInventoryMovementsListQuery(req.query as Record<string, unknown>);
       const where = buildInventoryMovementsWhere(q);
@@ -1809,7 +1861,7 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
     }
   });
 
-  app.get("/api/inventory/movements/:id", ...view, async (req, res) => {
+  app.get("/api/inventory/movements/:id", ...movementsView, async (req, res) => {
     try {
       const { id } = req.params;
       if (!isUuid(id)) return res.status(400).json(inventoryApiError("ID inválido."));
@@ -1915,7 +1967,7 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
     }
   });
 
-  app.get("/api/inventory/audit", ...view, async (req, res) => {
+  app.get("/api/inventory/audit", ...auditView, async (req, res) => {
     try {
       const page = Math.max(1, Number.parseInt(String(req.query.page ?? "1"), 10) || 1);
       const pageSize = Math.min(
@@ -1942,7 +1994,7 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
     }
   });
 
-  app.get("/api/inventory/reservations", ...view, async (req, res) => {
+  app.get("/api/inventory/reservations", ...reservationsView, async (req, res) => {
     try {
       const statusQ = String(req.query.status ?? "").trim();
       const itemId = String(req.query.itemId ?? "").trim();
@@ -1984,7 +2036,7 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
     }
   });
 
-  app.get("/api/inventory/reservations/:id", ...view, async (req, res) => {
+  app.get("/api/inventory/reservations/:id", ...reservationsView, async (req, res) => {
     try {
       const { id } = req.params;
       if (!isUuid(id)) return res.status(400).json(inventoryApiError("ID inválido."));
@@ -2003,7 +2055,7 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
     }
   });
 
-  app.post("/api/inventory/reservations", ...reserveManage, async (req, res) => {
+  app.post("/api/inventory/reservations", ...reservationsManage, async (req, res) => {
     try {
       const user = await auth.getCurrentAppUser(req);
       if (!user) return res.status(401).json(inventoryApiError("Autenticação necessária."));
@@ -2051,7 +2103,7 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
     }
   });
 
-  app.post("/api/inventory/reservations/:id/cancel", ...reserveManage, async (req, res) => {
+  app.post("/api/inventory/reservations/:id/cancel", ...reservationsManage, async (req, res) => {
     try {
       const user = await auth.getCurrentAppUser(req);
       if (!user) return res.status(401).json(inventoryApiError("Autenticação necessária."));
@@ -2516,7 +2568,7 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
   // Administrar dispositivos exige o mesmo nível de quem aprova conferência.
   // ---------------------------------------------------------------------
 
-  app.get("/api/inventory/collector-devices", ...countApprove, async (req, res) => {
+  app.get("/api/inventory/collector-devices", ...devicesView, async (req, res) => {
     try {
       const user = await auth.getCurrentAppUser(req);
       if (!user) return res.status(401).json(inventoryApiError("Autenticação necessária."));
@@ -2533,7 +2585,7 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
     }
   });
 
-  app.post("/api/inventory/collector-devices", ...countApprove, async (req, res) => {
+  app.post("/api/inventory/collector-devices", ...devicesManage, async (req, res) => {
     try {
       const user = await auth.getCurrentAppUser(req);
       if (!user) return res.status(401).json(inventoryApiError("Autenticação necessária."));
@@ -2586,7 +2638,7 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
   // nunca do corpo enviado pelo administrador.
   // ---------------------------------------------------------------------
 
-  app.get("/api/inventory/collector-device-enrollments", ...countApprove, async (req, res) => {
+  app.get("/api/inventory/collector-device-enrollments", ...devicesView, async (req, res) => {
     try {
       const user = await auth.getCurrentAppUser(req);
       if (!user) return res.status(401).json(inventoryApiError("Autenticação necessária."));

@@ -22,6 +22,8 @@ export {
   expandRootPermissionTreeKeys,
   filterPermissionTreeNodes,
   findPermissionTreeNode,
+  foldPermissionSearch,
+  permissionTreeBreadcrumb,
   getNodeDecision,
   isStructuralPermissionTreeNode,
   kindLabel,

@@ -50,17 +50,21 @@ describe("Comissões › Visão 360°", () => {
     assert.doesNotMatch(html, /<table[^>]*>(?:(?!<\/table>).)*<table/s, "sem tabela aninhada");
   });
 
-  it("aba registrada com o mesmo recurso da Previsão (sem ampliar permissão)", () => {
+  it("aba registrada com recurso próprio, separado da Previsão e dos Relatórios", () => {
     const tab = COMMISSIONS_LIVE_UI_TABS.find((row) => row.id === "view360");
-    assert.equal(tab?.resourceKey, TabResourceKeys.COMISSOES_RELATORIOS);
-    assert.equal(tab?.resourceKey, COMMISSIONS_LIVE_UI_TABS.find((row) => row.id === "portfolioOutlook")?.resourceKey);
+    assert.equal(tab?.resourceKey, TabResourceKeys.COMISSOES_VISAO_360);
+    assert.notEqual(tab?.resourceKey, TabResourceKeys.COMISSOES_RELATORIOS);
+    assert.notEqual(
+      tab?.resourceKey,
+      COMMISSIONS_LIVE_UI_TABS.find((row) => row.id === "portfolioOutlook")?.resourceKey
+    );
     assert.equal(parseCommissionsSectionFromPath("/commissions/visao-360"), "view360");
     assert.equal(isCommissionsCanonicalPath("/commissions/visao-360"), true);
     assert.equal(resolveCommissionsCanonicalPath("/commissions/visao-360"), "/commissions/visao-360");
     const viewer = {
       hasPermission: () => false,
       hasAnyPermission: () => false,
-      canViewResource: (key: string): boolean => key === TabResourceKeys.COMISSOES_RELATORIOS,
+      canViewResource: (key: string): boolean => key === TabResourceKeys.COMISSOES_VISAO_360,
     };
     assert.equal(canViewCommissionsSection("view360", viewer), true);
     const none = { hasPermission: () => false, hasAnyPermission: () => false, canViewResource: () => false };

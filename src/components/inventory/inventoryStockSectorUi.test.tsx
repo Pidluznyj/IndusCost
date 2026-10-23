@@ -290,13 +290,13 @@ describe("setores · tela (render estático)", () => {
 });
 
 describe("setores · navegação e fronteiras da tela", () => {
-  it("8. aba Setores / Collector existe no Estoque, com rota e permissão de almoxarifados", () => {
+  it("8. aba Setores / Collector existe no Estoque, com rota e permissão própria", () => {
     const tab = getVisibleInventoryTabs().find((t) => t.id === "stockSectors");
     assert.equal(tab?.label, "Setores / Collector");
     assert.equal(resolveInventoryTabFromPath("/inventory/stock-sectors"), "stockSectors");
     assert.equal(
       INVENTORY_UI_TABS.find((t) => t.id === "stockSectors")?.resourceKey,
-      "operations.inventory.warehouses"
+      "operations.inventory.sectors"
     );
     assert.match(read("src/App.tsx"), /path="inventory\/stock-sectors"/);
     const mod = read("src/components/InventoryModule.tsx");

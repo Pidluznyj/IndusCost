@@ -6,6 +6,7 @@ import {
   collectPermissionTreeIds,
   countPermissionTreeDecisions,
   filterPermissionTreeNodes,
+  permissionTreeBreadcrumb,
   mapPermissionTreeEffectives,
   resolvePermissionTreeEffective,
   setPermissionTreeDecision,
@@ -41,6 +42,16 @@ describe("permissionsTreeUi — estado puro", () => {
     const filtered = filterPermissionTreeNodes(nodes, { search: "BOM" });
     assert.ok(filtered.some((n) => n.id === "engineering"));
     assert.ok(!filtered.some((n) => n.id === "dashboard"));
+    const accent = filterPermissionTreeNodes(
+      [{ ...nodes[0], id: "visao", resourceKey: "x", label: "Visão 360°", kind: "page", originLabel: "", baselineEffective: "denied", children: [] }],
+      { search: "visao" }
+    );
+    assert.equal(accent.length, 1);
+    assert.deepEqual(permissionTreeBreadcrumb(nodes, "engineering.products.tab.bom"), [
+      "Engenharia",
+      "Produtos",
+      "Produto — BOM",
+    ]);
   });
 
   it("pai com DENY explícito força efetivo denied nos filhos", () => {

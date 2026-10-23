@@ -26,6 +26,7 @@ import {
   filterPermissionTreeNodes,
   findPermissionTreeNode,
   getNodeDecision,
+  permissionTreeBreadcrumb,
   isStructuralPermissionTreeNode,
   kindLabel,
   mapPermissionTreeEffectives,
@@ -257,6 +258,7 @@ export function PermissionsTree({
     initialExpandedKeys(nodes, initialExpandMode)
   );
   const [selectedBranchId, setSelectedBranchId] = useState<string | null>(null);
+  const [selectedDetailId, setSelectedDetailId] = useState<string | null>(null);
   const [pendingBatchDecision, setPendingBatchDecision] =
     useState<PermissionTreeDecision | null>(null);
 
@@ -281,6 +283,17 @@ export function PermissionsTree({
   const counters = useMemo(
     () => countPermissionTreeDecisions(nodes, decisions),
     [nodes, decisions]
+  );
+
+  const selectedDetail = useMemo(
+    () =>
+      selectedDetailId ? findPermissionTreeNode(nodes, selectedDetailId) : null,
+    [nodes, selectedDetailId]
+  );
+  const detailPath = useMemo(
+    () =>
+      selectedDetailId ? permissionTreeBreadcrumb(nodes, selectedDetailId) : [],
+    [nodes, selectedDetailId]
   );
 
   const selectedBranch = useMemo(
@@ -467,15 +480,20 @@ export function PermissionsTree({
 
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
-            <span
+            <button
+              type="button"
+              data-testid={`permissions-tree-open-${node.id}`}
+              aria-current={selectedDetailId === node.id ? "true" : undefined}
+              onClick={() => setSelectedDetailId(node.id)}
               className={cn(
-                "truncate text-sm text-foreground",
+                "truncate text-left text-sm text-foreground hover:underline",
                 (isModule || node.kind === "page") && "font-medium",
-                isSection && "font-semibold"
+                isSection && "font-semibold",
+                selectedDetailId === node.id && "underline"
               )}
             >
               {node.label}
-            </span>
+            </button>
             <span className="shrink-0 text-[10px] uppercase tracking-wide text-muted-foreground/80">
               {isSection ? "Seção do menu" : kindLabel(node.kind)}
             </span>
@@ -761,6 +779,50 @@ export function PermissionsTree({
           filtered.map((node) => renderNode(node, 0))
         )}
       </div>
+      <aside
+        data-testid="permissions-tree-detail"
+        className="shrink-0 border-t border-border bg-muted/20 px-3 py-2 text-sm"
+      >
+        {selectedDetail ? (
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-[11px] text-muted-foreground" data-testid="permissions-tree-breadcrumb">
+                {detailPath.join(" / ")}
+              </p>
+              <p className="font-medium text-foreground">{selectedDetail.label}</p>
+              <p className="text-[12px] text-muted-foreground">
+                Origem: {selectedDetail.originLabel}. Decisão configurada e resultado efetivo são independentes.
+              </p>
+            </div>
+            {isStructuralPermissionTreeNode(selectedDetail) ? (
+              <p className="max-w-sm text-[12px] text-muted-foreground">
+                Agrupador. Permitir esta linha não libera as telas e ações de dentro.
+              </p>
+            ) : (
+              <div className="flex flex-col items-end gap-1">
+                <DecisionSegmented
+                  value={getNodeDecision(decisions, selectedDetail.id)}
+                  disabled={readOnly}
+                  ariaLabel={`Decisão de ${selectedDetail.label}`}
+                  testId={`permissions-tree-detail-decision-${selectedDetail.id}`}
+                  onChange={(next) =>
+                    onDecisionsChange(
+                      setPermissionTreeDecision(decisions, selectedDetail.id, next)
+                    )
+                  }
+                />
+                <EffectiveBadge
+                  effective={effectives.get(selectedDetail.id) ?? "inherited"}
+                />
+              </div>
+            )}
+          </div>
+        ) : (
+          <p className="text-[12px] text-muted-foreground">
+            Selecione um nome na árvore para ver o caminho, a decisão e o acesso efetivo.
+          </p>
+        )}
+      </aside>
     </div>
   );
 }

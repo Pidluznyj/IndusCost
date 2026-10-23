@@ -48,6 +48,9 @@ export const COMMERCIAL_RESOURCE_KEYS = {
   commissionsMonthlyClosing: "commercial.commissions.monthly_closing",
   commissionsClosings: "commercial.commissions.closings",
   commissionsCustomerExclusions: "commercial.commissions.customer_exclusions",
+  commissionsOrderProvision: "commercial.commissions.order_provision",
+  commissionsPortfolioOutlook: "commercial.commissions.portfolio_outlook",
+  commissionsView360: "commercial.commissions.view_360",
   commissionsReports: "commercial.commissions.reports",
   commissionsReprocess: "commercial.commissions.reprocess",
 } as const;

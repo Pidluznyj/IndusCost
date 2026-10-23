@@ -350,6 +350,23 @@ export function registerCommissionsRoutes(app: express.Express, auth: AuthGuards
     COMMERCIAL_ACTIONS.view
   );
   const reportsGuard = rr(COMMERCIAL_RESOURCE_KEYS.commissionsReports, COMMERCIAL_ACTIONS.view);
+  const outlookGuard = rr(
+    COMMERCIAL_RESOURCE_KEYS.commissionsPortfolioOutlook,
+    COMMERCIAL_ACTIONS.view
+  );
+  const view360Guard = rr(COMMERCIAL_RESOURCE_KEYS.commissionsView360, COMMERCIAL_ACTIONS.view);
+  const view360ExportGuard = rr(
+    COMMERCIAL_RESOURCE_KEYS.commissionsView360,
+    COMMERCIAL_ACTIONS.export
+  );
+  const provisionGuard = rr(
+    COMMERCIAL_RESOURCE_KEYS.commissionsOrderProvision,
+    COMMERCIAL_ACTIONS.view
+  );
+  const provisionExportGuard = rr(
+    COMMERCIAL_RESOURCE_KEYS.commissionsOrderProvision,
+    COMMERCIAL_ACTIONS.export
+  );
   const closingsGuard = rr(COMMERCIAL_RESOURCE_KEYS.commissionsClosings, COMMERCIAL_ACTIONS.view);
   const recalculateGuard = rr(
     COMMERCIAL_RESOURCE_KEYS.commissionsReprocess,
@@ -522,7 +539,7 @@ export function registerCommissionsRoutes(app: express.Express, auth: AuthGuards
     }
   });
 
-  app.get("/api/commissions/portfolio-outlook", ...reportsGuard, async (req, res) => {
+  app.get("/api/commissions/portfolio-outlook", ...outlookGuard, async (req, res) => {
     try {
       const ctx = await resolveScopeOrRespond(req, res, getCurrentAppUser);
       if (!ctx) return;
@@ -542,7 +559,7 @@ export function registerCommissionsRoutes(app: express.Express, auth: AuthGuards
   });
 
   // Visão 360°: somente leitura (mesmo guard e mesmo escopo de vendedor da Previsão).
-  app.get("/api/commissions/visao-360", ...reportsGuard, async (req, res) => {
+  app.get("/api/commissions/visao-360", ...view360Guard, async (req, res) => {
     try {
       const ctx = await resolveScopeOrRespond(req, res, getCurrentAppUser);
       if (!ctx) return;
@@ -558,7 +575,7 @@ export function registerCommissionsRoutes(app: express.Express, auth: AuthGuards
     }
   });
 
-  app.get("/api/commissions/visao-360/conciliacao.csv", ...reportsGuard, async (req, res) => {
+  app.get("/api/commissions/visao-360/conciliacao.csv", ...view360ExportGuard, async (req, res) => {
     try {
       const ctx = await resolveScopeOrRespond(req, res, getCurrentAppUser);
       if (!ctx) return;
@@ -576,7 +593,7 @@ export function registerCommissionsRoutes(app: express.Express, auth: AuthGuards
     }
   });
 
-  app.get("/api/commissions/order-provision", ...reportsGuard, async (req, res) => {
+  app.get("/api/commissions/order-provision", ...provisionGuard, async (req, res) => {
     try {
       const ctx = await resolveScopeOrRespond(req, res, getCurrentAppUser);
       if (!ctx) return;
@@ -597,7 +614,7 @@ export function registerCommissionsRoutes(app: express.Express, auth: AuthGuards
     }
   });
 
-  app.get("/api/commissions/order-provision/report", ...reportsGuard, async (req, res) => {
+  app.get("/api/commissions/order-provision/report", ...provisionGuard, async (req, res) => {
     try {
       const ctx = await resolveScopeOrRespond(req, res, getCurrentAppUser);
       if (!ctx) return;
@@ -620,7 +637,7 @@ export function registerCommissionsRoutes(app: express.Express, auth: AuthGuards
 
   app.get(
     "/api/commissions/order-provision/export.xlsx",
-    ...exportReportsGuard,
+    ...provisionExportGuard,
     async (req, res) => {
       try {
         const ctx = await resolveScopeOrRespond(req, res, getCurrentAppUser);

@@ -25,8 +25,11 @@ export type OpsInventoryTabId =
   | "items"
   | "warehouses"
   | "balances"
+  | "implantation"
   | "movements"
   | "counts"
+  | "collectorDevices"
+  | "stockSectors"
   | "reservations"
   | "audit";
 
@@ -51,10 +54,17 @@ function dtoOrLegacy(
 
 /** Abas de estoque com recurso canônico fino (contrato). Almoxarifados = warehouses. */
 export const INVENTORY_TAB_RESOURCE_KEYS: Partial<Record<OpsInventoryTabId, string>> = {
+  overview: OPERATIONS_RESOURCE_KEYS.inventory,
   items: ResourceKeys.OPERACOES_ESTOQUE_ITENS,
   warehouses: ResourceKeys.OPERACOES_ESTOQUE_ALMOXARIFADOS,
+  balances: OPERATIONS_RESOURCE_KEYS.inventoryBalances,
+  implantation: OPERATIONS_RESOURCE_KEYS.inventoryImplantation,
   movements: ResourceKeys.OPERACOES_ESTOQUE_MOVIMENTACOES,
   counts: ResourceKeys.OPERACOES_ESTOQUE_CONFERENCIAS,
+  collectorDevices: OPERATIONS_RESOURCE_KEYS.inventoryCollectorDevices,
+  stockSectors: OPERATIONS_RESOURCE_KEYS.inventorySectors,
+  reservations: OPERATIONS_RESOURCE_KEYS.inventoryReservations,
+  audit: OPERATIONS_RESOURCE_KEYS.inventoryAudit,
 };
 
 // ─── Operações: Estoque ──────────────────────────────────────
@@ -71,11 +81,10 @@ export function canViewInventoryTab(
 ): boolean {
   if (!canViewInventory(auth)) return false;
   const resourceKey = INVENTORY_TAB_RESOURCE_KEYS[tabId];
-  if (!resourceKey) {
-    // overview / balances / reservations / audit — herdam view do módulo
+  if (!resourceKey || resourceKey === OPERATIONS_RESOURCE_KEYS.inventory) {
     return true;
   }
-  return dtoOrLegacy(auth, resourceKey, "view", () => auth.hasPermission("inventory.view"));
+  return dtoOrLegacy(auth, resourceKey, "view", () => false);
 }
 
 export function listVisibleInventoryTabIds(

@@ -12,6 +12,8 @@ export const ADMIN_SETTINGS_RESOURCE_KEYS = {
   globalParams: "admin.settings.global_params",
   operational: "admin.settings.operational",
   priceTables: "admin.settings.price_tables",
+  integrations: "admin.settings.integrations",
+  system: "admin.settings.system",
   guide: "admin.guide",
 } as const;
 
@@ -42,8 +44,8 @@ export const ADMIN_SETTINGS_PILOT_ENDPOINTS = [
   { method: "GET", path: "/api/settings/nomus-sync/*-status", resourceKey: "admin.settings.nomus_sync", action: "view" },
   { method: "GET", path: "/api/settings/nomus-sync/source-reconciliation-records", resourceKey: "admin.settings.nomus_sync", action: "view" },
   { method: "POST", path: "/api/settings/nomus-sync/*-run", resourceKey: "admin.settings.nomus_sync", action: "execute" },
-  { method: "GET", path: "/api/settings/system/sales-order-flow/status", resourceKey: "admin.settings", action: "view" },
-  { method: "GET", path: "/api/settings/system/supply-chain/status", resourceKey: "admin.settings", action: "view" },
+  { method: "GET", path: "/api/settings/system/sales-order-flow/status", resourceKey: "admin.settings.system", action: "view" },
+  { method: "GET", path: "/api/settings/system/supply-chain/status", resourceKey: "admin.settings.system", action: "view" },
 
   { method: "GET", path: "/guide", resourceKey: "admin.guide", action: "view" },
 ] as const;

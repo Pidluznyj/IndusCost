@@ -12,6 +12,8 @@ export const TabResourceKeys = {
   COMISSOES_FECHAMENTOS: "comissoes.tab.fechamentos",
   COMISSOES_EXCECOES: "comissoes.tab.excecoes_cliente",
   COMISSOES_PROVISAO_PEDIDO: "comissoes.tab.provisao_pedido",
+  COMISSOES_PREVISAO: "comissoes.tab.previsao",
+  COMISSOES_VISAO_360: "comissoes.tab.visao_360",
   COMISSOES_RELATORIOS: "comissoes.tab.relatorios",
   COMISSOES_REPROCESSAR: "comissoes.tab.reprocessar",
   COMISSOES_DASHBOARD: "comissoes.tab.dashboard",
@@ -106,12 +108,12 @@ export const COMMISSIONS_LIVE_UI_TABS: ReadonlyArray<{
   },
   {
     id: "portfolioOutlook",
-    resourceKey: TabResourceKeys.COMISSOES_RELATORIOS,
+    resourceKey: TabResourceKeys.COMISSOES_PREVISAO,
     label: "Previsão",
   },
   {
     id: "view360",
-    resourceKey: TabResourceKeys.COMISSOES_RELATORIOS,
+    resourceKey: TabResourceKeys.COMISSOES_VISAO_360,
     label: "Visão 360°",
   },
   {
@@ -218,6 +220,7 @@ export type InventoryUiTabId =
   | "items"
   | "warehouses"
   | "balances"
+  | "implantation"
   | "movements"
   | "counts"
   | "collectorDevices"
@@ -237,8 +240,8 @@ export const INVENTORY_UI_TABS: ReadonlyArray<{
     resourceKey: "operations.inventory.warehouses",
     label: "Almoxarifados",
   },
-  { id: "balances", resourceKey: "operations.inventory", label: "Saldos" },
-  { id: "implantation", resourceKey: "operations.inventory.movements", label: "Implantação" },
+  { id: "balances", resourceKey: "operations.inventory.balances", label: "Saldos" },
+  { id: "implantation", resourceKey: "operations.inventory.implantation", label: "Implantação" },
   {
     id: "movements",
     resourceKey: "operations.inventory.movements",
@@ -251,16 +254,16 @@ export const INVENTORY_UI_TABS: ReadonlyArray<{
   },
   {
     id: "collectorDevices",
-    resourceKey: "operations.inventory.counts",
+    resourceKey: "operations.inventory.collector_devices",
     label: "Dispositivos do Coletor",
   },
   {
     id: "stockSectors",
-    resourceKey: "operations.inventory.warehouses",
+    resourceKey: "operations.inventory.sectors",
     label: "Setores / Collector",
   },
-  { id: "reservations", resourceKey: "operations.inventory", label: "Reservas" },
-  { id: "audit", resourceKey: "operations.inventory", label: "Auditoria" },
+  { id: "reservations", resourceKey: "operations.inventory.reservations", label: "Reservas" },
+  { id: "audit", resourceKey: "operations.inventory.audit", label: "Auditoria" },
 ];
 
 /** Configurações — hub sections → contrato admin.settings.*. */
@@ -311,9 +314,9 @@ export const SETTINGS_HUB_UI_SECTIONS: ReadonlyArray<{
   },
   {
     id: "integrations",
-    resourceKey: "admin.settings",
+    resourceKey: "admin.settings.integrations",
     label: "Integrações",
   },
-  { id: "system", resourceKey: "admin.settings", label: "Sistema" },
+  { id: "system", resourceKey: "admin.settings.system", label: "Sistema" },
 ];
 
