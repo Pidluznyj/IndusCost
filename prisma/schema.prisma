@@ -10217,6 +10217,10 @@ model CommissionReceiptLedgerLine {
   customerNameSnapshot        String?
   customerDocumentSnapshot    String?
   nomusOrderId                Int?
+  /// Pedido local do direito (N:N). Nulo em linhas sem pedido e em ledgers anteriores ao N:N.
+  salesOrderId                String?                           @db.Uuid
+  /// Schedule vigente que originou a linha (antes só em ruleSnapshotJson).
+  commissionReceivableScheduleId String?                        @db.Uuid
   orderCode                   String?
   nomusNfeId                  Int?
   nfeNumber                   String?
@@ -10269,6 +10273,7 @@ model CommissionReceiptLedgerLine {
   @@index([year, month])
   @@index([closingId])
   @@index([nomusReceivableId])
+  @@index([salesOrderId])
   @@index([canonicalSellerId])
   @@index([customerExternalId])
   @@index([customerId])
@@ -10302,6 +10307,13 @@ model CommissionReceiptCoverage {
   ledgerLineId            String?                                    @db.Uuid
   legacyReference         String?
   legacyImportId          String?                                    @db.Uuid
+  /// Direito coberto (pedido) dentro do evento. Nulo = cobertura do EVENTO inteiro
+  /// (legado Nomus, ajuste, fechamentos anteriores ao N:N, "sem vínculo de venda"):
+  /// cobre todos os direitos do recebimento. Um evento é coberto por evento OU por
+  /// direito, nunca pelos dois (índices parciais + trigger da migration 20261030120000).
+  salesOrderId            String?                                    @db.Uuid
+  /// Schedule vigente do direito no momento do fechamento (rastreabilidade).
+  commissionReceivableScheduleId String?                             @db.Uuid
   coveredReceivedAmount   Decimal                                    @db.Decimal(20, 2)
   coveredCommissionAmount Decimal?                                   @db.Decimal(20, 2)
   associationMethod       CommissionReceiptCoverageAssociationMethod
@@ -10316,6 +10328,7 @@ model CommissionReceiptCoverage {
 
   @@index([receiptExternalId])
   @@index([receivableExternalId])
+  @@index([salesOrderId])
   @@index([naturalYear, naturalMonth])
   @@index([coveredYear, coveredMonth])
   @@index([coverageSource])
@@ -10359,6 +10372,16 @@ enum CommissionOrderSnapshotStatus {
   ERROR
 }
 
+/// Como o snapshot (pedido, NF-e) mede a venda.
+enum CommissionOrderSnapshotAllocationBasis {
+  /// Pedido inteiro — único caminho antes da alocação por NF-e (uma NF-e, sem evidência por item).
+  FULL_ORDER_LEGACY
+  /// Só os itens/quantidades desta NF-e, por evidência oficial do documento de saída.
+  INVOICED_ALLOCATION
+  /// Pedido em mais de uma NF-e sem evidência suficiente: comissão retida (schedule ERROR).
+  ALLOCATION_PENDING
+}
+
 enum CommissionOrderItemSnapshotStatus {
   COMMISSIONABLE
   CUSTOMER_EXCLUDED
@@ -10388,6 +10411,9 @@ model CommissionOrderSnapshot {
   totalFinalCommissionAmount Decimal                       @default(0) @db.Decimal(20, 2)
   sourceHash                 String                        @unique
   status                     CommissionOrderSnapshotStatus @default(ACTIVE)
+  /// Base do snapshot: pedido inteiro (histórico), só o faturado nesta NF-e (alocação
+  /// por item com evidência oficial) ou pendente de alocação (bloqueado, comissão 0).
+  allocationBasis            CommissionOrderSnapshotAllocationBasis @default(FULL_ORDER_LEGACY)
   createdAt                  DateTime                      @default(now()) @db.Timestamptz(6)
   updatedAt                  DateTime                      @default(now()) @updatedAt @db.Timestamptz(6)
 
@@ -10412,6 +10438,17 @@ model CommissionOrderItemSnapshot {
   productId             String                            @db.Uuid
   productNameSnapshot   String
   soldAmount            Decimal                           @default(0) @db.Decimal(20, 2)
+  /// Quantidade pedida do item (válida: sem cancelados/cortados).
+  orderedQuantity       Decimal?                          @db.Decimal(20, 6)
+  /// Quantidade do item faturada NESTA NF-e (alocação por evidência oficial).
+  invoicedQuantity      Decimal?                          @db.Decimal(20, 6)
+  /// Quantidade faturada acumulada até esta NF-e (ordem de processamento das NF-e).
+  cumulativeInvoicedQuantity Decimal?                     @db.Decimal(20, 6)
+  /// Valor e comissão do item inteiro (o snapshot guarda só a parcela desta NF-e).
+  itemFullSoldAmount    Decimal?                          @db.Decimal(20, 2)
+  itemFullCommissionAmount Decimal?                       @db.Decimal(20, 2)
+  /// Linhas de documento de saída que sustentam a alocação (ids, origem, quantidades).
+  allocationEvidenceJson Json?
   marginPercent         Decimal?                          @db.Decimal(10, 4)
   commissionRatePercent Decimal                           @default(0) @db.Decimal(10, 4)
   grossCommissionAmount Decimal                           @default(0) @db.Decimal(20, 2)

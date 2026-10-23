@@ -164,6 +164,7 @@ function materializerDb() {
         }
         return { count: 0 };
       },
+      findUnique: async () => null,
       create: async ({ data }: { data: { salesOrder: { connect: { id: string } }; nfeId: number | null; totalFinalCommissionAmount: unknown } }) => {
         const id = `snap-${rows.length + 1}`;
         rows.push({ id, salesOrderId: data.salesOrder.connect.id, nfeId: data.nfeId, status: "ACTIVE", total: data.totalFinalCommissionAmount });

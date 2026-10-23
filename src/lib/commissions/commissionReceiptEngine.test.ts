@@ -1133,7 +1133,11 @@ describe("commissionReceiptEngine", () => {
     assert.equal(result.countByStatus.NO_SCHEDULE, 0);
   });
 
-  it("NF ambígua (múltiplos pedidos) não resolve pedido e marca AMBIGUOUS", () => {
+  // N:N (2026-10-22): NF-e com vários pedidos e sem schedule nem vínculos
+  // carregados não escolhe pedido e marca AMBIGUOUS — mas como pendência
+  // (NO_SCHEDULE), nunca "sem vínculo de venda", que cobriria o recebimento com
+  // comissão zero (incidente NF-e 7862).
+  it("NF ambígua (múltiplos pedidos) não resolve pedido, marca AMBIGUOUS e fica pendente", () => {
     const result = buildCommissionReceiptPreview({
       year: 2026,
       month: 6,
@@ -1154,12 +1158,12 @@ describe("commissionReceiptEngine", () => {
       identityCtx: OK_IDENTITY,
     });
     assert.equal(result.lines.length, 1);
-    assert.equal(result.lines[0]?.status, "NO_SALES_LINK");
+    assert.equal(result.lines[0]?.status, "NO_SCHEDULE");
     assert.equal(result.lines[0]?.orderCode, null);
     assert.equal(result.lines[0]?.localOrderId, null);
     assert.equal(result.lines[0]?.linkResolutionStatus, "AMBIGUOUS");
     assert.equal(result.lines[0]?.linkResolutionSource, "AMBIGUOUS");
-    assert.match(result.lines[0]?.statusReason ?? "", /Vínculo ambíguo/);
+    assert.match(result.lines[0]?.statusReason ?? "", /mais de um pedido/);
     assert.equal(result.lines[0]?.releasedCommissionAmount, 0);
   });
 });

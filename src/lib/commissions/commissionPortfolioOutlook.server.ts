@@ -15,6 +15,7 @@ import { isCommissionInternalGroupReceivable } from "./commissionInternalGroupEx
 import {
   buildCommissionPortfolioOutlook,
   clampOutlookFromMonth,
+  resolveOutlookPaidToSellerAmount,
   type OutlookCoverageSource,
   type OutlookPayload,
   type OutlookQuery,
@@ -144,7 +145,7 @@ export async function loadCommissionPortfolioOutlookFacts(
       receivableNominalAmount: true,
       receivableSharePercent: true,
       scheduledCommissionAmount: true,
-      salesOrder: { select: { orderCode: true, externalSellerId: true } },
+      salesOrder: { select: { orderCode: true, externalSellerId: true, externalSalesOrderId: true } },
       customer: { select: { companyName: true, tradeName: true, taxId: true, nomusExternalPersonId: true } },
       canonicalSeller: { select: { name: true } },
       orderSnapshot: {
@@ -164,7 +165,13 @@ export async function loadCommissionPortfolioOutlookFacts(
   const receivableIds = [...new Set(schedules.map((row) => row.receivableId))];
   const titles = new Map<number, OutlookTitleFacts>();
   const receiptsByReceivable = new Map<number, OutlookScheduleInput["receipts"]>();
+  /** Cobertura por direito (B4): recebimento → pedido → cobertura daquele pedido. */
+  const rightCoverageByReceipt = new Map<number, Map<string, { source: OutlookCoverageSource; amount: number | null }>>();
   const paidByReceivable = new Map<number, number>();
+  /** Pago por (título, pedido Nomus) — título de N pedidos só soma o pagamento do próprio pedido. */
+  const paidByReceivableOrder = new Map<string, number>();
+  /** Pedidos com schedule vigente em cada título (sem filtro de vendedor/escopo). */
+  const ordersOnTitle = new Map<number, Set<string>>();
 
   for (const ids of chunk(receivableIds, 2000)) {
     const [arRows, receiptRows, coverageRows, paymentRows] = await Promise.all([
@@ -202,12 +209,14 @@ export async function loadCommissionPortfolioOutlookFacts(
           receivableExternalId: true,
           coverageSource: true,
           coveredCommissionAmount: true,
+          salesOrderId: true,
         },
       }),
       prisma.commissionPaymentSchedule.findMany({
         where: { nomusReceivableId: { in: ids } },
         select: {
           nomusReceivableId: true,
+          nomusOrderId: true,
           paymentBatchItems: {
             where: { status: "PAID" },
             select: { amountPaid: true },
@@ -250,6 +259,18 @@ export async function loadCommissionPortfolioOutlookFacts(
     const coverageByReceipt = new Map<number, { source: OutlookCoverageSource; amount: number | null }>();
     for (const row of coverageRows) {
       if (row.receiptExternalId == null) continue;
+      if (row.salesOrderId != null) {
+        // Cobertura do direito de UM pedido: não vale para os outros pedidos do evento.
+        const source = row.coverageSource;
+        if (source !== "NOMUS_LEGACY" && source !== "INDUSCOST_CLOSING" && source !== "MANUAL_ADJUSTMENT") continue;
+        const rights = rightCoverageByReceipt.get(row.receiptExternalId) ?? new Map();
+        rights.set(row.salesOrderId, {
+          source,
+          amount: row.coveredCommissionAmount == null ? null : decimalToNumber(row.coveredCommissionAmount),
+        });
+        rightCoverageByReceipt.set(row.receiptExternalId, rights);
+        continue;
+      }
       if (coverageByReceipt.has(row.receiptExternalId)) continue;
       const source = row.coverageSource;
       if (source !== "NOMUS_LEGACY" && source !== "INDUSCOST_CLOSING" && source !== "MANUAL_ADJUSTMENT") {
@@ -281,6 +302,21 @@ export async function loadCommissionPortfolioOutlookFacts(
         row.nomusReceivableId,
         (paidByReceivable.get(row.nomusReceivableId) ?? 0) + paid
       );
+      if (row.nomusOrderId != null) {
+        const key = `${row.nomusReceivableId}|${row.nomusOrderId}`;
+        paidByReceivableOrder.set(key, (paidByReceivableOrder.get(key) ?? 0) + paid);
+      }
+    }
+
+    const titleOrders = await prisma.commissionReceivableSchedule.findMany({
+      where: { receivableId: { in: ids }, ...commissionActiveSnapshotWhere() },
+      select: { receivableId: true, salesOrderId: true },
+      distinct: ["receivableId", "salesOrderId"],
+    });
+    for (const row of titleOrders) {
+      const set = ordersOnTitle.get(row.receivableId) ?? new Set<string>();
+      set.add(row.salesOrderId);
+      ordersOnTitle.set(row.receivableId, set);
     }
   }
 
@@ -327,8 +363,20 @@ export async function loadCommissionPortfolioOutlookFacts(
       sharePercent: decimalToNumber(row.receivableSharePercent),
       balanceReceivable: title?.balance ?? null,
       amountReceivedOnTitle: title?.amountReceived ?? null,
-      paidToSellerAmount: paidByReceivable.get(row.receivableId) ?? 0,
-      receipts: (receiptsByReceivable.get(row.receivableId) ?? []).filter((receipt) => receipt.receiptDate),
+      paidToSellerAmount: resolveOutlookPaidToSellerAmount({
+        receivableId: row.receivableId,
+        nomusOrderId: row.salesOrder.externalSalesOrderId ?? null,
+        ordersOnTitle: ordersOnTitle.get(row.receivableId)?.size ?? 1,
+        paidByReceivable,
+        paidByReceivableOrder,
+      }),
+      receipts: (receiptsByReceivable.get(row.receivableId) ?? [])
+        .filter((receipt) => receipt.receiptDate)
+        .map((receipt) => {
+          if (receipt.coverageSource != null) return receipt;
+          const right = rightCoverageByReceipt.get(receipt.externalId)?.get(row.salesOrderId);
+          return right ? { ...receipt, coverageSource: right.source, coveredCommissionAmount: right.amount } : receipt;
+        }),
     };
   });
 

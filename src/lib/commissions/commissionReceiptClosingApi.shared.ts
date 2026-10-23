@@ -197,8 +197,21 @@ export type ReceiptClosingApiLine = {
   canonicalSellerName: string | null;
   sellerResolutionStatus: string | null;
   receivedAmount: number;
-  /** Valor recebido exibido na linha — zero em linhas duplicadas do mesmo título. */
+  /**
+   * Valor recebido exibido na linha — zero em linhas duplicadas do mesmo título;
+   * em título de N pedidos com lastro, a parcela do pedido (Σ = recebido do título).
+   */
   uniqueReceivedAmount: number;
+  /** Título compartilhado por mais de um pedido (NF-e com N pedidos). */
+  financialAnchorShared?: boolean;
+  financialAnchorOrderCount?: number | null;
+  financialAnchorAttribution?: "ATTRIBUTED" | "UNATTRIBUTED";
+  /** Parcela do recebido do título atribuída ao pedido da linha. */
+  attributedReceivedAmount?: number;
+  /** Id do pedido no Nomus. */
+  nomusOrderId?: number | null;
+  /** Direito do pedido no título quando não resolvido normalmente (vínculo contraditório, duplicidade, R1…). */
+  rightResolution?: string | null;
   /** Valor original do CR (`amountReceivable` / nominal). */
   receivableOriginalAmount?: number;
   /** Principal comissionável = min(recebido, original). */

@@ -68,7 +68,13 @@ export async function loadR1OrderInputs(orderIds: readonly string[], today: stri
   const [orders, snapshots, links, flows, schedules] = await Promise.all([
     prisma.salesOrder.findMany({
       where: { id: { in: ids } },
-      select: { id: true, orderCode: true, status: true, Customer: { select: { companyName: true, tradeName: true } } },
+      select: {
+        id: true,
+        orderCode: true,
+        status: true,
+        externalSalesOrderId: true,
+        Customer: { select: { companyName: true, tradeName: true } },
+      },
     }),
     prisma.commissionOrderSnapshot.findMany({
       where: { salesOrderId: { in: ids } },
@@ -138,17 +144,37 @@ export async function loadR1OrderInputs(orderIds: readonly string[], today: stri
   const lineBySchedule = new Map(projectCommissionPortfolioOutlookLines(facts, today).map((line) => [line.scheduleId, line]));
 
   const receivableIds = [...new Set(schedules.map((row) => row.receivableId))];
-  const releases: Array<{ id: string; nomusReceivableId: number | null; closingId: string | null; year: number; month: number; releasedCommissionAmount: unknown; commissionRecordId: string | null }> = [];
+  const releases: Array<{
+    id: string;
+    nomusReceivableId: number | null;
+    closingId: string | null;
+    year: number;
+    month: number;
+    releasedCommissionAmount: unknown;
+    commissionRecordId: string | null;
+    nomusOrderId: number | null;
+    ruleSnapshotJson: unknown;
+  }> = [];
   for (const part of chunk(receivableIds, ID_CHUNK)) {
     releases.push(
       ...(await prisma.commissionReceiptLedgerLine.findMany({
         where: { nomusReceivableId: { in: part }, closing: { status: "CLOSED" } },
-        select: { id: true, nomusReceivableId: true, closingId: true, year: true, month: true, releasedCommissionAmount: true, commissionRecordId: true },
+        select: {
+          id: true,
+          nomusReceivableId: true,
+          closingId: true,
+          year: true,
+          month: true,
+          releasedCommissionAmount: true,
+          commissionRecordId: true,
+          nomusOrderId: true,
+          ruleSnapshotJson: true,
+        },
       }))
     );
   }
   const recordIds = [...new Set(releases.map((row) => row.commissionRecordId).filter((id): id is string => Boolean(id)))];
-  const paymentItems = new Map<string, { id: string; batchId: string; amountPaid: unknown; commissionRecordId: string; batch: { paymentDate: Date | null }; commissionPaymentSchedule: { nomusReceivableId: number | null } | null }>();
+  const paymentItems = new Map<string, { id: string; batchId: string; amountPaid: unknown; commissionRecordId: string; batch: { paymentDate: Date | null }; commissionPaymentSchedule: { nomusReceivableId: number | null; nomusOrderId: number | null } | null }>();
   const paymentFilters = [
     ...chunk(receivableIds, ID_CHUNK).map((part) => ({ commissionPaymentSchedule: { nomusReceivableId: { in: part } } })),
     ...chunk(recordIds, ID_CHUNK).map((part) => ({ commissionRecordId: { in: part } })),
@@ -162,11 +188,27 @@ export async function loadR1OrderInputs(orderIds: readonly string[], today: stri
         amountPaid: true,
         commissionRecordId: true,
         batch: { select: { paymentDate: true } },
-        commissionPaymentSchedule: { select: { nomusReceivableId: true } },
+        commissionPaymentSchedule: { select: { nomusReceivableId: true, nomusOrderId: true } },
       },
     });
     for (const row of rows) paymentItems.set(row.id, row);
   }
+
+  const ordersOnTitle = new Map<number, Set<string>>();
+  for (const part of chunk(receivableIds, ID_CHUNK)) {
+    const rows = await prisma.commissionReceivableSchedule.findMany({
+      where: { receivableId: { in: part }, ...commissionActiveSnapshotWhere() },
+      select: { receivableId: true, salesOrderId: true },
+      distinct: ["receivableId", "salesOrderId"],
+    });
+    for (const row of rows) {
+      const set = ordersOnTitle.get(row.receivableId) ?? new Set<string>();
+      set.add(row.salesOrderId);
+      ordersOnTitle.set(row.receivableId, set);
+    }
+  }
+  const sharedTitle = (receivableId: number | null | undefined) =>
+    receivableId != null && (ordersOnTitle.get(receivableId)?.size ?? 1) > 1;
 
   const byOrder = <T extends { salesOrderId: string }>(rows: readonly T[]) => {
     const map = new Map<string, T[]>();
@@ -185,7 +227,32 @@ export async function loadR1OrderInputs(orderIds: readonly string[], today: stri
   return orders.map((order) => {
     const orderSchedules = schedulesByOrder.get(order.id) ?? [];
     const titleIds = new Set(orderSchedules.map((row) => row.receivableId));
-    const orderReleases = releases.filter((row) => row.nomusReceivableId != null && titleIds.has(row.nomusReceivableId) && row.closingId);
+    const orderScheduleIds = new Set(orderSchedules.map((row) => row.id));
+    // Título de N pedidos: a liberação só é deste pedido com prova (pedido ou
+    // schedule gravados na linha do ledger). Sem prova não é atribuída a ninguém.
+    const releaseBelongsToOrder = (row: (typeof releases)[number]) => {
+      if (!sharedTitle(row.nomusReceivableId)) return true;
+      const json =
+        row.ruleSnapshotJson != null && typeof row.ruleSnapshotJson === "object"
+          ? (row.ruleSnapshotJson as Record<string, unknown>)
+          : null;
+      if (typeof json?.salesOrderId === "string") return json.salesOrderId === order.id;
+      if (typeof json?.commissionReceivableScheduleId === "string") {
+        return orderScheduleIds.has(json.commissionReceivableScheduleId);
+      }
+      if (row.nomusOrderId != null && order.externalSalesOrderId != null) {
+        return row.nomusOrderId === order.externalSalesOrderId;
+      }
+      return false;
+    };
+    const paymentBelongsToOrderTitle = (schedule: { nomusReceivableId: number | null; nomusOrderId: number | null } | null) =>
+      schedule?.nomusReceivableId != null &&
+      titleIds.has(schedule.nomusReceivableId) &&
+      (!sharedTitle(schedule.nomusReceivableId) ||
+        (schedule.nomusOrderId != null && schedule.nomusOrderId === order.externalSalesOrderId));
+    const orderReleases = releases.filter(
+      (row) => row.nomusReceivableId != null && titleIds.has(row.nomusReceivableId) && row.closingId && releaseBelongsToOrder(row)
+    );
     const orderRecordIds = new Set(orderReleases.map((row) => row.commissionRecordId).filter(Boolean));
     const snaps = snapshotsByOrder.get(order.id) ?? [];
     return {
@@ -252,7 +319,7 @@ export async function loadR1OrderInputs(orderIds: readonly string[], today: stri
       payments: [...paymentItems.values()]
         .filter(
           (item) =>
-            (item.commissionPaymentSchedule?.nomusReceivableId != null && titleIds.has(item.commissionPaymentSchedule.nomusReceivableId)) ||
+            paymentBelongsToOrderTitle(item.commissionPaymentSchedule) ||
             orderRecordIds.has(item.commissionRecordId)
         )
         .map((item) => ({
@@ -260,10 +327,9 @@ export async function loadR1OrderInputs(orderIds: readonly string[], today: stri
           batchId: item.batchId,
           paymentDate: civil(item.batch.paymentDate),
           amountPaid: decimalToNumber(item.amountPaid as number),
-          receivableId:
-            item.commissionPaymentSchedule?.nomusReceivableId != null && titleIds.has(item.commissionPaymentSchedule.nomusReceivableId)
-              ? item.commissionPaymentSchedule.nomusReceivableId
-              : null,
+          receivableId: paymentBelongsToOrderTitle(item.commissionPaymentSchedule)
+            ? item.commissionPaymentSchedule!.nomusReceivableId
+            : null,
           commissionRecordId: item.commissionRecordId,
         })),
     };

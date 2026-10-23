@@ -211,31 +211,42 @@ export async function rebuildCommissionReceivableSchedule(
 
   const drafts = buildCommissionReceivableScheduleDrafts({ snapshot, receivables });
 
-  // Carrega TODOS os status: sourceHash é único global, então uma linha
-  // SUPERSEDED/CUSTOMER_EXCLUDED com o mesmo hash bloqueia o create mesmo sem
-  // estar ativa. Buscar só ACTIVE deixava essa colisão invisível ao plano.
-  const existingAnyStatus = await db.commissionReceivableSchedule.findMany({
-    where: { orderSnapshotId: snapshot.id },
-    select: { id: true, receivableId: true, sourceHash: true, status: true },
-  });
-  const existingActive = existingAnyStatus
-    .filter((row) => row.status === "ACTIVE")
-    .map((row) => ({
-      id: row.id,
-      receivableId: row.receivableId,
-      sourceHash: row.sourceHash,
-    }));
+  const planAndPersist = async () => {
+    // Carrega TODOS os status: sourceHash é único global, então uma linha
+    // SUPERSEDED/CUSTOMER_EXCLUDED com o mesmo hash bloqueia o create mesmo sem
+    // estar ativa. Buscar só ACTIVE deixava essa colisão invisível ao plano.
+    const existingAnyStatus = await db.commissionReceivableSchedule.findMany({
+      where: { orderSnapshotId: snapshot.id },
+      select: { id: true, receivableId: true, sourceHash: true, status: true },
+    });
+    const existingActive = existingAnyStatus
+      .filter((row) => row.status === "ACTIVE")
+      .map((row) => ({
+        id: row.id,
+        receivableId: row.receivableId,
+        sourceHash: row.sourceHash,
+      }));
 
-  const plan = planCommissionReceivableScheduleRebuild({
-    existingActive,
-    existingAnyStatus,
-    drafts,
-  });
+    const plan = planCommissionReceivableScheduleRebuild({
+      existingActive,
+      existingAnyStatus,
+      drafts,
+    });
 
-  return persistCommissionReceivableScheduleRebuild(db, {
-    orderSnapshotId: snapshot.id,
-    plan,
-    drafts,
-    dryRun: input.dryRun ?? false,
-  });
+    return persistCommissionReceivableScheduleRebuild(db, {
+      orderSnapshotId: snapshot.id,
+      plan,
+      drafts,
+      dryRun: input.dryRun ?? false,
+    });
+  };
+
+  try {
+    return await planAndPersist();
+  } catch (error) {
+    // Outro processo gravou os mesmos schedules (mesmo sourceHash) entre a leitura e
+    // a gravação: replaneja uma vez sobre o que está no banco (idempotente).
+    if ((error as { code?: string }).code !== "P2002") throw error;
+    return planAndPersist();
+  }
 }

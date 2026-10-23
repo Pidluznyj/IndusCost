@@ -323,20 +323,20 @@ function economicStatus(input: {
 const VOID_SUPERSEDED_SNAPSHOT =
   "Schedule de uma versão substituída do pedido. Só a versão vigente conta, como no fechamento.";
 const VOID_DUPLICATE_SCHEDULE =
-  "O título tem mais de um schedule vigente. Vale o mais recente, o mesmo que o fechamento escolhe.";
+  "O pedido tem mais de um schedule vigente neste título. Vale um só, como no fechamento.";
 const VOID_TITLE_CANCELLED = "Título cancelado na origem. Fica fora do fechamento e não gera comissão a receber.";
 const VOID_TITLE_SUSPENDED =
   "Título com cobrança suspensa na origem. Fica fora do fechamento e não gera comissão a receber.";
 
 /**
  * Schedules que não podem contar, com o motivo. Espelha a seleção do fechamento
- * (keepSchedulesFromActiveSnapshot + pickMaterializedScheduleForReceivable):
- * uma comissão por título, sempre da versão vigente do pedido, e título
- * cancelado ou suspenso fora.
+ * (keepSchedulesFromActiveSnapshot + um direito por pedido no título): uma
+ * comissão por PEDIDO em cada título — NF-e com N pedidos conta os N —, sempre
+ * da versão vigente do pedido, e título cancelado ou suspenso fora.
  */
 function resolveVoidReasons(facts: readonly OutlookScheduleInput[]): Map<string, string> {
   const reasons = new Map<string, string>();
-  const currentByReceivable = new Map<number, OutlookScheduleInput[]>();
+  const currentByReceivableOrder = new Map<string, OutlookScheduleInput[]>();
   for (const fact of facts) {
     if (!isCommissionSnapshotActive(fact.orderSnapshotStatus)) {
       reasons.set(fact.scheduleId, VOID_SUPERSEDED_SNAPSHOT);
@@ -344,10 +344,12 @@ function resolveVoidReasons(facts: readonly OutlookScheduleInput[]): Map<string,
     }
     if (fact.titleCancelled) reasons.set(fact.scheduleId, VOID_TITLE_CANCELLED);
     else if (fact.titleSuspended) reasons.set(fact.scheduleId, VOID_TITLE_SUSPENDED);
-    const list = currentByReceivable.get(fact.receivableId) ?? [];
+    const key = `${fact.receivableId}|${fact.salesOrderId}`;
+    const list = currentByReceivableOrder.get(key) ?? [];
     list.push(fact);
-    currentByReceivable.set(fact.receivableId, list);
+    currentByReceivableOrder.set(key, list);
   }
+  const currentByReceivable = currentByReceivableOrder;
   for (const list of currentByReceivable.values()) {
     if (list.length < 2) continue;
     // Mesma ordem do motor: mais recente primeiro; ACTIVE vence os demais desfechos.
@@ -361,6 +363,24 @@ function resolveVoidReasons(facts: readonly OutlookScheduleInput[]): Map<string,
     }
   }
   return reasons;
+}
+
+/**
+ * Pagamento ao vendedor já liquidado que pertence ao schedule. Título de um
+ * pedido: tudo o que foi pago no título. Título de N pedidos: só o pagamento
+ * cujo pedido (nomusOrderId) é o do schedule — pagamento sem pedido identificado
+ * não é atribuído a nenhum (nunca copiado para cada pedido).
+ */
+export function resolveOutlookPaidToSellerAmount(input: {
+  receivableId: number;
+  nomusOrderId: number | null;
+  ordersOnTitle: number;
+  paidByReceivable: ReadonlyMap<number, number>;
+  paidByReceivableOrder: ReadonlyMap<string, number>;
+}): number {
+  if (input.ordersOnTitle <= 1) return roundMoney(input.paidByReceivable.get(input.receivableId) ?? 0);
+  if (input.nomusOrderId == null) return 0;
+  return roundMoney(input.paidByReceivableOrder.get(`${input.receivableId}|${input.nomusOrderId}`) ?? 0);
 }
 
 function projectSchedule(fact: OutlookScheduleInput, today: string, voidReason: string | null): OutlookLine {

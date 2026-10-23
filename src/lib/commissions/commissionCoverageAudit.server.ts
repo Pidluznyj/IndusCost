@@ -6,8 +6,9 @@
  * valor, por que não, e se há risco de duplicidade. Base do script
  * `npm run audit:commission:coverage` e do bootstrap preview.
  */
-import type { PrismaClient } from "@prisma/client";
+import { Prisma, type PrismaClient } from "@prisma/client";
 import { decimalToNumber } from "./commission-money.js";
+import { commissionActiveSnapshotWhere } from "./commissionScheduleVigency.js";
 import { toCivilDateKey } from "../financeCivilDate.js";
 import {
   COMMISSION_LEGACY_RECONCILIATION_START_DATE,
@@ -202,15 +203,18 @@ export async function buildCommissionCoverageAudit(
             legacyImportId: true,
             associationMethod: true,
             coveredCommissionAmount: true,
+            salesOrderId: true,
           },
         })
       : Promise.resolve([]),
     crIds.length > 0
       ? db.commissionReceivableSchedule.findMany({
-          where: { receivableId: { in: crIds } },
+          // Só a versão vigente de cada pedido (regra oficial de vigência).
+          where: { receivableId: { in: crIds }, ...commissionActiveSnapshotWhere() },
           select: {
             id: true,
             receivableId: true,
+            salesOrderId: true,
             status: true,
             installmentNumber: true,
             scheduledCommissionAmount: true,
@@ -234,18 +238,36 @@ export async function buildCommissionCoverageAudit(
 
   const receivableById = new Map(receivables.map((row) => [row.externalId, row]));
   const activeCoverage = new Map<number, (typeof coverage)[number]>();
+  const rightCoverage = new Map<number, (typeof coverage)[number][]>();
   const historyCount = new Map<number, number>();
   for (const row of coverage) {
     if (row.receiptExternalId == null) continue;
     historyCount.set(row.receiptExternalId, (historyCount.get(row.receiptExternalId) ?? 0) + 1);
-    if (row.coverageStatus === "COVERED") activeCoverage.set(row.receiptExternalId, row);
+    if (row.coverageStatus !== "COVERED") continue;
+    // Cobertura por direito (B4) não cobre o evento inteiro: só conta como coberto
+    // quando todos os pedidos vigentes do título estão contemplados (abaixo).
+    if (row.salesOrderId != null) {
+      const list = rightCoverage.get(row.receiptExternalId) ?? [];
+      list.push(row);
+      rightCoverage.set(row.receiptExternalId, list);
+      continue;
+    }
+    activeCoverage.set(row.receiptExternalId, row);
+  }
+  // Um schedule vigente por PEDIDO em cada título (NF-e com N pedidos tem N).
+  const schedulesByCrOrder = new Map<number, Map<string, (typeof schedules)[number]>>();
+  for (const schedule of schedules) {
+    const byOrder = schedulesByCrOrder.get(schedule.receivableId) ?? new Map<string, (typeof schedules)[number]>();
+    const current = byOrder.get(schedule.salesOrderId);
+    if (!current || (current.status !== "ACTIVE" && schedule.status === "ACTIVE")) {
+      byOrder.set(schedule.salesOrderId, schedule);
+    }
+    schedulesByCrOrder.set(schedule.receivableId, byOrder);
   }
   const scheduleByCr = new Map<number, (typeof schedules)[number]>();
-  for (const schedule of schedules) {
-    const current = scheduleByCr.get(schedule.receivableId);
-    if (!current || (current.status !== "ACTIVE" && schedule.status === "ACTIVE")) {
-      scheduleByCr.set(schedule.receivableId, schedule);
-    }
+  for (const [receivableId, byOrder] of schedulesByCrOrder) {
+    const list = [...byOrder.values()];
+    scheduleByCr.set(receivableId, list.find((row) => row.status === "ACTIVE") ?? list[0]!);
   }
   const closedClosingsByReceipt = new Map<number, Set<string>>();
   for (const line of ledgerLines) {
@@ -264,9 +286,32 @@ export async function buildCommissionCoverageAudit(
     const natural = resolveReceiptNaturalYearMonth(receiptDate);
     if (!receiptDate || !natural) continue;
     const schedule = scheduleByCr.get(receipt.receivableExternalId) ?? null;
-    const sellerName = schedule?.canonicalSeller?.name ?? null;
+    const titleSchedules = [...(schedulesByCrOrder.get(receipt.receivableExternalId)?.values() ?? [])];
+    const sellerNames = [
+      ...new Set(titleSchedules.map((row) => row.canonicalSeller?.name ?? null).filter((name): name is string => Boolean(name))),
+    ].sort((a, b) => a.localeCompare(b, "pt-BR"));
+    const sellerName = sellerNames.length > 0 ? sellerNames.join(", ") : null;
+    const titleScheduledCommission = titleSchedules
+      .filter((row) => row.status === "ACTIVE")
+      .reduce((sum, row) => sum + decimalToNumber(row.scheduledCommissionAmount), 0);
     if (sellerFilter && !(sellerName ?? "").toLowerCase().includes(sellerFilter)) continue;
-    const active = activeCoverage.get(receipt.externalId) ?? null;
+    const rights = rightCoverage.get(receipt.externalId) ?? [];
+    const titleOrders = [...(schedulesByCrOrder.get(receipt.receivableExternalId)?.keys() ?? [])];
+    const coveredOrders = new Set(rights.map((row) => row.salesOrderId));
+    const allRightsCovered =
+      rights.length > 0 && (titleOrders.length === 0 || titleOrders.every((order) => coveredOrders.has(order)));
+    const active =
+      activeCoverage.get(receipt.externalId) ??
+      (allRightsCovered
+        ? {
+            ...rights[0]!,
+            coveredCommissionAmount: rights.reduce(
+              (sum, row) => sum.add(row.coveredCommissionAmount ?? 0),
+              new Prisma.Decimal(0)
+            ),
+          }
+        : null);
+    const partialRights = !active && rights.length > 0 ? ` · direitos já contemplados: ${rights.length} de ${Math.max(titleOrders.length, rights.length)} pedido(s)` : "";
     const state = resolveCommissionReceiptCoverageState({
       receiptDate,
       activeCoverage: active,
@@ -323,12 +368,12 @@ export async function buildCommissionCoverageAudit(
       commissionAmount:
         active?.coveredCommissionAmount != null
           ? decimalToNumber(active.coveredCommissionAmount)
-          : schedule?.scheduledCommissionAmount != null
-            ? decimalToNumber(schedule.scheduledCommissionAmount)
+          : titleSchedules.length > 0
+            ? Math.round(titleScheduledCommission * 100) / 100
             : null,
       closedLedgerClosingIds: closedIds,
       duplicityRisk,
-      reason: duplicityRisk ? `RISCO DE DUPLICIDADE — ${reason}` : reason,
+      reason: (duplicityRisk ? `RISCO DE DUPLICIDADE — ${reason}` : reason) + partialRights,
     });
   }
 

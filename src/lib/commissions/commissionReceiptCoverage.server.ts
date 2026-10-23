@@ -72,15 +72,55 @@ export async function loadCoveredReceiptIdsForCompetence(
       naturalMonth: month,
       receiptExternalId: { not: null },
     },
-    select: { receiptExternalId: true, closingId: true },
+    select: { receiptExternalId: true, closingId: true, salesOrderId: true },
   });
   const ids = new Set<number>();
   for (const row of rows) {
     if (row.receiptExternalId == null) continue;
     if (options.excludeClosingId && row.closingId === options.excludeClosingId) continue;
+    // Cobertura por direito não tira o evento: os outros pedidos dele seguem.
+    if (row.salesOrderId != null) continue;
     ids.add(row.receiptExternalId);
   }
   return [...ids].sort((a, b) => a - b);
+}
+
+/**
+ * Cobertura por DIREITO da competência (B4): recebimento → pedidos já contemplados
+ * por outro fechamento. `excludeClosingId` = fechamento em reprocessamento.
+ */
+export async function loadCoveredRightsForCompetence(
+  db: Pick<PrismaClient, "commissionReceiptCoverage">,
+  year: number,
+  month: number,
+  options: { excludeClosingId?: string | null } = {}
+): Promise<Map<number, Set<string>>> {
+  const rows = await db.commissionReceiptCoverage.findMany({
+    where: {
+      coverageStatus: "COVERED",
+      naturalYear: year,
+      naturalMonth: month,
+      receiptExternalId: { not: null },
+      salesOrderId: { not: null },
+    },
+    select: { receiptExternalId: true, closingId: true, salesOrderId: true },
+  });
+  return indexCoveredRights(rows, options.excludeClosingId ?? null);
+}
+
+function indexCoveredRights(
+  rows: ReadonlyArray<{ receiptExternalId: number | null; closingId: string | null; salesOrderId: string | null }>,
+  excludeClosingId: string | null
+): Map<number, Set<string>> {
+  const out = new Map<number, Set<string>>();
+  for (const row of rows) {
+    if (row.receiptExternalId == null || row.salesOrderId == null) continue;
+    if (excludeClosingId && row.closingId === excludeClosingId) continue;
+    const set = out.get(row.receiptExternalId) ?? new Set<string>();
+    set.add(row.salesOrderId);
+    out.set(row.receiptExternalId, set);
+  }
+  return out;
 }
 
 type LegacyImportResultRow = {
@@ -136,7 +176,9 @@ export type CarryoverEvaluationDeps = {
   evaluateNaturalMonth: (
     natural: CommissionYearMonth,
     receiptExternalIds: number[],
-    alreadyCoveredReceiptExternalIds: number[]
+    alreadyCoveredReceiptExternalIds: number[],
+    /** Direitos já contemplados nesses eventos (B4): só os demais pedidos voltam. */
+    coveredRightsByReceiptId?: ReadonlyMap<number, ReadonlySet<string>>
   ) => Promise<CommissionReceiptPreviewLine[]>;
 };
 
@@ -156,7 +198,7 @@ export const defaultCarryoverEvaluationDeps: CarryoverEvaluationDeps = {
       { apply: true }
     );
   },
-  evaluateNaturalMonth: async (natural, receiptExternalIds, alreadyCoveredReceiptExternalIds) => {
+  evaluateNaturalMonth: async (natural, receiptExternalIds, alreadyCoveredReceiptExternalIds, coveredRightsByReceiptId) => {
     const { loadCommissionReceiptPreview } = await import("./commissionReceiptEngine.server.js");
     const preview = await loadCommissionReceiptPreview({
       year: natural.year,
@@ -164,6 +206,7 @@ export const defaultCarryoverEvaluationDeps: CarryoverEvaluationDeps = {
       receiptScope: {
         includeReceiptExternalIds: receiptExternalIds,
         alreadyCoveredReceiptExternalIds,
+        ...(coveredRightsByReceiptId && coveredRightsByReceiptId.size > 0 ? { coveredRightsByReceiptId } : {}),
       },
     });
     return preview.lines;
@@ -216,16 +259,20 @@ export async function loadReceiptClosingCarryovers(
         receiptExternalId: { not: null },
         naturalReceiptDate: { gte: from, lt: to },
       },
-      select: { receiptExternalId: true, receivableExternalId: true, closingId: true },
+      select: { receiptExternalId: true, receivableExternalId: true, closingId: true, salesOrderId: true },
     }),
     loadLegacyCoverageImportContext(db),
   ]);
 
+  // Evento coberto por inteiro sai das pendências; coberto por direito continua
+  // candidato para os demais pedidos (o motor tira os direitos já contemplados).
+  const coveredRights = indexCoveredRights(coverage, input.excludeCoverageClosingId ?? null);
   const covered = new Set<number>();
   const coveredByReceivable = new Map<number, number[]>();
   for (const row of coverage) {
     if (row.receiptExternalId == null) continue;
     if (input.excludeCoverageClosingId && row.closingId === input.excludeCoverageClosingId) continue;
+    if (row.salesOrderId != null) continue;
     covered.add(row.receiptExternalId);
     const list = coveredByReceivable.get(row.receivableExternalId) ?? [];
     list.push(row.receiptExternalId);
@@ -276,9 +323,15 @@ export async function loadReceiptClosingCarryovers(
     const alreadyCovered = [...(receivablesByMonth.get(key) ?? [])].flatMap(
       (receivableId) => coveredByReceivable.get(receivableId) ?? []
     );
+    const ids = idsByMonth.get(key) ?? [];
+    const rightsInMonth = new Map<number, Set<string>>();
+    for (const id of ids) {
+      const rights = coveredRights.get(id);
+      if (rights) rightsInMonth.set(id, rights);
+    }
     linesByNaturalMonth.set(
       key,
-      await deps.evaluateNaturalMonth(natural, idsByMonth.get(key) ?? [], alreadyCovered)
+      await deps.evaluateNaturalMonth(natural, ids, alreadyCovered, rightsInMonth.size > 0 ? rightsInMonth : undefined)
     );
   }
 

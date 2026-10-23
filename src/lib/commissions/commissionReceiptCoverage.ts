@@ -28,6 +28,11 @@ import {
   type CommissionLedgerInclusionType,
   type ReceiptClosingCarryoverRow,
 } from "./commissionReceiptCoverage.shared.js";
+import {
+  findReceiptRightConflicts,
+  formatReceiptRightConflicts,
+  rightOrderIdOf,
+} from "./commissionReceivableOrderRights.js";
 
 export type CarryoverInclusionType = Extract<
   CommissionLedgerInclusionType,
@@ -68,6 +73,7 @@ export function toCarryoverPreviewLine(
       nomusOrderItemId: line.nomusOrderItemId,
       ruleId: line.ruleId,
       carryover: { naturalYear, naturalMonth, inclusionType },
+      rightOrderId: line.rightKeyOrderId ?? null,
     }),
   };
 }
@@ -149,8 +155,13 @@ export function buildCarryoverRows(input: {
     for (const [receivableId, group] of byReceivable) {
       const events = eventsByKey.get(`${receivableId}|${monthKey}`) ?? [];
       if (events.length === 0) continue;
-      const primary = group.find((line) => line.status === "COMMISSIONABLE") ?? group[0]!;
-      if (isNotCommissionableLineStatus(primary.status)) continue;
+      // Não comissionável por regra só sai do grid quando TODAS as linhas do título
+      // são assim; com N pedidos, um pedido pendente não some atrás de outro.
+      if (group.every((line) => isNotCommissionableLineStatus(line.status))) continue;
+      const primary =
+        group.find((line) => line.status === "COMMISSIONABLE") ??
+        group.find((line) => !isNotCommissionableLineStatus(line.status)) ??
+        group[0]!;
       const state = events.reduce<CommissionCoverageState>(
         (worst, event) => (STATE_SEVERITY[event.state] > STATE_SEVERITY[worst] ? event.state : worst),
         events[0]!.state
@@ -171,16 +182,35 @@ export function buildCarryoverRows(input: {
       );
       const missingLegacyImports =
         state === "LEGACY_PENDING_CANDIDATE" ? input.missingLegacyImports(natural) : [];
-      const inclusion = assessCarryoverRowInclusion({
-        state,
-        lineStatus: primary.status,
-        statusReason: primary.statusReason,
-        commissionReceivableScheduleId: primary.commissionReceivableScheduleId,
-        canonicalSellerId: primary.canonicalSellerId,
-        sellerResolutionStatus: primary.sellerResolutionStatus,
-        missingLegacyImports,
-        statusLabel: input.statusLabel,
-      });
+      const assessLine = (line: CommissionReceiptPreviewLine) =>
+        assessCarryoverRowInclusion({
+          state,
+          lineStatus: line.status,
+          statusReason: line.statusReason,
+          commissionReceivableScheduleId: line.commissionReceivableScheduleId,
+          canonicalSellerId: line.canonicalSellerId,
+          sellerResolutionStatus: line.sellerResolutionStatus,
+          missingLegacyImports,
+          statusLabel: input.statusLabel,
+        });
+      let inclusion = assessLine(primary);
+      if (inclusion.includable) {
+        // Título de N pedidos: incluir cobre o evento inteiro — todos os direitos
+        // precisam estar resolvidos (comissionáveis ou excluídos por regra).
+        for (const line of group) {
+          if (line === primary) continue;
+          if (isNotCommissionableLineStatus(line.status) && line.status !== "NO_SALES_LINK") continue;
+          const other = assessLine(line);
+          if (other.includable) continue;
+          inclusion = {
+            includable: false,
+            blockedReason: `${line.orderCode ? `PD ${line.orderCode}` : "Outro direito do título"}: ${
+              other.blockedReason ?? input.statusLabel(line.status)
+            }`,
+          };
+          break;
+        }
+      }
       const situation =
         state === "POST_CUTOVER_PENDING"
           ? describePostCutoverSituation(events, input.naturalMonthClosings.get(monthKey) ?? null, natural)
@@ -327,10 +357,49 @@ export type InduscostCoverageRowInput = {
   ledgerLineId: string;
   coveredReceivedAmount: number;
   coveredCommissionAmount: number;
+  /** Direito coberto (pedido). Nulo = cobertura do evento inteiro. */
+  salesOrderId: string | null;
+  commissionReceivableScheduleId: string | null;
   associationMethod: "INDUSCOST_LEDGER";
   notes: string;
   createdBy: string;
 };
+
+export type CoveredReceiptRight = { receiptExternalId: number; salesOrderId: string | null };
+
+/**
+ * Direitos que o fechamento contempla de forma final: (evento, pedido) para linha de
+ * pedido; (evento, nulo) para linha sem pedido (cobre o evento inteiro).
+ */
+export function collectCoveredRightsFromLines(
+  lines: ReadonlyArray<{
+    status: string;
+    receiptIds?: number[] | null;
+    receiptExternalIds?: number[] | null;
+    localOrderId?: string | null;
+    salesOrderId?: string | null;
+  }>
+): CoveredReceiptRight[] {
+  const pending = new Set<string>();
+  for (const line of lines) {
+    if (isCoverageFinalLineStatus(line.status)) continue;
+    const order = rightOrderIdOf(line);
+    for (const id of line.receiptExternalIds ?? line.receiptIds ?? []) pending.add(`${id}|${order ?? ""}`);
+  }
+  const out = new Map<string, CoveredReceiptRight>();
+  for (const line of lines) {
+    if (!isCoverageFinalLineStatus(line.status)) continue;
+    const order = rightOrderIdOf(line);
+    for (const id of line.receiptExternalIds ?? line.receiptIds ?? []) {
+      const key = `${id}|${order ?? ""}`;
+      if (pending.has(key)) continue;
+      out.set(key, { receiptExternalId: id, salesOrderId: order });
+    }
+  }
+  return [...out.values()].sort(
+    (a, b) => a.receiptExternalId - b.receiptExternalId || (a.salesOrderId ?? "").localeCompare(b.salesOrderId ?? "")
+  );
+}
 
 /** Eventos que o fechamento contempla de forma final (cobrem pagamento). */
 export function collectCoveredReceiptIdsFromLines(
@@ -345,10 +414,16 @@ export function collectCoveredReceiptIdsFromLines(
 }
 
 /**
- * Cobertura INDUSCOST_CLOSING de um fechamento: um registro por evento de
- * recebimento contemplado de forma final. A comissão do título na competência é
- * rateada entre os eventos pelo valor recebido (resto no último — soma exata).
- * Evento sem dados de recebimento aborta (nunca grava cobertura sem prova).
+ * Cobertura INDUSCOST_CLOSING de um fechamento — granularidade do DIREITO (B4):
+ *   - linha de pedido final → um registro por (evento, pedido), com a comissão do
+ *     pedido e a PARCELA do recebido atribuída a ele (Σ das parcelas = evento);
+ *   - linha sem pedido final (ex.: "sem vínculo de venda") → cobertura do evento;
+ *   - direito pendente (status não final) → nenhum registro: segue pendente, mesmo
+ *     que outro pedido do mesmo evento seja coberto agora.
+ * A comissão do direito é rateada entre os eventos da linha pelo valor recebido (resto
+ * no último — soma exata). Evento sem dados de recebimento aborta (nunca grava cobertura
+ * sem prova). Situação que a cobertura não representa (linha sem pedido ao lado de
+ * direitos) aborta também.
  */
 export function buildInduscostCoverageRows(input: {
   closingId: string;
@@ -361,30 +436,80 @@ export function buildInduscostCoverageRows(input: {
     status: string;
     releasedCommissionAmount: number;
     inclusionType: CommissionLedgerInclusionType;
+    salesOrderId?: string | null;
+    commissionReceivableScheduleId?: string | null;
+    /** Parcela do recebido atribuída à linha (título compartilhado por N pedidos). */
+    allocatedReceivedAmount?: number | null;
+    /** Recebido do título na linha (fato financeiro). */
+    receivedAmount?: number | null;
   }>;
   receiptEvents: ReadonlyMap<number, ReceiptEventForCoverage>;
 }): InduscostCoverageRowInput[] {
+  const conflicts = findReceiptRightConflicts(
+    input.ledgerRows.map((row) => ({
+      nomusReceivableId: row.nomusReceivableId,
+      status: row.status,
+      receiptExternalIds: row.receiptExternalIds,
+      salesOrderId: row.salesOrderId ?? null,
+    })),
+    isCoverageFinalLineStatus
+  );
+  if (conflicts.length > 0) {
+    throw new Error(formatReceiptRightConflicts(conflicts));
+  }
+
+  // Direito com alguma linha pendente no evento não é coberto (conservador).
+  const pendingRight = new Set<string>();
+  for (const row of input.ledgerRows) {
+    if (isCoverageFinalLineStatus(row.status)) continue;
+    for (const id of row.receiptExternalIds) pendingRight.add(`${id}|${row.salesOrderId ?? ""}`);
+  }
+
   type Group = {
     ledgerLineId: string;
     inclusionType: CommissionLedgerInclusionType;
+    salesOrderId: string | null;
+    scheduleId: string | null;
     receiptIds: Set<number>;
     commission: number;
+    attributedReceived: number | null;
   };
   const groups = new Map<string, Group>();
-  const claimed = new Set<number>();
+  const claimed = new Set<string>();
   for (const row of input.ledgerRows) {
     if (!isCoverageFinalLineStatus(row.status)) continue;
-    const ids = row.receiptExternalIds.filter((id) => !claimed.has(id));
     if (row.receiptExternalIds.length === 0) continue;
-    const key = `${row.nomusReceivableId ?? "?"}|${[...row.receiptExternalIds].sort((a, b) => a - b).join(",")}`;
+    const order = row.salesOrderId ?? null;
+    // Direito com linha pendente no evento: não cobre (fica para quando resolver).
+    if (row.receiptExternalIds.every((id) => pendingRight.has(`${id}|${order ?? ""}`))) continue;
+    // Várias linhas do mesmo direito/evento (ex.: itens) somam a comissão no mesmo
+    // registro; o evento entra uma vez (claimed).
+    const ids = row.receiptExternalIds.filter(
+      (id) => !claimed.has(`${id}|${order ?? ""}`) && !pendingRight.has(`${id}|${order ?? ""}`)
+    );
+    const key = `${row.nomusReceivableId ?? "?"}|${[...row.receiptExternalIds].sort((a, b) => a - b).join(",")}|${order ?? "EVENT"}`;
     const group =
       groups.get(key) ??
-      ({ ledgerLineId: row.id, inclusionType: row.inclusionType, receiptIds: new Set<number>(), commission: 0 } satisfies Group);
+      ({
+        ledgerLineId: row.id,
+        inclusionType: row.inclusionType,
+        salesOrderId: order,
+        scheduleId: row.commissionReceivableScheduleId ?? null,
+        receiptIds: new Set<number>(),
+        commission: 0,
+        attributedReceived: 0,
+      } satisfies Group);
     ids.forEach((id) => {
       group.receiptIds.add(id);
-      claimed.add(id);
+      claimed.add(`${id}|${order ?? ""}`);
     });
     group.commission = roundMoney(group.commission + (row.status === "COMMISSIONABLE" ? row.releasedCommissionAmount : 0));
+    if (group.scheduleId == null) group.scheduleId = row.commissionReceivableScheduleId ?? null;
+    // Parcela atribuída: sem dado de atribuição, a linha é dona do recebido inteiro.
+    if (group.attributedReceived != null) {
+      const share = row.allocatedReceivedAmount ?? null;
+      group.attributedReceived = share == null ? null : roundMoney(group.attributedReceived + share);
+    }
     groups.set(key, group);
   }
 
@@ -401,7 +526,14 @@ export function buildInduscostCoverageRows(input: {
       return { id, event };
     });
     const totalReceived = events.reduce((sum, item) => sum + item.event.receivedAmount, 0);
+    // Recebido coberto pelo direito: evento inteiro (cobertura do evento ou linha sem
+    // atribuição) ou a parcela do pedido, repartida entre os eventos (resto no último).
+    const rightReceived =
+      group.salesOrderId != null && group.attributedReceived != null
+        ? roundMoney(Math.min(group.attributedReceived, totalReceived))
+        : null;
     let allocated = 0;
+    let allocatedReceived = 0;
     events.forEach(({ id, event }, index) => {
       const natural = resolveReceiptNaturalYearMonth(event.receiptDate);
       if (!natural) throw new Error(`Recebimento ${id} com data inválida.`);
@@ -413,6 +545,15 @@ export function buildInduscostCoverageRows(input: {
             ? roundMoney((group.commission * event.receivedAmount) / totalReceived)
             : 0;
       allocated = roundMoney(allocated + share);
+      const receivedShare =
+        rightReceived == null
+          ? roundMoney(event.receivedAmount)
+          : isLast
+            ? roundMoney(rightReceived - allocatedReceived)
+            : totalReceived > 0
+              ? roundMoney((rightReceived * event.receivedAmount) / totalReceived)
+              : 0;
+      allocatedReceived = roundMoney(allocatedReceived + receivedShare);
       out.push({
         receiptExternalId: id,
         receivableExternalId: event.receivableExternalId,
@@ -425,15 +566,21 @@ export function buildInduscostCoverageRows(input: {
         coveredMonth: input.closing.month,
         closingId: input.closingId,
         ledgerLineId: group.ledgerLineId,
-        coveredReceivedAmount: roundMoney(event.receivedAmount),
+        coveredReceivedAmount: receivedShare,
         coveredCommissionAmount: share,
+        salesOrderId: group.salesOrderId,
+        commissionReceivableScheduleId: group.salesOrderId != null ? group.scheduleId : null,
         associationMethod: "INDUSCOST_LEDGER",
-        notes: `Fechamento ${formatCommissionYearMonthLabel(input.closing)} (${group.inclusionType})`,
+        notes: `Fechamento ${formatCommissionYearMonthLabel(input.closing)} (${group.inclusionType})${
+          group.salesOrderId != null ? " · direito do pedido" : ""
+        }`,
         createdBy: input.userId,
       });
     });
   }
-  return out.sort((a, b) => a.receiptExternalId - b.receiptExternalId);
+  return out.sort(
+    (a, b) => a.receiptExternalId - b.receiptExternalId || (a.salesOrderId ?? "").localeCompare(b.salesOrderId ?? "")
+  );
 }
 
 /**

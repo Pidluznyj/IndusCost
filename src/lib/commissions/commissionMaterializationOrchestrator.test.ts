@@ -421,8 +421,11 @@ describe("commissionMaterializationOrchestrator", () => {
     assert.equal(scheduleCalls, 1);
   });
 
-  it("ensureCommissionMaterializationForReceiptMonth não materializa NF ambígua", async () => {
+  // N:N (2026-10-22): NF-e com dois pedidos é cardinalidade legítima — antes o
+  // título era pulado como "ambíguo" e nenhum dos dois pedidos ganhava schedule.
+  it("ensureCommissionMaterializationForReceiptMonth materializa cada pedido da NF-e com N pedidos", async () => {
     let materializeCalls = 0;
+    const materializedOrders: string[] = [];
     const db = {
       nomusReceivableReceipt: {
         findMany: async () => [
@@ -456,16 +459,19 @@ describe("commissionMaterializationOrchestrator", () => {
       month: 6,
       apply: true,
       deps: {
-        materialize: async () => {
+        materialize: async (_db, input) => {
           materializeCalls += 1;
+          materializedOrders.push(input.salesOrderId);
           return snapshotResult();
         },
         rebuildSchedule: async () => scheduleResult(),
       },
     });
 
-    assert.equal(materializeCalls, 0);
-    assert.equal(result.schedulesEnsured, 0);
-    assert.equal(result.unlinkedReceivables, 1);
+    assert.equal(materializeCalls, 2);
+    assert.deepEqual(materializedOrders.sort(), [ORDER_A, ORDER_B].sort());
+    assert.equal(result.receivablesMissingBefore, 1);
+    assert.equal(result.schedulesEnsured, 1);
+    assert.equal(result.unlinkedReceivables, 0);
   });
 });
