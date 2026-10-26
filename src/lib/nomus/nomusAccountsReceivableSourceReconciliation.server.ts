@@ -11,6 +11,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { dirname } from "node:path";
+import { testSafeLockPath } from "../testSafeLockPath.js";
 import { hostname } from "node:os";
 import { randomUUID } from "node:crypto";
 import type { Prisma, PrismaClient } from "@prisma/client";
@@ -70,8 +71,9 @@ export function acquireAccountsReceivableReconcileLock(input: {
 }):
   | { ok: true; lockFile: string; token: string; release: () => void }
   | { ok: false; code: "LOCK_HELD"; message: string; lockFile: string } {
-  const lockFile =
-    input.lockFile ?? resolveAccountsReceivableReconcileLockFile(input.env);
+  const lockFile = testSafeLockPath(
+    input.lockFile ?? resolveAccountsReceivableReconcileLockFile(input.env)
+  );
   mkdirSync(dirname(lockFile), { recursive: true });
 
   if (existsSync(lockFile)) {

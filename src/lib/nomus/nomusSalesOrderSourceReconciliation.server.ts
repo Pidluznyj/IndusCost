@@ -11,6 +11,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { dirname } from "node:path";
+import { testSafeLockPath } from "../testSafeLockPath.js";
 import { hostname } from "node:os";
 import { randomUUID } from "node:crypto";
 import type { Prisma, PrismaClient } from "@prisma/client";
@@ -61,8 +62,9 @@ export function acquireSalesOrderReconcileLock(input: {
 }):
   | { ok: true; lockFile: string; token: string; release: () => void }
   | { ok: false; code: "LOCK_HELD"; message: string; lockFile: string } {
-  const lockFile =
-    input.lockFile ?? resolveSalesOrderReconcileLockFile(input.env);
+  const lockFile = testSafeLockPath(
+    input.lockFile ?? resolveSalesOrderReconcileLockFile(input.env)
+  );
   mkdirSync(dirname(lockFile), { recursive: true });
 
   if (existsSync(lockFile)) {

@@ -13,6 +13,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { dirname } from "node:path";
+import { testSafeLockPath } from "./testSafeLockPath.js";
 import { randomUUID } from "node:crypto";
 import { hostname } from "node:os";
 import {
@@ -135,7 +136,7 @@ export function acquireStockDocumentsSyncLock(args: {
   pid?: number;
 }): StockDocumentsSyncLockAcquireResult {
   const env = args.env ?? process.env;
-  const lockFile = args.lockFile ?? resolveStockDocumentsSyncLockFile(env);
+  const lockFile = testSafeLockPath(args.lockFile ?? resolveStockDocumentsSyncLockFile(env));
   ensureLockDir(lockFile);
 
   const payload: StockDocumentsSyncLockPayload = {
@@ -188,6 +189,7 @@ export function releaseStockDocumentsSyncLock(args: {
   lockFile: string;
   token: string;
 }): void {
+  args = { ...args, lockFile: testSafeLockPath(args.lockFile) };
   const holder = readStockDocumentsSyncLockFile(args.lockFile);
   if (!holder) return;
   if (holder.token !== args.token) return;

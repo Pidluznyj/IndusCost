@@ -9,6 +9,7 @@
 
 import { existsSync, mkdirSync, openSync, closeSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
+import { testSafeLockPath } from "./testSafeLockPath.js";
 import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { hostname } from "node:os";
@@ -108,6 +109,7 @@ export function readProductionOrdersSyncLockFile(
 export function probeGlobalNomusSyncLockHeld(
   lockFile: string = NOMUS_SYNC_GLOBAL_LOCK_FILE_DEFAULT
 ): boolean {
+  lockFile = testSafeLockPath(lockFile);
   try {
     const probe = spawnSync("flock", ["-n", lockFile, "-c", "true"], { stdio: "ignore" });
     if (probe.error) return false; // Windows / flock ausente → não bloqueia
@@ -133,6 +135,7 @@ export function waitForGlobalNomusSyncLockToFree(
   timeoutSeconds: number,
   lockFile: string = NOMUS_SYNC_GLOBAL_LOCK_FILE_DEFAULT
 ): boolean {
+  lockFile = testSafeLockPath(lockFile);
   if (!Number.isFinite(timeoutSeconds) || timeoutSeconds <= 0) return false;
   try {
     const probe = spawnSync("flock", ["-w", String(Math.trunc(timeoutSeconds)), lockFile, "-c", "true"], {
@@ -190,7 +193,7 @@ export function acquireProductionOrdersSyncLock(args: {
   pid?: number;
 }): ProductionOrdersSyncLockAcquireResult {
   const env = args.env ?? process.env;
-  const lockFile = args.lockFile ?? resolveProductionOrdersSyncLockFile(env);
+  const lockFile = testSafeLockPath(args.lockFile ?? resolveProductionOrdersSyncLockFile(env));
   const respectGlobal =
     args.respectGlobalLock ?? shouldRespectGlobalNomusLock(env);
   const probeGlobal = args.probeGlobalLock ?? (() => probeGlobalNomusSyncLockHeld());
@@ -276,6 +279,7 @@ export function releaseProductionOrdersSyncLock(args: {
   lockFile: string;
   token: string;
 }): boolean {
+  args = { ...args, lockFile: testSafeLockPath(args.lockFile) };
   const current = readProductionOrdersSyncLockFile(args.lockFile);
   if (!current) return true;
   if (current.token !== args.token) return false;

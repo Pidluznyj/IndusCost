@@ -3,7 +3,10 @@
  */
 
 import assert from "node:assert/strict";
-import { describe, it } from "node:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { after, describe, it } from "node:test";
 import {
   classifyLegacyPermissionKey,
   createInMemoryBackfillPort,
@@ -73,6 +76,11 @@ describe("permissionBackfill — mega-key", () => {
   });
 });
 
+// Snapshots em diretório temporário: o gate do deploy roda este arquivo no servidor, e o padrão
+// (docs/generated/backfill-snapshots no repositório) reescrevia arquivos versionados em /opt/induscost.
+const SNAPSHOT_CWD = mkdtempSync(join(tmpdir(), "permission-backfill-test-"));
+after(() => rmSync(SNAPSHOT_CWD, { recursive: true, force: true }));
+
 describe("permissionBackfill — apply / idempotência / rollback", () => {
   it("apply grava overrides; reexecução idempotente", async () => {
     const user = fixtureAliasUser();
@@ -85,6 +93,7 @@ describe("permissionBackfill — apply / idempotência / rollback", () => {
       confirmApply: true,
       userIds: [user.userId],
       runId: "test-apply-1",
+      cwd: SNAPSHOT_CWD,
     });
     assert.equal(first.readyCount, 1);
     assert.equal(first.appliedCount, 1);
@@ -112,7 +121,7 @@ describe("permissionBackfill — apply / idempotência / rollback", () => {
       confirmApply: true,
       userIds: [user.userId],
       runId,
-      cwd: process.cwd(),
+      cwd: SNAPSHOT_CWD,
     });
 
     const afterApply = await port.loadUser(user.userId);
@@ -122,7 +131,7 @@ describe("permissionBackfill — apply / idempotência / rollback", () => {
       port,
       runId,
       confirmRollback: true,
-      cwd: process.cwd(),
+      cwd: SNAPSHOT_CWD,
     });
     assert.equal(rolled.restored, 1);
 
@@ -142,6 +151,7 @@ describe("permissionBackfill — apply / idempotência / rollback", () => {
       confirmApply: true,
       userIds: [good.userId],
       runId: "test-partial",
+      cwd: SNAPSHOT_CWD,
     });
     assert.equal(result.appliedCount, 1);
     void plan;

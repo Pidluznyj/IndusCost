@@ -20,6 +20,7 @@
 
 import { existsSync, mkdirSync, openSync, closeSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
+import { testSafeLockPath } from "./testSafeLockPath.js";
 import { randomUUID } from "node:crypto";
 import { hostname } from "node:os";
 import {
@@ -256,7 +257,7 @@ export function acquireProposalsSyncLock(args: {
   pid?: number;
 }): ProposalsSyncLockAcquireResult {
   const env = args.env ?? process.env;
-  const lockFile = args.lockFile ?? resolveProposalsSyncLockFile(env);
+  const lockFile = testSafeLockPath(args.lockFile ?? resolveProposalsSyncLockFile(env));
   const respectGlobal = args.respectGlobalLock ?? shouldRespectGlobalNomusLock(env);
   const probeGlobal = args.probeGlobalLock ?? (() => probeGlobalNomusSyncLockHeld());
   const now = args.now ?? (() => new Date());
@@ -277,7 +278,7 @@ export function acquireProposalsSyncLock(args: {
       };
     }
 
-    const waiterLockFile = args.waiterLockFile ?? resolveProposalsHourlyWaiterLockFile(env);
+    const waiterLockFile = testSafeLockPath(args.waiterLockFile ?? resolveProposalsHourlyWaiterLockFile(env));
     const waiter = tryAcquireHourlyWaiterLock(waiterLockFile, now, pid);
     if (!waiter.ok) {
       return {
@@ -374,6 +375,7 @@ export function acquireProposalsSyncLock(args: {
 
 /** Libera somente se o token for o dono atual (não derruba execução alheia). */
 export function releaseProposalsSyncLock(args: { lockFile: string; token: string }): boolean {
+  args = { ...args, lockFile: testSafeLockPath(args.lockFile) };
   const current = readProposalsSyncLockFile(args.lockFile);
   if (!current) return true;
   if (current.token !== args.token) return false;

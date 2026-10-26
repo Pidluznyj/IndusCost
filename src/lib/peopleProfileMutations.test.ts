@@ -1,5 +1,12 @@
 import assert from "node:assert/strict";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, it } from "node:test";
+
+// Uploads em diretório temporário: o gate do deploy roda este arquivo no servidor, onde
+// data/uploads guarda os documentos reais de RH. Cada arquivo de teste roda em processo próprio.
+process.env.APP_UPLOADS_DIR = mkdtempSync(join(tmpdir(), "people-profile-uploads-test-"));
 import {
   applyCareerMovement,
   applyCompensationAdjustment,

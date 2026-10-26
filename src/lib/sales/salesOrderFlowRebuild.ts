@@ -5,6 +5,7 @@
 
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
+import { testSafeLockPath } from "../testSafeLockPath.js";
 import { randomUUID } from "node:crypto";
 import { hostname } from "node:os";
 
@@ -412,6 +413,7 @@ export function acquireSalesOrderFlowRebuildLock(args: {
   unlinkFn?: (path: string) => void;
   mkdirFn?: (path: string) => void;
 }): SalesOrderFlowRebuildLockAcquireResult {
+  args = { ...args, lockFile: testSafeLockPath(args.lockFile) };
   const existsFn = args.existsFn ?? existsSync;
   const readFn = args.readFn ?? ((p) => readFileSync(p, "utf8"));
   const writeFn = args.writeFn ?? writeFileSync;
@@ -505,6 +507,7 @@ export function releaseSalesOrderFlowRebuildLock(args: {
   unlinkFn?: (path: string) => void;
   existsFn?: (path: string) => boolean;
 }): boolean {
+  args = { ...args, lockFile: testSafeLockPath(args.lockFile) };
   const existsFn = args.existsFn ?? existsSync;
   const readFn = args.readFn ?? ((p) => readFileSync(p, "utf8"));
   const unlinkFn = args.unlinkFn ?? unlinkSync;

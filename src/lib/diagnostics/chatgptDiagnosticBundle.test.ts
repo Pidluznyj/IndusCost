@@ -1,6 +1,13 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { describe, it } from "node:test";
+import { readFileSync, rmSync } from "node:fs";
+import { after, describe, it } from "node:test";
+
+// O builder só grava em tmp/ do projeto (gitignored); o teste remove o que gerou para não acumular
+// arquivos no servidor onde o gate do deploy roda.
+const generated: string[] = [];
+after(() => {
+  for (const path of generated) rmSync(path, { recursive: true, force: true });
+});
 import {
   REQUIRED_BUNDLE_ROOT_FILES,
   type DiagnosticFinding,
@@ -70,6 +77,7 @@ describe("chatgptDiagnosticBundle", () => {
 
   it("builder grava apenas em tmp/diagnostic-bundles", async () => {
     const result = await buildMinimalSystemDiagnosticBundle();
+    generated.push(result.outputDir, result.zipPath);
     assert.match(result.outputDir.replace(/\\/g, "/"), /^tmp\/diagnostic-bundles\//);
     assert.match(result.zipPath.replace(/\\/g, "/"), /^tmp\/diagnostic-bundles\//);
   });

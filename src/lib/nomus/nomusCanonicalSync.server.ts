@@ -19,6 +19,7 @@ import {
   readFileSync,
 } from "node:fs";
 import { dirname } from "node:path";
+import { testSafeLockPath } from "../testSafeLockPath.js";
 import {
   buildCanonicalSyncExecution,
   emptyCanonicalCounters,
@@ -157,7 +158,7 @@ export function tryAcquireCanonicalEntityLock(
   | { ok: true; path: string; recoveredStale?: boolean }
   | { ok: false; code: "LOCK_HELD"; path: string; message: string } {
   const env = options?.env ?? process.env;
-  const path = resolveCanonicalEntityLockFile(name, env);
+  const path = testSafeLockPath(resolveCanonicalEntityLockFile(name, env));
   try {
     mkdirSync(dirname(path), { recursive: true });
   } catch {

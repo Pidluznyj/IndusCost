@@ -11,6 +11,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { dirname } from "node:path";
+import { testSafeLockPath } from "../testSafeLockPath.js";
 import { hostname } from "node:os";
 import { randomUUID } from "node:crypto";
 import type { Prisma, PrismaClient } from "@prisma/client";
@@ -60,7 +61,7 @@ export function acquireLifecycleBackfillLock(input: {
   | { ok: false; code: "LOCK_HELD"; message: string; lockFile: string } {
   const env = input.env ?? process.env;
   const raw = (env[NOMUS_LIFECYCLE_BACKFILL_LOCK_ENV] ?? "").trim();
-  const lockFile = raw || NOMUS_LIFECYCLE_BACKFILL_LOCK_DEFAULT;
+  const lockFile = testSafeLockPath(raw || NOMUS_LIFECYCLE_BACKFILL_LOCK_DEFAULT);
   mkdirSync(dirname(lockFile), { recursive: true });
 
   if (existsSync(lockFile)) {

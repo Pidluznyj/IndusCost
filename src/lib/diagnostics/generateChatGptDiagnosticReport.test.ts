@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
-import { existsSync } from "node:fs";
-import { describe, it } from "node:test";
+import { existsSync, rmSync } from "node:fs";
+import { after, describe, it } from "node:test";
+
+// Remove os bundles gerados (tmp/ do projeto) para não acumular arquivos no servidor do gate.
+const generated: string[] = [];
+after(() => {
+  for (const path of generated) rmSync(path, { recursive: true, force: true });
+});
 import type { DiagnosticFinding } from "./chatgptDiagnosticTypes.js";
 import { resolveDiagnosticBundleOutputPaths } from "./diagnosticBundleBuilder.server.js";
 import {
@@ -92,6 +98,7 @@ describe("generateChatGptDiagnosticReport", () => {
   it("gera SYSTEM — ZIP válido, JSON parseável, sanitizado, git limpo", async () => {
     const args = parseChatGptDiagnosticReportCliArgs(["--scope=SYSTEM"]);
     const report = await generateChatGptDiagnosticReport(null, args);
+    generated.push(report.summary.outputDir, report.summary.zipPath);
 
     assertChatGptDiagnosticReportBundleValid(report.result);
     assert.match(report.summary.zipPath.replace(/\\/g, "/"), /^tmp\/diagnostic-bundles\//);
@@ -135,6 +142,7 @@ describe("generateChatGptDiagnosticReport", () => {
     );
     const args = parseChatGptDiagnosticReportCliArgs(["--scope=SYSTEM"]);
     const report = await generateChatGptDiagnosticReport(null, args);
+    generated.push(report.summary.outputDir, report.summary.zipPath);
     const validation = await validateChatGptDiagnosticZip(report.summary.zipPath);
     assert.equal(validation.ok, true, validation.errors.join("; "));
     assert.equal(validation.missingRequired.length, 0);
