@@ -9,9 +9,13 @@
  *    `express.Router`) vai para `next(err)`, como um `throw` síncrono já ia.
  * 2. `createGlobalErrorHandler` — resposta controlada: 4xx explícitos preservados, P2002 → 409, P2025 → 404,
  *    demais → 500 sem detalhes internos em produção (o log do servidor mantém o erro completo).
- * 3. `installProcessSafetyNet` — promessa rejeitada sem tratamento fora do ciclo da requisição (tarefa em segundo
- *    plano) é registrada sem derrubar o processo; exceção síncrona não capturada segue o padrão do Node.
+ * 3. `installProcessSafetyNet` — promessa rejeitada sem tratamento FORA do ciclo da requisição (sincronização,
+ *    financeiro, rotina em segundo plano) deixa o processo em estado incerto: o erro é registrado por completo e
+ *    começa um encerramento SUPERVISIONADO — o servidor para de aceitar conexões, as requisições em andamento
+ *    terminam (até `graceMs`) e o processo sai com código 1 para o systemd reiniciar. Erros de rota nunca chegam
+ *    aqui (item 1). Exceção síncrona não capturada segue o padrão do Node (saída imediata).
  */
+import type { Server } from "node:http";
 import { createRequire } from "node:module";
 import type { ErrorRequestHandler, NextFunction, Request, Response } from "express";
 
@@ -131,12 +135,60 @@ export function createGlobalErrorHandler(options: GlobalErrorHandlerOptions = {}
 
 const SAFETY_NET = Symbol.for("induscost.processSafetyNet");
 
-/** Idempotente. Registra rejeições sem tratamento sem derrubar o processo. */
-export function installProcessSafetyNet(log: (message: string, error: unknown) => void = (m, e) => console.error(m, e)): void {
+export type ProcessSafetyNetOptions = {
+  /** Servidor HTTP a drenar antes de sair (ainda indefinido durante a inicialização: sai sem drenar). */
+  getServer?: () => Server | undefined;
+  /** Prazo para as requisições em andamento terminarem. Padrão: INDUSCOST_SHUTDOWN_GRACE_MS ou 10 s. */
+  graceMs?: number;
+  log?: (message: string, error?: unknown) => void;
+  exit?: (code: number) => void;
+};
+
+/**
+ * Idempotente. Rejeição sem tratamento → registro completo + encerramento supervisionado (código 1, systemd
+ * reinicia). Rejeições seguintes durante o encerramento só são registradas.
+ */
+export function installProcessSafetyNet(options: ProcessSafetyNetOptions = {}): void {
   const proc = process as NodeJS.Process & { [SAFETY_NET]?: true };
   if (proc[SAFETY_NET]) return;
   proc[SAFETY_NET] = true;
+  const log = options.log ?? ((m, e) => (e === undefined ? console.error(m) : console.error(m, e)));
+  const exit = options.exit ?? ((code: number) => process.exit(code));
+  const envGrace = Number(process.env.INDUSCOST_SHUTDOWN_GRACE_MS);
+  const graceMs = options.graceMs ?? (Number.isFinite(envGrace) && envGrace > 0 ? envGrace : 10_000);
+  let shuttingDown = false;
+
   process.on("unhandledRejection", (reason) => {
-    log(`[unhandledRejection] ${describeErrorForLog(reason)} — processo mantido`, reason);
+    if (shuttingDown) {
+      log(`[unhandledRejection] ${describeErrorForLog(reason)} durante o encerramento`, reason);
+      return;
+    }
+    shuttingDown = true;
+    process.exitCode = 1;
+    log(
+      `[unhandledRejection] ${describeErrorForLog(reason)} fora de uma requisição — estado do processo incerto; ` +
+        `encerramento supervisionado (até ${graceMs} ms para as requisições em andamento; o systemd reinicia o serviço)`,
+      reason
+    );
+    const server = options.getServer?.();
+    // O prazo mantém o processo vivo até o fim do encerramento, mesmo com conexões presas.
+    const deadline = setTimeout(() => {
+      log(`[shutdown] prazo de ${graceMs} ms esgotado; saindo com código 1`);
+      exit(1);
+    }, graceMs);
+    if (!server || !server.listening) {
+      clearTimeout(deadline);
+      setImmediate(() => exit(1));
+      return;
+    }
+    // Conexões keep-alive que ficam ociosas DEPOIS do close() também precisam ser fechadas.
+    const idleSweep = setInterval(() => server.closeIdleConnections?.(), 200);
+    server.close(() => {
+      clearTimeout(deadline);
+      clearInterval(idleSweep);
+      log("[shutdown] requisições em andamento concluídas; saindo com código 1");
+      exit(1);
+    });
+    server.closeIdleConnections?.();
   });
 }

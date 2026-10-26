@@ -58,13 +58,41 @@ function readTaxId(value: unknown): { taxId: string; digits: string } {
   return { taxId, digits };
 }
 
-/** Serializa, dentro da transação, toda gravação do mesmo documento (inclusive em formatos diferentes). */
+/**
+ * Espaço dos locks consultivos deste módulo: forma de duas chaves (namespace, hashtext(dígitos)). Não colide com a
+ * forma de uma chave (ex.: personLocks) e só serializa documentos cujo hash coincida — nunca libera duplicata.
+ */
+export const CUSTOMER_TAX_ID_LOCK_NAMESPACE = 0x0c057a1d;
+/** Espera máxima pelo lock; acima disso o cadastro concorrente recebe 409 "tente novamente". */
+export const CUSTOMER_TAX_ID_LOCK_TIMEOUT_MS = 5_000;
+/** Prazo da transação inteira (maior que a espera pelo lock). */
+const CUSTOMER_WRITE_TX = { maxWait: 10_000, timeout: 15_000 } as const;
+
+/**
+ * Serializa, DENTRO da transação, toda gravação do mesmo documento (inclusive em formatos diferentes), entre
+ * conexões e processos: pg_advisory_xact_lock vale para o cluster e é liberado no commit/rollback.
+ */
 async function lockTaxId(tx: Prisma.TransactionClient, digits: string): Promise<void> {
-  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`customer-tax-id:${digits}`}))`;
+  await tx.$executeRawUnsafe(`SET LOCAL lock_timeout = '${CUSTOMER_TAX_ID_LOCK_TIMEOUT_MS}ms'`);
+  // pg_advisory_xact_lock retorna void; ::text evita coluna void no $queryRaw.
+  await tx.$queryRaw`SELECT pg_advisory_xact_lock(${CUSTOMER_TAX_ID_LOCK_NAMESPACE}::int, hashtext(${digits}))::text AS locked`;
+}
+
+/** lock_timeout do PostgreSQL (55P03), como o Prisma o entrega em consulta raw. */
+function isLockTimeout(error: unknown): boolean {
+  const e = error as { code?: unknown; meta?: { code?: unknown }; message?: unknown } | null;
+  return e?.meta?.code === "55P03" || (typeof e?.message === "string" && /55P03|lock timeout/i.test(e.message));
 }
 
 async function mapWriteError(db: PrismaClient, error: unknown, digits: string | null, excludeId?: string): Promise<never> {
   if (error instanceof CustomerRecordError) throw error;
+  if (isLockTimeout(error)) {
+    throw new CustomerRecordError(
+      "Outro cadastro com este CNPJ/CPF está sendo salvo neste momento. Aguarde alguns segundos e tente novamente.",
+      "CUSTOMER_TAX_ID_BUSY",
+      409
+    );
+  }
   const code = prismaErrorCode(error);
   if (code === "P2002") {
     throw duplicateError(digits ? await findCustomerIdByTaxIdDigits(db, digits, excludeId).catch(() => null) : null);
@@ -86,7 +114,7 @@ export async function createCustomerRecord(db: PrismaClient, body: unknown) {
       const existing = await findCustomerIdByTaxIdDigits(tx, digits);
       if (existing) throw duplicateError(existing);
       return tx.customer.create({ data: data as Prisma.CustomerCreateInput });
-    });
+    }, CUSTOMER_WRITE_TX);
   } catch (error) {
     return mapWriteError(db, error, digits);
   }
@@ -110,7 +138,7 @@ export async function updateCustomerRecord(db: PrismaClient, id: string, body: u
         if (existing) throw duplicateError(existing);
       }
       return tx.customer.update({ where: { id }, data: data as Prisma.CustomerUpdateInput });
-    });
+    }, CUSTOMER_WRITE_TX);
     return { customer, changedFields: Object.keys(data) };
   } catch (error) {
     return mapWriteError(db, error, digits, id);

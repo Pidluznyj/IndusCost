@@ -33,18 +33,21 @@ function memoryDb() {
   const sqlValues = (values: unknown[]) => values.flatMap((v) => (v && typeof v === "object" && Array.isArray((v as { values?: unknown[] }).values) ? (v as { values: unknown[] }).values : [v]));
 
   const client = (held: Array<() => void>) => ({
-    async $executeRaw(_s: TemplateStringsArray, ...values: unknown[]) {
-      const key = String(values[0]);
-      while (locks.has(key)) await locks.get(key);
-      let release!: () => void;
-      locks.set(key, new Promise<void>((r) => (release = r)));
-      held.push(() => {
-        locks.delete(key);
-        release();
-      });
-      return 1;
+    async $executeRawUnsafe() {
+      return 0; // SET LOCAL lock_timeout
     },
-    async $queryRaw(_s: TemplateStringsArray, ...values: unknown[]) {
+    async $queryRaw(strings: TemplateStringsArray, ...values: unknown[]) {
+      if (strings.join("?").includes("pg_advisory_xact_lock")) {
+        const key = `${String(values[0])}:${String(values[1])}`;
+        while (locks.has(key)) await locks.get(key);
+        let release!: () => void;
+        locks.set(key, new Promise<void>((r) => (release = r)));
+        held.push(() => {
+          locks.delete(key);
+          release();
+        });
+        return [{ locked: "" }];
+      }
       const [d, exclude] = sqlValues(values) as [string, string | undefined];
       if (state.skipPrecheckOnce) {
         state.skipPrecheckOnce = false;

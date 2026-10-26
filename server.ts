@@ -1183,7 +1183,9 @@ async function startServer() {
 
   // Express 4 não captura rejeição de handler async: sem isto, um erro previsível (ex.: P2002) encerra o Node.
   installExpressAsyncErrorForwarding();
-  installProcessSafetyNet();
+  // Rejeição sem tratamento fora de requisição: registra e encerra de forma supervisionada (systemd reinicia).
+  let httpServer: import("node:http").Server | undefined;
+  installProcessSafetyNet({ getServer: () => httpServer });
   const app = express();
   const port = process.env.PORT || 3000;
   const host = process.env.HOST || "0.0.0.0";
@@ -18118,7 +18120,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     });
   }
 
-  app.listen(Number(port), host, () => {
+  httpServer = app.listen(Number(port), host, () => {
     console.log(`Server running on http://${host}:${port}`);
   });
 }

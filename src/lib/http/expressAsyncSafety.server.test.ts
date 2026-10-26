@@ -133,7 +133,11 @@ describe("reprodução do incidente de 26/10/2026 em processo separado", () => {
       file,
       `import express from ${JSON.stringify(pathToFileURL(join(REPO, "node_modules/express/index.js")).href)};
 import { createGlobalErrorHandler, installExpressAsyncErrorForwarding, installProcessSafetyNet } from ${JSON.stringify(pathToFileURL(join(REPO, "src/lib/http/expressAsyncSafety.server.ts")).href)};
-if (${withFix}) { installExpressAsyncErrorForwarding(); installProcessSafetyNet(() => {}); }
+let server;
+if (${withFix}) {
+  installExpressAsyncErrorForwarding();
+  installProcessSafetyNet({ getServer: () => server, graceMs: Number(process.env.GRACE_MS ?? 3000), log: (m) => console.log(m) });
+}
 const app = express();
 app.use(express.json());
 app.get("/alive", (_req, res) => res.json({ ok: true }));
@@ -142,18 +146,23 @@ app.post("/api/customers", async (_req, res) => {
   await Promise.reject(err);
   res.json({});
 });
-app.get("/background", (_req, res) => { void Promise.reject(new Error("tarefa em segundo plano")); res.json({ ok: true }); });
+app.get("/route-boom", async () => { throw new Error("falha numa rota"); });
+// Rotina em segundo plano sem tratamento (ex.: sincronização disparada sem .catch).
+app.get("/background", (_req, res) => { void Promise.reject(new Error("sincronização em segundo plano falhou")); res.json({ ok: true }); });
+app.get("/background-twice", (_req, res) => { void Promise.reject(new Error("rotina A")); void Promise.reject(new Error("rotina B")); res.json({ ok: true }); });
+app.get("/slow", async (req, res) => { await new Promise((r) => setTimeout(r, Number(req.query.ms ?? 1000))); res.json({ ok: "concluída" }); });
+app.get("/hang", () => {});
 app.use(createGlobalErrorHandler({ production: true, log: () => {} }));
-const server = app.listen(0, "127.0.0.1", () => console.log("PORT=" + server.address().port));
+server = app.listen(0, "127.0.0.1", () => console.log("PORT=" + server.address().port));
 `
     );
     return file;
   }
 
-  async function startChild(withFix: boolean) {
+  async function startChild(withFix: boolean, extraEnv: Record<string, string> = {}) {
     // Sem NODE_TEST_CONTEXT: o filho é um servidor comum, não um subprocesso do test runner.
     const { NODE_TEST_CONTEXT: _ctx, ...env } = process.env;
-    const child = spawn(process.execPath, ["--import", "tsx", serverScript(withFix)], { cwd: REPO, env, stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn(process.execPath, ["--import", "tsx", serverScript(withFix)], { cwd: REPO, env: { ...env, ...extraEnv }, stdio: ["ignore", "pipe", "pipe"] });
     let out = "";
     child.stdout.on("data", (d) => (out += d));
     child.stderr.on("data", (d) => (out += d));
@@ -178,17 +187,54 @@ const server = app.listen(0, "127.0.0.1", () => console.log("PORT=" + server.add
     assert.notEqual(status, 409);
   });
 
-  it("I2. COM a correção: repetir o cadastro devolve 409, o processo continua vivo e atende outros usuários", async () => {
+  it("I2. COM a correção: repetir o cadastro devolve 409; erros de rota nunca encerram o processo", async () => {
     const s = await startChild(true);
     try {
       assert.equal(await post(s.base), 409);
       assert.equal(await post(s.base), 409);
-      assert.equal((await fetch(`${s.base}/background`)).status, 200);
-      await new Promise((r) => setTimeout(r, 200));
+      assert.equal((await fetch(`${s.base}/route-boom`)).status, 500);
+      await new Promise((r) => setTimeout(r, 300));
       assert.equal((await fetch(`${s.base}/alive`)).status, 200);
       assert.equal(s.child.exitCode, null, "processo vivo");
+      assert.doesNotMatch(s.output(), /encerramento supervisionado/);
     } finally {
       s.child.kill();
     }
+  });
+
+  it("S1. rejeição em segundo plano: registra, para de aceitar conexões, conclui a requisição em andamento e sai com 1", async () => {
+    const s = await startChild(true);
+    const inFlight = fetch(`${s.base}/slow?ms=1500`).then(async (r) => ({ status: r.status, body: await r.json() }));
+    await new Promise((r) => setTimeout(r, 200));
+    assert.equal((await fetch(`${s.base}/background`)).status, 200);
+    await new Promise((r) => setTimeout(r, 300));
+    const late = await fetch(`${s.base}/alive`).then((r) => r.status).catch(() => "recusada");
+    assert.equal(late, "recusada", "novas conexões recusadas durante o encerramento");
+    assert.deepEqual(await inFlight, { status: 200, body: { ok: "concluída" } }, "requisição em andamento concluída");
+    assert.equal(await s.exited, 1);
+    assert.match(s.output(), /\[unhandledRejection\] Error fora de uma requisição — estado do processo incerto; encerramento supervisionado/);
+    assert.match(s.output(), /requisições em andamento concluídas; saindo com código 1/);
+  });
+
+  it("S2. requisição presa não impede a saída: prazo esgotado → código 1", async () => {
+    const s = await startChild(true, { GRACE_MS: "1200" });
+    void fetch(`${s.base}/hang`).catch(() => undefined);
+    await new Promise((r) => setTimeout(r, 200));
+    const t0 = Date.now();
+    await fetch(`${s.base}/background`);
+    assert.equal(await s.exited, 1);
+    const elapsed = Date.now() - t0;
+    assert.ok(elapsed >= 1000 && elapsed < 6000, `saiu em ${elapsed} ms`);
+    assert.match(s.output(), /prazo de 1200 ms esgotado/);
+  });
+
+  it("S3. várias rejeições: um único encerramento; as seguintes só são registradas", async () => {
+    const s = await startChild(true, { GRACE_MS: "1500" });
+    void fetch(`${s.base}/hang`).catch(() => undefined);
+    await new Promise((r) => setTimeout(r, 200));
+    await fetch(`${s.base}/background-twice`);
+    assert.equal(await s.exited, 1);
+    assert.equal((s.output().match(/encerramento supervisionado/g) ?? []).length, 1);
+    assert.equal((s.output().match(/durante o encerramento/g) ?? []).length, 1);
   });
 });
