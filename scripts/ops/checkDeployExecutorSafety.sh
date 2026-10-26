@@ -1,26 +1,21 @@
 #!/usr/bin/env bash
 # Verificação SOMENTE LEITURA de um executor de deploy (produção ou homologação).
-# Confere se ele usa infra/deploy/induscost-deploy-safety.sh (v2) nos pontos que causaram o incidente de
-# 26/10/2026 e nas garantias G1–G6 da biblioteca.
+# Aceita o wrapper instalado por infra/deploy/install-induscost-deploy.sh (segue até o executor versionado e confere
+# o MANIFEST) ou um executor qualquer. Confere as garantias G1–G6 da biblioteca v3 (infra/deploy/induscost-deploy-safety.sh).
 #
 #   sudo bash scripts/ops/checkDeployExecutorSafety.sh /usr/local/bin/deploy-induscost-producao
 #   sudo bash scripts/ops/checkDeployExecutorSafety.sh "$(command -v induscost-deploy-homologacao)"
 #
-# IDS_LIB_INSTALLED (padrão /usr/local/lib/induscost/induscost-deploy-safety.sh): cópia que o executor carrega;
-# precisa ser idêntica à versão deste repositório.
-# Saída 0 = todas as proteções presentes; 1 = alguma ausente (listadas).
+# Saída 0 = todas as proteções presentes; 1 = alguma ausente (listadas); 2 = não foi possível ler.
 set -uo pipefail
 
 EXECUTOR="${1:-/usr/local/bin/deploy-induscost-producao}"
-INSTALLED="${IDS_LIB_INSTALLED:-/usr/local/lib/induscost/induscost-deploy-safety.sh}"
 REPO_LIB="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/infra/deploy/induscost-deploy-safety.sh"
 if [[ ! -r "$EXECUTOR" ]]; then
   echo "ERRO: não consigo ler $EXECUTOR (rode com sudo)."
   exit 2
 fi
 
-# Ignora comentários para não aceitar proteção "só no comentário".
-CODE="$(sed -E 's/^[[:space:]]*#.*$//' "$EXECUTOR")"
 fail=0
 check() {
   local label="$1" ok="$2"
@@ -31,39 +26,67 @@ check() {
     fail=1
   fi
 }
+
+# Wrapper → executor versionado.
+TARGET="$EXECUTOR"
+wrapped="$(sed -nE 's/^exec "([^"]*induscost-deploy-executor\.sh)".*/\1/p' "$EXECUTOR" | head -n 1)"
+if [[ -n "$wrapped" ]]; then
+  echo "wrapper → $wrapped"
+  TARGET="$wrapped"
+  if [[ -r "$TARGET" ]] && (cd "$(dirname "$TARGET")" && sha256sum -c --quiet --strict MANIFEST.sha256 >/dev/null 2>&1); then
+    check "instalação íntegra (MANIFEST.sha256 de $(dirname "$TARGET"))" 1
+  else
+    check "instalação íntegra (MANIFEST.sha256 de $(dirname "$TARGET"))" 0
+  fi
+fi
+LIB_NEXT="$(dirname "$TARGET")/induscost-deploy-safety.sh"
+if [[ -r "$LIB_NEXT" && -r "$REPO_LIB" ]] && cmp -s "$LIB_NEXT" "$REPO_LIB"; then
+  check "biblioteca ao lado do executor idêntica à do repositório" 1
+else
+  check "biblioteca ao lado do executor idêntica à do repositório ($LIB_NEXT)" 0
+fi
+
+# Ignora comentários para não aceitar proteção "só no comentário".
+CODE="$(sed -E 's/^[[:space:]]*#.*$//' "$TARGET")"
 has() { grep -Eq -e "$1" <<<"$CODE" && echo 1 || echo 0; }
 lacks() { grep -Eq -e "$1" <<<"$CODE" && echo 0 || echo 1; }
 line_of() { grep -nE -e "$1" <<<"$CODE" | head -1 | cut -d: -f1; }
 before() {
-  # $1 antes de $2 (primeira ocorrência de cada); ambos precisam existir.
   local a b
   a="$(line_of "$1")"
   b="$(line_of "$2")"
   [[ -n "$a" && -n "$b" && "$a" -lt "$b" ]] && echo 1 || echo 0
 }
 both() { [[ "$1" == 1 && "$2" == 1 ]] && echo 1 || echo 0; }
+# Primeira linha com $1 depois da linha $2.
+first_after() { grep -nE -e "$1" <<<"$CODE" | awk -F: -v n="$2" '$1 > n { print $1; exit }'; }
+MIGRATE='prisma[[:space:]]+migrate[[:space:]]+deploy'
+open_ok() {
+  local m o s
+  m="$(line_of "$MIGRATE")"
+  [[ -n "$m" ]] || { echo 0; return; }
+  o="$(first_after 'ids_open_for_app[[:space:]]' "$m")"
+  s="$(first_after 'start[[:space:]]+"\$SERVICE"' "$m")"
+  [[ -n "$o" && -n "$s" && "$o" -lt "$s" ]] && echo 1 || echo 0
+}
 
-check "carrega a biblioteca (source …/induscost-deploy-safety.sh)" "$(has '(source|\.)[[:space:]]+[^#]*induscost-deploy-safety\.sh')"
-if [[ -r "$INSTALLED" && -r "$REPO_LIB" ]] && cmp -s "$INSTALLED" "$REPO_LIB"; then
-  check "biblioteca instalada ($INSTALLED) idêntica à do repositório" 1
-else
-  check "biblioteca instalada ($INSTALLED) idêntica à do repositório" 0
-fi
-check "G5: ids_recover_db_state no início (interrupção de execução anterior)" "$(before 'ids_recover_db_state[[:space:]]' 'ids_backup_db[[:space:]]')"
-check "diretório de backup via ids_prepare_backup_dir" "$(has 'ids_prepare_backup_dir[[:space:]]')"
-check "G1: escritores pausados (ids_pause_writers) ANTES do backup" "$(before 'ids_pause_writers[[:space:]]' 'ids_backup_db[[:space:]]')"
-check "G1: escritores retomados (ids_resume_writers)" "$(has 'ids_resume_writers[[:space:]]')"
-check "G2: backup via ids_backup_db (dump conferido como postgres + cerca de XID)" "$(has 'ids_backup_db[[:space:]]')"
-check "G2: ids_mark_db_changes_started com o banco, antes de prisma migrate deploy" \
-  "$(both "$(has 'ids_mark_db_changes_started[[:space:]]+"?\$\{?BACKUP_DIR\}?"?[[:space:]]+"?\$\{?DB\b')" "$(before 'ids_mark_db_changes_started[[:space:]]' 'prisma[[:space:]]+migrate[[:space:]]+deploy')")"
-check "G3: ids_mark_app_starting depois das migrations (antes de subir a aplicação nova)" "$(before 'prisma[[:space:]]+migrate[[:space:]]+deploy' 'ids_mark_app_starting[[:space:]]')"
-check "G3/G5: rollback via ids_rollback_db_if_needed (assinatura v2, sem DB_OWNER)" \
-  "$(both "$(has 'ids_rollback_db_if_needed[[:space:]]')" "$(lacks 'ids_rollback_db_if_needed[^|;&]*DB_OWNER')")"
-check "G3: DB_RC=2 (decisão manual) tratado pelo executor" "$(has 'DB_RC"?[[:space:]]*(==|-eq)[[:space:]]*"?2\b')"
-check "G6: testes via ids_run_test_gate (sem banco/credenciais/locks reais)" "$(has 'ids_run_test_gate')"
-check "nenhum dropdb no executor" "$(lacks '\bdropdb\b')"
-check "nenhum pg_restore --clean / DROP DATABASE no executor" "$(lacks '--clean|DROP[[:space:]]+DATABASE')"
-check "nenhum pg_restore --no-owner/--no-acl no executor (perderia donos e permissões)" "$(lacks '--no-owner|--no-acl')"
+check "carrega a biblioteca induscost-deploy-safety.sh" "$(has '(source|\.)[[:space:]]+[^#]*induscost-deploy-safety\.sh')"
+check "confere a integridade (MANIFEST.sha256) antes de executar" "$(has 'sha256sum[[:space:]]+-c')"
+check "G1: recusa janela de manutenção pendente e recupera o banco antes de começar" "$(both "$(has 'ids_state_file')" "$(before 'ids_recover_db_state[[:space:]]' 'ids_maintenance_begin[[:space:]]')")"
+check "G1/G2: janela de manutenção (ids_maintenance_begin) ANTES do backup" "$(before 'ids_maintenance_begin[[:space:]]' 'ids_backup_db[[:space:]]')"
+check "G1: janela encerrada (ids_maintenance_end) no sucesso e no rollback" "$(has 'ids_maintenance_end')"
+check "G3: backup com prova (ids_backup_db)" "$(has 'ids_backup_db[[:space:]]')"
+check "G3: ids_mark_db_changes_started antes de prisma migrate deploy" "$(before 'ids_mark_db_changes_started[[:space:]]' "$MIGRATE")"
+check "G3: observador de sessões (ids_migrate_watch_start) antes das migrations" "$(before 'ids_migrate_watch_start[[:space:]]' "$MIGRATE")"
+check "G2: exceção da trava só na URL das migrations (ids_migrate_database_url)" "$(has 'ids_migrate_database_url')"
+check "G3: ids_open_for_app depois das migrations e antes de subir a aplicação" "$(open_ok)"
+check "G4: rollback por ids_rollback_db_if_needed com o diretório das migrations" "$(has 'ids_rollback_db_if_needed[[:space:]].*prisma/migrations')"
+check "G4: BLOQUEIO (DB_RC=2) tratado" "$(has 'DB_RC"?[[:space:]]*(==|-eq)[[:space:]]*"?2\b')"
+check "G6: testes via ids_run_test_gate" "$(has 'ids_run_test_gate')"
+check "um executor por vez (flock)" "$(has 'flock[[:space:]]+-n')"
+check "nenhum dropdb" "$(lacks '\bdropdb\b')"
+check "nenhum pg_restore --clean / DROP DATABASE" "$(lacks '--clean|DROP[[:space:]]+DATABASE')"
+check "nenhum --no-owner/--no-acl (perderia donos e permissões)" "$(lacks '--no-owner|--no-acl')"
 
 if [[ "$fail" == 0 ]]; then
   echo "RESULTADO: executor protegido."

@@ -1,85 +1,245 @@
 #!/usr/bin/env bash
-# Biblioteca de segurança dos executores de deploy do IndusCost (produção AWS e homologação) — v2.
+# Biblioteca de segurança dos executores de deploy do IndusCost (produção AWS e homologação) — v3.
 #
-# Uso: os executores fazem `source /usr/local/lib/induscost/induscost-deploy-safety.sh` (cópia fixa desta
-# versão; ver infra/deploy/APLICAR.md) e chamam as funções abaixo nos pontos indicados.
+# Uso: infra/deploy/induscost-deploy-executor.sh (instalado por infra/deploy/install-induscost-deploy.sh) faz
+# `source` desta biblioteca. Ver infra/deploy/APLICAR.md.
 #
 # Incidente de 26/10/2026: um teste falhou antes das migrations, o rollback apagou o banco e não conseguiu
 # restaurar (o postgres não lia o backup). Garantias desta versão:
-#   G1. Escritores pausados (cron, timers, processos Nomus em execução) e sem sessões no banco ANTES do backup.
-#   G2. Cerca de escrita: o próximo XID do banco é registrado antes do pg_dump; qualquer escrita até o início
-#       das migrations invalida o backup e ABORTA o deploy antes de alterar o banco.
-#   G3. Restauração automática só quando: as migrations começaram, o schema/migrations mudaram em relação ao
-#       backup e a aplicação nova NÃO chegou a subir (sem escrita de negócio possível). Fora disso, nada é
-#       restaurado automaticamente; o executor recebe "decisão manual" (DB_RC=2) com o diagnóstico.
-#   G4. Restauração fiel e não destrutiva: banco novo com encoding/collation/dono/ACL/configurações do original,
-#       pg_restore completo (donos e permissões), conferência integral (tabelas, linhas, índices, constraints,
-#       sequências, triggers, funções, extensões, donos, ACL, migrations) ANTES da troca.
-#   G5. Troca atômica (dois RENAME numa única transação, com o banco fechado para conexões); o banco atual é
-#       preservado como <db>__failed_<ts>. Nenhum dropdb. Interrupção em qualquer ponto é recuperável
-#       (ids_recover_db_state) — o banco <db> nunca deixa de existir.
+#   G1. Janela de manutenção SELETIVA e persistente: só os agendamentos do IndusCost (arquivos /etc/cron.d/induscost*,
+#       timers induscost-*.timer que estavam ativos, serviços induscost-* em execução, rotinas Nomus/Exposure já
+#       iniciadas). O estado anterior de cada um é gravado em $IDS_STATE_DIR e restaurado exatamente; timers
+#       inativos ou com falha não são tocados. Interrupção do executor: o estado persiste e o próximo deploy
+#       recusa (46) até `ids_maintenance_recover --resume`.
+#   G2. Trava de escrita: durante a janela o banco fica com default_transaction_read_only=on — toda sessão nova
+#       (aplicação, cron, BI, superusuário) só lê; só as migrations recebem a exceção explícita na URL. Antes
+#       disso o banco precisa estar sem sessões, sem transações preparadas, sem assinaturas lógicas e com
+#       estatísticas ligadas.
+#   G3. Prova de ausência de escrita, independente do XID global: contadores de tuplas do banco
+#       (pg_stat_database), valores das sequências (nextval não consome XID) e arquivos das tabelas (TRUNCATE não
+#       conta tupla), conferidos entre o backup e as migrations, durante as migrations (observador de sessões) e
+#       entre a liberação para a aplicação e o rollback.
+#   G4. Rollback por compatibilidade: schema novo compatível com o código anterior → banco mantido (só o código
+#       volta); incompatível e sem escrita legítima comprovada → restauração integral; incompatível sem prova →
+#       BLOQUEIO (nada destrutivo, serviço e janela mantidos, instruções de recuperação).
+#   G5. Restauração fiel: banco congelado (sem conexões) e prova reconferida antes de restaurar; banco novo com
+#       encoding/collation/dono/limite/ACL/configurações; pg_restore completo; conferência integral (tabelas e
+#       linhas, colunas, índices, constraints, sequências, triggers, views, funções, enums, extensões, donos, ACL,
+#       migrations); troca atômica (dois RENAME numa transação); <db>__failed_<ts> preservado; nenhum dropdb.
 #   G6. Gate de testes isolado: sem .env, banco inalcançável, chaves do .env vazias, locks temporários.
 #
-# Variáveis: IDS_PG (prefixo para rodar como postgres; padrão `runuser -u postgres --`), IDS_PG_USER (dono do
-# diretório de backup; padrão postgres), IDS_WRITER_TIMER_GLOB (padrão induscost-*.timer), IDS_PAUSE_CRON
-# (padrão 1), IDS_WRITER_PROCESS_PATTERN, IDS_WRITER_WAIT_SECONDS (padrão 1800), IDS_WRITER_POLL_SECONDS (padrão 5), IDS_SYSTEMCTL (padrão systemctl).
-# O padrão de processos só decide ESPERAR; a prova de ausência de escrita é a cerca de XID + sessões (G2).
+# Variáveis (padrão): IDS_PG (`runuser -u postgres --`), IDS_PG_USER (postgres), IDS_SYSTEMCTL (systemctl),
+# IDS_STATE_DIR (/var/lib/induscost/deploy-safety), IDS_APP_SERVICE (induscost.service), IDS_UNIT_GLOB (induscost-*),
+# IDS_CRON_DIR (/etc/cron.d), IDS_CRON_GLOB (induscost*), IDS_CRON_SCAN_FILES (/etc/crontab),
+# IDS_CRON_SPOOL_DIRS (/var/spool/cron/crontabs /var/spool/cron), IDS_APP_MARK_PATTERN (/opt/induscost),
+# IDS_CRON_RELOAD_WAIT (1), IDS_WRITER_PROCESS_PATTERN, IDS_WRITER_WAIT_SECONDS (1800), IDS_WRITER_POLL_SECONDS (5),
+# IDS_STATS_SETTLE_SECONDS (2), IDS_WATCH_INTERVAL (0.05), IDS_MAINT_FLAG (/run/induscost/deploy-maintenance).
 
+IDS_VERSION="3"
 IDS_PG="${IDS_PG-runuser -u postgres --}"
 IDS_PG_USER="${IDS_PG_USER-postgres}"
 IDS_SYSTEMCTL="${IDS_SYSTEMCTL:-systemctl}"
-IDS_WRITER_TIMER_GLOB="${IDS_WRITER_TIMER_GLOB:-induscost-*.timer}"
-IDS_PAUSE_CRON="${IDS_PAUSE_CRON:-1}"
+IDS_STATE_DIR="${IDS_STATE_DIR:-/var/lib/induscost/deploy-safety}"
+IDS_APP_SERVICE="${IDS_APP_SERVICE:-induscost.service}"
+IDS_UNIT_GLOB="${IDS_UNIT_GLOB:-induscost-*}"
+IDS_CRON_DIR="${IDS_CRON_DIR:-/etc/cron.d}"
+IDS_CRON_GLOB="${IDS_CRON_GLOB:-induscost*}"
+IDS_CRON_SCAN_FILES="${IDS_CRON_SCAN_FILES-/etc/crontab}"
+IDS_CRON_SPOOL_DIRS="${IDS_CRON_SPOOL_DIRS-/var/spool/cron/crontabs /var/spool/cron}"
+IDS_APP_MARK_PATTERN="${IDS_APP_MARK_PATTERN:-/opt/induscost}"
+IDS_CRON_RELOAD_WAIT="${IDS_CRON_RELOAD_WAIT:-1}"
 IDS_WRITER_PROCESS_PATTERN="${IDS_WRITER_PROCESS_PATTERN:-runNomus[A-Za-z]*Sync|scripts/nomus[A-Za-z0-9]*\.ts|legal-exposure|legalExposure}"
 IDS_WRITER_WAIT_SECONDS="${IDS_WRITER_WAIT_SECONDS:-1800}"
 IDS_WRITER_POLL_SECONDS="${IDS_WRITER_POLL_SECONDS:-5}"
+IDS_STATS_SETTLE_SECONDS="${IDS_STATS_SETTLE_SECONDS:-2}"
+IDS_WATCH_INTERVAL="${IDS_WATCH_INTERVAL:-0.05}"
+IDS_MAINT_FLAG="${IDS_MAINT_FLAG:-/run/induscost/deploy-maintenance}"
+IDS_APPNAME="ids-deploy"
+IDS_MIGRATE_APPNAME="ids-deploy-migrate"
 IDS_MARKER_NAME="db-changes-started"
 IDS_APP_MARKER_NAME="app-started"
+# Parâmetro que a trava de escrita usa; nunca entra nos metadados nem na cópia de configurações.
+IDS_LOCK_GUC="default_transaction_read_only"
 
 ids_log() {
   echo "[deploy-safety] $*"
 }
 
-# Uma instrução por chamada; saída no formato `psql -At` (colunas separadas por |).
+# Uma instrução por chamada; saída no formato `psql -At` (colunas separadas por |, sem CR). Sessões identificadas.
 ids_psql() {
-  local db="$1" sql="$2"
-  $IDS_PG psql -d "$db" -v ON_ERROR_STOP=1 -Atc "$sql"
+  local db="$1" sql="$2" out
+  out="$($IDS_PG psql -X -d "dbname='$db' application_name=$IDS_APPNAME" -v ON_ERROR_STOP=1 -Atc "$sql")" || return $?
+  if [[ -n "$out" ]]; then printf '%s\n' "${out//$'\r'/}"; fi
 }
 
 # Várias instruções numa única transação (tudo ou nada).
 ids_psql_tx() {
   local db="$1" sql="$2"
-  $IDS_PG psql -d "$db" -v ON_ERROR_STOP=1 -Atc "BEGIN; $sql COMMIT;"
+  $IDS_PG psql -X -d "dbname='$db' application_name=$IDS_APPNAME" -v ON_ERROR_STOP=1 -Atc "BEGIN; $sql COMMIT;"
 }
 
+# Informativo (cluster inteiro; ver G3 para a prova real).
 ids_next_xid() {
-  ids_psql "$1" "SELECT pg_snapshot_xmax(pg_current_snapshot())::text"
+  ids_psql postgres "SELECT pg_snapshot_xmax(pg_current_snapshot())::text"
 }
 
-# Sessões de clientes no banco, exceto a própria consulta. Saída: uma linha por sessão.
+# Sessões no banco (qualquer tipo, exceto autovacuum e a própria consulta). pid|usuário|aplicação|origem|tipo.
 ids_foreign_sessions() {
-  ids_psql postgres "SELECT format('%s|%s|%s|%s', pid, coalesce(usename,''), coalesce(application_name,''), coalesce(client_addr::text,'local')) FROM pg_stat_activity WHERE datname = '$1' AND pid <> pg_backend_pid() AND backend_type = 'client backend' ORDER BY pid"
+  ids_psql postgres "SELECT format('%s|%s|%s|%s|%s', pid, coalesce(usename,''), coalesce(application_name,''), coalesce(client_addr::text,'local'), backend_type) FROM pg_stat_activity WHERE datname = '$1' AND pid <> pg_backend_pid() AND backend_type NOT IN ('autovacuum worker') ORDER BY pid"
+}
+
+# Contadores de escrita do banco: tuplas inseridas+alteradas+apagadas nas tabelas de usuário (o autovacuum/
+# autoanalyze escreve em catálogos e não entra aqui; estrutura é conferida pela impressão digital)|reset das
+# estatísticas. Lido dentro do banco.
+ids_db_counters() {
+  ids_psql "$1" "SELECT format('%s|%s', (SELECT coalesce(sum(n_tup_ins + n_tup_upd + n_tup_del), 0) FROM pg_stat_all_tables WHERE schemaname NOT IN ('pg_catalog', 'information_schema') AND schemaname NOT LIKE 'pg_toast%'), (SELECT coalesce(stats_reset::text, 'never') FROM pg_stat_database WHERE datname = current_database()))"
+}
+
+# Sessões já abertas no banco (contador cumulativo, só clientes)|reset. Lido de fora (funciona com o banco
+# congelado): igual antes e depois = ninguém conectou no intervalo.
+ids_db_sessions() {
+  ids_psql postgres "SELECT format('%s|%s', sessions, coalesce(stats_reset::text, 'never')) FROM pg_stat_database WHERE datname = '$1'"
+}
+
+ids_settle() {
+  sleep "$IDS_STATS_SETTLE_SECONDS"
 }
 
 # ---------------------------------------------------------------------------------------------------------
-# G1 — escritores
+# G1 — janela de manutenção seletiva e persistente
 # ---------------------------------------------------------------------------------------------------------
 
-# Para timers induscost-*, o cron (opcional) e espera processos Nomus terminarem. Registra o que parou em
-# $state para ids_resume_writers. ≠ 0 = não foi possível pausar (nada foi alterado no banco; retome e aborte).
-ids_pause_writers() {
-  local state="$1" db="$2" unit waited=0 running sessions
-  : > "$state"
-  while IFS= read -r unit; do
-    [[ -n "$unit" ]] || continue
-    if $IDS_SYSTEMCTL is-active --quiet "$unit"; then
-      $IDS_SYSTEMCTL stop "$unit" && echo "unit $unit" >> "$state" && ids_log "pausado: $unit"
-    fi
-  done < <($IDS_SYSTEMCTL list-units --type=timer --all --no-legend --plain "$IDS_WRITER_TIMER_GLOB" 2>/dev/null | awk '{print $1}')
-  if [[ "$IDS_PAUSE_CRON" == 1 ]] && $IDS_SYSTEMCTL is-active --quiet cron; then
-    $IDS_SYSTEMCTL stop cron && echo "unit cron" >> "$state" && ids_log "pausado: cron (novas execuções agendadas não começam)"
+ids_state_file() {
+  printf '%s\n' "$IDS_STATE_DIR/maintenance.state"
+}
+
+ids_state_add() {
+  printf '%s\n' "$*" >> "$(ids_state_file)"
+}
+
+# Linhas de cron fora de /etc/cron.d/induscost* que executam o IndusCost: não dá para pausá-las sem editar
+# crontabs de terceiros, então o deploy recusa (47) até que sejam movidas para um arquivo induscost*.
+ids_unmanaged_cron_lines() {
+  local f d
+  for f in $IDS_CRON_SCAN_FILES; do
+    [[ -f "$f" ]] && grep -HnE -e "$IDS_APP_MARK_PATTERN" "$f" 2>/dev/null | grep -vE '^[^:]+:[0-9]+:[[:space:]]*#' || true
+  done
+  for d in $IDS_CRON_SPOOL_DIRS; do
+    [[ -d "$d" ]] || continue
+    for f in "$d"/*; do
+      [[ -f "$f" ]] && grep -HnE -e "$IDS_APP_MARK_PATTERN" "$f" 2>/dev/null | grep -vE '^[^:]+:[0-9]+:[[:space:]]*#' || true
+    done
+  done
+  for f in "$IDS_CRON_DIR"/*; do
+    [[ -f "$f" ]] || continue
+    # shellcheck disable=SC2053
+    [[ "$(basename "$f")" == $IDS_CRON_GLOB ]] && continue
+    grep -HnE -e "$IDS_APP_MARK_PATTERN" "$f" 2>/dev/null | grep -vE '^[^:]+:[0-9]+:[[:space:]]*#' || true
+  done
+}
+
+# Rotinas do IndusCost em execução: processos do padrão e serviços induscost-* (exceto a aplicação) ativos.
+ids_running_writers() {
+  local unit state
+  ${IDS_PGREP:-pgrep} -af -- "$IDS_WRITER_PROCESS_PATTERN" 2>/dev/null | grep -v -- "pgrep" || true
+  while read -r unit _; do
+    [[ -n "$unit" && "$unit" != "$IDS_APP_SERVICE" ]] || continue
+    state="$($IDS_SYSTEMCTL is-active "$unit" 2>/dev/null || true)"
+    case "$state" in
+      active|activating|reloading|deactivating) echo "unit $unit $state" ;;
+    esac
+  done < <($IDS_SYSTEMCTL list-units --type=service --all --no-legend --plain "${IDS_UNIT_GLOB}.service" 2>/dev/null)
+}
+
+# Pré-condições da prova: nada conectado, nada preparado, nada replicando, estatísticas ligadas.
+ids_assert_quiescent() {
+  local db="$1" sessions other
+  sessions="$(ids_foreign_sessions "$db")" || return 41
+  if [[ -n "$sessions" ]]; then
+    ids_log "ERRO: há sessões no banco $db (pid|usuário|aplicação|origem|tipo):"
+    printf '%s\n' "$sessions" | sed 's/^/[deploy-safety]   /'
+    return 41
   fi
-  while running="$(pgrep -af -- "$IDS_WRITER_PROCESS_PATTERN" | grep -v -- "pgrep" || true)"; [[ -n "$running" ]]; do
+  other="$(ids_psql postgres "SELECT concat_ws(',', CASE WHEN current_setting('track_counts') <> 'on' THEN 'track_counts=off' END, (SELECT 'prepared_xacts=' || count(*) FROM pg_prepared_xacts WHERE database = '$db' HAVING count(*) > 0), (SELECT 'subscriptions=' || string_agg(subname, ' ') FROM pg_subscription s JOIN pg_database d ON d.oid = s.subdbid WHERE d.datname = '$db' AND s.subenabled HAVING count(*) > 0), CASE WHEN current_setting('cron.database_name', true) = '$db' THEN 'pg_cron=database' END)")" || return 41
+  if [[ -n "$other" ]]; then
+    ids_log "ERRO: não é possível provar ausência de escrita em $db: $other"
+    return 41
+  fi
+}
+
+ids_write_lock_on() {
+  local db="$1" pre
+  pre="$(ids_psql postgres "SELECT count(*) FROM pg_db_role_setting s, unnest(s.setconfig) c WHERE s.setrole = 0 AND s.setdatabase = (SELECT oid FROM pg_database WHERE datname = '$db') AND c LIKE '$IDS_LOCK_GUC=%'")" || return 48
+  if [[ "$pre" != 0 ]] && ! grep -qx "readonly $db" "$(ids_state_file)" 2>/dev/null; then
+    ids_log "ERRO: $db já tem $IDS_LOCK_GUC configurado fora da janela de deploy; trava não aplicada"
+    return 48
+  fi
+  grep -qx "readonly $db" "$(ids_state_file)" 2>/dev/null || ids_state_add "readonly $db"
+  ids_psql postgres "ALTER DATABASE \"$db\" SET $IDS_LOCK_GUC = on" >/dev/null || return 48
+  sed -i "/^released $db\$/d" "$(ids_state_file)" 2>/dev/null || true
+  ids_log "trava de escrita ligada em $db (sessões novas só leem)"
+}
+
+ids_write_lock_off() {
+  local db="$1"
+  ids_psql postgres "ALTER DATABASE \"$db\" RESET $IDS_LOCK_GUC" >/dev/null || return 48
+  grep -qx "released $db" "$(ids_state_file)" 2>/dev/null || ids_state_add "released $db"
+  ids_log "trava de escrita desligada em $db"
+}
+
+ids_sha256() {
+  sha256sum "$1" | awk '{print $1}'
+}
+
+# Abre a janela: ≠ 0 = não abriu; desfazer com ids_maintenance_end (nada no banco foi alterado além da trava).
+ids_maintenance_begin() {
+  local db="$1" unmanaged f parked unit state waited=0 running reload_wait
+  if [[ -f "$(ids_state_file)" ]]; then
+    ids_log "ERRO: janela de manutenção anterior não encerrada ($(ids_state_file)); rode ids_maintenance_recover"
+    return 46
+  fi
+  unmanaged="$(ids_unmanaged_cron_lines)"
+  if [[ -n "$unmanaged" ]]; then
+    ids_log "ERRO: agendamentos do IndusCost fora de $IDS_CRON_DIR/$IDS_CRON_GLOB (mover para um arquivo próprio):"
+    printf '%s\n' "$unmanaged" | sed 's/^/[deploy-safety]   /'
+    return 47
+  fi
+  mkdir -p "$IDS_STATE_DIR/cron-parked" && chmod 0700 "$IDS_STATE_DIR" "$IDS_STATE_DIR/cron-parked" || return 46
+  ids_state_add "begin $(date -u +%Y-%m-%dT%H:%M:%SZ) $db"
+  mkdir -p "$(dirname "$IDS_MAINT_FLAG")" && : > "$IDS_MAINT_FLAG" && ids_state_add "flag $IDS_MAINT_FLAG"
+
+  # Cron: arquivos induscost* saem de /etc/cron.d (preservados com hash) — o cron deixa de agendá-los.
+  for f in "$IDS_CRON_DIR"/$IDS_CRON_GLOB; do
+    [[ -f "$f" ]] || continue
+    parked="$IDS_STATE_DIR/cron-parked/$(basename "$f")"
+    cp -p "$f" "$parked" || return 46
+    [[ "$(ids_sha256 "$f")" == "$(ids_sha256 "$parked")" ]] || return 46
+    ids_state_add "cron $f $parked $(ids_sha256 "$f")"
+    rm -f "$f" || return 46
+    ids_log "cron pausado: $f"
+  done
+
+  # Timers: só os ativos param; inativos/falhos ficam como estão (registrados como intocados).
+  while read -r unit _; do
+    [[ -n "$unit" ]] || continue
+    state="$($IDS_SYSTEMCTL is-active "$unit" 2>/dev/null || true)"
+    if [[ "$state" == active ]]; then
+      ids_state_add "timer $unit active stopped"
+      $IDS_SYSTEMCTL stop "$unit" || return 46
+      ids_log "timer pausado: $unit"
+    else
+      ids_state_add "timer $unit ${state:-unknown} untouched"
+    fi
+  done < <($IDS_SYSTEMCTL list-units --type=timer --all --no-legend --plain "${IDS_UNIT_GLOB}.timer" 2>/dev/null)
+
+  # O cron relê /etc/cron.d a cada minuto: espera a virada para que nenhuma execução já agendada escape.
+  if [[ "$IDS_CRON_RELOAD_WAIT" == 1 ]] && grep -q '^cron ' "$(ids_state_file)"; then
+    reload_wait=$(( 65 - $(date +%-S) ))
+    ids_log "aguardando ${reload_wait}s para o cron reler $IDS_CRON_DIR"
+    sleep "$reload_wait"
+  fi
+
+  while running="$(ids_running_writers)"; [[ -n "$running" ]]; do
     if (( waited >= IDS_WRITER_WAIT_SECONDS )); then
       ids_log "ERRO: rotinas ainda em execução após ${IDS_WRITER_WAIT_SECONDS}s:"
       printf '%s\n' "$running" | sed 's/^/[deploy-safety]   /'
@@ -89,47 +249,86 @@ ids_pause_writers() {
     sleep "$IDS_WRITER_POLL_SECONDS"
     waited=$(( waited + IDS_WRITER_POLL_SECONDS ))
   done
-  if [[ -n "$db" ]]; then
-    sessions="$(ids_foreign_sessions "$db")" || return 41
-    if [[ -n "$sessions" ]]; then
-      ids_log "ERRO: ainda há sessões no banco $db (pid|usuário|aplicação|origem):"
-      printf '%s\n' "$sessions" | sed 's/^/[deploy-safety]   /'
-      return 41
-    fi
-  fi
-  ids_log "escritores pausados e banco sem sessões"
+
+  ids_write_lock_on "$db" || return $?
+  ids_assert_quiescent "$db" || return $?
+  ids_log "janela de manutenção aberta: agendamentos do IndusCost pausados, banco $db travado para escrita e sem sessões"
 }
 
-# Retoma exatamente o que ids_pause_writers parou (idempotente; chamar no fim do deploy E do rollback).
-ids_resume_writers() {
-  local state="$1" kind unit rc=0
+# Encerra a janela restaurando exatamente o estado anterior. Idempotente; ≠ 0 mantém o estado para nova tentativa.
+ids_maintenance_end() {
+  local state kind a b c rc=0 db
+  state="$(ids_state_file)"
   [[ -f "$state" ]] || return 0
-  while read -r kind unit; do
-    [[ "$kind" == unit && -n "$unit" ]] || continue
-    if $IDS_SYSTEMCTL start "$unit"; then
-      ids_log "retomado: $unit"
-    else
-      ids_log "ERRO: não foi possível retomar $unit"
-      rc=42
+  while read -r kind a b c; do
+    case "$kind" in
+      readonly)
+        db="$a"
+        if [[ "$(ids_psql postgres "SELECT count(*) FROM pg_database WHERE datname = '$db'")" == 1 ]]; then
+          ids_psql postgres "ALTER DATABASE \"$db\" RESET $IDS_LOCK_GUC" >/dev/null && ids_log "trava de escrita removida: $db" || rc=42
+        fi
+        ;;
+      cron)
+        if [[ -f "$b" ]]; then
+          if [[ -f "$a" && "$(ids_sha256 "$a")" != "$c" ]]; then
+            ids_log "ERRO: $a foi recriado com outro conteúdo durante a janela; original mantido em $b"
+            rc=42
+            continue
+          fi
+          [[ -f "$a" ]] || cp -p "$b" "$a" || { rc=42; continue; }
+          if [[ "$(ids_sha256 "$a")" == "$c" ]]; then
+            rm -f "$b"
+            ids_log "cron retomado: $a"
+          else
+            ids_log "ERRO: $a restaurado com hash diferente; original mantido em $b"
+            rc=42
+          fi
+        fi
+        ;;
+    esac
+  done < "$state"
+  while read -r kind a b c; do
+    if [[ "$kind" == timer && "$c" == stopped ]]; then
+      if $IDS_SYSTEMCTL start "$a"; then ids_log "timer retomado: $a"; else ids_log "ERRO: não foi possível retomar $a"; rc=42; fi
     fi
-  done < <(tac "$state" 2>/dev/null || cat "$state")
-  [[ "$rc" == 0 ]] && : > "$state"
+  done < <(tac "$state")
+  if [[ "$rc" == 0 ]]; then
+    { grep '^flag ' "$state" || true; } | while read -r _ a; do rm -f "$a"; done
+    mv "$state" "$IDS_STATE_DIR/maintenance.$(date -u +%Y%m%dT%H%M%SZ).done"
+    ids_log "janela de manutenção encerrada; agendamentos no estado anterior ao deploy"
+  fi
   return "$rc"
 }
 
+# Janela deixada por um executor interrompido: mostra o estado; com --resume, restaura o estado anterior.
+ids_maintenance_recover() {
+  local state
+  state="$(ids_state_file)"
+  if [[ ! -f "$state" ]]; then
+    ids_log "nenhuma janela de manutenção pendente"
+    return 0
+  fi
+  ids_log "janela de manutenção pendente ($state):"
+  sed 's/^/[deploy-safety]   /' "$state"
+  if [[ "${1:-}" == "--resume" ]]; then
+    ids_maintenance_end
+    return $?
+  fi
+  ids_log "conferir banco e aplicação; depois: ids_maintenance_recover --resume"
+  return 46
+}
+
 # ---------------------------------------------------------------------------------------------------------
-# Backup + cerca de escrita (G2)
+# Backup e prova de ausência de escrita (G3)
 # ---------------------------------------------------------------------------------------------------------
 
 # Diretório do backup desta execução, do usuário do banco; pais com 0711 (atravessar, sem listar).
 ids_prepare_backup_dir() {
   local root="$1" ts="$2" dir
-  install -d -m 0711 "$(dirname "$root")" "$root"
   dir="$root/$ts"
+  mkdir -p "$dir" && chmod 0711 "$(dirname "$root")" "$root" && chmod 0700 "$dir" || return 30
   if [[ -n "$IDS_PG_USER" ]]; then
-    install -d -m 0700 -o "$IDS_PG_USER" -g "$IDS_PG_USER" "$dir"
-  else
-    install -d -m 0700 "$dir"
+    chown "$IDS_PG_USER:$IDS_PG_USER" "$dir" || return 30
   fi
   printf '%s\n' "$dir"
 }
@@ -150,93 +349,281 @@ ids_assert_backup_readable() {
 }
 
 # Propriedades do banco que o pg_dump não leva (só com --create): encoding, collation, dono, limite de
-# conexões, ACL (concessões normalizadas, sem o concedente) e configurações por banco. Uma linha, sem o nome
-# do banco — comparável entre o original e o restaurado.
+# conexões, ACL (concessões normalizadas) e configurações por banco (exceto a trava). Comparável entre bancos.
 ids_db_meta() {
-  ids_psql postgres "SELECT format('encoding=%s|collate=%s|ctype=%s|locprovider=%s|owner=%s|connlimit=%s|aclset=%s|settings=%s', pg_encoding_to_char(d.encoding), d.datcollate, d.datctype, d.datlocprovider, pg_get_userbyid(d.datdba), d.datconnlimit, (SELECT string_agg(DISTINCT CASE WHEN a.grantee = 0 THEN 'PUBLIC' ELSE pg_get_userbyid(a.grantee) END || ':' || a.privilege_type, ',' ORDER BY CASE WHEN a.grantee = 0 THEN 'PUBLIC' ELSE pg_get_userbyid(a.grantee) END || ':' || a.privilege_type) FROM aclexplode(coalesce(d.datacl, acldefault('d', d.datdba))) a), coalesce((SELECT md5(string_agg(c, chr(31) ORDER BY c)) FROM pg_db_role_setting s, unnest(s.setconfig) c WHERE s.setdatabase = d.oid AND s.setrole = 0), 'none')) FROM pg_database d WHERE d.datname = '$1'"
+  ids_psql postgres "SELECT format('encoding=%s|collate=%s|ctype=%s|locprovider=%s|owner=%s|connlimit=%s|aclset=%s|settings=%s', pg_encoding_to_char(d.encoding), d.datcollate, d.datctype, d.datlocprovider, pg_get_userbyid(d.datdba), d.datconnlimit, (SELECT string_agg(DISTINCT CASE WHEN a.grantee = 0 THEN 'PUBLIC' ELSE pg_get_userbyid(a.grantee) END || ':' || a.privilege_type, ',' ORDER BY CASE WHEN a.grantee = 0 THEN 'PUBLIC' ELSE pg_get_userbyid(a.grantee) END || ':' || a.privilege_type) FROM aclexplode(coalesce(d.datacl, acldefault('d', d.datdba))) a), coalesce((SELECT md5(string_agg(c, chr(31) ORDER BY c)) FROM pg_db_role_setting s, unnest(s.setconfig) c WHERE s.setdatabase = d.oid AND s.setrole = 0 AND c NOT LIKE '$IDS_LOCK_GUC=%'), 'none')) FROM pg_database d WHERE d.datname = '$1'"
 }
 
-# Impressão digital do conteúdo: tabelas (dono, ACL, linhas exatas), colunas, índices, constraints, sequências
-# (valor), triggers, views, funções, extensões e migrations Prisma. Ordenada, uma linha por objeto.
-# Nomes sem esquema nas definições seguem o search_path do banco, por isso as configurações do banco são
-# copiadas para o restaurado ANTES desta conferência.
+# Impressão digital do banco. Modos (combináveis, separados por vírgula): rows (linhas exatas por tabela), seq
+# (valor das sequências), files (arquivo físico das tabelas: muda com TRUNCATE/reescrita). Sem modo = estrutura.
+# Uma linha por objeto, ordenada. Nomes sem esquema nas definições seguem o search_path do banco.
 ids_db_fingerprint() {
-  local migrations="" has
-  # A tabela de migrations só entra se existir (referenciá-la ausente faria a consulta inteira falhar).
-  has="$(ids_psql "$1" "SELECT to_regclass('public._prisma_migrations') IS NOT NULL")" || return 1
+  local db="$1" modes=",${2:-},"
+  local rows="''" seq="''" files="''" migrations="" has
+  [[ "$modes" == *,rows,* ]] && rows="'|rows=' || (xpath('/row/n/text()', query_to_xml(format('SELECT count(*) AS n FROM %I.%I', n.nspname, c.relname), false, true, '')))[1]::text"
+  [[ "$modes" == *,seq,* ]] && seq="'|last=' || coalesce(s.last_value::text, 'null')"
+  local lo=""
+  if [[ "$modes" == *,files,* ]]; then
+    files="'|file=' || c.relfilenode"
+    lo="UNION ALL SELECT 'largeobjects|' || count(*) FROM pg_largeobject_metadata"
+  fi
+  has="$(ids_psql "$db" "SELECT to_regclass('public._prisma_migrations') IS NOT NULL")" || return 1
   if [[ "$has" == "t" ]]; then
     migrations="UNION ALL SELECT format('migration|%s|finished=%s|rolledback=%s', migration_name, finished_at IS NOT NULL, rolled_back_at IS NOT NULL) FROM public._prisma_migrations"
   fi
-  ids_psql "$1" "WITH t AS (SELECT c.oid, n.nspname, c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE c.relkind IN ('r','p') AND n.nspname NOT IN ('pg_catalog','information_schema') AND n.nspname NOT LIKE 'pg_toast%')
+  ids_psql "$db" "WITH ns AS (SELECT oid, nspname FROM pg_namespace WHERE nspname NOT IN ('pg_catalog','information_schema') AND nspname NOT LIKE 'pg_toast%' AND nspname NOT LIKE 'pg_temp%')
 SELECT line FROM (
-  SELECT format('table|%s.%s|owner=%s|acl=%s|rows=%s', t.nspname, t.relname, pg_get_userbyid(c.relowner), coalesce(c.relacl::text,''), (xpath('/row/n/text()', query_to_xml(format('SELECT count(*) AS n FROM %I.%I', t.nspname, t.relname), false, true, '')))[1]::text) AS line FROM t JOIN pg_class c ON c.oid = t.oid
-  UNION ALL SELECT format('column|%s.%s|%s|%s|notnull=%s|default=%s', t.nspname, t.relname, a.attname, format_type(a.atttypid, a.atttypmod), a.attnotnull, coalesce(pg_get_expr(ad.adbin, ad.adrelid),'')) FROM t JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum > 0 AND NOT a.attisdropped LEFT JOIN pg_attrdef ad ON ad.adrelid = a.attrelid AND ad.adnum = a.attnum
-  UNION ALL SELECT format('index|%s.%s|%s', schemaname, indexname, indexdef) FROM pg_indexes WHERE schemaname NOT IN ('pg_catalog','information_schema')
-  UNION ALL SELECT format('constraint|%s|%s|%s', conrelid::regclass, conname, pg_get_constraintdef(oid)) FROM pg_constraint WHERE connamespace NOT IN (SELECT oid FROM pg_namespace WHERE nspname IN ('pg_catalog','information_schema'))
-  UNION ALL SELECT format('sequence|%s.%s|owner=%s|last=%s', schemaname, sequencename, sequenceowner, coalesce(last_value::text,'null')) FROM pg_sequences
-  UNION ALL SELECT format('trigger|%s|%s|%s', tgrelid::regclass, tgname, pg_get_triggerdef(oid)) FROM pg_trigger WHERE NOT tgisinternal
+  SELECT format('table|%s.%s|owner=%s|acl=%s', n.nspname, c.relname, pg_get_userbyid(c.relowner), coalesce(c.relacl::text,'')) || $rows || $files AS line FROM pg_class c JOIN ns n ON n.oid = c.relnamespace WHERE c.relkind IN ('r','p')
+  UNION ALL SELECT format('column|%s.%s|%s|%s|notnull=%s|default=%s|identity=%s|generated=%s', n.nspname, c.relname, a.attname, format_type(a.atttypid, a.atttypmod), a.attnotnull, coalesce(pg_get_expr(ad.adbin, ad.adrelid),''), a.attidentity, a.attgenerated) FROM pg_class c JOIN ns n ON n.oid = c.relnamespace JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped LEFT JOIN pg_attrdef ad ON ad.adrelid = a.attrelid AND ad.adnum = a.attnum WHERE c.relkind IN ('r','p')
+  UNION ALL SELECT format('index|%s.%s|%s|unique=%s|%s', n.nspname, t.relname, i.relname, x.indisunique, pg_get_indexdef(i.oid)) FROM pg_index x JOIN pg_class i ON i.oid = x.indexrelid JOIN pg_class t ON t.oid = x.indrelid JOIN ns n ON n.oid = t.relnamespace
+  UNION ALL SELECT format('constraint|%s.%s|%s|%s|%s', n.nspname, t.relname, co.conname, co.contype, pg_get_constraintdef(co.oid)) FROM pg_constraint co JOIN ns n ON n.oid = co.connamespace JOIN pg_class t ON t.oid = co.conrelid
+  UNION ALL SELECT format('sequence|%s.%s|owner=%s', s.schemaname, s.sequencename, s.sequenceowner) || $seq FROM pg_sequences s
+  UNION ALL SELECT format('trigger|%s.%s|%s|%s', n.nspname, t.relname, tg.tgname, pg_get_triggerdef(tg.oid)) FROM pg_trigger tg JOIN pg_class t ON t.oid = tg.tgrelid JOIN ns n ON n.oid = t.relnamespace WHERE NOT tg.tgisinternal
   UNION ALL SELECT format('view|%s.%s|owner=%s|%s', schemaname, viewname, viewowner, md5(definition)) FROM pg_views WHERE schemaname NOT IN ('pg_catalog','information_schema')
-  UNION ALL SELECT format('function|%s|owner=%s|%s', p.oid::regprocedure, pg_get_userbyid(p.proowner), md5(pg_get_functiondef(p.oid))) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname NOT IN ('pg_catalog','information_schema') AND p.prokind IN ('f','p')
+  UNION ALL SELECT format('function|%s|owner=%s|%s', p.oid::regprocedure, pg_get_userbyid(p.proowner), md5(pg_get_functiondef(p.oid))) FROM pg_proc p JOIN ns n ON n.oid = p.pronamespace WHERE p.prokind IN ('f','p')
+  UNION ALL SELECT format('enum|%s.%s|%s', n.nspname, t.typname, string_agg(e.enumlabel, ',' ORDER BY e.enumsortorder)) FROM pg_type t JOIN ns n ON n.oid = t.typnamespace JOIN pg_enum e ON e.enumtypid = t.oid GROUP BY n.nspname, t.typname
   UNION ALL SELECT format('extension|%s|%s', extname, extversion) FROM pg_extension
+  UNION ALL SELECT format('schema|%s|owner=%s|acl=%s', nspname, pg_get_userbyid(n2.nspowner), coalesce(n2.nspacl::text,'')) FROM pg_namespace n2 WHERE n2.oid IN (SELECT oid FROM ns)
+  UNION ALL SELECT format('defacl|%s|%s|%s|%s', pg_get_userbyid(da.defaclrole), coalesce(dn.nspname, '*'), da.defaclobjtype, da.defaclacl::text) FROM pg_default_acl da LEFT JOIN pg_namespace dn ON dn.oid = da.defaclnamespace
   ${migrations}
+  ${lo}
 ) x ORDER BY line"
 }
 
-# Só a parte estrutural (sem contagem de linhas nem valores de sequência): detecta se o deploy mudou o banco.
 ids_schema_fingerprint() {
-  ids_db_fingerprint "$1" | sed -E 's/\|rows=[0-9]+$//; s/\|last=[^|]*$//'
+  ids_db_fingerprint "$1" ""
 }
 
-# Backup completo (donos e permissões), conferido como postgres, com metadados, impressão digital e cerca de
-# escrita. ≠ 0 aborta o deploy antes de qualquer mudança.
+ids_tup() {
+  printf '%s\n' "$1" | cut -d'|' -f1
+}
+
+ids_reset_of() {
+  printf '%s\n' "$1" | cut -d'|' -f2
+}
+
+# Compara contadores: mesmas tuplas escritas e mesmo reset de estatísticas.
+ids_counters_equal() {
+  [[ "$(ids_tup "$1")" == "$(ids_tup "$2")" && "$(ids_reset_of "$1")" == "$(ids_reset_of "$2")" ]]
+}
+
+# Backup completo (donos e permissões) dentro da janela, conferido como postgres. Prova (G3) de que nada foi
+# escrito durante o dump: contadores de tuplas iguais antes e depois. ≠ 0 aborta o deploy antes de mudanças.
 ids_backup_db() {
-  local db="$1" dump="$2" dir xid_before xid_after
+  local db="$1" dump="$2" dir c0 c1
   dir="$(dirname "$dump")"
-  xid_before="$(ids_next_xid "$db")" || { ids_log "ERRO: não consegui ler o XID de $db"; return 30; }
-  $IDS_PG pg_dump -Fc -Z 6 -d "$db" -f "$dump" || { ids_log "ERRO: pg_dump falhou"; return 30; }
+  ids_assert_quiescent "$db" || return $?
+  ids_settle
+  c0="$(ids_db_counters "$db")" || return 30
+  ids_next_xid "$db" > "$dir/xid-at-backup" || return 30
+  $IDS_PG pg_dump -Fc -Z 6 -d "dbname='$db' application_name=$IDS_APPNAME" -f "$dump" || { ids_log "ERRO: pg_dump falhou"; return 30; }
   ids_assert_backup_readable "$dump" || return $?
   ids_db_meta "$db" > "$dir/db-meta.txt" || return 30
-  ids_db_fingerprint "$db" > "$dir/fingerprint-before.txt" || return 30
+  ids_db_fingerprint "$db" rows,seq > "$dir/fingerprint-before.txt" || return 30
   ids_schema_fingerprint "$db" > "$dir/schema-before.txt" || return 30
-  xid_after="$(ids_next_xid "$db")" || return 30
-  if [[ "$xid_before" != "$xid_after" ]]; then
-    ids_log "ERRO: o banco recebeu escritas durante o backup (XID $xid_before → $xid_after); escritores não estavam pausados"
+  ids_db_fingerprint "$db" seq,files > "$dir/state-before.txt" || return 30
+  ids_assert_quiescent "$db" || return $?
+  ids_settle
+  c1="$(ids_db_counters "$db")" || return 30
+  if ! ids_counters_equal "$c0" "$c1"; then
+    ids_log "ERRO: o banco recebeu escritas durante o backup (tuplas $(ids_tup "$c0") → $(ids_tup "$c1")); backup descartado"
     return 39
   fi
-  printf '%s\n' "$xid_before" > "$dir/xid-at-backup"
-  ids_log "backup íntegro; cerca de escrita no XID $xid_before"
+  printf '%s\n' "$c1" > "$dir/counters-at-backup"
+  ids_log "backup íntegro e sem escrita concorrente (tuplas escritas: $(ids_tup "$c1"))"
 }
 
-# Chamar IMEDIATAMENTE antes de `prisma migrate deploy`. Recusa (≠ 0) se houve escrita desde o backup ou se
-# há sessões no banco: nesse caso o backup não representa o estado atual e o deploy deve parar aqui.
+# Chamar IMEDIATAMENTE antes de `prisma migrate deploy`. Recusa (43) se, desde o backup, houve qualquer escrita
+# (tuplas, sequências, arquivos de tabela, estrutura) ou se há sessões: o backup deixaria de ser o estado atual.
 ids_mark_db_changes_started() {
-  local dir="$1" db="$2" xid sessions
-  xid="$(ids_next_xid "$db")" || return 43
-  if [[ "$xid" != "$(cat "$dir/xid-at-backup" 2>/dev/null)" ]]; then
-    ids_log "ERRO: houve escrita no banco depois do backup (XID $(cat "$dir/xid-at-backup" 2>/dev/null) → $xid); migrations NÃO serão aplicadas"
+  local dir="$1" db="$2" c
+  [[ -f "$dir/counters-at-backup" ]] || { ids_log "ERRO: backup sem prova de integridade; migrations NÃO serão aplicadas"; return 43; }
+  ids_assert_quiescent "$db" || return 43
+  if ! diff -q "$dir/state-before.txt" <(ids_db_fingerprint "$db" seq,files) >/dev/null || ! diff -q "$dir/schema-before.txt" <(ids_schema_fingerprint "$db") >/dev/null; then
+    ids_log "ERRO: sequências, tabelas ou estrutura mudaram depois do backup; migrations NÃO serão aplicadas"
     return 43
   fi
-  sessions="$(ids_foreign_sessions "$db")" || return 43
-  if [[ -n "$sessions" ]]; then
-    ids_log "ERRO: sessões abertas no banco antes das migrations:"
-    printf '%s\n' "$sessions" | sed 's/^/[deploy-safety]   /'
+  ids_settle
+  c="$(ids_db_counters "$db")" || return 43
+  if ! ids_counters_equal "$(cat "$dir/counters-at-backup")" "$c"; then
+    ids_log "ERRO: houve escrita no banco depois do backup (tuplas $(ids_tup "$(cat "$dir/counters-at-backup")") → $(ids_tup "$c")); migrations NÃO serão aplicadas"
     return 43
   fi
-  printf '%s\n' "$xid" > "$dir/$IDS_MARKER_NAME"
-  ids_log "início das alterações do banco registrado (XID $xid)"
+  printf '%s\n' "$c" > "$dir/$IDS_MARKER_NAME"
+  ids_log "início das alterações do banco registrado; nenhuma escrita desde o backup"
 }
 
-# Chamar imediatamente antes de subir a aplicação nova: a partir daqui pode haver escrita de negócio.
-ids_mark_app_starting() {
-  date -u +%Y-%m-%dT%H:%M:%SZ > "$1/$IDS_APP_MARKER_NAME"
+# URL das migrations: a única com exceção à trava de escrita, identificada para o observador de sessões.
+ids_migrate_database_url() {
+  local url="$1" sep="?"
+  if [[ "$url" == *"options="* || "$url" == *"application_name="* ]]; then
+    ids_log "ERRO: DATABASE_URL já define options/application_name; exceção da trava não pode ser aplicada com segurança"
+    return 1
+  fi
+  [[ "$url" == *"?"* ]] && sep="&"
+  printf '%s%soptions=-c%%20%s%%3Doff&application_name=%s\n' "$url" "$sep" "$IDS_LOCK_GUC" "$IDS_MIGRATE_APPNAME"
+}
+
+# Observador de sessões durante as migrations: registra toda sessão no banco; qualquer uma que não seja das
+# migrations ou da própria biblioteca invalida a prova (restauração automática deixa de ser permitida).
+ids_migrate_watch_start() {
+  local dir="$1" db="$2"
+  rm -f "$dir/migrate-watch.stop" "$dir/migrate-sessions.raw"
+  : > "$dir/migrate-sessions.raw"
+  (
+    while [[ ! -f "$dir/migrate-watch.stop" ]]; do
+      ids_psql postgres "SELECT format('%s|%s|%s|%s|%s', pid, backend_start, coalesce(application_name,''), coalesce(usename,''), backend_type) FROM pg_stat_activity WHERE datname = '$db' AND pid <> pg_backend_pid() AND backend_type NOT IN ('autovacuum worker')" >> "$dir/migrate-sessions.raw" 2>/dev/null || true
+      sleep "$IDS_WATCH_INTERVAL"
+    done
+  ) >/dev/null 2>&1 &
+  printf '%s\n' "$!" > "$dir/migrate-watch.pid"
+}
+
+ids_migrate_watch_stop() {
+  local dir="$1" pid i
+  [[ -f "$dir/migrate-watch.pid" ]] || return 0
+  pid="$(cat "$dir/migrate-watch.pid")"
+  : > "$dir/migrate-watch.stop"
+  for i in $(seq 1 100); do
+    kill -0 "$pid" 2>/dev/null || break
+    sleep 0.1
+  done
+  kill "$pid" 2>/dev/null || true
+  rm -f "$dir/migrate-watch.pid"
+  sort -u "$dir/migrate-sessions.raw" > "$dir/migrate-sessions.log"
+  awk -F'|' -v m="$IDS_MIGRATE_APPNAME" -v s="$IDS_APPNAME" '$3 != m && $3 != s' "$dir/migrate-sessions.log" > "$dir/migrate-foreign-sessions.log"
+  if [[ -s "$dir/migrate-foreign-sessions.log" ]]; then
+    ids_log "ATENÇÃO: sessões estranhas durante as migrations (restauração automática deixa de ser permitida):"
+    sed 's/^/[deploy-safety]   /' "$dir/migrate-foreign-sessions.log"
+  fi
+}
+
+# Chamar imediatamente antes de subir a aplicação nova: registra o ponto de controle (contadores, sequências,
+# arquivos, estrutura), libera a escrita para a aplicação e marca app-started.
+ids_open_for_app() {
+  local dir="$1" db="$2"
+  ids_migrate_watch_stop "$dir"
+  ids_assert_quiescent "$db" || return $?
+  ids_schema_fingerprint "$db" > "$dir/schema-after-migrate.txt" || return 30
+  ids_db_fingerprint "$db" seq,files > "$dir/state-before-app.txt" || return 30
+  ids_settle
+  ids_db_counters "$db" > "$dir/counters-before-app" || return 30
+  ids_write_lock_off "$db" || return $?
+  date -u +%Y-%m-%dT%H:%M:%SZ > "$dir/$IDS_APP_MARKER_NAME"
 }
 
 ids_db_changed_by_deploy() {
   [[ -f "$1/$IDS_MARKER_NAME" ]]
 }
 
+# Prova de que restaurar o backup não perde escrita legítima. Imprime o motivo quando não há prova.
+ids_restore_proof() {
+  local dir="$1" db="$2" c
+  [[ -f "$dir/counters-at-backup" ]] || { echo "backup sem prova de integridade"; return 1; }
+  ids_db_changed_by_deploy "$dir" || { echo "migrations não iniciadas"; return 1; }
+  [[ -f "$dir/migrate-sessions.log" ]] || { echo "sessões durante as migrations não observadas"; return 1; }
+  [[ ! -s "$dir/migrate-foreign-sessions.log" ]] || { echo "sessões estranhas durante as migrations"; return 1; }
+  if [[ -f "$dir/$IDS_APP_MARKER_NAME" ]]; then
+    [[ -f "$dir/counters-before-app" ]] || { echo "ponto de controle anterior à aplicação ausente"; return 1; }
+    diff -q "$dir/state-before-app.txt" <(ids_db_fingerprint "$db" seq,files) >/dev/null || { echo "sequências ou tabelas mudaram depois que a aplicação subiu"; return 1; }
+    diff -q "$dir/schema-after-migrate.txt" <(ids_schema_fingerprint "$db") >/dev/null || { echo "estrutura mudou depois que a aplicação subiu"; return 1; }
+    ids_settle
+    c="$(ids_db_counters "$db")" || { echo "contadores indisponíveis"; return 1; }
+    ids_counters_equal "$(cat "$dir/counters-before-app")" "$c" || { echo "a aplicação escreveu $(( $(ids_tup "$c") - $(ids_tup "$(cat "$dir/counters-before-app")") )) tupla(s) depois de subir"; return 1; }
+  fi
+  echo "sem escrita legítima desde o backup (trava de escrita + contadores + sequências + observador)"
+}
+
 # ---------------------------------------------------------------------------------------------------------
-# Restauração (G4/G5)
+# G4 — compatibilidade do schema atual com o código anterior
+# ---------------------------------------------------------------------------------------------------------
+
+# Saída: linhas "OK|motivo", "INCOMPATIVEL|motivo", "CHECK-EMPTY|tabela|fk", "CHECK-ENUM|tipo|rótulos novos",
+# "FAILED|migration". Regras conservadoras: o código anterior funciona com tabelas, colunas anuláveis/com valor
+# padrão, índices não únicos, sequências, views, funções e extensões NOVOS; qualquer remoção/alteração, coluna
+# obrigatória sem padrão, índice único, constraint ou trigger em tabela existente é incompatível.
+ids_compat_classify() {
+  local before="$1" now="$2"
+  diff <(cat "$before") <(cat "$now") | awk -F'|' -v BEFORE="$before" '
+    BEGIN { while ((getline l < BEFORE) > 0) { split(l, f, "|"); if (f[1] == "table") T[f[2]] = 1; if (f[1] == "enum") E[f[2]] = f[3] } }
+    /^< / { sub(/^< /, ""); split($0, f, "|"); if (f[1] == "enum") { RE[f[2]] = f[3]; next } print "INCOMPATIVEL|removido ou alterado: " $0; next }
+    /^> / {
+      sub(/^> /, ""); n = split($0, f, "|"); k = f[1]
+      if (k == "table") { if (f[2] in T) print "INCOMPATIVEL|tabela existente alterada: " f[2]; else print "OK|tabela nova: " f[2]; next }
+      if (k == "column") {
+        if (!(f[2] in T)) next
+        if (f[5] == "notnull=f" || f[6] != "default=" || f[7] != "identity=" || f[8] != "generated=") print "OK|coluna nova opcional: " f[2] "." f[3]
+        else print "INCOMPATIVEL|coluna nova obrigatória sem valor padrão: " f[2] "." f[3]
+        next
+      }
+      if (k == "index") { if ((f[2] in T) && f[4] == "unique=t") print "INCOMPATIVEL|índice único em tabela existente: " f[3]; else print "OK|índice novo: " f[3]; next }
+      if (k == "constraint") {
+        if (f[2] in T) { print "INCOMPATIVEL|constraint em tabela existente: " f[2] "." f[3]; next }
+        if (f[4] == "f" && f[5] !~ /ON DELETE (CASCADE|SET NULL|SET DEFAULT)/) { print "CHECK-EMPTY|" f[2] "|" f[3]; next }
+        print "OK|constraint de tabela nova: " f[2] "." f[3]; next
+      }
+      if (k == "trigger") { if (f[2] in T) print "INCOMPATIVEL|trigger em tabela existente: " f[2] "." f[3]; else print "OK|trigger de tabela nova: " f[3]; next }
+      if (k == "enum") { AE[f[2]] = f[3]; next }
+      if (k == "migration") { if (f[3] == "finished=t") print "OK|migration aplicada: " f[2]; else print "FAILED|" f[2]; next }
+      print "OK|" k " novo: " f[2]
+    }
+    END {
+      for (t in RE) {
+        if (!(t in AE)) { print "INCOMPATIVEL|enum removido ou alterado: " t; continue }
+        o = split(RE[t], old, ","); m = split(AE[t], cur, ","); j = 1; added = ""
+        for (i = 1; i <= m; i++) { if (j <= o && cur[i] == old[j]) j++; else added = added (added == "" ? "" : ",") cur[i] }
+        if (j <= o) print "INCOMPATIVEL|enum com rótulo removido ou reordenado: " t
+        else print "CHECK-ENUM|" t "|" added
+      }
+      for (t in AE) if (!(t in RE)) { if (t in E) print "INCOMPATIVEL|enum alterado: " t; else print "OK|enum novo: " t }
+    }'
+}
+
+# Resolve as verificações que dependem de dados e grava compat-report.txt. Retorno: 0 compatível, 1 incompatível.
+# Também marca FAILED (migration com falha registrada) em compat-failed.txt.
+ids_compat_report() {
+  local dir="$1" db="$2" migrations_dir="${3:-}" line kind a b n cols col tbl name
+  : > "$dir/compat-report.txt"
+  : > "$dir/compat-failed.txt"
+  while IFS= read -r line; do
+    kind="${line%%|*}"
+    case "$kind" in
+      OK|INCOMPATIVEL) echo "$line" >> "$dir/compat-report.txt" ;;
+      FAILED) echo "${line#FAILED|}" >> "$dir/compat-failed.txt"; echo "OK|migration com falha registrada: ${line#FAILED|}" >> "$dir/compat-report.txt" ;;
+      CHECK-EMPTY)
+        IFS='|' read -r _ a b <<< "$line"
+        n="$(ids_psql "$db" "SELECT count(*) FROM (SELECT 1 FROM $(printf '%s' "$a" | awk -F. '{printf "\"%s\".\"%s\"", $1, $2}') LIMIT 1) x")" || n=1
+        if [[ "$n" == 0 ]]; then echo "OK|tabela nova vazia com FK restritiva: $a ($b)" >> "$dir/compat-report.txt"
+        else echo "INCOMPATIVEL|tabela nova com linhas e FK restritiva para tabela existente: $a ($b)" >> "$dir/compat-report.txt"; fi
+        ;;
+      CHECK-ENUM)
+        IFS='|' read -r _ a b <<< "$line"
+        cols="$(ids_psql "$db" "SELECT format('%I.%I|%I|%s', n.nspname, c.relname, at.attname, CASE WHEN at.atttypid = t.oid THEN 'scalar' ELSE 'array' END) FROM pg_type t JOIN pg_namespace tn ON tn.oid = t.typnamespace JOIN pg_attribute at ON at.atttypid IN (t.oid, t.typarray) AND at.attnum > 0 AND NOT at.attisdropped JOIN pg_class c ON c.oid = at.attrelid AND c.relkind IN ('r','p') JOIN pg_namespace n ON n.oid = c.relnamespace WHERE tn.nspname || '.' || t.typname = '$a'")" || cols="?|?|array"
+        name="OK|enum com rótulos novos ainda sem uso: $a ($b)"
+        while IFS='|' read -r tbl col kind; do
+          [[ -n "$tbl" ]] || continue
+          if [[ "$kind" == array ]]; then name="INCOMPATIVEL|enum com rótulos novos em coluna array: $a ($tbl)"; break; fi
+          n="$(ids_psql "$db" "SELECT count(*) FROM $tbl WHERE $col::text = ANY (string_to_array('$b', ','))")" || n=1
+          if [[ "$n" != 0 ]]; then name="INCOMPATIVEL|enum com rótulos novos já usados: $a ($tbl.$col, $n linha(s))"; break; fi
+        done <<< "$cols"
+        echo "$name" >> "$dir/compat-report.txt"
+        ;;
+    esac
+  done < <(ids_compat_classify "$dir/schema-before.txt" <(ids_schema_fingerprint "$db"))
+  # Migrations que apagam dados: o código anterior funcionaria, mas manter o banco perpetuaria a remoção.
+  if [[ -n "$migrations_dir" ]]; then
+    while IFS= read -r name; do
+      [[ -f "$migrations_dir/$name/migration.sql" ]] || continue
+      if grep -qiE '^[[:space:]]*(DELETE|TRUNCATE)[[:space:]]' "$migrations_dir/$name/migration.sql"; then
+        echo "INCOMPATIVEL|migration remove dados: $name" >> "$dir/compat-report.txt"
+      fi
+    done < <(diff <(cat "$dir/schema-before.txt") <(ids_schema_fingerprint "$db") | sed -n 's/^> migration|\([^|]*\)|.*/\1/p')
+  fi
+  ! grep -q '^INCOMPATIVEL|' "$dir/compat-report.txt"
+}
+
+# ---------------------------------------------------------------------------------------------------------
+# Restauração (G5)
 # ---------------------------------------------------------------------------------------------------------
 
 ids_meta_field() {
@@ -249,8 +636,12 @@ ids_journal() {
   printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$2" >> "$1/restore-journal"
 }
 
+ids_unfreeze() {
+  ids_psql postgres "ALTER DATABASE \"$1\" WITH ALLOW_CONNECTIONS true" >/dev/null || true
+}
+
 ids_restore_db_safely() {
-  local db="$1" dump="$2" ts="$3" dir meta staging failed owner diff_file
+  local db="$1" dump="$2" ts="$3" dir meta staging failed owner diff_file k1 k2 terminated
   dir="$(dirname "$dump")"
   staging="${db}__rollback_${ts}"
   failed="${db}__failed_${ts}"
@@ -264,54 +655,72 @@ ids_restore_db_safely() {
   fi
   ids_journal "$dir" "restore-start db=$db staging=$staging"
 
+  # 0. Congela o banco atual (ninguém conecta, nem superusuário) e reconfere que nada mudou desde a prova.
+  ids_settle
+  k1="$(ids_db_sessions "$db")" || return 49
+  ids_psql postgres "ALTER DATABASE \"$db\" WITH ALLOW_CONNECTIONS false" >/dev/null || return 35
+  ids_journal "$dir" "frozen db=$db"
+  terminated="$(ids_psql postgres "SELECT count(pg_terminate_backend(pid)) FROM pg_stat_activity WHERE datname = '$db' AND pid <> pg_backend_pid() AND backend_type NOT IN ('autovacuum worker')")" || terminated=1
+  ids_settle
+  k2="$(ids_db_sessions "$db")" || k2="?"
+  if [[ "$terminated" != 0 || "$k1" != "$k2" ]]; then
+    ids_unfreeze "$db"
+    ids_journal "$dir" "aborted-after-freeze reopened=$db"
+    ids_log "ERRO: sessão ou escrita surgiu entre a prova e o congelamento; restauração cancelada; $db reaberto e intocado"
+    return 49
+  fi
+
   # 1. Banco novo com as mesmas propriedades do original (encoding/collation do backup, não do template).
   if ! $IDS_PG createdb -T template0 -E "$(ids_meta_field "$meta" encoding)" \
       --lc-collate="$(ids_meta_field "$meta" collate)" --lc-ctype="$(ids_meta_field "$meta" ctype)" \
       -O "$owner" "$staging"; then
-    ids_log "ERRO: não foi possível criar $staging; banco $db intocado"
+    ids_unfreeze "$db"
+    ids_log "ERRO: não foi possível criar $staging; banco $db reaberto e intocado"
     return 33
   fi
   ids_journal "$dir" "staging-created"
 
   # 2. Restauração completa (donos e permissões preservados).
-  if ! $IDS_PG pg_restore --exit-on-error --dbname="$staging" "$dump"; then
-    ids_log "ERRO: restore em $staging falhou; banco $db intocado ($staging mantido para análise)"
+  if ! $IDS_PG pg_restore --exit-on-error --dbname="dbname='$staging' application_name=$IDS_APPNAME" "$dump"; then
+    ids_unfreeze "$db"
+    ids_log "ERRO: restore em $staging falhou; banco $db reaberto e intocado ($staging mantido para análise)"
     return 34
   fi
   # 3. Propriedades de nível de banco copiadas do original (que ainda existe): limite de conexões,
-  #    configurações (ALTER DATABASE … SET) e concessões. Conferidas abaixo contra o estado do backup.
-  ids_psql postgres "ALTER DATABASE \"$staging\" CONNECTION LIMIT $(ids_meta_field "$meta" connlimit)" >/dev/null || return 34
+  #    configurações (ALTER DATABASE … SET, exceto a trava) e concessões. Conferidas abaixo contra o backup.
   #    Parâmetros de lista (search_path etc.) já estão gravados na sintaxe de SET ("$user", public) e vão sem
   #    aspas — entre aspas virariam um único elemento; os demais vão como literal (mesma regra do pg_dumpall).
+  ids_psql postgres "ALTER DATABASE \"$staging\" CONNECTION LIMIT $(ids_meta_field "$meta" connlimit)" >/dev/null || { ids_unfreeze "$db"; return 34; }
   local -a stmts=()
-  mapfile -t stmts < <(ids_psql postgres "SELECT format('ALTER DATABASE %I SET %s TO %s', '$staging', split_part(c, '=', 1), CASE WHEN split_part(c, '=', 1) IN ('search_path', 'temp_tablespaces', 'session_preload_libraries', 'local_preload_libraries') THEN substr(c, strpos(c, '=') + 1) ELSE quote_literal(substr(c, strpos(c, '=') + 1)) END) FROM pg_db_role_setting s, unnest(s.setconfig) c WHERE s.setrole = 0 AND s.setdatabase = (SELECT oid FROM pg_database WHERE datname = '$db')
+  mapfile -t stmts < <(ids_psql postgres "SELECT format('ALTER DATABASE %I SET %s TO %s', '$staging', split_part(c, '=', 1), CASE WHEN split_part(c, '=', 1) IN ('search_path', 'temp_tablespaces', 'session_preload_libraries', 'local_preload_libraries') THEN substr(c, strpos(c, '=') + 1) ELSE quote_literal(substr(c, strpos(c, '=') + 1)) END) FROM pg_db_role_setting s, unnest(s.setconfig) c WHERE s.setrole = 0 AND c NOT LIKE '$IDS_LOCK_GUC=%' AND s.setdatabase = (SELECT oid FROM pg_database WHERE datname = '$db')
 UNION ALL SELECT format('REVOKE ALL ON DATABASE %I FROM PUBLIC', '$staging') FROM pg_database WHERE datname = '$db' AND datacl IS NOT NULL
-UNION ALL SELECT format('GRANT %s ON DATABASE %I TO %s', a.privilege_type, '$staging', CASE WHEN a.grantee = 0 THEN 'PUBLIC' ELSE quote_ident(pg_get_userbyid(a.grantee)) END) FROM pg_database d, aclexplode(d.datacl) a WHERE d.datname = '$db'") || return 34
+UNION ALL SELECT format('GRANT %s ON DATABASE %I TO %s', a.privilege_type, '$staging', CASE WHEN a.grantee = 0 THEN 'PUBLIC' ELSE quote_ident(pg_get_userbyid(a.grantee)) END) FROM pg_database d, aclexplode(d.datacl) a WHERE d.datname = '$db'") || { ids_unfreeze "$db"; return 34; }
   local stmt
   for stmt in "${stmts[@]}"; do
     [[ -n "$stmt" ]] || continue
-    ids_psql postgres "$stmt" >/dev/null || { ids_log "ERRO: falhou ao aplicar em $staging: $stmt"; return 34; }
+    ids_psql postgres "$stmt" >/dev/null || { ids_log "ERRO: falhou ao aplicar em $staging: $stmt"; ids_unfreeze "$db"; return 34; }
   done
 
   # 4. Conferência integral ANTES da troca: conteúdo e propriedades do banco iguais aos do backup.
   diff_file="$dir/restore-verification.diff"
-  if ! diff <(cat "$dir/fingerprint-before.txt") <(ids_db_fingerprint "$staging") > "$diff_file"; then
-    ids_log "ERRO: banco restaurado difere do backup (ver $diff_file); troca NÃO realizada; $db intocado"
+  if ! diff <(cat "$dir/fingerprint-before.txt") <(ids_db_fingerprint "$staging" rows,seq) > "$diff_file"; then
+    ids_unfreeze "$db"
+    ids_log "ERRO: banco restaurado difere do backup (ver $diff_file); troca NÃO realizada; $db reaberto e intocado"
     return 38
   fi
   if ! diff <(printf '%s\n' "$meta") <(ids_db_meta "$staging") >> "$diff_file"; then
-    ids_log "ERRO: propriedades do banco restaurado diferem do backup (ver $diff_file); troca NÃO realizada; $db intocado"
+    ids_unfreeze "$db"
+    ids_log "ERRO: propriedades do banco restaurado diferem do backup (ver $diff_file); troca NÃO realizada; $db reaberto e intocado"
     return 38
   fi
   ids_journal "$dir" "verified"
 
-  # 5. Troca atômica: fecha os dois bancos para conexões, encerra sessões e renomeia numa única transação.
-  ids_psql postgres "ALTER DATABASE \"$db\" WITH ALLOW_CONNECTIONS false" >/dev/null || return 35
-  ids_psql postgres "ALTER DATABASE \"$staging\" WITH ALLOW_CONNECTIONS false" >/dev/null || return 35
+  # 5. Troca atômica: fecha o restaurado para conexões e renomeia os dois numa única transação.
+  ids_psql postgres "ALTER DATABASE \"$staging\" WITH ALLOW_CONNECTIONS false" >/dev/null || { ids_unfreeze "$db"; return 35; }
+  ids_psql postgres "SELECT count(pg_terminate_backend(pid)) FROM pg_stat_activity WHERE datname = '$staging' AND pid <> pg_backend_pid()" >/dev/null || true
   ids_journal "$dir" "connections-closed"
-  ids_psql postgres "SELECT count(pg_terminate_backend(pid)) FROM pg_stat_activity WHERE datname IN ('$db','$staging') AND pid <> pg_backend_pid()" >/dev/null || true
   if ! ids_psql_tx postgres "ALTER DATABASE \"$db\" RENAME TO \"$failed\"; ALTER DATABASE \"$staging\" RENAME TO \"$db\";" >/dev/null; then
-    ids_psql postgres "ALTER DATABASE \"$db\" WITH ALLOW_CONNECTIONS true" >/dev/null || true
+    ids_unfreeze "$db"
     ids_journal "$dir" "swap-failed reopened=$db"
     ids_log "ERRO: troca não concluída (transação desfeita); $db reaberto e intocado; restaurado disponível em $staging"
     return 36
@@ -335,35 +744,71 @@ ids_recover_db_state() {
   allow="$(ids_psql postgres "SELECT datallowconn FROM pg_database WHERE datname = '$db'")" || return 45
   if [[ "$allow" != "t" && "$allow" != "true" ]]; then
     ids_psql postgres "ALTER DATABASE \"$db\" WITH ALLOW_CONNECTIONS true" >/dev/null || return 45
-    [[ -n "$dir" ]] && ids_journal "$dir" "recovered reopened=$db"
-    ids_log "recuperado: $db voltou a aceitar conexões ($(tail -n 2 "$dir/restore-journal" 2>/dev/null | head -1 | cut -d' ' -f2-))"
+    if [[ -n "$dir" ]]; then ids_journal "$dir" "recovered reopened=$db"; fi
+    ids_log "recuperado: $db voltou a aceitar conexões"
   else
     ids_log "estado consistente: $db existe e aceita conexões"
   fi
 }
 
-# Decide se o banco deve ser restaurado (G3) e restaura. Retorno: 0 = nada a restaurar ou restaurado;
-# 2 = decisão manual (diagnóstico impresso); outro ≠ 0 = falha da restauração (banco atual intocado).
+# Decide e executa a recuperação do banco depois de uma falha (G4). Pré-condição: aplicação parada.
+# Retorno: 0 = banco pronto para o código anterior (mantido ou restaurado); 2 = BLOQUEIO (nada destrutivo
+# feito; manter serviço parado e a janela aberta); outro ≠ 0 = falha da restauração (banco atual intocado).
+# Grava rollback-decision.txt.
 ids_rollback_db_if_needed() {
-  local dir="$1" db="$2" dump="$3" ts="$4" changed
+  local dir="$1" db="$2" dump="$3" ts="$4" migrations_dir="${5:-}" proof compat=0 failed rc
   ids_recover_db_state "$db" "$dir" || return $?
+  ids_migrate_watch_stop "$dir"
   if ! ids_db_changed_by_deploy "$dir"; then
+    echo "decision=NO_DB_CHANGE" > "$dir/rollback-decision.txt"
     ids_log "banco não foi alterado por este deploy (falha antes das migrations): restauração NÃO executada"
     return 0
   fi
-  if diff -q <(cat "$dir/schema-before.txt") <(ids_schema_fingerprint "$db") >/dev/null; then
+  ids_write_lock_on "$db" || true
+  if ! ids_assert_quiescent "$db"; then
+    printf 'decision=BLOCKED\nreason=sessões abertas no banco durante o rollback\n' > "$dir/rollback-decision.txt"
+    ids_log "BLOQUEIO: sessões abertas no banco; nada foi alterado"
+    return 2
+  fi
+  if diff -q "$dir/schema-before.txt" <(ids_schema_fingerprint "$db") >/dev/null; then
+    echo "decision=NO_SCHEMA_CHANGE" > "$dir/rollback-decision.txt"
     ids_log "schema e migrations iguais ao backup: nenhuma migration foi aplicada; restauração NÃO executada"
     return 0
   fi
-  changed="$(diff <(cat "$dir/schema-before.txt") <(ids_schema_fingerprint "$db") | grep -c '^[<>]' || true)"
-  if [[ -f "$dir/$IDS_APP_MARKER_NAME" ]]; then
-    ids_log "DECISÃO MANUAL: o schema mudou ($changed diferença(s)) e a aplicação nova chegou a subir ($(cat "$dir/$IDS_APP_MARKER_NAME"));"
-    ids_log "  pode haver escrita de negócio depois do backup. Nada foi restaurado. Para restaurar após avaliar:"
-    ids_log "  source /usr/local/lib/induscost/induscost-deploy-safety.sh && ids_restore_db_safely $db $dump $ts"
-    return 2
+  ids_compat_report "$dir" "$db" "$migrations_dir" || compat=1
+  failed="$(cat "$dir/compat-failed.txt" 2>/dev/null)"
+  proof="$(ids_restore_proof "$dir" "$db")" && rc=0 || rc=1
+  {
+    echo "compatible=$([[ "$compat" == 0 ]] && echo yes || echo no)"
+    echo "failed_migrations=${failed//$'\n'/,}"
+    echo "restore_proven=$([[ "$rc" == 0 ]] && echo yes || echo no)"
+    echo "proof=$proof"
+  } > "$dir/rollback-decision.txt"
+  ids_log "compatibilidade do schema atual com o código anterior: $([[ "$compat" == 0 ]] && echo COMPATÍVEL || echo INCOMPATÍVEL) (ver $dir/compat-report.txt)"
+  { grep '^INCOMPATIVEL|' "$dir/compat-report.txt" || true; } | sed 's/^INCOMPATIVEL|/[deploy-safety]   incompatível: /'
+  ids_log "prova para restauração: $proof"
+  if [[ "$compat" == 0 && ( -z "$failed" || "$rc" != 0 ) ]]; then
+    echo "decision=KEEP_DB" >> "$dir/rollback-decision.txt"
+    ids_log "decisão: banco MANTIDO (schema compatível); só o código volta"
+    if [[ -n "$failed" ]]; then
+      ids_log "  migration com falha registrada ($failed): antes do próximo deploy, prisma migrate resolve --rolled-back <nome>"
+    fi
+    return 0
   fi
-  ids_log "schema mudou ($changed diferença(s)) e a aplicação nova não subiu: restaurando o backup"
-  ids_restore_db_safely "$db" "$dump" "$ts"
+  if [[ "$rc" == 0 ]]; then
+    echo "decision=RESTORE" >> "$dir/rollback-decision.txt"
+    ids_log "decisão: RESTAURAR o backup (schema $([[ "$compat" == 0 ]] && echo 'com migration falha' || echo incompatível); nenhuma escrita legítima a perder)"
+    ids_restore_db_safely "$db" "$dump" "$ts"
+    return $?
+  fi
+  echo "decision=BLOCKED" >> "$dir/rollback-decision.txt"
+  ids_log "BLOQUEIO: schema incompatível com o código anterior e sem prova de que restaurar não perde escrita."
+  ids_log "  Nada foi restaurado nem apagado. Serviço parado; janela de manutenção e trava de escrita mantidas."
+  ids_log "  Opções após avaliar $dir/compat-report.txt e $dir/rollback-decision.txt:"
+  ids_log "   a) corrigir para frente e reimplantar;"
+  ids_log "   b) restaurar mesmo assim (descarta o que foi escrito depois do backup): ${IDS_EXECUTOR_NAME:-<executor>} --restore-backup $dir"
+  ids_log "  Encerrar a janela depois: ${IDS_EXECUTOR_NAME:-<executor>} --recover --resume"
+  return 2
 }
 
 # ---------------------------------------------------------------------------------------------------------
