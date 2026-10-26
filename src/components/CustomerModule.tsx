@@ -26,6 +26,7 @@ import {
 import { cn } from "@/src/lib/utils";
 import { buildCustomerIntelligencePath } from "@/src/lib/customerIntelligenceNavigation";
 import { fetchJsonOk, fetchOk } from "@/src/lib/http";
+import { describeCustomerSaveError } from "@/src/lib/commercial/customerSaveErrors";
 import { fetchUiSessionCachedJson } from "@/src/lib/uiSessionGetCache";
 import { DEFAULT_BRANDING, type BrandingSettingsDTO } from "@/src/types/branding";
 import type { CustomerListReportExportPayload } from "@/src/lib/customerListReportExport";
@@ -314,7 +315,18 @@ export const CustomerModule = () => {
       fetchData();
     } catch (error) {
       console.error("Erro ao salvar cliente:", error);
-      alert(error instanceof Error ? error.message : "Não foi possível salvar o cliente.");
+      const { message, existingCustomerId } = describeCustomerSaveError(error);
+      // CNPJ/CPF já cadastrado: o formulário continua aberto; o usuário pode abrir o cliente existente.
+      if (existingCustomerId && existingCustomerId !== editingCustomer?.id) {
+        if (confirm(`${message}\n\nAbrir o cadastro do cliente existente?`)) {
+          setIsModalOpen(false);
+          const next = new URLSearchParams(searchParams);
+          next.set("edit", existingCustomerId);
+          setSearchParams(next, { replace: true });
+        }
+        return;
+      }
+      alert(message);
     }
   };
 

@@ -20,6 +20,7 @@ import {
 import { writeCommercialAuditLog } from "./commercialAuditLog.js";
 import { recordCorporateMembershipsFromLookup } from "./commercial/corporateRelation.server.js";
 import { CompanyIntelligenceError } from "./companyCnpjErrors.js";
+import { findCustomerIdByTaxIdDigits } from "./commercial/customerTaxIdIdentity.server.js";
 import { fetchPublicCnpj } from "./companyCnpjPublicaWs.js";
 import {
   aggregateCnpjIntelligence,
@@ -397,16 +398,12 @@ export async function createCustomerFromCompanyIntelligence(input: {
     }
   }
 
-  const existing = await prisma.customer.findUnique({ where: { taxId: body.taxId } });
-  if (existing) {
-    throw new CompanyIntelligenceError(
-      "Já existe cliente cadastrado com este CNPJ.",
-      "DUPLICATE_TAX_ID",
-      409
-    );
-  }
+  // Pelos dígitos: um cliente cadastrado à mão como "08.535.015/0001-66" é o mesmo de "08535015000166".
+  const duplicate = () =>
+    new CompanyIntelligenceError("Já existe cliente cadastrado com este CNPJ.", "DUPLICATE_TAX_ID", 409);
+  if (await findCustomerIdByTaxIdDigits(prisma, body.taxId)) throw duplicate();
 
-  const customer = await prisma.customer.create({
+  const created = prisma.customer.create({
     data: {
       companyName: String(body.companyName ?? summary.companyName),
       tradeName: body.tradeName ? String(body.tradeName) : null,
@@ -423,6 +420,11 @@ export async function createCustomerFromCompanyIntelligence(input: {
       notes: body.notes ? String(body.notes) : null,
       status: "ACTIVE",
     },
+  });
+  // Gravação concorrente do mesmo CNPJ entre a conferência e o create.
+  const customer = await created.catch((error: unknown) => {
+    if ((error as { code?: unknown } | null)?.code === "P2002") throw duplicate();
+    throw error;
   });
 
   await prisma.customerCnpjLookup.update({

@@ -103,12 +103,15 @@ describe("hardening — guards de API (fonte)", () => {
   });
 
   it("PUT customers strip personId/contactPersonId", () => {
-    const src = readSrc("server.ts");
-    const putIdx = src.indexOf('app.put("/api/customers/:id"');
-    assert.ok(putIdx > 0);
-    const slice = src.slice(putIdx, putIdx + 800);
-    assert.ok(slice.includes("delete body.personId"));
-    assert.ok(slice.includes("delete body.contactPersonId"));
+    // Rotas de cadastro movidas para o módulo (incidente de 26/10/2026); server.ts só registra.
+    assert.ok(readSrc("server.ts").includes("registerCustomerRecordRoutes(app"));
+    const src = readSrc("src/lib/commercial/customerRecordRoutes.server.ts");
+    const fnIdx = src.indexOf("export async function updateCustomerRecord");
+    assert.ok(fnIdx > 0);
+    const slice = src.slice(fnIdx, fnIdx + 800);
+    assert.ok(slice.includes("delete data.personId"));
+    assert.ok(slice.includes("delete data.contactPersonId"));
+    assert.ok(src.includes('app.put("/api/customers/:id"'));
   });
 
   it("system-links e person-link protegidos por requireResource", () => {
