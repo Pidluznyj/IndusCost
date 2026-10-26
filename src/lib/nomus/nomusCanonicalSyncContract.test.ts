@@ -6,6 +6,7 @@ import { describe, it } from "node:test";
 import {
   closeSync,
   existsSync,
+  mkdtempSync,
   openSync,
   readFileSync,
   unlinkSync,
@@ -16,6 +17,7 @@ import { tmpdir } from "node:os";
 import {
   CANONICAL_SYNC_SERVICE_NAMES,
   ENTRY_POINTS_MUST_CALL_CANONICAL,
+  ENTITY_CANONICAL_LOCK_ENV,
   ENTITY_LOCK_FILE_DEFAULT,
   ENTITY_SHELL_FLOCK_FILE_DEFAULT,
   NOMUS_AUTOMATIC_SYNC_ROUTINES,
@@ -44,6 +46,15 @@ import {
 } from "./nomusSalesOrderSourceReconciliation.js";
 
 const ROOT = process.cwd();
+
+// Isolamento dos locks canônicos: o gate do deploy roda este arquivo no próprio servidor, onde as
+// sincronizações reais seguram /tmp/induscost-nomus-*.lock. Sem isto o teste (a) é pulado com
+// SKIPPED_LOCKED quando a rotina real está rodando e (b) pode fazer a rotina real pular. Cada arquivo de
+// teste roda em processo próprio, então o ajuste de process.env vale só aqui.
+const TEST_LOCK_DIR = mkdtempSync(join(tmpdir(), "nomus-canonical-contract-locks-"));
+for (const [lockName, envKey] of Object.entries(ENTITY_CANONICAL_LOCK_ENV)) {
+  if (envKey) process.env[envKey] = join(TEST_LOCK_DIR, `${lockName}.lock`);
+}
 
 function read(rel: string): string {
   return readFileSync(join(ROOT, rel), "utf8");
