@@ -13,6 +13,7 @@ import {
 } from "./CreditIntelligencePackageSection";
 import { QuodDossierReport } from "./QuodDossierSection";
 import { QuodDossierPrintReport } from "./QuodDossierPrintReport";
+import { LikeSerasaActionButton, LikeSerasaSection, useLikeSerasa } from "./LikeSerasaSection";
 
 type QuoteLine = {
   product: string;
@@ -91,6 +92,8 @@ export function CustomerQuodDossierPanel({
   const [showIeptb, setShowIeptb] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  // LIKE SERASA (Boa Vista via Direct Data): consulta paga irmã, com estado, persistência e cobrança próprios.
+  const likeSerasa = useLikeSerasa({ customerId, isSuperAdmin });
 
   const load = useCallback(async () => {
     if (!customerId) return;
@@ -201,8 +204,18 @@ export function CustomerQuodDossierPanel({
             setForceRefresh(true);
             setConfirming(true);
           }}
+          extraActions={<LikeSerasaActionButton status={likeSerasa.status} canConsult={isSuperAdmin} onRequest={likeSerasa.openConfirm} />}
         />
       ) : null}
+      <LikeSerasaSection
+        controller={likeSerasa}
+        customerId={customerId}
+        companyName={companyName}
+        cnpj={cnpj}
+        requestedBy={requestedBy}
+        isSuperAdmin={isSuperAdmin}
+        internalCreditLabel={creditLabel}
+      />
       {showQuod && status?.quod.consultation?.sections ? (
         <>
           <QuodDossierReport sections={status.quod.consultation.sections} partners={status.quod.consultation.partners ?? []} />
