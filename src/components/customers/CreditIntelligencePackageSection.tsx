@@ -261,6 +261,7 @@ export function CreditIntelligenceSourceCards({
   onViewIeptb,
   onRequestPackage,
   onForceRefresh,
+  extraActions,
 }: {
   quodState: string;
   quodScore: number | null;
@@ -283,6 +284,8 @@ export function CreditIntelligenceSourceCards({
   onViewIeptb: () => void;
   onRequestPackage: () => void;
   onForceRefresh: () => void;
+  /** Botões de outras consultas pagas, na mesma linha de ações (ex.: LIKE SERASA). Não alteram o pacote QUOD + IEPTB. */
+  extraActions?: React.ReactNode;
 }) {
   const ieptbSituation =
     ieptbState !== "VALID"
@@ -377,6 +380,7 @@ export function CreditIntelligenceSourceCards({
               Atualizar análise
             </button>
           ) : null}
+          {extraActions}
           {!ieptbEnabled ? (
             <p className="text-xs text-slate-500">Protestos nacionais ainda não habilitados. O dossiê QUOD permanece disponível.</p>
           ) : null}
