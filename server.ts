@@ -811,6 +811,8 @@ import { registerMaterialStockSpreadsheetMirrorAdminRoutes } from "./src/lib/mat
 import { registerCnpjWeeklyRefreshAdminRoutes } from "./src/lib/cnpjWeeklyRefresh/adminRoutes.js";
 import { registerQuodDossierRoutes } from "./src/lib/quodDossier/routes.js";
 import { registerCreditIntelligencePackageRoutes } from "./src/lib/creditIntelligencePackage/routes.js";
+import { registerLikeSerasaRoutes } from "./src/lib/boaVistaDefineLimite/routes.js";
+import { writeCommercialAuditLog } from "./src/lib/commercialAuditLog.js";
 import { enqueueMaterialStockSpreadsheetMirrorBestEffort } from "./src/lib/materialStockSpreadsheetMirror/enqueue.server.js";
 import {
   applyNomusBomBatchFromDashboard,
@@ -9067,6 +9069,17 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
 
   registerQuodDossierRoutes(app, { requireAppAuth, getCurrentAppUser }, { prisma });
   registerCreditIntelligencePackageRoutes(app, { requireAppAuth, getCurrentAppUser }, { prisma });
+  // LIKE SERASA (Boa Vista via Direct Data): consulta real só em produção atestada (ver environmentGate.ts);
+  // toda tentativa paga fica no CommercialAuditLog.
+  registerLikeSerasaRoutes(
+    app,
+    { requireAppAuth, getCurrentAppUser },
+    {
+      prisma,
+      audit: (entry) =>
+        writeCommercialAuditLog({ entityType: "LikeSerasaConsultation", entityId: entry.entityId, action: entry.action, newValue: entry.newValue, performedBy: entry.performedBy }).catch(() => undefined),
+    }
+  );
 
   app.get(
     "/api/nomus/bom-auto-apply/products/apply-readiness",

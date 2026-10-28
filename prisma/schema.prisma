@@ -2534,6 +2534,7 @@ model Customer {
   cnpjRefreshRunItems              CnpjRefreshRunItem[]
   quodDossierConsultations         QuodDossierConsultation[]
   ieptbOnlineConsultations         IeptbOnlineConsultation[]
+  boaVistaDefineLimiteConsultations BoaVistaDefineLimiteConsultation[]
 
   @@index([personId])
   @@index([contactPersonId])
@@ -3709,6 +3710,53 @@ model IeptbOnlineConsultation {
   createdAt           DateTime  @default(now()) @db.Timestamptz(6)
   updatedAt           DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
   Customer            Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([customerId, createdAt])
+  @@index([cnpj, createdAt])
+  @@index([status])
+}
+
+/// LIKE SERASA — Boa Vista Define Limite Positivo PJ via Direct Data. Persistência própria (nada compartilhado com QUOD/IEPTB).
+/// mode: LIVE (consulta real) | DEMO (fixture sintética, nunca cobrada). Índice único parcial de consulta real em andamento
+/// por CNPJ só na migration (WHERE mode = 'LIVE' AND status IN ('RESERVED','SENT')).
+model BoaVistaDefineLimiteConsultation {
+  id                    String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  customerId            String    @db.Uuid
+  companyName           String
+  cnpj                  String
+  mode                  String    @default("LIVE")
+  provider              String    @default("Direct Data")
+  product               String    @default("Boa Vista — Define Limite Positivo Pessoa Jurídica")
+  idempotencyKey        String    @unique
+  requestedByUserId     String
+  requestedByRole       String
+  status                String
+  billingStatus         String
+  authorizedCostCents   Int
+  chargedCostCents      Int?
+  providerQueryId       String?
+  providerHttpStatus    Int?
+  providerResult        String?
+  failureCode           String?
+  scoreRaw              String?
+  score                 Int?
+  scoreClass            String?
+  riskText              String?
+  defaultProbability    String?
+  suggestedLimitCents   BigInt?
+  suggestedLimitLabel   String?
+  restrictionCount      Int?
+  confirmedRestriction  Boolean   @default(false)
+  insufficient          Boolean   @default(false)
+  sections              Json?
+  rawPayload            Json?
+  parserVersion         String?
+  receiptUrl            String?
+  validUntil            DateTime? @db.Timestamptz(6)
+  consultedAt           DateTime? @db.Timestamptz(6)
+  createdAt             DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt             DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+  Customer              Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([customerId, createdAt])
   @@index([cnpj, createdAt])
