@@ -1,4 +1,4 @@
--- Rastreabilidade do vínculo Pedido de Venda → Proposta (src/lib/sales/proposalSalesOrderLinkPolicy.ts).
+-- Rastreabilidade do vínculo Pedido de Venda → Proposta (src/lib/sales/proposalSalesOrderLinkPolicy.ts) e histórico de status Nomus (SalesOrderNomusStatusEvent).
 -- Somente aditiva: colunas novas anuláveis (ou com default), enums e tabelas novas; nenhum dado existente é alterado.
 -- Pedidos já vinculados ficam com proposalLinkSource NULL = LEGADO (não confirmado) até a primeira decisão da política.
 -- Rollback: docs/sales/proposal-sales-order-link.rollback.sql (procedimento em docs/sales/proposal-sales-order-link.md).
@@ -40,6 +40,23 @@ CREATE TABLE "SalesOrderProposalLinkEvent" (
 );
 
 -- CreateTable
+CREATE TABLE "SalesOrderNomusStatusEvent" (
+    "id" UUID NOT NULL DEFAULT gen_random_uuid(),
+    "salesOrderId" UUID NOT NULL,
+    "salesOrderItemId" UUID,
+    "kind" TEXT NOT NULL,
+    "previousStatusNormalized" TEXT,
+    "newStatusNormalized" TEXT,
+    "newStatusRaw" TEXT,
+    "previousState" JSONB,
+    "newState" JSONB,
+    "runId" TEXT,
+    "createdAt" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "SalesOrderNomusStatusEvent_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
 CREATE TABLE "NomusProposalImportIssue" (
     "id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "externalProposalId" INTEGER NOT NULL,
@@ -62,6 +79,12 @@ CREATE INDEX "SalesOrderProposalLinkEvent_salesOrderId_createdAt_idx" ON "SalesO
 CREATE INDEX "SalesOrderProposalLinkEvent_runId_idx" ON "SalesOrderProposalLinkEvent"("runId");
 
 -- CreateIndex
+CREATE INDEX "SalesOrderNomusStatusEvent_salesOrderId_createdAt_idx" ON "SalesOrderNomusStatusEvent"("salesOrderId", "createdAt");
+
+-- CreateIndex
+CREATE INDEX "SalesOrderNomusStatusEvent_kind_createdAt_idx" ON "SalesOrderNomusStatusEvent"("kind", "createdAt");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "NomusProposalImportIssue_externalProposalId_key" ON "NomusProposalImportIssue"("externalProposalId");
 
 -- CreateIndex
@@ -72,4 +95,7 @@ CREATE INDEX "SalesOrder_proposalLinkStatus_idx" ON "SalesOrder"("proposalLinkSt
 
 -- AddForeignKey
 ALTER TABLE "SalesOrderProposalLinkEvent" ADD CONSTRAINT "SalesOrderProposalLinkEvent_salesOrderId_fkey" FOREIGN KEY ("salesOrderId") REFERENCES "SalesOrder"("id") ON DELETE CASCADE ON UPDATE NO ACTION;
+
+-- AddForeignKey
+ALTER TABLE "SalesOrderNomusStatusEvent" ADD CONSTRAINT "SalesOrderNomusStatusEvent_salesOrderId_fkey" FOREIGN KEY ("salesOrderId") REFERENCES "SalesOrder"("id") ON DELETE CASCADE ON UPDATE NO ACTION;
 

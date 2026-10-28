@@ -80,7 +80,7 @@ Fonte no load: colunas persistidas + fallback `nomusRawResponse` (`enrichFactsWi
 - Comissão: itens cancelados/stale **não entram** no bundle ativo (não geram `NO_MARGIN` indevido).
 - Aparecem como ignorados/cancelados na auditoria de margem.
 
-Não altera Contas a Receber, Fluxo, Presidencial, regra de vendedor comissionável nem comissões pagas.
+Não altera Contas a Receber, Presidencial, regra de vendedor comissionável nem comissões pagas. (Correção 28/10/2026: o cronograma efetivo do Fluxo de Caixa **usa** as bandeiras cancelado/cortado/stale por item; previsão de faturamento e carteira em aberto passaram a usar a mesma regra — `docs/sales/sales-order-nomus-status-lifecycle.md`.)
 
 ## Diagnóstico
 

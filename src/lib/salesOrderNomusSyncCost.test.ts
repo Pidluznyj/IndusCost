@@ -51,7 +51,9 @@ describe("salesOrderNomusSyncCost (legado)", () => {
 
   it("sync Nomus não preserva unitCost como custo industrial", () => {
     const sync = read("scripts/nomusSalesOrdersSyncV1.ts");
-    assert.match(sync, /buildNomusSyncItemWritePlan/);
+    // Itens gravados pelo plano idempotente via lib compartilhada (src/lib/sales/salesOrderNomusItemSync.server.ts).
+    assert.match(sync, /applyNomusSalesOrderItemSyncInTx/);
+    assert.match(read("src/lib/sales/salesOrderNomusItemSync.server.ts"), /buildNomusSyncItemWritePlan/);
     assert.doesNotMatch(sync, /buildPreservationMapFromExistingItems/);
     assert.doesNotMatch(sync, /resolveSalesOrderItemUnitCostSnapshot/);
     assert.doesNotMatch(sync, /buildNomusSyncOfficialUnitCostIndex/);

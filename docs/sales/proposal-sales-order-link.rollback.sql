@@ -6,6 +6,7 @@
 -- Depois de executar, remover a linha da migration em _prisma_migrations conforme o runbook.
 BEGIN;
 DROP TABLE IF EXISTS "SalesOrderProposalLinkEvent";
+DROP TABLE IF EXISTS "SalesOrderNomusStatusEvent";
 DROP TABLE IF EXISTS "NomusProposalImportIssue";
 DROP INDEX IF EXISTS "SalesOrder_proposalLinkStatus_idx";
 ALTER TABLE "SalesOrder"

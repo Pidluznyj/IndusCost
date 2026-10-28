@@ -47,9 +47,25 @@ Histórico: `SalesOrderProposalLinkEvent` (só acrescenta). Evidência da últim
 
 ### Clientes (ambos os syncs)
 `src/lib/nomus/customerIdentityByDocument.ts` + `src/lib/nomusCustomerBridgeResolution.ts`: histórico de pedidos →
-`Customer.nomusExternalPersonId` → CPF/CNPJ **por dígitos**. Mais de um cliente equivalente = conflito, nenhum escolhido:
-pedido existente mantém o cliente gravado; pedido novo fica bloqueado (`CUSTOMER_IDENTITY_CONFLICT`); proposta fica
-pendente. Nenhum cliente é criado. Só resoluções positivas ficam em cache de memória.
+`Customer.nomusExternalPersonId` → CPF/CNPJ **por dígitos**. Nenhum cliente é criado; só resoluções positivas ficam em
+cache de memória.
+
+Clientes duplicados (mesmo documento) — desempate só por evidência, nunca por escolha arbitrária:
+1. Pedido **já existente** nunca é bloqueado: mantém o cliente gravado.
+2. Cliente já ligado a **outra** pessoa do Nomus (`nomusExternalPersonId` diferente) sai da disputa pelo documento.
+3. Cliente com o `nomusExternalPersonId` da pessoa do pedido resolve (o sync de clientes grava esse id).
+4. Conflito no histórico é desempatado pelo documento da pessoa no Nomus (interseção das evidências).
+5. Restando mais de um candidato, só o pedido **novo** fica bloqueado (`CUSTOMER_IDENTITY_CONFLICT`, com os
+   candidatos no relatório do sync) e a proposta fica pendente em `NomusProposalImportIssue`.
+
+Na prática o bloqueio só ocorre quando nenhum dos duplicados tem id de pessoa do Nomus (A8:
+`grupos_que_podem_bloquear_pedido_novo`). Saídas seguras para esses casos, sem associação arbitrária:
+- gravar o id da pessoa no cliente correto (o sync de clientes faz isso quando o documento casa) ou sanear o cadastro
+  (unificar os duplicados) — o próximo sync importa o pedido;
+- impedir novos duplicados com unicidade de CPF/CNPJ por dígitos (proposta estrutural separada, ver o P0 de CNPJ
+  duplicado de 26/10/2026).
+Descartadas por arbitrárias ou por alterarem cadastro existente: escolher o cliente mais antigo / com mais pedidos e
+unificar clientes automaticamente.
 
 ### Propostas
 - SKU inativo no Nomus com produto no IndusCost: item importado e marcado (`ProposalItem.nomusProductInactive`).
@@ -132,7 +148,9 @@ Restaura cada pedido do APPLY só se o vínculo ainda estiver como o APPLY deixo
 
 1. Rodar a auditoria (seção 3) em homologação e produção e guardar a saída.
 2. Aplicar a migration `20261102120000_proposal_sales_order_link_traceability` **antes** do código (colunas novas
-   anuláveis/default; `ADD COLUMN … DEFAULT false` é só metadado no PostgreSQL 11+).
+   anuláveis/default; `ADD COLUMN … DEFAULT false` é só metadado no PostgreSQL 11+). O nome segue a sequência
+   sintética do repositório (um "dia" por migration, `…120000`, logo após `20261101120000`), não a data do calendário;
+   conferir `ls prisma/migrations | tail` contra a `origin/main` imediatamente antes do merge.
 3. Implantar o código. O primeiro sync de pedidos classifica os pedidos tocados (vínculos existentes → `LEGACY`).
 4. Rodar o DRY-RUN da reconciliação em homologação e revisar `REVIEW_CONFLICT` / `REVIEW_AMBIGUOUS`.
 
@@ -155,4 +173,6 @@ Restaura cada pedido do APPLY só se o vínculo ainda estiver como o APPLY deixo
 - O sync de propostas continua recriando itens de propostas sem pedido vinculado (ids de `ProposalItem` mudam nesses
   casos), comportamento anterior.
 - Proposta com SKU sem cadastro local continua fora do IndusCost (agora registrada em `NomusProposalImportIssue`).
-- Pedido novo de cliente com cadastro duplicado (mesmo documento) fica bloqueado até o cadastro ser saneado.
+- Pedido novo de cliente duplicado (mesmo documento) sem nenhum id de pessoa do Nomus entre os duplicados fica
+  bloqueado até o cadastro ser saneado (quantificar com A8 antes de implantar).
+- Pedido bloqueado por cliente fora da janela do sync incremental só volta numa reconciliação completa.

@@ -2755,6 +2755,7 @@ model SalesOrder {
   Customer                      Customer                        @relation(fields: [customerId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   Proposal                      Proposal?                       @relation(fields: [proposalId], references: [id], onDelete: Restrict, onUpdate: NoAction)
   proposalLinkEvents            SalesOrderProposalLinkEvent[]
+  nomusStatusEvents             SalesOrderNomusStatusEvent[]
   items                         SalesOrderItem[]
   CommercialActivity            CommercialActivity[]
   nfeLinks                      SalesOrderNfeLink[]
@@ -2829,6 +2830,30 @@ model SalesOrderProposalLinkEvent {
 
   @@index([salesOrderId, createdAt])
   @@index([runId])
+}
+
+/// Histórico das mudanças de status Nomus de pedidos/itens observadas entre sincronizações (cancelamento, corte,
+/// reativação, item que sai/volta do payload, status desconhecido preservado). Só acrescenta; nunca reescrito.
+model SalesOrderNomusStatusEvent {
+  id                       String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  salesOrderId             String     @db.Uuid
+  /// NULL nos eventos do pedido inteiro (ORDER_*).
+  salesOrderItemId         String?    @db.Uuid
+  /// ITEM_CANCELED | ITEM_REACTIVATED | ITEM_CUT | ITEM_CUT_REVERTED | ITEM_STALE | ITEM_RETURNED | ITEM_STATUS_CHANGED
+  /// | ITEM_STATUS_UNKNOWN_PRESERVED | ORDER_FULLY_CANCELED | ORDER_REACTIVATED
+  kind                     String
+  previousStatusNormalized String?
+  newStatusNormalized      String?
+  newStatusRaw             String?
+  /// Bandeiras/quantidades antes e depois (nomusIsCanceled, nomusIsCut, nomusIsStale, quantidades).
+  previousState            Json?
+  newState                 Json?
+  runId                    String?
+  createdAt                DateTime   @default(now()) @db.Timestamptz(6)
+  SalesOrder               SalesOrder @relation(fields: [salesOrderId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([salesOrderId, createdAt])
+  @@index([kind, createdAt])
 }
 
 /// Proposta do Nomus que não pôde ser importada (cliente/produto não resolvido). Mantida para auditoria e

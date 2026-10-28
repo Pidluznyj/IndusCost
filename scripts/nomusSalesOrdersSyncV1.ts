@@ -4,7 +4,6 @@ import { Prisma, PrismaClient } from "@prisma/client";
 import { parseNomusPtBrNumber } from "./nomusNumberParser.ts";
 import { upsertSalesOrderNfeLinksForOrder } from "../src/lib/salesOrderNfeLink.ts";
 import {
-  buildNomusSyncItemWritePlan,
   buildNomusSyncUpdatePreview,
   extractNomusLineExternalId,
   canonicalNomusOrderCodeKey,
@@ -15,7 +14,6 @@ import {
   normalizeNomusOrderCodeForStorage,
   NOMUS_SALES_ORDER_SOURCE,
   type NomusSyncExistingSalesOrder,
-  type NomusSyncItemWriteRow,
   type NomusSyncUpdatePreview,
 } from "../src/lib/salesOrderNomusSync.server.ts";
 import { parseNomusSalesOrderItemStatus } from "../src/lib/sales/nomusSalesOrderItemStatus.ts";
@@ -86,6 +84,11 @@ import {
   type NomusCanonicalSyncDelegateResult,
 } from "../src/lib/nomus/nomusCanonicalSync.server.ts";
 import { resolveNomusCustomerBridge, type CustomerBridgeEntry } from "../src/lib/nomusCustomerBridgeResolution.ts";
+import {
+  applyNomusSalesOrderItemSyncInTx,
+  lockNomusSalesOrderSyncInTx,
+  NOMUS_SYNC_EXISTING_ITEM_SELECT,
+} from "../src/lib/sales/salesOrderNomusItemSync.server.ts";
 import { extractNomusProposalReferences } from "../src/lib/nomus/nomusProposalOrderReference.ts";
 import {
   decideProposalSalesOrderLink,
@@ -1187,65 +1190,6 @@ async function runDry(
   };
 }
 
-function mapItemWriteRowToCreateData(row: NomusSyncItemWriteRow): Prisma.SalesOrderItemCreateManyInput {
-  return {
-    salesOrderId: row.salesOrderId,
-    proposalItemId: row.proposalItemId,
-    productId: row.productId,
-    externalProductId: row.externalProductId,
-    skuSnapshot: row.skuSnapshot,
-    productNameSnapshot: row.productNameSnapshot,
-    quantity: row.quantity,
-    unit: row.unit,
-    unitCost: row.unitCost,
-    negotiatedPrice: row.negotiatedPrice,
-    totalNetValue: row.totalNetValue,
-    totalCost: row.totalCost,
-    marginValue: row.marginValue,
-    marginPerc: row.marginPerc,
-    notes: row.notes,
-    nomusItemExternalId: row.nomusItemExternalId ?? null,
-    nomusItemSequence: row.nomusItemSequence ?? null,
-    nomusItemStatusRaw: row.nomusItemStatusRaw ?? null,
-    nomusItemStatusNormalized: row.nomusItemStatusNormalized ?? null,
-    nomusQuantityFulfilled: row.nomusQuantityFulfilled ?? null,
-    nomusQuantityPending: row.nomusQuantityPending ?? null,
-    nomusIsCanceled: row.nomusIsCanceled ?? false,
-    nomusIsCut: row.nomusIsCut ?? false,
-    nomusIsStale: row.nomusIsStale ?? false,
-    nomusMatchConfidence: row.nomusMatchConfidence ?? null,
-    nomusMatchReason: row.nomusMatchReason ?? null,
-    nomusLastSeenAt: row.nomusLastSeenAt ?? null,
-    nomusRawItem:
-      row.nomusRawItem != null
-        ? (row.nomusRawItem as Prisma.InputJsonValue)
-        : Prisma.JsonNull,
-  };
-}
-
-async function applyNomusSyncItemWritePlan(
-  tx: Prisma.TransactionClient,
-  plan: ReturnType<typeof buildNomusSyncItemWritePlan>
-): Promise<number> {
-  let touched = 0;
-  for (const row of [...plan.upserts, ...plan.staleUpdates]) {
-    if (!row.id) continue;
-    await tx.salesOrderItem.update({
-      where: { id: row.id },
-      data: mapItemWriteRowToCreateData(row),
-    });
-    touched += 1;
-  }
-  if (plan.creates.length > 0) {
-    await tx.salesOrderItem.createMany({
-      data: plan.creates.map(mapItemWriteRowToCreateData),
-    });
-    touched += plan.creates.length;
-  }
-  return touched;
-}
-
-
 async function runApply(
   eligible: EligibleSalesOrderPlan[],
   existingIndexes: ReturnType<typeof indexExistingSalesOrdersByNomusKey>,
@@ -1260,6 +1204,7 @@ async function runApply(
   affectedSalesOrderIds: string[];
   reactivatedSalesOrderIds: string[];
   proposalLinks: ProposalLinkRunSummary;
+  statusEventsRecorded: number;
 }> {
   let created = 0;
   let updated = 0;
@@ -1269,12 +1214,21 @@ async function runApply(
   const affectedSalesOrderIds: string[] = [];
   const reactivatedSalesOrderIds: string[] = [];
   const proposalLinks = emptyProposalLinkRunSummary();
+  let statusEventsRecorded = 0;
 
   for (const plan of eligible) {
     // Uma nova tentativa só quando outro escritor ocupou a vaga 1:1 da proposta entre a leitura e a gravação
     // (P2002 em SalesOrder.proposalId): a segunda leitura vê o dono da vaga e registra CONFLICT.
     for (let attempt = 1; ; attempt += 1) {
-      const snapshot = { created, updated, itemsCreated, itemsUpdated, itemsStale, links: structuredClone(proposalLinks) };
+      const snapshot = {
+        created,
+        updated,
+        itemsCreated,
+        itemsUpdated,
+        itemsStale,
+        statusEventsRecorded,
+        links: structuredClone(proposalLinks),
+      };
       const affectedLength = affectedSalesOrderIds.length;
       const reactivatedLength = reactivatedSalesOrderIds.length;
       try {
@@ -1282,7 +1236,7 @@ async function runApply(
         break;
       } catch (error) {
         // Transação desfeita: contadores voltam ao estado anterior.
-        ({ created, updated, itemsCreated, itemsUpdated, itemsStale } = snapshot);
+        ({ created, updated, itemsCreated, itemsUpdated, itemsStale, statusEventsRecorded } = snapshot);
         Object.assign(proposalLinks, snapshot.links);
         affectedSalesOrderIds.length = affectedLength;
         reactivatedSalesOrderIds.length = reactivatedLength;
@@ -1299,6 +1253,8 @@ async function runApply(
 
   async function runApplyOne(plan: EligibleSalesOrderPlan): Promise<void> {
     await prisma.$transaction(async (tx) => {
+      // Duas sincronizações do mesmo pedido nunca gravam ao mesmo tempo (itens, status e vínculo).
+      await lockNomusSalesOrderSyncInTx(tx, plan.externalSalesOrderId);
       const pedido = plan.pedido;
       const issueDate =
         parseNomusDateTime(pedido.dataEmissao) ??
@@ -1313,7 +1269,26 @@ async function runApply(
       const externalCompanyId = toInt(pedido.idEmpresa);
       const payloadHash = stableNomusSalesOrderPayloadHash(pedido);
 
-      const existingMatch = findExistingSalesOrderForNomusSync(existingIndexes, plan);
+      // Relido depois do lock: outra execução pode ter criado o pedido depois da leitura em lote.
+      const existingMatch =
+        findExistingSalesOrderForNomusSync(existingIndexes, plan) ??
+        (await tx.salesOrder.findFirst({
+          where: { sourceSystem: SOURCE_SYSTEM, externalSalesOrderId: plan.externalSalesOrderId },
+          select: {
+            id: true,
+            orderCode: true,
+            externalSalesOrderId: true,
+            externalSalesOrderCode: true,
+            sourceSystem: true,
+            totalNetValue: true,
+            totalGrossValue: true,
+            totalItems: true,
+            totalCost: true,
+            totalMarginValue: true,
+            totalMarginPerc: true,
+            updatedAt: true,
+          },
+        }));
 
       // proposalId NÃO faz parte do cabeçalho espelhado: o vínculo é decidido depois, pela política oficial
       // (src/lib/sales/proposalSalesOrderLinkPolicy.ts), que nunca apaga nem troca um vínculo existente.
@@ -1419,29 +1394,7 @@ async function runApply(
 
         const existingItems = await tx.salesOrderItem.findMany({
           where: { salesOrderId: existingMatch.id },
-          select: {
-            id: true,
-            productId: true,
-            externalProductId: true,
-            proposalItemId: true,
-            skuSnapshot: true,
-            productNameSnapshot: true,
-            unit: true,
-            unitCost: true,
-            totalCost: true,
-            marginValue: true,
-            marginPerc: true,
-            quantity: true,
-            negotiatedPrice: true,
-            totalNetValue: true,
-            notes: true,
-            nomusItemExternalId: true,
-            nomusItemStatusNormalized: true,
-            nomusIsCanceled: true,
-            nomusIsStale: true,
-            nomusIsCut: true,
-            nomusMatchConfidence: true,
-          },
+          select: NOMUS_SYNC_EXISTING_ITEM_SELECT,
         });
 
         const headerData = mergeNomusSyncHeaderPreservingHistoricalCosts(
@@ -1458,13 +1411,14 @@ async function runApply(
         salesOrderId = updatedOrder.id;
         updated += 1;
 
-        const itemPlan = buildNomusSyncItemWritePlan({
+        // Itens + histórico de status (cancelamento, corte, reativação, status desconhecido preservado).
+        const { plan: itemPlan, statusEvents } = await applyNomusSalesOrderItemSyncInTx(tx, {
           salesOrderId,
           plannedLines,
           existingItems,
+          runId: lifecycleCtx.runId,
         });
-
-        await applyNomusSyncItemWritePlan(tx, itemPlan);
+        statusEventsRecorded += statusEvents.length;
         itemsUpdated += itemPlan.upserts.length + itemPlan.staleUpdates.length;
         itemsCreated += itemPlan.creates.length;
         itemsStale += itemPlan.staleUpdates.length;
@@ -1477,12 +1431,12 @@ async function runApply(
         created += 1;
 
         if (plan.lines.length > 0) {
-          const itemPlan = buildNomusSyncItemWritePlan({
+          const { plan: itemPlan } = await applyNomusSalesOrderItemSyncInTx(tx, {
             salesOrderId,
             plannedLines,
             existingItems: [],
+            runId: lifecycleCtx.runId,
           });
-          await applyNomusSyncItemWritePlan(tx, itemPlan);
           itemsCreated += itemPlan.creates.length;
         }
       }
@@ -1535,6 +1489,7 @@ async function runApply(
     affectedSalesOrderIds: [...new Set(affectedSalesOrderIds)],
     reactivatedSalesOrderIds: [...new Set(reactivatedSalesOrderIds)],
     proposalLinks,
+    statusEventsRecorded,
   };
 }
 
