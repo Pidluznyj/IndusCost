@@ -7,6 +7,12 @@ import { promises as fs } from "fs";
 import { fileURLToPath } from "url";
 import { prisma } from "./src/lib/prisma.js";
 import {
+  createGlobalErrorHandler,
+  installExpressAsyncErrorForwarding,
+  installProcessSafetyNet,
+} from "./src/lib/http/expressAsyncSafety.server.js";
+import { registerCustomerRecordRoutes } from "./src/lib/commercial/customerRecordRoutes.server.js";
+import {
   Prisma,
   AppUserRole,
   type ItemType,
@@ -1175,6 +1181,11 @@ async function startServer() {
     });
   }
 
+  // Express 4 não captura rejeição de handler async: sem isto, um erro previsível (ex.: P2002) encerra o Node.
+  installExpressAsyncErrorForwarding();
+  // Rejeição sem tratamento fora de requisição: registra e encerra de forma supervisionada (systemd reinicia).
+  let httpServer: import("node:http").Server | undefined;
+  installProcessSafetyNet({ getServer: () => httpServer });
   const app = express();
   const port = process.env.PORT || 3000;
   const host = process.env.HOST || "0.0.0.0";
@@ -15890,39 +15901,15 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     getCurrentAppUser,
   });
 
-  app.post("/api/customers", requireAppAuth, requireResource("commercial.customers", "create"), async (req, res) => {
-    const customer = await prisma.customer.create({ data: req.body });
-    res.json(customer);
-  });
-
-  app.put("/api/customers/:id", requireAppAuth, requireResource("commercial.customers", "update"), async (req, res) => {
-    const { id } = req.params;
-    const body = { ...(req.body as Record<string, unknown>) };
-    // Vínculos Person só via endpoints dedicados (people-links), nunca pelo PUT bruto.
-    delete body.personId;
-    delete body.contactPersonId;
-    delete body.person;
-    delete body.contactPerson;
-    const customer = await prisma.customer.update({
-      where: { id },
-      data: body,
-    });
-    const watched = ["phone", "email", "address", "city", "state", "zipCode", "taxId"] as const;
-    if (watched.some((field) => Object.prototype.hasOwnProperty.call(body, field))) {
-      try {
-        const { scheduleCorporateRadar } = await import("./src/lib/commercial/corporateRadar.server.js");
-        scheduleCorporateRadar(customer.id, "CUSTOMER_UPDATE");
-      } catch (error) {
-        console.error("corporate-radar", error instanceof Error ? error.name : "error");
-      }
-    }
-    res.json(customer);
-  });
-
-  app.delete("/api/customers/:id", requireAppAuth, requireResource("commercial.customers", "update"), async (req, res) => {
-    const { id } = req.params;
-    await prisma.customer.delete({ where: { id } });
-    res.json({ success: true });
+  // Cadastro de clientes: documento duplicado → 409 (nunca derruba o processo); ver o módulo.
+  registerCustomerRecordRoutes(app, {
+    prisma,
+    requireAppAuth,
+    requireResource,
+    onCustomerContactChanged: async (customerId) => {
+      const { scheduleCorporateRadar } = await import("./src/lib/commercial/corporateRadar.server.js");
+      scheduleCorporateRadar(customerId, "CUSTOMER_UPDATE");
+    },
   });
 
   // --- API: Proposals (Propostas Comerciais) ---
@@ -18037,14 +18024,8 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     });
   });
 
-  // Global Error Handler
-  app.use((err: any, req: any, res: any, next: any) => {
-    console.error("Express Error:", err);
-    res.status(500).json({ 
-      error: err.message || "Internal Server Error",
-      stack: process.env.NODE_ENV !== "production" ? err.stack : undefined
-    });
-  });
+  // Global Error Handler (recebe também as rejeições de handlers async — ver expressAsyncSafety).
+  app.use(createGlobalErrorHandler());
 
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
@@ -18139,7 +18120,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     });
   }
 
-  app.listen(Number(port), host, () => {
+  httpServer = app.listen(Number(port), host, () => {
     console.log(`Server running on http://${host}:${port}`);
   });
 }

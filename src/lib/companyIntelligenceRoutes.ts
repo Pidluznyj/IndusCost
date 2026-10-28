@@ -491,14 +491,15 @@ export function registerCompanyIntelligenceRoutes(app: express.Express, auth: Au
         if (e instanceof CompanyIntelligenceError && e.code === "DUPLICATE_TAX_ID") {
           const { prisma } = await import("@/src/lib/prisma.js");
           const lookup = await prisma.customerCnpjLookup.findUnique({ where: { id: req.body?.lookupId } });
-          const taxId = lookup?.cnpj;
-          const existing = taxId
-            ? await prisma.customer.findUnique({ where: { taxId } })
+          // Pelos dígitos: o cliente existente pode estar gravado com máscara.
+          const { findCustomerIdByTaxIdDigits } = await import("@/src/lib/commercial/customerTaxIdIdentity.server.js");
+          const existingCustomerId = lookup?.cnpj
+            ? await findCustomerIdByTaxIdDigits(prisma, lookup.cnpj.replace(/\D/g, ""))
             : null;
           return res.status(409).json({
             error: e.message,
             code: e.code,
-            existingCustomerId: existing?.id ?? null,
+            existingCustomerId,
           });
         }
         handleError(res, e);
