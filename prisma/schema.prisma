@@ -2640,6 +2640,8 @@ model ProposalItem {
   externalProductId             Int?
   externalItemStatus            String?
   externalRawPayload            Json?
+  /// Produto inativo no Nomus na importação: a proposta histórica é importada; o item fica marcado.
+  nomusProductInactive          Boolean          @default(false)
   priceTableItemId              String?          @db.Uuid
   priceSource                   String?
   pricingSnapshotJson           Json?
@@ -2743,8 +2745,16 @@ model SalesOrder {
   missingConsecutiveRuns        Int                             @default(0)
   sourceRemovedAt               DateTime?
   lastSyncRunId                 String?                         @db.Uuid
+  /// Rastreabilidade do vínculo com a proposta (src/lib/sales/proposalSalesOrderLinkPolicy.ts).
+  /// NULL nos pedidos anteriores a esta versão: um proposalId já existente é LEGADO (não confirmado).
+  proposalLinkSource            ProposalLinkSource?
+  proposalLinkStatus            ProposalLinkStatus?
+  /// Evidência da última decisão (referência explícita, candidatos por item, motivo).
+  proposalLinkEvidence          Json?
+  proposalLinkUpdatedAt         DateTime?                       @db.Timestamptz(6)
   Customer                      Customer                        @relation(fields: [customerId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   Proposal                      Proposal?                       @relation(fields: [proposalId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  proposalLinkEvents            SalesOrderProposalLinkEvent[]
   items                         SalesOrderItem[]
   CommercialActivity            CommercialActivity[]
   nfeLinks                      SalesOrderNfeLink[]
@@ -2770,6 +2780,72 @@ model SalesOrder {
   @@index([lastSyncRunId])
   @@index([externalSalesOrderId])
   @@index([payloadHash])
+  @@index([proposalLinkStatus])
+}
+
+/// Origem do vínculo Pedido de Venda → Proposta.
+enum ProposalLinkSource {
+  /// Referência explícita no payload do Nomus (campo confirmado em src/lib/nomus/nomusProposalOrderReference.ts).
+  NOMUS_REFERENCE
+  /// Confirmado por uma pessoa (revisão registrada na reconciliação).
+  MANUAL
+  /// Pedido gerado a partir da proposta dentro do IndusCost.
+  INDUSCOST_GENERATED
+  /// Deduzido pelos itens (mesmo cliente + mesmo produto), sem ambiguidade.
+  INFERRED_ITEMS
+  /// Vínculo anterior a esta versão, de origem desconhecida (nunca tratado como confirmado).
+  LEGACY
+}
+
+/// Situação do vínculo (inclusive quando não há proposta vinculada).
+enum ProposalLinkStatus {
+  CONFIRMED
+  INFERRED
+  AMBIGUOUS
+  NO_EVIDENCE
+  CONFLICT
+}
+
+/// Histórico das decisões sobre o vínculo Pedido → Proposta (só acrescenta; nunca reescrito).
+model SalesOrderProposalLinkEvent {
+  id                  String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  salesOrderId        String              @db.Uuid
+  /// LINKED | CONFIRMED | PRESERVED | CONFLICT | STATUS | REVERTED
+  kind                String
+  previousProposalId  String?             @db.Uuid
+  newProposalId       String?             @db.Uuid
+  candidateProposalId String?             @db.Uuid
+  previousSource      ProposalLinkSource?
+  newSource           ProposalLinkSource?
+  previousStatus      ProposalLinkStatus?
+  newStatus           ProposalLinkStatus?
+  reason              String
+  evidence            Json?
+  /// Quem decidiu: nomus-sales-orders-sync | generate-sales-order:<usuário> | reconcile:<execução>.
+  actor               String
+  runId               String?
+  createdAt           DateTime            @default(now()) @db.Timestamptz(6)
+  SalesOrder          SalesOrder          @relation(fields: [salesOrderId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([salesOrderId, createdAt])
+  @@index([runId])
+}
+
+/// Proposta do Nomus que não pôde ser importada (cliente/produto não resolvido). Mantida para auditoria e
+/// reimportada automaticamente quando a pendência some — nenhuma proposta desaparece em silêncio.
+model NomusProposalImportIssue {
+  id                   String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  externalProposalId   Int       @unique
+  externalProposalCode String?
+  externalCustomerId   Int?
+  reasons              String[]
+  missingSkus          String[]
+  firstSeenAt          DateTime  @default(now()) @db.Timestamptz(6)
+  lastSeenAt           DateTime  @default(now()) @db.Timestamptz(6)
+  occurrences          Int       @default(1)
+  resolvedAt           DateTime? @db.Timestamptz(6)
+
+  @@index([resolvedAt])
 }
 
 /// Vínculo normalizado Pedido de Venda → NF-e Nomus (chave: nfes.id → NomusNfe.externalId).
