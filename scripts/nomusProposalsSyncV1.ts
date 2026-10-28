@@ -62,6 +62,8 @@ type ProposalPlan = {
     externalItemStatus: string | null;
     externalRawPayload: JsonObject;
     productId: string;
+    /** SKU inativo no Nomus: item histórico importado e marcado (ProposalItem.nomusProductInactive). */
+    nomusProductInactive: boolean;
     quantity: number;
     unit: string | null;
     unitCost: number;
@@ -92,6 +94,12 @@ type BlockedProposal = {
   reasons: string[];
   missingSkus: string[];
   missingCustomerExternalId: number | null;
+};
+
+type InactiveSkuItemProposal = {
+  externalProposalId: number;
+  externalProposalCode: string;
+  inactiveSkus: string[];
 };
 
 type IgnoredProposal = {
@@ -155,6 +163,9 @@ type DryRunResult = {
     reasons: string[];
     rawLineItemCount?: number;
   }>;
+  /** Propostas importadas com itens de SKU inativo no Nomus (itens marcados, proposta preservada). */
+  inactiveSkuItemsImportedCount: number;
+  inactiveSkuItemsImportedPreview: Array<{ externalProposalId: number; externalProposalCode: string; inactiveSkus: string[] }>;
 };
 
 type ExistingProposalStatsRow = ExistingProposalRef & {
@@ -490,6 +501,7 @@ function toInputJsonValue(value: unknown): Prisma.InputJsonValue {
   return JSON.parse(JSON.stringify(value ?? null)) as Prisma.InputJsonValue;
 }
 
+import { classifyNomusProposalItem } from "../src/lib/nomusProposalItemClassification.ts";
 import {
   selectNomusProposalCandidates,
   type CandidateSelectionResult,
@@ -505,6 +517,7 @@ async function buildPlans(options: {
   missingSkus: Set<string>;
   missingCustomers: Set<number>;
   inactiveSkus: Set<string>;
+  inactiveSkuItemProposals: InactiveSkuItemProposal[];
   rawProposalsCount: number;
   totalItemsRead: number;
   pagesProcessed: number;
@@ -558,6 +571,7 @@ async function buildPlans(options: {
       missingSkus: new Set(),
       missingCustomers: new Set(),
       inactiveSkus: new Set(),
+      inactiveSkuItemProposals: [],
       rawProposalsCount: discoveryMetrics.totalDiscovered,
       totalItemsRead: 0,
       pagesProcessed,
@@ -599,6 +613,7 @@ async function buildPlans(options: {
   const missingSkus = new Set<string>();
   const missingCustomers = new Set<number>();
   const inactiveSkus = new Set<string>();
+  const inactiveSkuItemProposals: InactiveSkuItemProposal[] = [];
   let totalItemsRead = 0;
 
   for (const proposal of rawProposals) {
@@ -623,18 +638,20 @@ async function buildPlans(options: {
     let totalCost = 0;
 
     for (const item of proposalItemsRaw) {
-      const sku = asString(item.codigoProduto);
-
-      if (sku && nomusProductActiveBySku.get(sku) === false) {
-        inactiveSkusInProposal.add(sku);
+      // Produto inativo no Nomus não descarta a proposta histórica: o item é importado e marcado quando o produto
+      // existe no IndusCost (src/lib/nomusProposalItemClassification.ts).
+      const classified = classifyNomusProposalItem({
+        sku: asString(item.codigoProduto),
+        nomusActiveBySku: nomusProductActiveBySku,
+        localProductIdBySku: productBySku,
+      });
+      if (classified.kind === "NO_SKU") continue;
+      if (classified.nomusProductInactive) inactiveSkusInProposal.add(classified.sku);
+      if (classified.kind === "MISSING_PRODUCT") {
+        unresolvedSkus.add(classified.sku);
         continue;
       }
-
-      const productId = sku ? (productBySku.get(sku) ?? null) : null;
-      if (!productId) {
-        if (sku) unresolvedSkus.add(sku);
-        continue;
-      }
+      const { productId, nomusProductInactive } = classified;
 
       const quantity = parseNomusPtBrNumber(item.qtde);
       const negotiatedPrice = parseNomusPtBrNumber(item.valorUnitario);
@@ -651,6 +668,7 @@ async function buildPlans(options: {
         externalItemStatus: asString(item.status),
         externalRawPayload: item,
         productId,
+        nomusProductInactive,
         quantity,
         unit: asString(item.nomeUnidadeMedida),
         unitCost,
@@ -669,22 +687,19 @@ async function buildPlans(options: {
       });
     }
 
+    for (const sku of inactiveSkusInProposal) inactiveSkus.add(sku);
     if (inactiveSkusInProposal.size > 0) {
-      for (const sku of inactiveSkusInProposal) inactiveSkus.add(sku);
-
-      ignored.push({
+      inactiveSkuItemProposals.push({
         externalProposalId,
         externalProposalCode,
-        reasons: ["INACTIVE_PRODUCT_SKU_NOMUS"],
         inactiveSkus: [...inactiveSkusInProposal].sort(),
-        rawLineItemCount: proposalItemsRaw.length,
       });
-      continue;
     }
 
     const reasons: string[] = [];
     if (externalCustomerId == null || !customerId) {
-      reasons.push("CUSTOMER_NOT_RESOLVED");
+      // Clientes equivalentes (mesmo documento/idPessoa): pendência própria, nenhum cliente é escolhido.
+      reasons.push(bridge?.conflict ? "CUSTOMER_IDENTITY_CONFLICT" : "CUSTOMER_NOT_RESOLVED");
       if (externalCustomerId != null) missingCustomers.add(externalCustomerId);
     }
     if (unresolvedSkus.size > 0) reasons.push("MISSING_PRODUCT_SKU");
@@ -739,6 +754,7 @@ async function buildPlans(options: {
     missingSkus,
     missingCustomers,
     inactiveSkus,
+    inactiveSkuItemProposals,
     rawProposalsCount: discoveryMetrics.totalDiscovered,
     totalItemsRead,
     pagesProcessed,
@@ -752,7 +768,8 @@ async function runDry(
   blocked: BlockedProposal[],
   ignored: IgnoredProposal[],
   rawProposalsCount: number,
-  totalItemsRead: number
+  totalItemsRead: number,
+  inactiveSkuItemProposals: InactiveSkuItemProposal[] = []
 ): Promise<DryRunResult> {
   const existing = await prisma.proposal.findMany({
     where: {
@@ -934,6 +951,8 @@ async function runDry(
     blockedPreview: blocked.slice(0, 50),
     ignoredPreview: ignored.slice(0, 50),
     ignoredInactiveSkuPreview,
+    inactiveSkuItemsImportedCount: inactiveSkuItemProposals.length,
+    inactiveSkuItemsImportedPreview: inactiveSkuItemProposals.slice(0, 30),
   };
 }
 
@@ -1099,6 +1118,7 @@ async function applyPlans(plans: ProposalPlan[]): Promise<{
               externalItemStatus: item.externalItemStatus,
               externalRawPayload: toInputJsonValue(item.externalRawPayload),
               productId: item.productId,
+              nomusProductInactive: item.nomusProductInactive,
               quantity: toPrismaDecimal(item.quantity),
               unit: item.unit,
               unitCost: toPrismaDecimal(item.unitCost),
@@ -1135,6 +1155,44 @@ async function applyPlans(plans: ProposalPlan[]): Promise<{
     preservedItemsDueToSalesOrderLinkCount,
     changedProposalIds,
   };
+}
+
+/**
+ * Registro das propostas do Nomus que não puderam ser importadas (cliente/produto não resolvido, clientes
+ * equivalentes em conflito). Proposta inexistente localmente é candidata em toda execução, então a pendência é
+ * reavaliada sozinha; quando a proposta é importada, a pendência recebe resolvedAt. Falha aqui não desfaz o sync.
+ */
+async function recordNomusProposalImportIssues(
+  blocked: BlockedProposal[],
+  plans: ProposalPlan[]
+): Promise<{ open: number; resolved: number; error: string | null }> {
+  try {
+    const now = new Date();
+    for (const row of blocked) {
+      const data = {
+        externalProposalCode: row.externalProposalCode,
+        externalCustomerId: row.missingCustomerExternalId,
+        reasons: [...row.reasons].sort(),
+        missingSkus: row.missingSkus,
+        lastSeenAt: now,
+        resolvedAt: null,
+      };
+      await prisma.nomusProposalImportIssue.upsert({
+        where: { externalProposalId: row.externalProposalId },
+        create: { externalProposalId: row.externalProposalId, ...data, firstSeenAt: now },
+        update: { ...data, occurrences: { increment: 1 } },
+      });
+    }
+    const resolved = await prisma.nomusProposalImportIssue.updateMany({
+      where: { externalProposalId: { in: plans.map((p) => p.externalProposalId) }, resolvedAt: null },
+      data: { resolvedAt: now },
+    });
+    return { open: blocked.length, resolved: resolved.count, error: null };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn(`${LOG_PREFIX} IMPORT_ISSUES_NOT_RECORDED (sync preservado): ${message}`);
+    return { open: blocked.length, resolved: 0, error: message };
+  }
 }
 
 async function main(): Promise<void> {
@@ -1204,6 +1262,7 @@ async function main(): Promise<void> {
       missingSkus,
       missingCustomers,
       inactiveSkus,
+      inactiveSkuItemProposals,
       rawProposalsCount,
       totalItemsRead,
       pagesProcessed,
@@ -1214,7 +1273,7 @@ async function main(): Promise<void> {
       startDate: window.startDate,
     });
 
-    const dry = await runDry(plans, blocked, ignored, rawProposalsCount, totalItemsRead);
+    const dry = await runDry(plans, blocked, ignored, rawProposalsCount, totalItemsRead, inactiveSkuItemProposals);
 
     if (missingSkus.has(KNOWN_MISSING_SKU)) {
       console.warn(`[sync-v1] SKU conhecido ainda sem cadastro local: ${KNOWN_MISSING_SKU}`);
@@ -1265,6 +1324,7 @@ async function main(): Promise<void> {
     }
 
     const result = await applyPlans(plans);
+    const importIssues = await recordNomusProposalImportIssues(blocked, plans);
 
     // Scoped Recálculo de Margem Comercial pós-sync:
     // Se 0 propostas foram criadas/atualizadas (tudo UNCHANGED), não recalcula.
@@ -1361,6 +1421,7 @@ async function main(): Promise<void> {
       missingSkus: [...missingSkus].sort(),
       missingCustomers: [...missingCustomers].sort((a, b) => a - b),
       ignoredInactiveSkus: [...inactiveSkus].sort(),
+      importIssues,
     };
 
     console.log(JSON.stringify(applyJson, null, 2));
