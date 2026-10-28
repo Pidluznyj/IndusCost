@@ -424,4 +424,83 @@ systemctl start "$SERVICE"
       assert.match(check(noCp).out, /FALTA G3: ids_open_for_app/, eol);
     }
   });
+
+  /** Cópia isolada de infra/deploy (instalador + biblioteca + executor) com um ambiente de ensaio completo. */
+  function installerSandbox(crlfLib: boolean) {
+    seq += 1;
+    const base = join(work, `inst-${seq}`);
+    const deploy = join(base, "deploy");
+    mkdirSync(deploy, { recursive: true });
+    for (const f of ["install-induscost-deploy.sh", "induscost-deploy-safety.sh", "induscost-deploy-executor.sh"]) {
+      const content = toLf(readFileSync(join(process.cwd(), "infra/deploy", f), "utf8"));
+      writeFileSync(join(deploy, f), crlfLib && f === "induscost-deploy-safety.sh" ? toCrlf(content) : content);
+    }
+    const exec = join(base, "bin", "deploy-induscost-ensaio");
+    mkdirSync(join(base, "bin"));
+    writeFileSync(exec, "#!/usr/bin/env bash\necho executor antigo\n");
+    const envFile = join(base, "ensaio.env");
+    writeFileSync(
+      envFile,
+      [
+        "IDS_ENV_NAME=ensaio",
+        `EXECUTOR_PATH=${toPosix(exec)}`,
+        "APP=/opt/induscost",
+        "SERVICE=induscost.service",
+        "DB=teste_bi",
+        "HEALTH=http://127.0.0.1:3000/api/health",
+        "BACKUP_ROOT=/var/backups/x",
+        `LOCK=${toPosix(join(base, "deploy.lock"))}`,
+        "GIT_REMOTE=origin",
+        "DEFAULT_TARGET=origin/main",
+        "EXPECTED_MODE=none",
+        "PRECUTOVER_EXPECTED=none",
+        "START_SERVICE_POLICY=if-was-active",
+        "APP_MARK_PATTERN=/opt/induscost",
+        "CRON_GLOB='induscost*'",
+        "UNIT_GLOB='induscost-*'",
+        `IDS_STATE_DIR=${toPosix(join(base, "state"))}`,
+        "",
+      ].join("\n")
+    );
+    const run = (args: string) => {
+      const r = spawnSync(BASH!, [toPosix(join(deploy, "install-induscost-deploy.sh")), "--env", "ensaio", ...args.split(" ")], {
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          IDS_INSTALL_ROOT: toPosix(join(base, "lib")),
+          IDS_INSTALL_ETC: toPosix(join(base, "etc")),
+          IDS_INSTALL_ALLOW_NONROOT: "1",
+          IDS_INSTALL_ENV_SOURCE: toPosix(envFile),
+        },
+      });
+      return { code: r.status, out: `${r.stdout}\n${r.stderr}` };
+    };
+    return { base, exec, run };
+  }
+
+  it("I3. instalador recusa biblioteca/executor com CRLF (cópia vinda do Windows) e nada é instalado", () => {
+    const s = installerSandbox(true);
+    for (const mode of ["--dry-run", "--apply"]) {
+      const r = s.run(mode);
+      assert.equal(r.code, 3, r.out);
+      assert.match(r.out, /RECUSADO: arquivo\(s\) com fim de linha CRLF/);
+      assert.match(r.out, /induscost-deploy-safety\.sh/);
+    }
+    assert.equal(readFileSync(s.exec, "utf8"), "#!/usr/bin/env bash\necho executor antigo\n", "executor anterior intocado");
+    assert.ok(!existsSync(join(s.base, "lib", "releases")));
+  });
+
+  it("I4. com LF o instalador instala e o --verify confere fim de linha; arquivo instalado convertido a CRLF reprova", () => {
+    const s = installerSandbox(false);
+    const r = s.run("--apply");
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /OK {4}fim de linha LF/);
+    const release = readFileSync(join(s.base, "lib", "ensaio.current"), "utf8").trim().replace(/^\/([a-z])\//, (_m, d: string) => `${d.toUpperCase()}:/`);
+    const lib = join(release, "induscost-deploy-safety.sh");
+    chmodSync(lib, 0o644);
+    writeFileSync(lib, toCrlf(readFileSync(lib, "utf8")));
+    const v = s.run("--verify");
+    assert.equal(v.code, 1, v.out);
+    assert.match(v.out, /FALHA .*induscost-deploy-safety\.sh com fim de linha CRLF/);
+  });
 });

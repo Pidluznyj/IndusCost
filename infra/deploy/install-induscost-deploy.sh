@@ -50,6 +50,8 @@ CURRENT="$ROOT/$ENV_NAME.current"
 FILES=(induscost-deploy-safety.sh induscost-deploy-executor.sh)
 
 say() { echo "[install] $*"; }
+# CR em qualquer linha. Por comparação de tamanho: o grep do Git Bash ignora o CR do fim da linha.
+has_cr() { [[ "$(tr -d '\r' < "$1" | wc -c)" != "$(wc -c < "$1")" ]]; }
 do_or_show() {
   if [[ "$MODE" == apply ]]; then "$@"; else say "(simulação) $*"; fi
 }
@@ -92,6 +94,11 @@ verify() {
     say "AVISO permissões de arquivo não conferidas fora do Linux"
   fi
   if bash -n "$release/induscost-deploy-executor.sh" && bash -n "$release/induscost-deploy-safety.sh"; then say "OK    sintaxe"; else ok=1; fi
+  local f crlf_installed=0
+  for f in "$release/induscost-deploy-executor.sh" "$release/induscost-deploy-safety.sh" "$DEST_ENV" "$EXECUTOR_PATH"; do
+    if [[ -f "$f" ]] && has_cr "$f"; then say "FALHA $f com fim de linha CRLF"; crlf_installed=1; fi
+  done
+  if [[ "$crlf_installed" == 0 ]]; then say "OK    fim de linha LF"; else ok=1; fi
   [[ "$ok" == 0 ]] && say "RESULTADO: instalação íntegra." || say "RESULTADO: instalação com problemas."
   return "$ok"
 }
@@ -130,6 +137,16 @@ if grep -qE '^[^#]*A_COLETAR' "$SRC_ENV"; then
   [[ "$MODE" == apply ]] && { say "instalação recusada"; exit 3; }
 fi
 [[ "$EXECUTOR_PATH" == /* ]] || { say "EXECUTOR_PATH inválido: '$EXECUTOR_PATH'"; exit 3; }
+# Fim de linha CRLF (cópia feita no Windows) quebra o bash no servidor e diverge do repositório: recusado.
+crlf=()
+for f in "${FILES[@]/#/$REPO_DEPLOY/}" "$SRC_ENV"; do
+  if has_cr "$f"; then crlf+=("$f"); fi
+done
+if (( ${#crlf[@]} > 0 )); then
+  say "RECUSADO: arquivo(s) com fim de linha CRLF (use um checkout git com .gitattributes, que entrega LF):"
+  printf '%s\n' "${crlf[@]}" | sed 's/^/[install]   /'
+  exit 3
+fi
 for f in "${FILES[@]}"; do bash -n "$REPO_DEPLOY/$f"; done
 if maintenance_or_lock_busy; then exit 3; fi
 if [[ -f "$DEST_ENV" ]] && ! cmp -s "$SRC_ENV" "$DEST_ENV" && [[ "$REPLACE_ENV" != 1 ]]; then
