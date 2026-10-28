@@ -54,12 +54,15 @@ describe("nomusCustomerBridgeResolution — Matriz P0 Customer Bridge", () => {
       },
       customer: {
         findMany: async (args: any) => {
-          assert.deepEqual(args.where.taxId.in, ["98765432000100"]);
+          // Comparação por dígitos em memória: a consulta não filtra pelo texto do taxId (que perderia a máscara).
+          assert.equal(args.where, undefined);
           return [
             {
               id: "cust-uuid-202",
               taxId: "98.765.432/0001-00", // Formatação com pontuação no banco
+              nomusExternalPersonId: null,
             },
+            { id: "cust-outro", taxId: "98.765.432/0001-99", nomusExternalPersonId: null },
           ];
         },
       },
@@ -127,12 +130,12 @@ describe("nomusCustomerBridgeResolution — Matriz P0 Customer Bridge", () => {
     const mockPrisma = {
       salesOrder: { findMany: async () => [] },
       customer: {
-        findMany: async (args: any) => {
+        findMany: async () => {
           customerQueryCount += 1;
-          const taxIds = args.where.taxId.in;
-          return taxIds.map((taxId: string, idx: number) => ({
+          return Array.from({ length: 20 }, (_, idx) => ({
             id: `cust-by-tax-${idx}`,
-            taxId,
+            taxId: `11223344000${idx + 200}`,
+            nomusExternalPersonId: null,
           }));
         },
       },
@@ -271,6 +274,105 @@ describe("nomusCustomerBridgeResolution — Matriz P0 Customer Bridge", () => {
     assert.equal(result.metrics.peopleBatchRequests, 0); // Não busca no Nomus para ID em conflito!
     assert.equal(result.bridge.get(555)?.customerId, null);
     assert.equal(result.bridge.get(555)?.conflict, true);
+  });
+
+  it("Vínculo proposta×pedido: dois clientes com o mesmo CNPJ (com e sem máscara) → conflito, nenhum escolhido", async () => {
+    const mockPrisma = {
+      salesOrder: { findMany: async () => [] },
+      customer: {
+        findMany: async () => [
+          { id: "cust-mask", taxId: "11.222.333/0001-81", nomusExternalPersonId: null },
+          { id: "cust-digits", taxId: "11222333000181", nomusExternalPersonId: null },
+        ],
+      },
+    };
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async () =>
+      new Response(JSON.stringify([{ id: 77, cnpj: "11222333000181" }]), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    try {
+      const result = await resolveNomusCustomerBridge(mockPrisma as any, "http://nomus.fake", [77]);
+      assert.equal(result.bridge.get(77)?.customerId, null);
+      assert.equal(result.bridge.get(77)?.conflict, true);
+      assert.deepEqual(result.bridge.get(77)?.candidateCustomerIds, ["cust-digits", "cust-mask"]);
+      assert.equal(result.metrics.conflicts, 1);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("Vínculo proposta×pedido: CPF mascarado no cadastro resolve pelo CPF do Nomus sem máscara", async () => {
+    const mockPrisma = {
+      salesOrder: { findMany: async () => [] },
+      customer: { findMany: async () => [{ id: "cust-pf", taxId: "123.456.789-09", nomusExternalPersonId: null }] },
+    };
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async () =>
+      new Response(JSON.stringify([{ id: 88, cnpj: null, cpf: "12345678909" }]), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    try {
+      const result = await resolveNomusCustomerBridge(mockPrisma as any, "http://nomus.fake", [88]);
+      assert.equal(result.bridge.get(88)?.customerId, "cust-pf");
+      assert.equal(result.bridge.get(88)?.via, "DOCUMENT_DIGITS");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("Vínculo proposta×pedido: nomusExternalPersonId resolve sem chamar o Nomus e desempata conflito do histórico", async () => {
+    let httpCalls = 0;
+    const mockPrisma = {
+      salesOrder: {
+        findMany: async () => [
+          { externalCustomerId: 555, Customer: { id: "cust-A", taxId: "11111111000111" } },
+          { externalCustomerId: 555, Customer: { id: "cust-B", taxId: "22222222000222" } },
+        ],
+      },
+      customer: {
+        findMany: async () => [
+          { id: "cust-B", taxId: "22222222000222", nomusExternalPersonId: 555 },
+          { id: "cust-P", taxId: "33333333000133", nomusExternalPersonId: 600 },
+        ],
+      },
+    };
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async () => {
+      httpCalls += 1;
+      return new Response("[]", { status: 200 });
+    };
+    try {
+      const result = await resolveNomusCustomerBridge(mockPrisma as any, "http://nomus.fake", [555, 600]);
+      assert.equal(result.bridge.get(555)?.customerId, "cust-B");
+      assert.equal(result.bridge.get(555)?.via, "NOMUS_PERSON_ID");
+      assert.equal(result.bridge.get(600)?.customerId, "cust-P");
+      assert.equal(httpCalls, 0);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("Vínculo proposta×pedido: cliente não encontrado não fica em cache (resolve depois do cadastro)", async () => {
+    const customers: Array<{ id: string; taxId: string; nomusExternalPersonId: number | null }> = [];
+    const mockPrisma = { salesOrder: { findMany: async () => [] }, customer: { findMany: async () => customers } };
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async () =>
+      new Response(JSON.stringify([{ id: 99, cnpj: "44555666000177" }]), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    try {
+      const first = await resolveNomusCustomerBridge(mockPrisma as any, "http://nomus.fake", [99]);
+      assert.equal(first.bridge.get(99)?.customerId, null);
+      customers.push({ id: "cust-novo", taxId: "44.555.666/0001-77", nomusExternalPersonId: null });
+      const second = await resolveNomusCustomerBridge(mockPrisma as any, "http://nomus.fake", [99]);
+      assert.equal(second.bridge.get(99)?.customerId, "cust-novo");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 
   it("P0-22 (PROTEÇÃO DE REGRESSÃO): Garante estritamente que Customer.sourceExternalId NÃO é acessado em propostas", () => {

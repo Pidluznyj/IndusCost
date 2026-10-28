@@ -1,11 +1,22 @@
 import type { PrismaClient } from "@prisma/client";
 import { normalizeTaxId } from "../../scripts/nomusNumberParser.js";
 import { buildNomusUrl, fetchNomusJson, resolveNomusHttpTimeoutMs } from "./nomusRestClient.js";
+import {
+  buildCustomerIdentityIndexes,
+  decideCustomerIdentity,
+  documentDigits,
+  type CustomerIdentityIndexes,
+  type CustomerIdentityVia,
+} from "./nomus/customerIdentityByDocument.js";
 
 export type CustomerBridgeEntry = {
   taxId: string | null;
   customerId: string | null;
   conflict?: boolean;
+  /** Evidência que resolveu (ou que gerou o conflito). */
+  via?: CustomerIdentityVia;
+  /** Clientes equivalentes quando há conflito (nenhum é escolhido). */
+  candidateCustomerIds?: string[];
 };
 
 export type CustomerResolutionMetrics = {
@@ -24,6 +35,8 @@ export type CustomerBridgeResult = {
   metrics: CustomerResolutionMetrics;
 };
 
+// Só entradas RESOLVIDAS ficam em cache: pendência (cliente não cadastrado) ou conflito (duplicidade) precisam ser
+// reavaliados na próxima execução, depois que o cadastro for corrigido.
 const customerBridgeMemoryCache = new Map<number, CustomerBridgeEntry>();
 
 export function clearCustomerBridgeMemoryCacheForTests(): void {
@@ -31,25 +44,27 @@ export function clearCustomerBridgeMemoryCacheForTests(): void {
 }
 
 /**
- * Resolução canônica de Customer Bridge (Nomus externalCustomerId -> IndusCost Customer.id).
- * 
- * ARQUITETURA DE IDENTIDADE:
- * 1. ETAPA 1 (LOCAL / BATCH): Consulta SalesOrder existente por externalCustomerId em lote.
- *    - Se o cliente já possui Pedidos de Venda no IndusCost com o mesmo Customer.id -> resolve localmente (0 HTTP).
- *    - Se o mesmo externalCustomerId estiver associado a múltiplos Customer.id diferentes -> CONFLITO (não escolhe arbitrariamente, marca como unresolved).
- * 2. ETAPA 2 (NOMUS API / BATCH + FALLBACK): Para externalCustomerIds não resolvidos via SalesOrder e sem conflito,
- *    consulta a API Nomus /pessoas em lotes de 50 (query=id=in(...)) para obter CNPJ/CPF.
- *    Em caso de falha do batch, executa fallback seguro por id individual sem abortar o sync.
- * 3. ETAPA 3 (LOCAL / BATCH): Consulta a tabela Customer por taxId (CNPJ/CPF normalizado) em lote.
- * 
- * NUNCA consulta colunas inexistentes no model Customer.
- * NUNCA executa N+1 queries SQL.
+ * Resolução canônica de Customer Bridge (Nomus externalCustomerId -> IndusCost Customer.id), usada pelos syncs de
+ * propostas e de pedidos. Regra de identidade única: src/lib/nomus/customerIdentityByDocument.ts.
+ *
+ * 1. SalesOrder existente por externalCustomerId (em lote): um Customer → resolve; mais de um → conflito.
+ * 2. Customer.nomusExternalPersonId (id estável da pessoa no Nomus): resolve, ou desempata um conflito da etapa 1.
+ * 3. Pessoa no Nomus /pessoas em lotes de 50 (fallback individual) → CPF/CNPJ comparado por DÍGITOS com todos os
+ *    clientes (com ou sem máscara). Mais de um cliente com o mesmo documento → conflito, sem escolher.
+ *
+ * Clientes são carregados numa única consulta (id, taxId, nomusExternalPersonId) só quando a etapa 1 não resolve
+ * tudo; o chamador pode passar `identityIndexes` já montados. Nunca cria cliente. Sem N+1.
  */
 export async function resolveNomusCustomerBridge(
   prisma: PrismaClient,
   baseUrl: string,
   externalCustomerIds: number[],
-  options?: { logPrefix?: string; maxRetries?: number; retryBaseMs?: number }
+  options?: {
+    logPrefix?: string;
+    maxRetries?: number;
+    retryBaseMs?: number;
+    identityIndexes?: CustomerIdentityIndexes;
+  }
 ): Promise<CustomerBridgeResult> {
   const uniqueIds = [...new Set(externalCustomerIds)].filter((id) => id > 0);
   const bridge = new Map<number, CustomerBridgeEntry>();
@@ -57,90 +72,61 @@ export async function resolveNomusCustomerBridge(
   let resolvedFromSalesOrders = 0;
   let peopleBatchRequests = 0;
   let peopleFallbackRequests = 0;
-  let conflicts = 0;
 
-  if (uniqueIds.length === 0) {
+  const finalMetrics = (unresolvedAfterSalesOrders: number): CustomerResolutionMetrics => {
+    let resolved = 0;
+    let unresolvedFinal = 0;
+    let conflicts = 0;
+    for (const id of uniqueIds) {
+      const entry = bridge.get(id);
+      if (entry?.customerId) resolved += 1;
+      else unresolvedFinal += 1;
+      if (entry?.conflict) conflicts += 1;
+    }
     return {
-      bridge,
-      metrics: {
-        requestedExternalCustomerIds: 0,
-        resolvedFromSalesOrders: 0,
-        unresolvedAfterSalesOrders: 0,
-        peopleBatchRequests: 0,
-        peopleFallbackRequests: 0,
-        resolvedByTaxId: 0,
-        conflicts: 0,
-        unresolvedFinal: 0,
-      },
+      requestedExternalCustomerIds: uniqueIds.length,
+      resolvedFromSalesOrders,
+      unresolvedAfterSalesOrders,
+      peopleBatchRequests,
+      peopleFallbackRequests,
+      resolvedByTaxId: resolved,
+      conflicts,
+      unresolvedFinal,
     };
-  }
+  };
 
-  // 1. Tenta recuperar do cache em memória primeiro
+  if (uniqueIds.length === 0) return { bridge, metrics: finalMetrics(0) };
+
   const missingFromMemory: number[] = [];
   for (const id of uniqueIds) {
-    if (customerBridgeMemoryCache.has(id)) {
-      const entry = customerBridgeMemoryCache.get(id)!;
-      bridge.set(id, entry);
-      if (entry.customerId) resolvedFromSalesOrders += 1;
-      if (entry.conflict) conflicts += 1;
+    const cached = customerBridgeMemoryCache.get(id);
+    if (cached?.customerId) {
+      bridge.set(id, cached);
+      resolvedFromSalesOrders += 1;
     } else {
       missingFromMemory.push(id);
     }
   }
 
+  // ETAPA 1 — histórico de pedidos (1 query em lote).
+  const historyByExtId = new Map<number, Map<string, string | null>>();
   if (missingFromMemory.length > 0) {
-    // ETAPA 1 — CACHE LOCAL VIA SALES ORDER EM LOTE (1 Query SQL)
     const salesOrderCustomers = await prisma.salesOrder.findMany({
-      where: {
-        sourceSystem: "NOMUS",
-        externalCustomerId: { in: missingFromMemory },
-      },
-      select: {
-        externalCustomerId: true,
-        Customer: {
-          select: {
-            id: true,
-            taxId: true,
-          },
-        },
-      },
+      where: { sourceSystem: "NOMUS", externalCustomerId: { in: missingFromMemory } },
+      select: { externalCustomerId: true, Customer: { select: { id: true, taxId: true } } },
     });
-
-    // Detecta se o mesmo externalCustomerId aponta para mais de um Customer.id local
-    const customersByExtId = new Map<number, Set<{ id: string; taxId: string | null }>>();
     for (const row of salesOrderCustomers) {
       const extId = row.externalCustomerId;
       if (extId == null || !row.Customer?.id) continue;
-      if (!customersByExtId.has(extId)) {
-        customersByExtId.set(extId, new Set());
-      }
-      customersByExtId.get(extId)!.add({ id: row.Customer.id, taxId: row.Customer.taxId });
+      const customers = historyByExtId.get(extId) ?? new Map<string, string | null>();
+      customers.set(row.Customer.id, row.Customer.taxId);
+      historyByExtId.set(extId, customers);
     }
-
     for (const extId of missingFromMemory) {
-      const customerSet = customersByExtId.get(extId);
-      if (!customerSet || customerSet.size === 0) continue;
-
-      const customerArray = [...customerSet];
-      // Verifica se todos apontam para o mesmo Customer.id
-      const uniqueCustomerIds = new Set(customerArray.map((c) => c.id));
-
-      if (uniqueCustomerIds.size > 1) {
-        // CONFLITO DE IDENTIDADE! Múltiplos Customers para o mesmo externalCustomerId
-        const entry: CustomerBridgeEntry = {
-          taxId: null,
-          customerId: null,
-          conflict: true,
-        };
-        bridge.set(extId, entry);
-        customerBridgeMemoryCache.set(extId, entry);
-        conflicts += 1;
-      } else {
-        const singleCustomer = customerArray[0]!;
-        const entry: CustomerBridgeEntry = {
-          customerId: singleCustomer.id,
-          taxId: normalizeTaxId(singleCustomer.taxId),
-        };
+      const customers = historyByExtId.get(extId);
+      if (customers?.size === 1) {
+        const [customerId, taxId] = [...customers.entries()][0]!;
+        const entry: CustomerBridgeEntry = { customerId, taxId: normalizeTaxId(taxId), via: "SALES_ORDER_HISTORY" };
         bridge.set(extId, entry);
         customerBridgeMemoryCache.set(extId, entry);
         resolvedFromSalesOrders += 1;
@@ -148,45 +134,61 @@ export async function resolveNomusCustomerBridge(
     }
   }
 
-  const missingIdsFromNomus = uniqueIds.filter(
-    (id) => !bridge.has(id) || (!bridge.get(id)?.customerId && !bridge.get(id)?.conflict)
-  );
-  const unresolvedAfterSalesOrders = missingIdsFromNomus.length;
+  const pending = uniqueIds.filter((id) => !bridge.has(id));
+  const unresolvedAfterSalesOrders = pending.filter((id) => (historyByExtId.get(id)?.size ?? 0) === 0).length;
+  if (pending.length === 0) return { bridge, metrics: finalMetrics(0) };
 
-  // Se todos os clientes foram resolvidos via SalesOrders / cache ou são conflitos, encerra sem chamadas HTTP!
-  if (missingIdsFromNomus.length === 0) {
-    let resolvedByTaxIdCount = 0;
-    let unresolvedFinalCount = 0;
-    for (const id of uniqueIds) {
-      const entry = bridge.get(id);
-      if (entry?.customerId) resolvedByTaxIdCount += 1;
-      else unresolvedFinalCount += 1;
+  let indexes = options?.identityIndexes ?? null;
+  const loadIndexes = async (): Promise<CustomerIdentityIndexes> => {
+    if (!indexes) {
+      const rows = await prisma.customer.findMany({ select: { id: true, taxId: true, nomusExternalPersonId: true } });
+      indexes = buildCustomerIdentityIndexes(rows);
     }
-    return {
-      bridge,
-      metrics: {
-        requestedExternalCustomerIds: uniqueIds.length,
-        resolvedFromSalesOrders,
-        unresolvedAfterSalesOrders: 0,
-        peopleBatchRequests: 0,
-        peopleFallbackRequests: 0,
-        resolvedByTaxId: resolvedByTaxIdCount,
-        conflicts,
-        unresolvedFinal: unresolvedFinalCount,
-      },
-    };
-  }
+    return indexes;
+  };
 
-  // ETAPA 2 — RESOLVER PESSOAS NO NOMUS EM LOTE (para IDs não resolvidos e sem conflito)
+  // ETAPA 2 — id estável da pessoa no Nomus (resolve ou desempata conflito do histórico).
+  const needsNomusPerson: number[] = [];
+  {
+    const idx = await loadIndexes();
+    for (const extId of pending) {
+      const history = historyByExtId.get(extId);
+      const decision = decideCustomerIdentity({
+        salesOrderHistoryCustomerIds: history ? [...history.keys()] : [],
+        personIdCustomerIds: idx.byPersonId.get(extId) ?? [],
+      });
+      if (decision.status === "RESOLVED") {
+        const entry: CustomerBridgeEntry = { customerId: decision.customerId, taxId: null, via: decision.via };
+        bridge.set(extId, entry);
+        customerBridgeMemoryCache.set(extId, entry);
+      } else if (decision.status === "CONFLICT") {
+        // Conflito não consulta o Nomus: o documento não desempata clientes já divergentes no histórico.
+        bridge.set(extId, {
+          customerId: null,
+          taxId: null,
+          conflict: true,
+          via: decision.via,
+          candidateCustomerIds: decision.candidateCustomerIds,
+        });
+      } else {
+        needsNomusPerson.push(extId);
+      }
+    }
+  }
+  if (needsNomusPerson.length === 0) return { bridge, metrics: finalMetrics(unresolvedAfterSalesOrders) };
+
+  // ETAPA 3 — pessoa no Nomus (lote de 50, fallback individual) → documento por dígitos.
   const pessoaTaxIdByNomusId = new Map<number, string | null>();
   const BATCH_SIZE = 50;
   const maxRetries = options?.maxRetries ?? 6;
   const retryBaseMs = options?.retryBaseMs ?? 700;
   const timeoutMs = resolveNomusHttpTimeoutMs();
   const logPrefix = options?.logPrefix ?? "[nomus-customer-bridge]";
+  const pessoaDocument = (pObj: Record<string, unknown> | null | undefined): string | null =>
+    normalizeTaxId((pObj?.cnpj as string) ?? (pObj?.cpf as string));
 
-  for (let i = 0; i < missingIdsFromNomus.length; i += BATCH_SIZE) {
-    const batch = missingIdsFromNomus.slice(i, i + BATCH_SIZE);
+  for (let i = 0; i < needsNomusPerson.length; i += BATCH_SIZE) {
+    const batch = needsNomusPerson.slice(i, i + BATCH_SIZE);
     peopleBatchRequests += 1;
 
     try {
@@ -194,51 +196,33 @@ export async function resolveNomusCustomerBridge(
       if (batch.length === 1) url.searchParams.set("query", `id==${batch[0]}`);
       else url.searchParams.set("query", `id=in=(${batch.join(",")})`);
 
-      const payload = await fetchNomusJson(url, {
-        maxRetries,
-        retryBaseMs,
-        timeoutMs,
-        logPrefix,
-      });
-
+      const payload = await fetchNomusJson(url, { maxRetries, retryBaseMs, timeoutMs, logPrefix });
       const arr = Array.isArray(payload)
         ? payload
         : (payload as Record<string, unknown>)?.pessoas ??
           (payload as Record<string, unknown>)?.data ??
           (payload as Record<string, unknown>)?.items ??
           [];
-      const pessoaList = Array.isArray(arr) ? arr : [];
-
-      for (const p of pessoaList) {
+      for (const p of Array.isArray(arr) ? arr : []) {
         if (!p || typeof p !== "object") continue;
         const pObj = p as Record<string, unknown>;
         const pId = Number(pObj.id);
-        if (Number.isFinite(pId)) {
-          const taxId = normalizeTaxId((pObj.cnpj as string) ?? (pObj.cpf as string));
-          pessoaTaxIdByNomusId.set(pId, taxId);
-        }
+        if (Number.isFinite(pId)) pessoaTaxIdByNomusId.set(pId, pessoaDocument(pObj));
       }
     } catch {
-      // Fallback seguro em caso de falha do batch com query=id=in(...)
       for (const idCliente of batch) {
         try {
           peopleFallbackRequests += 1;
           const singleUrl = buildNomusUrl(baseUrl, "pessoas");
           singleUrl.searchParams.set("query", `id==${idCliente}`);
-          const singlePayload = await fetchNomusJson(singleUrl, {
-            maxRetries,
-            retryBaseMs,
-            timeoutMs,
-            logPrefix,
-          });
+          const singlePayload = await fetchNomusJson(singleUrl, { maxRetries, retryBaseMs, timeoutMs, logPrefix });
           const arr = Array.isArray(singlePayload)
             ? singlePayload
             : (singlePayload as Record<string, unknown>)?.pessoas ?? [];
           const pObj = (Array.isArray(arr) && arr[0] && typeof arr[0] === "object"
             ? arr[0]
             : singlePayload) as Record<string, unknown>;
-          const taxId = normalizeTaxId((pObj?.cnpj as string) ?? (pObj?.cpf as string));
-          pessoaTaxIdByNomusId.set(idCliente, taxId);
+          pessoaTaxIdByNomusId.set(idCliente, pessoaDocument(pObj));
         } catch {
           pessoaTaxIdByNomusId.set(idCliente, null);
         }
@@ -246,50 +230,27 @@ export async function resolveNomusCustomerBridge(
     }
   }
 
-  // ETAPA 3 — CUSTOMER LOCAL POR TAXID (1 Query SQL em lote)
-  const fetchedTaxIds = [
-    ...new Set([...pessoaTaxIdByNomusId.values()].filter((t): t is string => t != null)),
-  ];
-
-  const localCustomersByTax =
-    fetchedTaxIds.length === 0
-      ? []
-      : await prisma.customer.findMany({
-          where: { taxId: { in: fetchedTaxIds } },
-          select: { id: true, taxId: true },
-        });
-
-  const localByTaxIdMap = new Map<string, string>();
-  for (const c of localCustomersByTax) {
-    const norm = normalizeTaxId(c.taxId);
-    if (norm) localByTaxIdMap.set(norm, c.id);
-  }
-
-  let resolvedByTaxIdCount = 0;
-  let unresolvedFinalCount = 0;
-
-  for (const idCliente of missingIdsFromNomus) {
+  const idx = await loadIndexes();
+  for (const idCliente of needsNomusPerson) {
     const taxId = pessoaTaxIdByNomusId.get(idCliente) ?? null;
-    const customerId = taxId ? (localByTaxIdMap.get(taxId) ?? null) : null;
-    const entry: CustomerBridgeEntry = { taxId, customerId };
-    bridge.set(idCliente, entry);
-    customerBridgeMemoryCache.set(idCliente, entry);
-
-    if (customerId) resolvedByTaxIdCount += 1;
-    else unresolvedFinalCount += 1;
+    const digits = documentDigits(taxId);
+    const decision = decideCustomerIdentity({ documentCustomerIds: digits ? (idx.byDocument.get(digits) ?? []) : [] });
+    if (decision.status === "RESOLVED") {
+      const entry: CustomerBridgeEntry = { taxId, customerId: decision.customerId, via: decision.via };
+      bridge.set(idCliente, entry);
+      customerBridgeMemoryCache.set(idCliente, entry);
+    } else if (decision.status === "CONFLICT") {
+      bridge.set(idCliente, {
+        taxId,
+        customerId: null,
+        conflict: true,
+        via: decision.via,
+        candidateCustomerIds: decision.candidateCustomerIds,
+      });
+    } else {
+      bridge.set(idCliente, { taxId, customerId: null });
+    }
   }
 
-  return {
-    bridge,
-    metrics: {
-      requestedExternalCustomerIds: uniqueIds.length,
-      resolvedFromSalesOrders,
-      unresolvedAfterSalesOrders,
-      peopleBatchRequests,
-      peopleFallbackRequests,
-      resolvedByTaxId: resolvedByTaxIdCount,
-      conflicts,
-      unresolvedFinal: unresolvedFinalCount,
-    },
-  };
+  return { bridge, metrics: finalMetrics(unresolvedAfterSalesOrders) };
 }
