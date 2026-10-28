@@ -40,6 +40,10 @@ As camadas 1, 2 e 7 já protegem com o executor atual. As camadas 3 a 6 exigem i
   códigos) sem mudar o schema não é detectada; só `DELETE`/`TRUNCATE` em migration são tratados como incompatíveis.
 - Objetos grandes (`pg_largeobject`): só a quantidade entra na prova, não o conteúdo. O IndusCost não os usa.
 - systemd, cron e o health são simulados nas suítes locais (Windows). O ensaio no servidor
-  (`scripts/ops/rehearseDeploySafety.sh`) e a validação em homologação cobrem `runuser`, as permissões reais e os
-  binários do servidor.
+  (`scripts/ops/rehearseDeploySafety.sh --env-file <ambiente instalado>`) e a validação em homologação cobrem
+  `runuser`, as permissões reais e os binários do servidor.
+- Hosts com mais de um cluster PostgreSQL (servidor-01: 12 em 5432 e 17 em 5433): biblioteca v4 só fala com o cluster
+  configurado (socket, porta, papel, binários) e confere versão/porta/socket/superusuário antes de qualquer ação (50);
+  os globs da janela precisam casar só o que executa na instalação, e unidades protegidas nunca (52). Ver
+  `infra/deploy/APLICAR.md` (G7/G8).
 - Collation ICU: restauração automática recusada (33) sem tocar no banco.

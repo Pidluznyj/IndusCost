@@ -43,6 +43,7 @@ case "$1" in
   reset-failed) : ;;
   list-units) t=""; for a in "$@"; do [[ "$a" == --type=* ]] && t="\${a#--type=}"; done
     for f in "$S"/induscost-*."$t"; do [[ -f "$f" ]] && echo "$(basename "$f") loaded $(cat "$f") waiting x"; done ;;
+  show) u="\${@: -1}"; if [[ -f "$S/$u.show" ]]; then cat "$S/$u.show"; else echo "WorkingDirectory=$STUB_APP_DIR"; fi ;;
 esac
 exit 0
 `,
@@ -105,7 +106,7 @@ describe("executor de deploy instalado — ensaio com git, Prisma e PostgreSQL 1
   const GIT_ENV = { GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t" };
 
   /** Servidor de mentira completo: origin, checkout, banco migrado em C0, serviço/timers/cron, executor instalado. */
-  async function server(c1: Record<string, string | null>) {
+  async function server(c1: Record<string, string | null>, envExtra: Record<string, string> = {}) {
     n += 1;
     const w = join(root, `s${n}`);
     const dev = join(w, "dev");
@@ -160,46 +161,56 @@ describe("executor de deploy instalado — ensaio com git, Prisma e PostgreSQL 1
     mkdirSync(dirname(executorPath));
     writeFileSync(executorPath, "#!/usr/bin/env bash\necho executor antigo\n");
     const envFile = join(w, "teste.env");
-    writeFileSync(
-      envFile,
-      [
-        `IDS_ENV_NAME=teste`,
-        `EXECUTOR_PATH=${posix(executorPath)}`,
-        `APP=${posix(app)}`,
-        `SERVICE=induscost.service`,
-        `DB=${dbName}`,
-        `HEALTH=http://127.0.0.1:9/api/health`,
-        `BACKUP_ROOT=${posix(join(w, "backups", "deploys"))}`,
-        `LOCK=${posix(join(w, "deploy.lock"))}`,
-        `GIT_REMOTE=origin`,
-        `DEFAULT_TARGET=origin/main`,
-        `MODE_FILE=${posix(join(w, "deploy-mode"))}`,
-        `EXPECTED_MODE=production`,
-        `PRECUTOVER_DROPIN=${posix(join(w, "10-precutover-isolation.conf"))}`,
-        `PRECUTOVER_EXPECTED=absent`,
-        `START_SERVICE_POLICY=if-was-active`,
-        `APP_MARK_PATTERN=${posix(app)}`,
-        `CRON_GLOB='induscost*'`,
-        `UNIT_GLOB='induscost-*'`,
-        `HEALTH_TRIES=2`,
-        `HEALTH_INTERVAL=0`,
-        `IDS_PG=""`,
-        `IDS_PG_USER=""`,
-        `IDS_STATE_DIR=${posix(join(w, "state"))}`,
-        `IDS_MAINT_FLAG=${posix(join(w, "maintenance.flag"))}`,
-        `IDS_CRON_DIR=${posix(cron)}`,
-        `IDS_CRON_SCAN_FILES=""`,
-        `IDS_CRON_SPOOL_DIRS=""`,
-        `IDS_CRON_RELOAD_WAIT=0`,
-        `IDS_STATS_SETTLE_SECONDS=1`,
-        `IDS_SYSTEMCTL=${posix(join(stubs, "systemctl"))}`,
-        `IDS_CURL=${posix(join(stubs, "curl"))}`,
-        `IDS_TEST_RUNNER=${posix(join(stubs, "fake-test-runner"))}`,
-        `IDS_TEST_RUNNER_ARGS=""`,
-        "",
-      ].join("\n")
-    );
     const u = new URL(db.url);
+    const envValues: Record<string, string> = {
+      IDS_ENV_NAME: "teste",
+      EXECUTOR_PATH: posix(executorPath),
+      EXECUTOR_EXPECTED_SHA256: "",
+      LEGACY_WRAPPER_PATH: "none",
+      APP: posix(app),
+      SERVICE: "induscost.service",
+      DB: dbName,
+      HEALTH: "http://127.0.0.1:9/api/health",
+      BACKUP_ROOT: posix(join(w, "backups", "deploys")),
+      LOCK: posix(join(w, "deploy.lock")),
+      GIT_REMOTE: "origin",
+      DEFAULT_TARGET: "origin/main",
+      IDS_PG_OS_USER: "none",
+      IDS_PG_BIN: "PATH",
+      IDS_PG_HOST: u.hostname,
+      IDS_PG_PORT: u.port,
+      IDS_PG_ADMIN_ROLE: decodeURIComponent(u.username),
+      IDS_PG_EXPECT_MAJOR: "17",
+      PROTECTED_DATABASES: "''",
+      MODE_FILE: posix(join(w, "deploy-mode")),
+      EXPECTED_MODE: "production",
+      PRECUTOVER_DROPIN: posix(join(w, "10-precutover-isolation.conf")),
+      PRECUTOVER_EXPECTED: "absent",
+      START_SERVICE_POLICY: "if-was-active",
+      APP_MARK_PATTERN: posix(app),
+      CRON_GLOB: "'induscost*'",
+      UNIT_GLOB: "'induscost-*'",
+      PROTECTED_UNITS: "''",
+      HOOKS_PRE_DEPLOY: "none",
+      HOOKS_POST_START: "none",
+      HOOKS_POST_ROLLBACK: "none",
+      HEALTH_TRIES: "2",
+      HEALTH_INTERVAL: "0",
+      IDS_PIDFILE: posix(join(w, "deploy.pid")),
+      IDS_STATE_DIR: posix(join(w, "state")),
+      IDS_MAINT_FLAG: posix(join(w, "maintenance.flag")),
+      IDS_CRON_DIR: posix(cron),
+      IDS_CRON_SCAN_FILES: '""',
+      IDS_CRON_SPOOL_DIRS: '""',
+      IDS_CRON_RELOAD_WAIT: "0",
+      IDS_STATS_SETTLE_SECONDS: "1",
+      IDS_SYSTEMCTL: posix(join(stubs, "systemctl")),
+      IDS_CURL: posix(join(stubs, "curl")),
+      IDS_TEST_RUNNER: posix(join(stubs, "fake-test-runner")),
+      IDS_TEST_RUNNER_ARGS: '""',
+      ...envExtra,
+    };
+    writeFileSync(envFile, `${Object.entries(envValues).map(([k, v]) => `${k}=${v}`).join("\n")}\n`);
     const env = {
       ...GIT_ENV,
       PATH: `${posix(stubs)}:${posix(pg17Bin!)}:${process.env.PATH}`,
@@ -242,8 +253,29 @@ describe("executor de deploy instalado — ensaio com git, Prisma e PostgreSQL 1
       const d = readdirSync(base).sort().pop()!;
       return join(base, d);
     };
-    const calls = () => readFileSync(join(sysd, "calls"), "utf8");
-    return { w, app, cron, executorPath, run, install, state, head, q, columns, lockOn, dbs, backupDir, calls, c0, c1: c1sha, dbName, env };
+    // Sem o arquivo = nenhuma chamada ao systemctl (o executor recusou antes de tocar em qualquer serviço).
+    const calls = () => (existsSync(join(sysd, "calls")) ? readFileSync(join(sysd, "calls"), "utf8") : "");
+    /** Executor em segundo plano, saída num arquivo; resolve com o código de saída. */
+    const runAsync = (args: string) => {
+      const log = join(w, "executor.log");
+      const child = spawn(BASH!, ["-c", `"${posix(executorPath)}" ${args} > "${posix(log)}" 2>&1`], { cwd: w, env: { ...process.env, ...env }, stdio: "ignore" });
+      const done = new Promise<number | null>((res) => child.on("exit", (code) => res(code)));
+      return { child, done, log: () => readFileSync(log, "utf8") };
+    };
+    const waitFor = async (file: string, tries = 1200) => {
+      for (let i = 0; i < tries && !existsSync(file); i++) await new Promise((res) => setTimeout(res, 100));
+      return existsSync(file);
+    };
+    return { w, app, sysd, cron, executorPath, envFile, run, runAsync, waitFor, install, state, head, q, columns, lockOn, dbs, backupDir, calls, c0, c1: c1sha, dbName, env };
+  }
+
+  /** Hook executável num diretório próprio; registra fase e variáveis de contexto. */
+  function hook(dir: string, name: string, exitCode: number) {
+    mkdirSync(dir, { recursive: true });
+    const f = join(dir, name);
+    writeFileSync(f, `#!/usr/bin/env bash\necho "fase=$IDS_DEPLOY_PHASE alvo=$IDS_TARGET anterior=$IDS_OLD_COMMIT backup=$IDS_BACKUP_DIR" >> "$(dirname "$0")/${name}.log"\nexit ${exitCode}\n`);
+    chmodSync(f, 0o755);
+    return { path: posix(f), log: () => (existsSync(`${f}.log`) ? readFileSync(`${f}.log`, "utf8") : "") };
   }
 
   /** Agendamentos voltaram exatamente ao estado anterior: só o timer ativo foi religado; inativo/falho intocados. */
@@ -352,15 +384,146 @@ describe("executor de deploy instalado — ensaio com git, Prisma e PostgreSQL 1
     assertSchedulersRestored(s);
   });
 
-  it("E7. --check não altera nada", async () => {
+  it("E7. --check não altera nada (cluster, disco e escopo conferidos; hooks listados, não executados)", async () => {
     const s = await server({ "prisma/migrations/20261101120000_color/migration.sql": `ALTER TABLE "Item" ADD COLUMN "color" TEXT;\n` });
     const r = s.run("--check");
     assert.equal(r.code, 0, r.out);
     assert.match(r.out, /Migrations novas: 1 20261101120000_color/);
+    assert.match(r.out, /cluster conferido: PostgreSQL 17, porta \d+/);
+    assert.match(r.out, /escopo da janela conferido/);
+    assert.match(r.out, /Hooks prévios:/);
     assert.equal(s.head(), s.c0);
     assert.deepEqual(await s.columns(), ["id", "legacy", "name"]);
     assert.ok(!existsSync(join(s.w, "backups")));
     assert.equal(s.state("induscost-legal-djen.timer"), "active");
+  });
+
+  it("E8. --stop durante os testes: SIGTERM só à árvore do executor; rollback controlado (código anterior, serviço de volta, janela encerrada); saída 143", async () => {
+    const s = await server({ "src/a.test.ts": "HANG\n" });
+    const bg = s.runAsync("");
+    assert.ok(await s.waitFor(join(s.sysd, "executor-chain")), "executor chegou aos testes");
+    assert.ok(existsSync(join(s.w, "deploy.pid")), "pidfile gravado");
+    const stop = s.run("--stop");
+    assert.equal(stop.code, 0, stop.out);
+    assert.match(stop.out, /SIGTERM enviado ao executor/);
+    const code = await Promise.race([bg.done, new Promise<number | null>((res) => setTimeout(() => res(-1), 120_000))]);
+    assert.equal(code, 143, bg.log());
+    assert.match(bg.log(), /SIGTERM recebido/);
+    assert.match(bg.log(), /interrompido por SIGTERM/);
+    assert.match(bg.log(), /ROLLBACK AUTOMÁTICO CONCLUÍDO/);
+    assert.equal(s.head(), s.c0);
+    assert.equal(s.state("induscost.service"), "active");
+    assert.equal(await s.lockOn(), 0);
+    assert.ok(!existsSync(join(s.w, "deploy.pid")), "pidfile removido");
+    assertSchedulersRestored(s);
+    assert.equal(s.run("--stop").code, 1, "sem executor em andamento");
+  });
+
+  it("E9. --abort-hard (queda simulada: SIGKILL na árvore) deixa a janela; próximo deploy recusa (46); --recover --rollback conclui pelo rollback normal", async () => {
+    const s = await server({ "prisma/migrations/20261101120000_color/migration.sql": `ALTER TABLE "Item" ADD COLUMN "color" TEXT;\n`, "src/a.test.ts": "HANG\n" });
+    const bg = s.runAsync("");
+    assert.ok(await s.waitFor(join(s.sysd, "executor-chain")), "executor chegou aos testes");
+    const abort = s.run("--abort-hard");
+    assert.equal(abort.code, 0, abort.out);
+    assert.match(abort.out, /simulação de queda/);
+    await Promise.race([bg.done, new Promise((res) => setTimeout(res, 15_000))]);
+    assert.equal(await s.lockOn(), 1, "queda deixou a trava ligada");
+    assert.ok(existsSync(join(s.w, "state", "maintenance.state")));
+    assert.match(readFileSync(join(s.w, "state", "maintenance.state"), "utf8"), /^deploy .*backups/m, "janela registra o backup do deploy");
+    assert.equal(s.head(), s.c1, "código novo no checkout");
+    const again = s.run("");
+    assert.equal(again.code, 46, again.out);
+    assert.match(again.out, /--recover --rollback/);
+    const status = s.run("--recover");
+    assert.equal(status.code, 46, status.out);
+    const rb = s.run("--recover --rollback");
+    assert.equal(rb.code, 0, rb.out);
+    assert.match(rb.out, /banco não foi alterado por este deploy/);
+    assert.match(rb.out, /ROLLBACK AUTOMÁTICO CONCLUÍDO/);
+    assert.equal(s.head(), s.c0);
+    assert.deepEqual(await s.columns(), ["id", "legacy", "name"]);
+    assert.equal(s.state("induscost.service"), "active");
+    assert.equal(await s.lockOn(), 0);
+    assertSchedulersRestored(s);
+  });
+
+  it("E10. hooks por fase: prévio falha → 9 e nada muda; prévio OK recebe o contexto; pós-subida falha → rollback (44); política warn segue; hook inválido → 3", async () => {
+    const dir = join(root, "hooks");
+    const fail = hook(dir, "falha.sh", 7);
+    const ok = hook(dir, "ok.sh", 0);
+    const s1 = await server({ "src/a.test.ts": "pass 2\n" }, { HOOKS_PRE_DEPLOY: fail.path });
+    const r1 = s1.run("");
+    assert.equal(r1.code, 9, r1.out);
+    assert.match(r1.out, /verificação prévia falhou/);
+    assert.equal(s1.head(), s1.c0);
+    assert.ok(!existsSync(join(s1.w, "backups")));
+    assert.equal(s1.state("induscost.service"), "active");
+    assert.ok(!existsSync(join(s1.w, "state", "maintenance.state")));
+    assert.match(fail.log(), /fase=HOOKS_PRE_DEPLOY/);
+
+    const s2 = await server({ "src/a.test.ts": "pass 2\n" }, { HOOKS_PRE_DEPLOY: ok.path, HOOKS_POST_START: fail.path, HOOKS_POST_ROLLBACK: ok.path });
+    const r2 = s2.run("");
+    assert.equal(r2.code, 44, r2.out);
+    assert.match(r2.out, /verificação pós-subida falhou/);
+    assert.match(r2.out, /ROLLBACK AUTOMÁTICO CONCLUÍDO/);
+    assert.equal(s2.head(), s2.c0);
+    assert.equal(s2.state("induscost.service"), "active");
+    assert.match(ok.log(), new RegExp(`fase=HOOKS_PRE_DEPLOY alvo=${s2.c1} anterior=${s2.c0} backup=\\n`));
+    assert.match(ok.log(), new RegExp(`fase=HOOKS_POST_ROLLBACK alvo=${s2.c1} anterior=${s2.c0} backup=\\S+backups`));
+    assert.match(fail.log(), /fase=HOOKS_POST_START/);
+    assertSchedulersRestored(s2);
+
+    const s3 = await server({ "src/a.test.ts": "pass 2\n" }, { HOOKS_POST_START: fail.path, HOOKS_POST_START_FAILURE: "warn" });
+    const r3 = s3.run("");
+    assert.equal(r3.code, 0, r3.out);
+    assert.match(r3.out, /HOOKS_POST_START_FAILURE=warn/);
+    assert.equal(s3.head(), s3.c1);
+
+    const s4 = await server({ "src/a.test.ts": "pass 2\n" }, { HOOKS_PRE_DEPLOY: "relativo/hook.sh" });
+    const r4 = s4.run("--check");
+    assert.equal(r4.code, 3, r4.out);
+    assert.match(r4.out, /não é um executável com caminho absoluto/);
+  });
+
+  it("E11. cluster diferente do configurado (versão maior ou socket): recusa (50) antes de parar o serviço ou criar backup", async () => {
+    const s1 = await server({ "src/a.test.ts": "pass 2\n" }, { IDS_PG_EXPECT_MAJOR: "16" });
+    const r1 = s1.run("");
+    assert.equal(r1.code, 50, r1.out);
+    assert.match(r1.out, /cluster conectado é PostgreSQL 17; esperado 16/);
+    assert.ok(!existsSync(join(s1.w, "backups")));
+    assert.equal(s1.state("induscost.service"), "active");
+    assert.doesNotMatch(s1.calls(), /systemctl stop/);
+    const s2 = await server({ "src/a.test.ts": "pass 2\n" }, { IDS_PG_HOST: "/run/induscost-pg17-inexistente" });
+    const r2 = s2.run("--check");
+    assert.equal(r2.code, 50, r2.out);
+    assert.match(r2.out, /sem conexão administrativa com o cluster/);
+    assert.doesNotMatch(s2.calls(), /systemctl stop/);
+  });
+
+  it("E12. espaço em disco insuficiente para a restauração: recusa (51) antes de qualquer ação", async () => {
+    const s = await server({ "src/a.test.ts": "pass 2\n" }, { IDS_DISK_DATA_FACTOR: "1000000000" });
+    const r = s.run("");
+    assert.equal(r.code, 51, r.out);
+    assert.match(r.out, /a restauração de app\d+ exige/);
+    assert.ok(!existsSync(join(s.w, "backups")));
+    assert.doesNotMatch(s.calls(), /systemctl stop/);
+  });
+
+  it("E13. UNIT_GLOB que casa unidade protegida ou de outro ambiente: recusa (52) antes de parar o serviço; banco protegido nunca é o alvo (50)", async () => {
+    const s = await server({ "src/a.test.ts": "pass 2\n" }, { PROTECTED_UNITS: "'induscost-db-backup.timer'" });
+    writeFileSync(join(s.sysd, "induscost-db-backup.timer"), "active");
+    writeFileSync(join(s.sysd, "induscost-db-backup.timer.show"), "Unit=induscost-db-backup.service\n");
+    writeFileSync(join(s.sysd, "induscost-db-backup.service.show"), "ExecStart={ path=/usr/bin/pg_dump ; argv[]=/usr/bin/pg_dump -p 5432 teste_bi }\nWorkingDirectory=/var/lib/postgresql\n");
+    const r = s.run("");
+    assert.equal(r.code, 52, r.out);
+    assert.match(r.out, /unidade protegida induscost-db-backup\.timer/);
+    assert.doesNotMatch(s.calls(), /systemctl stop/);
+    assert.ok(!existsSync(join(s.w, "backups")));
+    assert.equal(s.state("induscost-db-backup.timer"), "active");
+    const s2 = await server({ "src/a.test.ts": "pass 2\n" }, { PROTECTED_DATABASES: `'app${n + 1} outro'` });
+    const r2 = s2.run("--check");
+    assert.equal(r2.code, 50, r2.out);
+    assert.match(r2.out, /está em IDS_PROTECTED_DATABASES/);
   });
 
   it("I1. instalação: --verify confere; biblioteca adulterada → executor recusa (4) e --verify reprova; --uninstall devolve o executor antigo byte a byte", async () => {
@@ -376,6 +539,137 @@ describe("executor de deploy instalado — ensaio com git, Prisma e PostgreSQL 1
     const un = s.install("--uninstall");
     assert.equal(un.code, 0, un.out);
     assert.equal(readFileSync(s.executorPath, "utf8"), "#!/usr/bin/env bash\necho executor antigo\n");
+  });
+
+  it("E14. janela não abre (sessão estranha no banco): aborta com o código real (41), serviço religado, trava removida, RESULTADO: ABORTADO", async () => {
+    const s = await server({ "src/a.test.ts": "pass 2\n" });
+    const holder = new PrismaClient({ datasourceUrl: `${db.url.replace(/\/postgres\?/, `/${s.dbName}?`)}&application_name=bi-metabase` });
+    await holder.$queryRawUnsafe(`SELECT 1`);
+    try {
+      const r = s.run("");
+      assert.equal(r.code, 41, r.out);
+      assert.match(r.out, /bi-metabase/);
+      assert.match(r.out, /janela de manutenção não abriu \(RC=41\)/);
+      assert.match(r.out, /RESULTADO: ABORTADO \(janela\) .* rc=41/);
+      assert.equal(s.head(), s.c0);
+      assert.equal(s.state("induscost.service"), "active");
+      assert.ok(!existsSync(join(s.w, "state", "maintenance.state")));
+    } finally {
+      await holder.$disconnect();
+    }
+    assert.equal(await s.lockOn(), 0);
+    assertSchedulersRestored(s);
+  });
+
+  it("E15. --recover --rollback com git reset impossível (index.lock órfão): código NÃO reinstalado, serviço NÃO religado, janela mantida; removido o lock, conclui", async () => {
+    const s = await server({ "src/a.test.ts": "HANG\n" });
+    const bg = s.runAsync("");
+    assert.ok(await s.waitFor(join(s.sysd, "executor-chain")), "executor chegou aos testes");
+    assert.equal(s.run("--abort-hard").code, 0);
+    await Promise.race([bg.done, new Promise((res) => setTimeout(res, 15_000))]);
+    writeFileSync(join(s.app, ".git", "index.lock"), "");
+    const rb = s.run("--recover --rollback");
+    assert.notEqual(rb.code, 0, rb.out);
+    assert.match(rb.out, /git reset --hard .* falhou/);
+    assert.match(rb.out, /index\.lock existe/);
+    assert.match(rb.out, /RESULTADO: RETOMADA INCOMPLETA/);
+    assert.equal(s.head(), s.c1, "código não revertido");
+    assert.equal(s.state("induscost.service"), "inactive", "serviço não religado com o código errado");
+    assert.ok(existsSync(join(s.w, "state", "maintenance.state")), "janela mantida");
+    rmSync(join(s.app, ".git", "index.lock"));
+    const ok = s.run("--recover --rollback");
+    assert.equal(ok.code, 0, ok.out);
+    assert.equal(s.head(), s.c0);
+    assert.equal(s.state("induscost.service"), "active");
+    assertSchedulersRestored(s);
+  });
+
+  it("E16. DATABASE_URL da aplicação apontando para outro banco: recusa (58) antes de qualquer ação, inclusive em --check", async () => {
+    const s = await server({ "src/a.test.ts": "pass 2\n" });
+    await admin.$executeRawUnsafe(`CREATE DATABASE "outro${n}"`);
+    writeFileSync(join(s.app, ".env"), `DATABASE_URL="${db.url.replace(/\/postgres\?/, `/outro${n}?`)}"\n`);
+    const r = s.run("--check");
+    assert.equal(r.code, 58, r.out);
+    assert.match(r.out, new RegExp(`aponta para banco=outro${n}`));
+    assert.match(r.out, /RESULTADO: RECUSADO \(DATABASE_URL da aplicação\)/);
+    assert.doesNotMatch(s.calls(), /systemctl (stop|start)/, "só leituras do systemd (escopo da janela) antes da recusa");
+    assert.ok(!existsSync(join(s.w, "backups")));
+  });
+
+  it("E17. --restore-backup após BLOQUEIO: só sob BACKUP_ROOT, só com backup-meta do mesmo banco; restaura, preserva __failed_, --recover --resume encerra", async () => {
+    const s = await server({ "prisma/migrations/20261101120000_drop/migration.sql": `ALTER TABLE "Item" DROP COLUMN "legacy";\n`, HEALTH: "erro", APP_WRITES: "1" });
+    assert.equal(s.run("").code, 2);
+    const dir = s.backupDir();
+    const outside = join(s.w, "fora");
+    mkdirSync(outside, { recursive: true });
+    for (const f of readdirSync(dir)) writeFileSync(join(outside, f), readFileSync(join(dir, f)));
+    const far = s.run(`--restore-backup "${posix(outside)}"`);
+    assert.equal(far.code, 3, far.out);
+    assert.match(far.out, /não está sob/);
+    const meta = readFileSync(join(dir, "backup-meta.txt"), "utf8");
+    writeFileSync(join(dir, "backup-meta.txt"), "env=teste|db=outro|sysid=0|version=0\n");
+    const wrong = s.run(`--restore-backup "${posix(dir)}"`);
+    assert.equal(wrong.code, 33, wrong.out);
+    assert.match(wrong.out, /backup de outro banco\/cluster/);
+    assert.deepEqual(await s.columns(), ["id", "name"], "nada restaurado");
+    writeFileSync(join(dir, "backup-meta.txt"), meta);
+    const ok = s.run(`--restore-backup "${posix(dir)}"`);
+    assert.equal(ok.code, 0, ok.out);
+    assert.match(ok.out, /Restauração manual RC=0/);
+    assert.deepEqual(await s.columns(), ["id", "legacy", "name"]);
+    assert.deepEqual(await s.dbs(), [s.dbName, `${s.dbName}__failed_${dir.split(/[\\/]/).pop()}`]);
+    assert.equal(s.run("--recover --resume").code, 0);
+    assert.equal(await s.lockOn(), 0);
+    assertSchedulersRestored(s);
+  });
+
+  it("E18. globs malformados (espaço, sufixo .timer) e PROTECTED_* = none: recusa (3) / aceito", async () => {
+    const s1 = await server({ "src/a.test.ts": "pass 2\n" }, { UNIT_GLOB: "'induscost-*.timer'" });
+    const r1 = s1.run("--check");
+    assert.equal(r1.code, 3, r1.out);
+    assert.match(r1.out, /sem sufixo \.timer/);
+    const s2 = await server({ "src/a.test.ts": "pass 2\n" }, { CRON_GLOB: "'induscost* outro*'" });
+    const r2 = s2.run("--check");
+    assert.equal(r2.code, 3, r2.out);
+    assert.match(r2.out, /um único padrão/);
+    const s3 = await server({ "src/a.test.ts": "pass 2\n" }, { PROTECTED_DATABASES: "none", PROTECTED_UNITS: "none" });
+    assert.equal(s3.run("--check").code, 0);
+  });
+
+  it("I3. instalador confere o sha256 do executor antigo: diferente → recusa (3) e nada muda; igual → instala, --verify confere o guardado; --uninstall recusa se o arquivo já não é o wrapper", async () => {
+    const s = await server({ "src/a.test.ts": "pass 2\n" });
+    const u0 = s.install("--uninstall"); assert.equal(u0.code, 0, u0.out);
+    const old = readFileSync(s.executorPath);
+    const { createHash } = await import("node:crypto");
+    const sha = createHash("sha256").update(old).digest("hex");
+    const setSha = (v: string) => writeFileSync(s.envFile, readFileSync(s.envFile, "utf8").replace(/^EXECUTOR_EXPECTED_SHA256=.*$/m, `EXECUTOR_EXPECTED_SHA256=${v}`));
+    setSha("0000000000000000000000000000000000000000000000000000000000000000");
+    const bad = s.install("--apply --replace-env");
+    assert.equal(bad.code, 3, bad.out);
+    assert.match(bad.out, /não é o executor auditado/);
+    assert.equal(readFileSync(s.executorPath, "utf8"), old.toString("utf8"), "executor antigo intocado");
+    setSha(sha);
+    const good = s.install("--apply --replace-env");
+    assert.equal(good.code, 0, good.out);
+    assert.match(good.out, /é o executor auditado \(sha256 confere\)/);
+    assert.match(good.out, /executor antigo guardado em .* \(sha256 confere\)/);
+    const ck = s.run("--check"); assert.equal(ck.code, 0, ck.out);
+    // Reinstalação (--replace-env) guarda o wrapper anterior; um único --uninstall desfaz a cadeia até o executor antigo.
+    writeFileSync(s.envFile, `${readFileSync(s.envFile, "utf8")}# reinstalação\n`);
+    const again = s.install("--apply --replace-env");
+    assert.equal(again.code, 0, again.out);
+    assert.match(again.out, /wrapper de uma instalação anterior/);
+    const chain = s.install("--uninstall");
+    assert.equal(chain.code, 0, chain.out);
+    assert.match(chain.out, /2 instalação\(ões\) desfeita\(s\)/);
+    assert.equal(readFileSync(s.executorPath, "utf8"), old.toString("utf8"), "executor antigo de volta byte a byte");
+    const re = s.install("--apply --replace-env");
+    assert.equal(re.code, 0, re.out);
+    assert.match(re.out, /já instalada e íntegra: reutilizada/);
+    writeFileSync(s.executorPath, "#!/usr/bin/env bash\necho outro\n");
+    const un = s.install("--uninstall");
+    assert.equal(un.code, 3, un.out);
+    assert.match(un.out, /já não é o wrapper desta instalação/);
   });
 
   it("I2. ambiente com A_COLETAR: instalação recusada e executor recusa rodar (3)", async () => {

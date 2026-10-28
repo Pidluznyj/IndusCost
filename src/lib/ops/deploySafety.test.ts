@@ -40,12 +40,13 @@ case "$1" in
   start) [[ "$2" == "\${STUB_START_FAIL:-none}" ]] && exit 1; echo active > "$S/$2" ;;
   list-units) t=""; for a in "$@"; do [[ "$a" == --type=* ]] && t="\${a#--type=}"; done
     for f in "$S"/induscost-*."$t"; do [[ -f "$f" ]] && echo "$(basename "$f") loaded $(cat "$f") x x"; done ;;
+  show) u="\${@: -1}"; if [[ -f "$S/$u.show" ]]; then cat "$S/$u.show"; else echo "WorkingDirectory=\${STUB_UNIT_DIR:-/opt/induscost}"; fi ;;
 esac
 exit 0
 `,
   pgrep: `#!/usr/bin/env bash
 f="$STUB_SYSTEMD/pgrep-count"; n=$(( $(cat "$f" 2>/dev/null || echo 0) + 1 )); echo "$n" > "$f"
-if [[ "$n" -le "\${STUB_PGREP_BUSY:-0}" ]]; then echo "4242 tsx scripts/nomusAccountsReceivableSync.ts apply"; exit 0; fi
+if [[ "$n" -le "\${STUB_PGREP_BUSY:-0}" ]]; then echo "4242 \${STUB_PGREP_CMD:-tsx scripts/nomusAccountsReceivableSync.ts apply}"; exit 0; fi
 exit 1
 `,
   psql: `#!/usr/bin/env bash
@@ -234,6 +235,72 @@ describe("biblioteca de segurança do deploy (sem banco)", { skip: SKIP }, () =>
     assert.equal(h.calls(), before);
   });
 
+  it("S1. UNIT_GLOB que casa unidade protegida (induscost-db-backup.timer, PostgreSQL 12) ou que não executa no APP: recusa (52) antes de tocar em qualquer coisa", () => {
+    const h = host({ ...TIMERS, "induscost-db-backup.timer": "active" }, CRONS);
+    writeFileSync(join(h.base, "systemd", "induscost-db-backup.timer.show"), "Unit=induscost-db-backup.service\n");
+    writeFileSync(join(h.base, "systemd", "induscost-db-backup.service.show"), "ExecStart={ path=/usr/bin/pg_dump ; argv[]=/usr/bin/pg_dump -p 5432 teste_bi }\nWorkingDirectory=/var/lib/postgresql\n");
+    const out = h.run(`IDS_PROTECTED_UNITS="induscost-db-backup.timer induscost-db-backup.service" ids_maintenance_begin teste_bi; echo RC=$?`);
+    assert.match(out, /RC=52/, out);
+    assert.match(out, /unidade protegida induscost-db-backup\.timer/);
+    assert.doesNotMatch(h.calls(), /systemctl stop/);
+    assert.ok(!existsSync(join(h.base, "state", "maintenance.state")));
+    assert.equal(readdirSync(h.cron).length, 4);
+    // Sem a lista de protegidas, a mesma unidade é recusada por não executar no caminho da aplicação.
+    const out2 = h.run(`ids_maintenance_begin teste_bi; echo RC=$?`);
+    assert.match(out2, /RC=52/, out2);
+    assert.match(out2, /induscost-db-backup\.timer, que não executa em \/opt\/induscost/);
+    assert.doesNotMatch(h.calls(), /systemctl stop/);
+    assert.ok(!existsSync(join(h.base, "state", "maintenance.state")));
+  });
+
+  it("S2. CRON_GLOB que casa arquivo sem o caminho da aplicação (ex.: backup do PostgreSQL 12): recusa (52); arquivo intocado", () => {
+    const h = host(TIMERS, { ...CRONS, "induscost-db-backup": "30 22 * * * postgres /usr/lib/postgresql/12/bin/pg_dump teste_bi\n" });
+    const out = h.run(`ids_maintenance_begin teste_bi; echo RC=$?`);
+    assert.match(out, /RC=52/, out);
+    assert.match(out, /induscost-db-backup, que não executa \/opt\/induscost/);
+    assert.equal(readdirSync(h.cron).length, 5);
+    assert.ok(!existsSync(join(h.base, "state", "maintenance.state")));
+    assert.doesNotMatch(h.calls(), /systemctl stop/);
+  });
+
+  it("S3. dois ambientes no mesmo host: /opt/induscost (legado) não casa /opt/induscost-homolog; crons do legado ficam; linha do homolog na crontab do root recusa (47) sem citar o legado", () => {
+    const h = host({ "induscost-homolog.service": "active" }, { "induscost-homolog": "*/15 * * * * root cd /opt/induscost-homolog/app && npm run sync:x\n", "induscost-nomus-purchase-orders": "37 * * * * root /opt/induscost/scripts/runNomusPurchaseOrdersSync.sh apply\n" });
+    mkdirSync(join(h.base, "spool"), { recursive: true });
+    writeFileSync(join(h.base, "spool", "root"), "17 */2 * * * cd /opt/induscost && npm run sync:nomus:accounts-receivable:apply\n");
+    const env = `IDS_APP_MARK_PATTERN=/opt/induscost-homolog IDS_CRON_GLOB='induscost-homolog*' IDS_UNIT_GLOB='induscost-homolog-*' IDS_APP_SERVICE=induscost-homolog.service`;
+    const out = h.run(`${env} ids_maintenance_begin teste_bi_homolog; echo RC=$?`);
+    assert.match(out, /RC=0/, out);
+    assert.deepEqual(readdirSync(h.cron).sort(), ["induscost-nomus-purchase-orders"], "só o cron do homolog saiu; o do legado ficou");
+    assert.match(h.run(`${env} ids_maintenance_end; echo RC=$?`), /RC=0/);
+    assert.deepEqual(readdirSync(h.cron).sort(), ["induscost-homolog", "induscost-nomus-purchase-orders"]);
+    writeFileSync(join(h.base, "spool", "root"), "17 */2 * * * cd /opt/induscost && npm run sync:nomus:accounts-receivable:apply\n0 * * * * /opt/induscost-homolog/app/scripts/x.sh\n");
+    const out2 = h.run(`${env} ids_maintenance_begin teste_bi_homolog; echo RC=$?`);
+    assert.match(out2, /RC=47/, out2);
+    assert.match(out2, /induscost-homolog\/app\/scripts\/x\.sh/);
+    assert.doesNotMatch(out2, /accounts-receivable/);
+    assert.deepEqual(readdirSync(h.cron).sort(), ["induscost-homolog", "induscost-nomus-purchase-orders"], "nada pausado");
+  });
+
+  it("S4. rotina em execução só conta se for desta instalação: caminho na linha de comando ou cwd dentro do APP; outra instalação é ignorada; sem cwd legível espera", () => {
+    const h = host();
+    const run = (mark: string, cmd: string, procDir: string) =>
+      h.run(`rm -f "$STUB_SYSTEMD/pgrep-count"; IDS_WRITER_WAIT_SECONDS=0 IDS_WRITER_POLL_SECONDS=0 IDS_APP_MARK_PATTERN="${mark}" IDS_PROC_DIR="${procDir}" ids_maintenance_begin teste_bi; echo RC=$?; ids_maintenance_end >/dev/null`, { STUB_PGREP_BUSY: "1", STUB_PGREP_CMD: cmd });
+    // /proc simulado (readlink -f devolve o próprio caminho; no servidor devolve o cwd real do processo).
+    const fakeRoot = toPosix(join(h.base, "fs"));
+    const procHomolog = `${fakeRoot}/opt/induscost-homolog/app/proc`;
+    const procLegacy = `${fakeRoot}/opt/induscost/proc`;
+    mkdirSync(join(h.base, "fs", "opt", "induscost-homolog", "app", "proc", "4242", "cwd"), { recursive: true });
+    mkdirSync(join(h.base, "fs", "opt", "induscost", "proc", "4242", "cwd"), { recursive: true });
+    const legacyCmd = "/opt/induscost/scripts/runNomusPurchaseOrdersSync.sh apply";
+    assert.match(run("/opt/induscost-homolog", legacyCmd, procLegacy), /RC=0/, "rotina do legado (linha de comando e cwd fora do APP): ignorada");
+    assert.match(run("/opt/induscost", legacyCmd, procLegacy), /RC=40/, "linha de comando com o caminho desta instalação: espera (prazo 0 → 40)");
+    assert.match(run("/opt/induscost", "cd /opt/induscost-homolog/app && npm run sync", procLegacy), /RC=0/, "/opt/induscost não casa /opt/induscost-homolog");
+    const cmd = "tsx scripts/nomusAccountsReceivableSync.ts apply";
+    assert.match(run(`${fakeRoot}/opt/induscost-homolog`, cmd, procHomolog), /RC=40/, "sem caminho na linha de comando, cwd dentro do APP: espera");
+    assert.match(run(`${fakeRoot}/opt/induscost-homolog`, cmd, procLegacy), /RC=0/, "cwd em outra instalação: ignorada");
+    assert.match(run(`${fakeRoot}/opt/induscost-homolog`, cmd, `${fakeRoot}/inexistente`), /RC=40/, "sem cwd legível: conservador, espera");
+  });
+
   const classify = (before: string[], now: string[]) => {
     const h = host();
     writeFileSync(join(h.base, "before.txt"), `${before.join("\n")}\n`);
@@ -392,7 +459,7 @@ systemctl start "$SERVICE"
     return src.replace(from, () => to);
   }
   const lateWindow = (src: string) =>
-    mutateOnce(mutateOnce(src, /if ! ids_maintenance_begin "\$DB"; then/, "if ! true; then"), 'ids_backup_db "$DB" "$DB_BACKUP"; then', 'ids_backup_db "$DB" "$DB_BACKUP"; then\n  ids_maintenance_begin "$DB"');
+    mutateOnce(mutateOnce(src, 'ids_maintenance_begin "$DB" || {', "true || {"), 'ids_backup_db "$DB" "$DB_BACKUP" 9>&- || {', 'ids_backup_db "$DB" "$DB_BACKUP" 9>&- || {\n  ids_maintenance_begin "$DB"');
   const noCheckpoint = (src: string) => mutateOnce(src, '  ids_open_for_app "$BACKUP_DIR" "$DB"\n', "");
 
   it("K3. verificador reprova executor que faz backup antes da janela ou sobe a aplicação antes do ponto de controle", () => {

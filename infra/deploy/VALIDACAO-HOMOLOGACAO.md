@@ -1,149 +1,269 @@
-# Validação manual em homologação (antes de qualquer atualização na AWS)
+# Validação manual em homologação (servidor-01) — procedimento exato
 
-Roteiro para quem opera o servidor-01. Pré-requisitos:
+Roteiro para quem opera o servidor-01. Nada aqui é executado automaticamente. Pré-requisitos:
 
-- a coleta de [COLETA.md](COLETA.md) foi feita;
-- `environments/homologacao.env` está sem `A_COLETAR`;
-- o commit com estes arquivos está no checkout da homologação.
+- a coleta H1–H11 de [COLETA.md](COLETA.md) foi feita e `environments/homologacao.env` está **sem `A_COLETAR`**;
+- as três suítes locais passaram no commit (elas validam o código; o arquivo de ambiente é validado pelo instalador
+  em `--dry-run` e pelo `--check` deste roteiro);
+- o commit com estes arquivos está no checkout `/opt/induscost-homolog/app` (deploy anterior) ou num clone à parte;
+- fora da janela 22h25–22h40 (backup diário do PostgreSQL 12: não é tocado, mas evita confundir a observação).
 
-Cada passo diz o que observar. Se algo não bater, **pare** e traga a saída; não ajuste o servidor para "passar".
+Cada passo diz o que observar. "Esperado" cita trechos que a saída **contém** (a biblioteca prefixa suas linhas
+com `[deploy-safety] ` e o instalador com `[install] `). Se algo não bater, **pare** e traga a saída; não ajuste o
+servidor para "passar". Até H2 confirmar que o wrapper `induscost-deploy-homologacao` repassa `"$@"`, todos os
+comandos usam o caminho instalado `deploy-induscost-homologacao` (substituído pelo wrapper do instalador).
+Nos comandos, `PSQL17` é o cliente 17 do cluster da homologação, conforme coletado em H5:
 
-## 0. Ensaio da biblioteca no próprio servidor (sem tocar no banco da homologação)
+```bash
+PSQL17='sudo runuser -u <IDS_PG_OS_USER> -- env -i <IDS_PG_BIN>/psql -h /run/induscost-pg17 -p 5433 -U pg17homolog -X -At'
+```
 
-Exercita, num banco descartável `ids_ensaio_*` do mesmo cluster, o que o Windows de desenvolvimento não reproduz:
-`runuser postgres`, os binários do servidor e as permissões do diretório de backup (causa do incidente).
+## 0. Fotografia dos recursos que NÃO pertencem à homologação (antes)
+
+```bash
+sudo mkdir -p /root/validacao-executor && cd /root/validacao-executor
+{
+  systemctl list-timers --all --no-pager
+  systemctl list-units --all --plain --no-legend '*induscost*'
+  ls -l /etc/cron.d/
+  sudo crontab -l
+  sudo systemctl show induscost-homolog -p DropInPaths -p IPAddressDeny -p IPAddressAllow
+  sudo sha256sum /usr/local/bin/update-induscost-homolog-egress /usr/local/bin/induscost-deploy-homologacao
+  sudo -u postgres psql -p 5432 -Atc "select datname from pg_database order by 1"
+  $PSQL17 -d postgres -c "select datname, datallowconn from pg_database order by 1"
+  $PSQL17 -d postgres -c "select d.datname, s.setconfig from pg_db_role_setting s join pg_database d on d.oid = s.setdatabase"
+} > antes.txt 2>&1
+sudo sha256sum /usr/local/bin/deploy-induscost-homologacao
+```
+
+Esperado em `antes.txt`: `induscost-db-backup.timer` listado; os bancos do cluster 17 incluem `teste_bi_homolog`,
+`teste_bi_homolog_prev`, `teste_bi_cloud_standby`; nenhuma configuração por banco. O último comando (fora da
+fotografia, porque o arquivo vai mudar de propósito) dá `114c438fb993b1fcef99b04f9f255900a7c008cde3c142a458e26a8fb5697411`.
+
+## 1. Ensaio da biblioteca no próprio servidor (bancos descartáveis, cluster 17)
+
+Exercita, em bancos `ids_ensaio_*` **do cluster 17** (socket `/run/induscost-pg17`, porta 5433), o que o Windows
+de desenvolvimento não reproduz: `runuser` do usuário do cluster, os binários 17 do servidor e as permissões do
+diretório de backup (causa do incidente). O arquivo de ambiente do repositório é o mesmo que será instalado.
 
 ```bash
 cd /opt/induscost-homolog/app
-sudo bash scripts/ops/rehearseDeploySafety.sh
+sudo bash scripts/ops/rehearseDeploySafety.sh --env-file infra/deploy/environments/homologacao.env
 ```
 
-Esperado: `resultado: 15 OK, 0 falha(s)`. Inspecione se quiser e depois remova (só bancos `ids_ensaio_*` e o
-diretório do ensaio):
+Esperado: uma linha contendo `cluster conferido: PostgreSQL 17, porta 5433, socket '` seguido de um valor que
+inclui `/run/induscost-pg17`, `papel pg17homolog (superusuário), clientes 17`; ao fim, `resultado: 16 OK, 0
+falha(s) (esperado: 16 OK)`. Conferir que os bancos de ensaio só existem no cluster 17 e que o 12 não ganhou nenhum:
 
 ```bash
-sudo bash scripts/ops/rehearseDeploySafety.sh --cleanup
+$PSQL17 -d postgres -c "select datname from pg_database where datname like 'ids\_ensaio\_%'"
+sudo -u postgres psql -p 5432 -Atc "select datname from pg_database where datname like 'ids\_ensaio\_%'"   # esperado: vazio
 ```
 
-## 1. Instalação (reversível)
+Depois, remova (só bancos `ids_ensaio_<época>_<cenário>…` sem sessões e o diretório do ensaio):
+
+```bash
+sudo bash scripts/ops/rehearseDeploySafety.sh --env-file infra/deploy/environments/homologacao.env --cleanup
+```
+
+## 2. Instalação (reversível)
 
 ```bash
 sudo bash infra/deploy/install-induscost-deploy.sh --env homologacao
 ```
 
-Esse comando só simula. Confira o caminho do executor, a versão e o wrapper. Depois instale:
+Só simula. Esperado: `OK    /usr/local/bin/deploy-induscost-homologacao é o executor auditado (sha256 confere)`,
+`OK    /usr/local/bin/induscost-deploy-homologacao chama deploy-induscost-homologacao com "$@"` (com as linhas do
+wrapper impressas), versão, release e o wrapper que será gravado. Se aparecer `RECUSADO`, pare. Depois instale:
 
 ```bash
 sudo bash infra/deploy/install-induscost-deploy.sh --env homologacao --apply
 ```
 
-Esperado: `RESULTADO: instalação íntegra.` e o executor anterior guardado em `/usr/local/lib/induscost/backups/`.
+Esperado: `OK    executor antigo guardado em /usr/local/lib/induscost/backups/… (sha256 confere)` e `RESULTADO:
+instalação íntegra.`. O wrapper do operador (`induscost-deploy-homologacao`) continua existindo e chega ao executor
+versionado através de `deploy-induscost-homologacao`.
 
 ```bash
-sudo bash scripts/ops/checkDeployExecutorSafety.sh "$(command -v induscost-deploy-homologacao)"
+sudo bash scripts/ops/checkDeployExecutorSafety.sh /usr/local/bin/deploy-induscost-homologacao
 ```
 
-Esperado: `RESULTADO: executor protegido.`
+Esperado: `RESULTADO: executor protegido.` (um `AVISO` sobre a biblioteca do checkout é aceitável; `FALTA` não).
 
-## 2. Plano sem alterar nada
+Se depois de um passo você corrigir `homologacao.env`, reaplique com `--apply --replace-env`: isso cria uma
+segunda instalação, e o `--uninstall` do passo 8 desfaz a cadeia inteira de uma vez.
+
+## 3. Plano sem alterar nada
 
 ```bash
-sudo induscost-deploy-homologacao --check
+sudo deploy-induscost-homologacao --check
 ```
 
-Esperado: commit atual, alvo, testes alterados e migrations novas. Nada é parado nem alterado.
+Esperado, nesta ordem: a linha `cluster conferido: PostgreSQL 17, porta 5433, socket '…/run/induscost-pg17…', papel
+pg17homolog (superusuário), clientes 17`; `espaço: banco teste_bi_homolog … MiB; livres …`; para cada cron/timer dos
+globs, `janela pausaria …` ou `janela não tocaria …`; `escopo da janela conferido: cron /etc/cron.d/<CRON_GLOB> e
+unidades <UNIT_GLOB> só desta instalação (/opt/induscost-homolog)`; `DATABASE_URL da aplicação conferida:
+teste_bi_homolog na porta 5433 (PostgreSQL 17)`; commit atual, alvo, testes alterados, migrations novas, hooks de cada
+fase; `Modo --check: nada foi alterado (só as referências remotas do git foram atualizadas; hooks não executados).`
+e `RESULTADO: CHECK OK ambiente=homologacao rc=0 …`. Nada é parado nem alterado (o `git fetch` atualiza
+`refs/remotes/origin/*`). Saídas 50/51/52/58 aqui significam cluster, disco, escopo ou `DATABASE_URL` errados:
+corrigir o arquivo de ambiente (`--apply --replace-env`), não o servidor.
 
-## 3. Deploy real de um commit da `main`
+## 4. Preparar os alvos
 
-Num segundo terminal, durante o deploy, observe a janela:
+Os passos 5, 6 e 7 fazem rollback, então o checkout volta ao commit anterior e o **mesmo alvo** serve para os três
+e para o deploy real do passo 8. O alvo precisa ser avanço rápido do commit em execução e, para os passos 6 e 7
+(interrupção durante `5/11 TESTES DO PACOTE`), precisa alterar pelo menos um `*.test.ts` — o próprio commit desta
+infraestrutura altera três. Anote:
+
+```bash
+git -C /opt/induscost-homolog/app rev-parse HEAD          # commit anterior
+git -C /opt/induscost-homolog/app rev-parse origin/main   # alvo
+```
+
+## 5. Falha depois da subida, sem migrations (rollback só do código)
+
+Um hook pós-subida que falha, com o health real, faz o executor reverter o código e religar o serviço (um health
+quebrado no arquivo de ambiente derrubaria também o health do rollback). Com um alvo **sem migrations novas**:
+
+```bash
+sudo install -o root -g root -m 0755 /dev/stdin /root/validacao-executor/hook-falha.sh <<'EOF'
+#!/usr/bin/env bash
+echo "hook de validação: falha proposital (fase $IDS_DEPLOY_PHASE)"
+exit 7
+EOF
+sudo cp /etc/induscost/deploy-executor-homologacao.env /root/validacao-executor/ensaio-hook.env
+sudo sed -i 's#^HOOKS_POST_START=.*#HOOKS_POST_START=/root/validacao-executor/hook-falha.sh#' /root/validacao-executor/ensaio-hook.env
+sudo "$(cat /usr/local/lib/induscost/homologacao.current)/induscost-deploy-executor.sh" --env-file /root/validacao-executor/ensaio-hook.env <alvo>
+```
+
+Esperado: `Health: OK`, `hook HOOKS_POST_START: /root/validacao-executor/hook-falha.sh falhou (RC=7)`, `DEPLOY
+(homologacao) FALHOU: etapa de deploy retornou RC=44`, `nenhuma migration foi aplicada` (ou `banco não foi alterado
+por este deploy`), o código de volta ao commit anterior, o serviço no ar, `ROLLBACK AUTOMÁTICO CONCLUÍDO`,
+`RESULTADO: FALHOU, ROLLBACK CONCLUÍDO (etapa rc=44) … rc=44`. Remova `ensaio-hook.env` e `hook-falha.sh` ao final.
+
+## 6. Interrupção controlada (substitui o antigo `pkill -9 -f`)
+
+Nunca use `pkill -f`: casa qualquer processo cuja linha de comando contenha o texto (um `grep`, um editor, outro
+executor) e `-9` impede qualquer limpeza. O executor grava o próprio pid em `/run/induscost/deploy-homologacao.pid`
+e o `--stop` envia SIGTERM **só a ele**; ele encerra a própria árvore de processos (filhos primeiro, pelos pids) e
+faz o rollback normal. Se o sinal chegar antes da etapa de deploy (espera por rotinas, backup), a etapa em curso
+termina e o executor aborta com o sistema de volta, sem rollback de código.
+
+Durante um deploy do alvo, na etapa `5/11 TESTES DO PACOTE`, num segundo terminal:
+
+```bash
+sudo deploy-induscost-homologacao --stop
+```
+
+Esperado no terminal do deploy: `SIGTERM recebido: interrompendo a etapa atual`, `DEPLOY (homologacao) FALHOU:
+interrompido por SIGTERM`, `banco não foi alterado por este deploy`, `ROLLBACK AUTOMÁTICO CONCLUÍDO`, `RESULTADO:
+FALHOU, ROLLBACK CONCLUÍDO (etapa rc=143) … rc=143`. O código está no commit anterior, o serviço está no ar, a
+janela foi encerrada e o pidfile sumiu.
+
+## 7. Queda abrupta simulada (recuperação)
+
+Só para validar a recuperação. Durante outro deploy do alvo, na etapa `5/11`:
+
+```bash
+sudo deploy-induscost-homologacao --abort-hard
+```
+
+Isso envia SIGKILL a toda a árvore do executor (pelos pids, não por padrão de texto) e deixa a janela aberta, como
+numa queda de energia. Depois:
+
+```bash
+sudo deploy-induscost-homologacao
+```
+
+Esperado: `janela de manutenção de um deploy interrompido está aberta`, `RESULTADO: RECUSADO (janela pendente) …
+rc=46`.
+
+```bash
+sudo deploy-induscost-homologacao --recover
+```
+
+Esperado: estado sem alterar nada (`deploy <backup>`, `readonly teste_bi_homolog`, cron/timers pausados). Então:
+
+```bash
+sudo deploy-induscost-homologacao --recover --rollback
+```
+
+Esperado: `Retomando a interrupção: backup …, commit anterior …`, `banco não foi alterado por este deploy`, código
+anterior, serviço no ar, `ROLLBACK AUTOMÁTICO CONCLUÍDO`, `RESULTADO: ROLLBACK CONCLUÍDO (retomada) … rc=0`.
+(`--recover --resume` continua existindo para só encerrar a janela quando o operador já tratou banco e código por
+conta própria; se a interrupção tiver sido depois de a aplicação nova subir, o executor diz isso e recusa o
+`--rollback` sem `--force-rollback`.)
+
+## 8. Deploy real do alvo
+
+```bash
+sudo deploy-induscost-homologacao
+```
+
+Num segundo terminal, durante a etapa `3/11` em diante, observe a janela:
 
 ```bash
 sudo cat /var/lib/induscost/deploy-safety/homologacao/maintenance.state
 ls -l /etc/cron.d/
-systemctl list-timers --all 'induscost*'
-sudo -u postgres psql -Atc "select d.datname, s.setconfig from pg_db_role_setting s join pg_database d on d.oid = s.setdatabase where d.datname = 'teste_bi_homolog'"
+systemctl list-timers --all --no-pager | grep -E 'induscost'
+$PSQL17 -d postgres -c "select d.datname, s.setconfig from pg_db_role_setting s join pg_database d on d.oid = s.setdatabase"
+sudo crontab -l | grep -c /opt/induscost
 ```
 
 Esperado durante a janela:
 
-- os arquivos `induscost*` saem de `/etc/cron.d`; os outros arquivos ficam;
-- só os timers que estavam ativos param;
-- o banco mostra `default_transaction_read_only=on`.
+- `maintenance.state` tem `begin`, `flag`, `deploy /var/backups/induscost-homolog/deploys/<ts>`, `readonly teste_bi_homolog`
+  e só os `cron`/`timer` casados pelos globs da homologação;
+- só os arquivos de `/etc/cron.d/<CRON_GLOB>` saem; os demais ficam;
+- `induscost-db-backup.timer` continua listado e ativo; só timers de `<UNIT_GLOB>` que estavam ativos param;
+- apenas `teste_bi_homolog` mostra `default_transaction_read_only=on`; `_prev` e `_cloud_standby` sem configuração;
+- a crontab do root continua com as mesmas linhas de `/opt/induscost`.
 
-Ao fim: tudo volta, o `maintenance.state` vira `maintenance.<data>.done` e a trava some.
+Ao fim: `DEPLOY (homologacao) CONCLUÍDO` e `RESULTADO: DEPLOY CONCLUÍDO ambiente=homologacao rc=0 …`, tudo volta,
+`maintenance.state` vira `maintenance.<data>.done`, a trava some e `http://127.0.0.1:3001/api/health` responde.
 
-## 4. Falha antes das migrations (rollback só do código)
-
-Use um alvo que **não** tenha migrations novas e um arquivo de ambiente de ensaio com o health apontando para uma
-porta fechada. A configuração oficial não muda:
-
-```bash
-sudo cp /etc/induscost/deploy-executor-homologacao.env /root/ensaio-health.env
-sudo sed -i 's#^HEALTH=.*#HEALTH=http://127.0.0.1:1/ensaio#; s#^HEALTH_TRIES=.*#HEALTH_TRIES=2#' /root/ensaio-health.env
-sudo "$(cat /usr/local/lib/induscost/homologacao.current)/induscost-deploy-executor.sh" --env-file /root/ensaio-health.env <alvo-sem-migration>
-```
-
-Esperado:
-
-- `banco não foi alterado por este deploy` ou `nenhuma migration foi aplicada`;
-- o código volta ao commit anterior;
-- o serviço volta;
-- `ROLLBACK AUTOMÁTICO CONCLUÍDO`;
-- a janela é encerrada.
-
-Remova `/root/ensaio-health.env` ao final.
-
-## 5. Interrupção do executor (recuperação)
-
-Durante um deploy, na etapa `5/11 TESTES DO PACOTE`:
-
-```bash
-sudo pkill -9 -f induscost-deploy-executor.sh
-```
-
-Depois:
-
-```bash
-sudo induscost-deploy-homologacao
-```
-
-Esperado: recusa (46) e lista a janela pendente.
-
-```bash
-sudo induscost-deploy-homologacao --recover
-```
-
-Esperado: estado sem alterar nada. Confira `git -C /opt/induscost-homolog/app log -1` e o banco antes do próximo
-comando:
-
-```bash
-sudo induscost-deploy-homologacao --recover --resume
-```
-
-Esperado: cron e timers como antes, trava removida. Se o código ficou no commit novo, rode um deploy normal ou volte
-o código manualmente antes de religar o serviço.
-
-## 6. Desinstalação e reinstalação (reversibilidade)
+## 9. Desinstalação e reinstalação (reversibilidade)
 
 ```bash
 sudo bash infra/deploy/install-induscost-deploy.sh --env homologacao --uninstall
-sudo sha256sum "$(command -v induscost-deploy-homologacao)"
+sudo sha256sum /usr/local/bin/deploy-induscost-homologacao
 ```
 
-Esperado: o hash é igual ao coletado em COLETA P9/H1. Reinstale com `--apply` e rode `--verify`.
+Esperado: `executor anterior restaurado (N instalação(ões) desfeita(s); sha256 114c438f…)` e o `sha256sum`
+`114c438fb993b1fcef99b04f9f255900a7c008cde3c142a458e26a8fb5697411` (byte a byte o executor antigo), mesmo que
+tenha havido `--apply --replace-env` no meio. Reinstale com `--apply` e confira com `--verify`.
+
+## 10. Fotografia depois e comparação
+
+Repita o bloco do passo 0 gravando `depois.txt` e compare:
+
+```bash
+cd /root/validacao-executor && diff antes.txt depois.txt
+```
+
+Esperado: nenhuma diferença fora do timestamp dos timers (o bloco não inclui `deploy-induscost-homologacao`, que
+muda de propósito e é conferido pelo `--verify`). Em particular: mesmos timers (inclusive `induscost-db-backup.timer`),
+mesmos arquivos em `/etc/cron.d`, mesma crontab do root, mesmos drop-ins e `IPAddressDeny/Allow`, mesmo sha256 de
+`update-induscost-homolog-egress` e do wrapper `induscost-deploy-homologacao`, mesmos bancos nos dois clusters
+(nenhum `__failed_`/`__rollback_`: os cenários acima não têm migration).
 
 ## Critérios de aceite para seguir para a AWS
 
-- [ ] Ensaio 0 com 15 OK e `--cleanup` feito.
-- [ ] Instalação íntegra e verificador aprovado.
-- [ ] Deploy real concluído, com a janela observada abrindo e fechando como descrito.
-- [ ] Falha antes das migrations: rollback só do código, sistema de volta.
-- [ ] Interrupção: recusa 46, `--recover --resume` devolvendo o estado anterior.
+- [ ] Ensaio com `16 OK`, bancos de ensaio só no cluster 17, `--cleanup` feito.
+- [ ] Instalação íntegra (sha256 do executor antigo conferido, wrapper do operador conferido) e verificador aprovado.
+- [ ] `--check` com cluster, disco, escopo e `DATABASE_URL` conferidos.
+- [ ] Falha pós-subida: rollback só do código, sistema de volta (rc 44).
+- [ ] `--stop`: rollback controlado, rc 143.
+- [ ] `--abort-hard`: recusa 46, `--recover --rollback` devolvendo o estado anterior.
+- [ ] Deploy real concluído, com a janela observada: só os agendamentos da homologação pausados, PG12 e seu timer
+      intocados, só `teste_bi_homolog` travado.
 - [ ] Desinstalação devolvendo o executor original byte a byte.
-- [ ] Saídas completas arquivadas.
+- [ ] `diff antes.txt depois.txt` sem diferenças fora das esperadas.
+- [ ] Saídas completas arquivadas em `/root/validacao-executor/`.
 
-Os cenários com migration incompatível (restauração e bloqueio) são exercitados no passo 0 (banco descartável) e nas
+Os cenários com migration incompatível (restauração e bloqueio) são exercitados no passo 1 (banco descartável) e nas
 suítes locais com PostgreSQL 17 real. Não são forçados no banco da homologação.
 
-Produção: mesmos passos 0–6, com `--env producao`, só com autorização explícita. O passo 0 cria bancos `ids_ensaio_*`
+Produção: mesmos passos, com `--env producao`, só com autorização explícita. O passo 1 cria bancos `ids_ensaio_*`
 no cluster de produção e pede essa autorização à parte.

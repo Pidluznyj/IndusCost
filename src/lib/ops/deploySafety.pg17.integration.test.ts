@@ -477,19 +477,62 @@ describe("biblioteca de deploy com PostgreSQL 17 e binários reais", { skip: SKI
 
   it("R18. roteiro de ensaio do servidor (scripts/ops/rehearseDeploySafety.sh): todos os passos OK; --cleanup remove só ids_ensaio_*", async () => {
     const base = join(work, "ensaio");
-    const env = { ...process.env, ...pgEnv, IDS_PG: "", IDS_PG_USER: "", IDS_STATS_SETTLE_SECONDS: "1", IDS_ENSAIO_ROOT: posix(join(base, "backups")), IDS_ENSAIO_STATE: posix(join(base, "state")), IDS_SYSTEMCTL: posix(join(stubDir, "systemctl")) };
+    const env = { ...process.env, ...pgEnv, IDS_PG: "", IDS_PG_USER: "", IDS_ENSAIO_ALLOW_ENV: "1", IDS_STATS_SETTLE_SECONDS: "1", IDS_ENSAIO_ROOT: posix(join(base, "backups")), IDS_ENSAIO_STATE: posix(join(base, "state")), IDS_SYSTEMCTL: posix(join(stubDir, "systemctl")) };
     const script = posix(join(REPO, "scripts/ops/rehearseDeploySafety.sh"));
     const path = `export PATH="${posix(pg17Bin!)}:${posix(stubDir)}:$PATH"`;
     const r = spawnSync(BASH!, ["-c", `${path}; bash "${script}"`], { encoding: "utf8", env });
     const out = `${r.stdout}\n${r.stderr}`;
     assert.equal(r.status, 0, out);
-    assert.match(out, /resultado: 15 OK, 0 falha\(s\)/);
+    assert.match(out, /resultado: 16 OK, 0 falha\(s\)/);
     assert.ok((await databases("ids_ensaio_")).length >= 4);
     const before = (await databases("r1")).map((d) => d.datname);
     const c = spawnSync(BASH!, ["-c", `${path}; bash "${script}" --cleanup`], { encoding: "utf8", env });
     assert.equal(c.status, 0, c.stdout + c.stderr);
     assert.deepEqual(await databases("ids_ensaio_"), []);
     assert.deepEqual((await databases("r1")).map((d) => d.datname), before, "nada fora do prefixo foi tocado");
+  });
+
+  it("R19. ensaio sem --env-file recusa (2) sem tocar no cluster; --cleanup remove só nomes do padrão ids_ensaio_<época>_<cenário> e deixa os demais (1)", async () => {
+    const base = join(work, "ensaio2");
+    const env = { ...process.env, ...pgEnv, IDS_PG: "", IDS_PG_USER: "", IDS_ENSAIO_ROOT: posix(join(base, "backups")), IDS_ENSAIO_STATE: posix(join(base, "state")), IDS_SYSTEMCTL: posix(join(stubDir, "systemctl")) };
+    const script = posix(join(REPO, "scripts/ops/rehearseDeploySafety.sh"));
+    const path = `export PATH="${posix(pg17Bin!)}:${posix(stubDir)}:$PATH"`;
+    const r = spawnSync(BASH!, ["-c", `${path}; bash "${script}"`], { encoding: "utf8", env });
+    assert.equal(r.status, 2, r.stdout + r.stderr);
+    assert.match(r.stdout + r.stderr, /informe --env-file/);
+    assert.deepEqual(await databases("ids_ensaio_"), []);
+    await admin.$executeRawUnsafe(`CREATE DATABASE "ids_ensaio_bogus"`);
+    await admin.$executeRawUnsafe(`CREATE DATABASE "ids_ensaio_1_x"`);
+    const c = spawnSync(BASH!, ["-c", `${path}; bash "${script}" --cleanup`], { encoding: "utf8", env: { ...env, IDS_ENSAIO_ALLOW_ENV: "1" } });
+    assert.equal(c.status, 1, c.stdout + c.stderr);
+    assert.match(c.stdout + c.stderr, /nome fora do padrão do ensaio: ids_ensaio_bogus/);
+    assert.match(c.stdout + c.stderr, /removido: ids_ensaio_1_x/);
+    assert.deepEqual((await databases("ids_ensaio_")).map((d) => d.datname), ["ids_ensaio_bogus"]);
+    await admin.$executeRawUnsafe(`DROP DATABASE "ids_ensaio_bogus"`);
+  });
+
+  it("R20. --env-file: cluster diferente do configurado recusa (50) antes de criar qualquer banco; cluster certo roda o ensaio inteiro e o --cleanup", async () => {
+    const base = join(work, "ensaio3");
+    mkdirSync(base, { recursive: true });
+    const u = new URL(db.url);
+    const envFile = (extra: string) => {
+      const f = join(base, `ensaio-${extra ? "errado" : "certo"}.env`);
+      writeFileSync(f, ["IDS_ENV_NAME=teste", "DB=r1", `IDS_PG_OS_USER=none`, `IDS_PG_BIN=PATH`, `IDS_PG_HOST=${u.hostname}`, `IDS_PG_PORT=${u.port}`, `IDS_PG_ADMIN_ROLE=${decodeURIComponent(u.username)}`, `IDS_PG_EXPECT_MAJOR=17`, `PROTECTED_DATABASES='r2 r3'`, extra, ""].join("\n"));
+      return posix(f);
+    };
+    const env = { ...process.env, IDS_STATS_SETTLE_SECONDS: "1", IDS_ENSAIO_ROOT: posix(join(base, "backups")), IDS_ENSAIO_STATE: posix(join(base, "state")), IDS_SYSTEMCTL: posix(join(stubDir, "systemctl")), PGSSLMODE: "disable" };
+    const script = posix(join(REPO, "scripts/ops/rehearseDeploySafety.sh"));
+    const path = `export PATH="${posix(pg17Bin!)}:${posix(stubDir)}:$PATH"`;
+    const wrong = spawnSync(BASH!, ["-c", `${path}; bash "${script}" --env-file "${envFile("IDS_PG_EXPECT_MAJOR=16")}"`], { encoding: "utf8", env });
+    assert.equal(wrong.status, 50, wrong.stdout + wrong.stderr);
+    assert.match(wrong.stdout + wrong.stderr, /cluster conectado é PostgreSQL 17; esperado 16/);
+    assert.deepEqual(await databases("ids_ensaio_"), []);
+    const right = spawnSync(BASH!, ["-c", `${path}; bash "${script}" --env-file "${envFile("")}"`], { encoding: "utf8", env });
+    assert.equal(right.status, 0, right.stdout + right.stderr);
+    assert.match(right.stdout + right.stderr, /resultado: 16 OK, 0 falha\(s\)/);
+    const c = spawnSync(BASH!, ["-c", `${path}; bash "${script}" --env-file "${envFile("")}" --cleanup`], { encoding: "utf8", env });
+    assert.equal(c.status, 0, c.stdout + c.stderr);
+    assert.deepEqual(await databases("ids_ensaio_"), []);
   });
 
   it("R17. banco já configurado como read-only por terceiros: trava recusa (48) e não remove a configuração alheia", async () => {
