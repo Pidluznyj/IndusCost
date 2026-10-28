@@ -382,17 +382,46 @@ systemctl start "$SERVICE"
     assert.match(bad.out, /FALTA biblioteca ao lado do executor idêntica/);
   });
 
+  // Checkout no Windows com core.autocrlf entrega CRLF; as mutações são escritas em LF. Cada mutação precisa casar
+  // EXATAMENTE uma vez — senão o executor "mutado" seria o original e o teste não provaria nada.
+  const toLf = (s: string) => s.replace(/\r\n/g, "\n");
+  const toCrlf = (s: string) => toLf(s).replace(/\n/g, "\r\n");
+  function mutateOnce(src: string, from: string | RegExp, to: string): string {
+    const hits = typeof from === "string" ? src.split(from).length - 1 : (src.match(new RegExp(from.source, `${from.flags.replace("g", "")}g`)) ?? []).length;
+    assert.equal(hits, 1, `mutação deveria casar uma única vez: ${String(from)}`);
+    return src.replace(from, () => to);
+  }
+  const lateWindow = (src: string) =>
+    mutateOnce(mutateOnce(src, /if ! ids_maintenance_begin "\$DB"; then/, "if ! true; then"), 'ids_backup_db "$DB" "$DB_BACKUP"; then', 'ids_backup_db "$DB" "$DB_BACKUP"; then\n  ids_maintenance_begin "$DB"');
+  const noCheckpoint = (src: string) => mutateOnce(src, '  ids_open_for_app "$BACKUP_DIR" "$DB"\n', "");
+
   it("K3. verificador reprova executor que faz backup antes da janela ou sobe a aplicação antes do ponto de controle", () => {
-    const src = readFileSync(EXECUTOR, "utf8");
-    const swapped = src.replace(/if ! ids_maintenance_begin "\$DB"; then/, "if ! true; then").replace("ids_backup_db \"$DB\" \"$DB_BACKUP\"; then", "ids_backup_db \"$DB\" \"$DB_BACKUP\"; then\n  ids_maintenance_begin \"$DB\"");
-    assert.notEqual(swapped, src);
+    const src = toLf(readFileSync(EXECUTOR, "utf8"));
     const f1 = join(work, "exec-late-window.sh");
-    writeFileSync(f1, swapped);
+    writeFileSync(f1, lateWindow(src));
     assert.match(check(f1).out, /FALTA G1\/G2: janela de manutenção/);
-    const noCheckpoint = src.replace('  ids_open_for_app "$BACKUP_DIR" "$DB"\n', "");
-    assert.notEqual(noCheckpoint, src);
     const f2 = join(work, "exec-no-checkpoint.sh");
-    writeFileSync(f2, noCheckpoint);
+    writeFileSync(f2, noCheckpoint(src));
     assert.match(check(f2).out, /FALTA G3: ids_open_for_app/);
+  });
+
+  it("K4. o verificador dá o mesmo resultado com LF e com CRLF (aprova o executor; reprova as mutações)", () => {
+    const src = toLf(readFileSync(EXECUTOR, "utf8"));
+    for (const [eol, conv] of [["LF", toLf], ["CRLF", toCrlf]] as const) {
+      // O verificador também confere a biblioteca AO LADO do executor (cópia idêntica à do repositório).
+      const dir = join(work, `k4-${eol}`);
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, "induscost-deploy-safety.sh"), readFileSync(LIB));
+      const ok = join(dir, `exec-${eol}.sh`);
+      writeFileSync(ok, conv(src));
+      const approved = check(ok);
+      assert.equal(approved.code, 0, `${eol}: ${approved.out}`);
+      const late = join(dir, `exec-late-${eol}.sh`);
+      writeFileSync(late, conv(lateWindow(src)));
+      assert.match(check(late).out, /FALTA G1\/G2: janela de manutenção/, eol);
+      const noCp = join(dir, `exec-nocp-${eol}.sh`);
+      writeFileSync(noCp, conv(noCheckpoint(src)));
+      assert.match(check(noCp).out, /FALTA G3: ids_open_for_app/, eol);
+    }
   });
 });

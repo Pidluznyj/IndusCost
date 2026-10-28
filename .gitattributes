@@ -1,0 +1,11 @@
+# Arquivos lidos ou executados em servidores Linux: sempre LF no checkout, inclusive no Windows com core.autocrlf.
+# Um CR no fim da linha quebra o bash ("$'\r': command not found"), o cron, o systemd e o nginx, e faz a cópia
+# instalada de um executor divergir byte a byte da versão do repositório.
+# SQL (migrations Prisma), TypeScript e demais arquivos seguem a configuração de cada máquina.
+*.sh                  text eol=lf
+infra/**/*.env        text eol=lf
+infra/**/*.template   text eol=lf
+infra/**/*.conf       text eol=lf
+infra/**/*.service    text eol=lf
+infra/**/*.timer      text eol=lf
+.gitattributes        text eol=lf
