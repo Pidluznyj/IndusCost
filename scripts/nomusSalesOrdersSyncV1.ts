@@ -1,7 +1,7 @@
 import "dotenv/config";
 import { readFileSync, writeFileSync } from "node:fs";
 import { Prisma, PrismaClient } from "@prisma/client";
-import { normalizeTaxId, parseNomusPtBrNumber } from "./nomusNumberParser.ts";
+import { parseNomusPtBrNumber } from "./nomusNumberParser.ts";
 import { upsertSalesOrderNfeLinksForOrder } from "../src/lib/salesOrderNfeLink.ts";
 import {
   buildNomusSyncItemWritePlan,
@@ -85,6 +85,21 @@ import {
   runNomusSalesOrdersSync,
   type NomusCanonicalSyncDelegateResult,
 } from "../src/lib/nomus/nomusCanonicalSync.server.ts";
+import { resolveNomusCustomerBridge, type CustomerBridgeEntry } from "../src/lib/nomusCustomerBridgeResolution.ts";
+import { extractNomusProposalReferences } from "../src/lib/nomus/nomusProposalOrderReference.ts";
+import {
+  decideProposalSalesOrderLink,
+  type ProposalLinkSourceValue,
+  type ProposalLinkStatusValue,
+} from "../src/lib/sales/proposalSalesOrderLinkPolicy.ts";
+import {
+  applyProposalSalesOrderLinkInTx,
+  buildProposalLinkLineEvidence,
+  isProposalSlotUniqueViolation,
+  loadProposalLinkCandidateIndex,
+  resolveExplicitProposalReference,
+  type ProposalLinkCandidateIndex,
+} from "../src/lib/sales/proposalSalesOrderLinkWriter.server.ts";
 
 const prisma = new PrismaClient();
 
@@ -99,6 +114,8 @@ type JsonObject = Record<string, unknown>;
 
 type BlockReason =
   | "CUSTOMER_NOT_RESOLVED"
+  /** Mais de um cliente equivalente (mesmo documento/idPessoa) e pedido ainda não existe: nenhum é escolhido. */
+  | "CUSTOMER_IDENTITY_CONFLICT"
   | "MISSING_PRODUCT_SKU"
   | "INACTIVE_PRODUCT_NOMUS"
   | "INVALID_NOMUS_ORDER"
@@ -162,6 +179,8 @@ type DryRunResult = {
   changedHeaderTotals: NomusSyncUpdatePreview[];
   changedItems: NomusSyncUpdatePreview[];
   blockedPreview: BlockedSalesOrder[];
+  /** Prévia das decisões de vínculo com proposta (situação e motivo por pedido elegível). */
+  proposalLinks: ProposalLinkRunSummary;
   criticalSchemaNote: string;
 };
 
@@ -667,90 +686,26 @@ function nomusProductIsActive(product: JsonObject): boolean {
   return true;
 }
 
+/**
+ * Ponte idPessoaCliente (Nomus) → Customer.id. Mesma regra do sync de propostas
+ * (src/lib/nomusCustomerBridgeResolution.ts): histórico de pedidos, Customer.nomusExternalPersonId e CPF/CNPJ por
+ * dígitos; clientes equivalentes viram conflito (sem escolha arbitrária).
+ */
 async function mapPessoaBridgeByExternalCustomerId(
   baseUrl: string,
   externalCustomerIds: number[]
-): Promise<Map<number, { taxId: string | null; customerId: string | null }>> {
+): Promise<Map<number, CustomerBridgeEntry>> {
   const maxRetries = Math.max(0, toInt(process.env.NOMUS_MAX_RETRIES) ?? DEFAULT_MAX_RETRIES);
   const retryBaseMs = Math.max(100, toInt(process.env.NOMUS_RETRY_BASE_MS) ?? DEFAULT_RETRY_BASE_MS);
-
-  const bridge = new Map<number, { taxId: string | null; customerId: string | null }>();
-  const uniqueIds = [...new Set(externalCustomerIds)].filter((id) => id > 0);
-
-  const cachedSalesOrderCustomers =
-    uniqueIds.length === 0
-      ? []
-      : await prisma.salesOrder.findMany({
-          where: {
-            sourceSystem: SOURCE_SYSTEM,
-            externalCustomerId: { in: uniqueIds },
-          },
-          select: {
-            externalCustomerId: true,
-            Customer: {
-              select: {
-                id: true,
-                taxId: true,
-              },
-            },
-          },
-        });
-
-  for (const row of cachedSalesOrderCustomers) {
-    const externalCustomerId = row.externalCustomerId;
-    if (externalCustomerId == null || !row.Customer?.id) continue;
-    if (!bridge.has(externalCustomerId)) {
-      bridge.set(externalCustomerId, {
-        taxId: normalizeTaxId(row.Customer.taxId),
-        customerId: row.Customer.id,
-      });
-    }
-  }
-
-  timeLog(
-    `mapPessoaBridgeByExternalCustomerId cacheSalesOrder resolved=${bridge.size}/${uniqueIds.length}`
-  );
-
-  const missingIds = uniqueIds.filter((id) => !bridge.has(id));
-
-  const localCustomers = await prisma.customer.findMany({
-    select: { id: true, taxId: true },
+  const { bridge, metrics } = await resolveNomusCustomerBridge(prisma, baseUrl, externalCustomerIds, {
+    logPrefix: "[nomus-sales-orders-v1]",
+    maxRetries,
+    retryBaseMs,
   });
-  const localByTaxId = new Map<string, string>();
-  for (const customer of localCustomers) {
-    const taxId = normalizeTaxId(customer.taxId);
-    if (taxId) localByTaxId.set(taxId, customer.id);
-  }
-
-  let pessoaFetchCount = 0;
-  for (const idCliente of missingIds) {
-    pessoaFetchCount += 1;
-    if (
-      pessoaFetchCount === 1 ||
-      pessoaFetchCount % 25 === 0 ||
-      pessoaFetchCount === missingIds.length
-    ) {
-      timeLog(`fetchPessoa progresso=${pessoaFetchCount}/${missingIds.length}`);
-    }
-
-    const url = buildNomusUrl(baseUrl, "pessoas");
-    url.searchParams.set("query", `id==${idCliente}`);
-
-    const payload = await fetchJsonWithRetry(url, maxRetries, retryBaseMs);
-    const arr = pickArrayFromUnknown(payload);
-    const pessoa =
-      (arr.find((x): x is JsonObject => !!x && typeof x === "object") as JsonObject | undefined) ??
-      ((payload && typeof payload === "object" ? (payload as JsonObject) : undefined) as JsonObject | undefined);
-
-    const taxId = normalizeTaxId((pessoa?.cnpj as unknown) ?? (pessoa?.cpf as unknown));
-    const customerId = taxId ? (localByTaxId.get(taxId) ?? null) : null;
-    bridge.set(idCliente, { taxId, customerId });
-  }
-
   timeLog(
-    `mapPessoaBridgeByExternalCustomerId fetchPessoa missing=${missingIds.length} totalResolved=${bridge.size}`
+    `mapPessoaBridgeByExternalCustomerId requested=${metrics.requestedExternalCustomerIds} ` +
+      `resolved=${metrics.resolvedByTaxId} conflicts=${metrics.conflicts} unresolved=${metrics.unresolvedFinal}`
   );
-
   return bridge;
 }
 
@@ -860,11 +815,13 @@ function mergeReasons(set: Set<BlockReason>, reasons: BlockReason[]): void {
 
 function analyzeOrder(
   pedido: JsonObject,
-  customerBridge: Map<number, { taxId: string | null; customerId: string | null }>,
+  customerBridge: Map<number, CustomerBridgeEntry>,
   proposalIndex: Map<string, ProposalItemJoin[]>,
   nomusProductById: Map<number, JsonObject>,
   productBySku: Map<string, { id: string; sku: string; name: string }>,
-  productById: Map<string, { id: string; sku: string; name: string }>
+  productById: Map<string, { id: string; sku: string; name: string }>,
+  /** Cliente já gravado em cada pedido existente (externalSalesOrderId → Customer.id). */
+  existingCustomerIdByExternalOrderId: ReadonlyMap<number, string> = new Map()
 ): { eligible: EligibleSalesOrderPlan | null; blocked: BlockedSalesOrder | null; lineReasons: BlockReason[][] } {
   const externalSalesOrderId = toInt(pedido.id);
   const codigoPedido = asString(pedido.codigoPedido);
@@ -888,7 +845,10 @@ function analyzeOrder(
   const idPessoaCliente = toInt(pedido.idPessoaCliente);
   const { externalSellerId, nomusSellerName } = extractNomusSellerFromPedido(pedido);
   const bridge = idPessoaCliente != null ? customerBridge.get(idPessoaCliente) : undefined;
-  const customerId = bridge?.customerId ?? null;
+  // Clientes equivalentes em conflito: pedido já existente mantém o cliente gravado (não troca histórico);
+  // pedido novo fica bloqueado até o cadastro ser saneado.
+  const customerId =
+    bridge?.customerId ?? (bridge?.conflict ? (existingCustomerIdByExternalOrderId.get(externalSalesOrderId) ?? null) : null);
 
   const reasons = new Set<BlockReason>();
   const missingSkus = new Set<string>();
@@ -896,7 +856,10 @@ function analyzeOrder(
   let proposalItemDetail: string | null = null;
 
   if (idPessoaCliente == null || !customerId) {
-    reasons.add("CUSTOMER_NOT_RESOLVED");
+    reasons.add(bridge?.conflict ? "CUSTOMER_IDENTITY_CONFLICT" : "CUSTOMER_NOT_RESOLVED");
+    if (bridge?.conflict) {
+      proposalItemDetail = `Clientes equivalentes no IndusCost (${bridge.via ?? "?"}): ${(bridge.candidateCustomerIds ?? []).length} candidatos; nenhum escolhido.`;
+    }
   }
 
   const itemsRaw = Array.isArray(pedido.itensPedido)
@@ -1082,7 +1045,8 @@ function analyzeOrder(
         externalSalesOrderId,
         codigoPedido,
         reasons: [...reasons],
-        missingCustomerExternalId: reasons.has("CUSTOMER_NOT_RESOLVED") ? idPessoaCliente : null,
+        missingCustomerExternalId:
+          reasons.has("CUSTOMER_NOT_RESOLVED") || reasons.has("CUSTOMER_IDENTITY_CONFLICT") ? idPessoaCliente : null,
         missingSkus: [...missingSkus].sort(),
         inactiveNomusProductIds: [...inactiveNomusProductIds].sort((a, b) => a - b),
         proposalItemDetail,
@@ -1285,7 +1249,8 @@ async function applyNomusSyncItemWritePlan(
 async function runApply(
   eligible: EligibleSalesOrderPlan[],
   existingIndexes: ReturnType<typeof indexExistingSalesOrdersByNomusKey>,
-  lifecycleCtx: { runId: string | null; executedAt: Date }
+  lifecycleCtx: { runId: string | null; executedAt: Date },
+  proposalLinkIndex: ProposalLinkCandidateIndex
 ): Promise<{
   created: number;
   updated: number;
@@ -1294,6 +1259,7 @@ async function runApply(
   itemsStale: number;
   affectedSalesOrderIds: string[];
   reactivatedSalesOrderIds: string[];
+  proposalLinks: ProposalLinkRunSummary;
 }> {
   let created = 0;
   let updated = 0;
@@ -1302,8 +1268,36 @@ async function runApply(
   let itemsStale = 0;
   const affectedSalesOrderIds: string[] = [];
   const reactivatedSalesOrderIds: string[] = [];
+  const proposalLinks = emptyProposalLinkRunSummary();
 
   for (const plan of eligible) {
+    // Uma nova tentativa só quando outro escritor ocupou a vaga 1:1 da proposta entre a leitura e a gravação
+    // (P2002 em SalesOrder.proposalId): a segunda leitura vê o dono da vaga e registra CONFLICT.
+    for (let attempt = 1; ; attempt += 1) {
+      const snapshot = { created, updated, itemsCreated, itemsUpdated, itemsStale, links: structuredClone(proposalLinks) };
+      const affectedLength = affectedSalesOrderIds.length;
+      const reactivatedLength = reactivatedSalesOrderIds.length;
+      try {
+        await runApplyOne(plan);
+        break;
+      } catch (error) {
+        // Transação desfeita: contadores voltam ao estado anterior.
+        ({ created, updated, itemsCreated, itemsUpdated, itemsStale } = snapshot);
+        Object.assign(proposalLinks, snapshot.links);
+        affectedSalesOrderIds.length = affectedLength;
+        reactivatedSalesOrderIds.length = reactivatedLength;
+        if (attempt === 1 && isProposalSlotUniqueViolation(error)) {
+          console.warn(
+            `[nomus-sales-orders-v1] pedido ${plan.codigoPedido}: vaga da proposta ocupada por escrita concorrente; reprocessando.`
+          );
+          continue;
+        }
+        throw error;
+      }
+    }
+  }
+
+  async function runApplyOne(plan: EligibleSalesOrderPlan): Promise<void> {
     await prisma.$transaction(async (tx) => {
       const pedido = plan.pedido;
       const issueDate =
@@ -1321,23 +1315,8 @@ async function runApply(
 
       const existingMatch = findExistingSalesOrderForNomusSync(existingIndexes, plan);
 
-      let safeProposalId = plan.proposalId;
-
-      if (safeProposalId) {
-        const salesOrderUsingProposal = await tx.salesOrder.findUnique({
-          where: { proposalId: safeProposalId },
-          select: { id: true, externalSalesOrderId: true, orderCode: true },
-        });
-
-        if (salesOrderUsingProposal && (!existingMatch || salesOrderUsingProposal.id !== existingMatch.id)) {
-          console.warn(
-            `[nomus-sales-orders-v1] proposalId ${safeProposalId} já está vinculado ao pedido ${salesOrderUsingProposal.orderCode ?? salesOrderUsingProposal.externalSalesOrderId}; ` +
-              `pedido ${plan.codigoPedido} será espelhado sem vínculo direto com proposalId.`,
-          );
-          safeProposalId = null;
-        }
-      }
-
+      // proposalId NÃO faz parte do cabeçalho espelhado: o vínculo é decidido depois, pela política oficial
+      // (src/lib/sales/proposalSalesOrderLinkPolicy.ts), que nunca apaga nem troca um vínculo existente.
       const lifecycleWrite = buildPresentLifecycleWriteData({
         payloadHash,
         executedAt: lifecycleCtx.executedAt,
@@ -1346,7 +1325,6 @@ async function runApply(
       });
 
       const nomusHeader = {
-        proposalId: safeProposalId,
         sourceSystem: SOURCE_SYSTEM,
         externalSalesOrderId: plan.externalSalesOrderId,
         externalSalesOrderCode: plan.codigoPedido,
@@ -1532,6 +1510,18 @@ async function runApply(
         tx
       );
 
+      const link = await applyProposalSalesOrderLinkInTx(tx, {
+        salesOrderId,
+        orderCustomerId: plan.customerId,
+        orderIssueDate: issueDate,
+        explicit: await resolveExplicitProposalReference(tx, extractNomusProposalReferences(pedido)),
+        lines: buildProposalLinkLineEvidence(proposalLinkIndex, plan.customerId, proposalLinkLineKeys(plan)),
+        proposals: proposalLinkIndex.proposals,
+        actor: "nomus-sales-orders-sync",
+        runId: lifecycleCtx.runId,
+      });
+      countProposalLinkDecision(proposalLinks, link.decision, link.previous.proposalId);
+
       affectedSalesOrderIds.push(salesOrderId);
     });
   }
@@ -1544,7 +1534,96 @@ async function runApply(
     itemsStale,
     affectedSalesOrderIds: [...new Set(affectedSalesOrderIds)],
     reactivatedSalesOrderIds: [...new Set(reactivatedSalesOrderIds)],
+    proposalLinks,
   };
+}
+
+type ProposalLinkRunSummary = {
+  byStatus: Record<string, number>;
+  byReason: Record<string, number>;
+  events: number;
+  newLinks: number;
+};
+
+function emptyProposalLinkRunSummary(): ProposalLinkRunSummary {
+  return { byStatus: {}, byReason: {}, events: 0, newLinks: 0 };
+}
+
+function countProposalLinkDecision(
+  summary: ProposalLinkRunSummary,
+  decision: { status: string; reason: string; eventKind: string | null; proposalId: string | null },
+  previousProposalId?: string | null
+): void {
+  summary.byStatus[decision.status] = (summary.byStatus[decision.status] ?? 0) + 1;
+  summary.byReason[decision.reason] = (summary.byReason[decision.reason] ?? 0) + 1;
+  if (decision.eventKind) summary.events += 1;
+  if (decision.eventKind === "LINKED" && previousProposalId !== decision.proposalId) summary.newLinks += 1;
+}
+
+function proposalLinkLineKeys(plan: EligibleSalesOrderPlan): Array<{ lineKey: string; productId: string }> {
+  return plan.lines.map((line, index) => ({
+    lineKey:
+      line.externalLineId != null && line.externalLineId > 0
+        ? `line:${line.externalLineId}`
+        : `seq:${line.itemSequence ?? index + 1}`,
+    productId: line.productId,
+  }));
+}
+
+/**
+ * Prévia (sem escrita e sem lock) das decisões de vínculo para o dry-run. A gravação real relê o estado dentro da
+ * transação de cada pedido.
+ */
+async function previewProposalLinkDecisions(
+  eligible: EligibleSalesOrderPlan[],
+  proposalLinkIndex: ProposalLinkCandidateIndex
+): Promise<{ summary: ProposalLinkRunSummary; byExternalSalesOrderId: Map<number, string | null> }> {
+  const summary = emptyProposalLinkRunSummary();
+  const byExternalSalesOrderId = new Map<number, string | null>();
+  const existingRows = await loadExistingSalesOrdersForNomusSync(eligible);
+  const indexes = indexExistingSalesOrdersByNomusKey(existingRows);
+  const existingIds = existingRows.map((row) => row.id);
+  const currentRows =
+    existingIds.length === 0
+      ? []
+      : await prisma.salesOrder.findMany({
+          where: { id: { in: existingIds } },
+          select: { id: true, proposalId: true, proposalLinkSource: true, proposalLinkStatus: true },
+        });
+  const currentById = new Map(currentRows.map((row) => [row.id, row]));
+  const candidateIds = [...proposalLinkIndex.proposals.keys()];
+  const owners =
+    candidateIds.length === 0
+      ? []
+      : await prisma.salesOrder.findMany({
+          where: { proposalId: { in: candidateIds } },
+          select: { id: true, proposalId: true },
+        });
+  const slotOwnerByProposalId = new Map(
+    owners.filter((o) => o.proposalId).map((o) => [o.proposalId as string, o.id] as const)
+  );
+
+  for (const plan of eligible) {
+    const existing = findExistingSalesOrderForNomusSync(indexes, plan);
+    const current = existing ? currentById.get(existing.id) : undefined;
+    const decision = decideProposalSalesOrderLink({
+      salesOrderId: existing?.id ?? null,
+      orderCustomerId: plan.customerId,
+      orderIssueDate: parseNomusDateTime(plan.pedido.dataEmissao) ?? parseNomusDateTime(plan.pedido.dataCriacao),
+      current: {
+        proposalId: current?.proposalId ?? null,
+        source: (current?.proposalLinkSource as ProposalLinkSourceValue | null | undefined) ?? null,
+        status: (current?.proposalLinkStatus as ProposalLinkStatusValue | null | undefined) ?? null,
+      },
+      explicit: await resolveExplicitProposalReference(prisma, extractNomusProposalReferences(plan.pedido)),
+      lines: buildProposalLinkLineEvidence(proposalLinkIndex, plan.customerId, proposalLinkLineKeys(plan)),
+      proposals: proposalLinkIndex.proposals,
+      slotOwnerByProposalId,
+    });
+    countProposalLinkDecision(summary, decision, current?.proposalId ?? null);
+    byExternalSalesOrderId.set(plan.externalSalesOrderId, decision.proposalId);
+  }
+  return { summary, byExternalSalesOrderId };
 }
 
 function parseIsoDateBound(value: string, endOfDay: boolean): Date {
@@ -1721,6 +1800,22 @@ export async function executeNomusSalesOrdersSync(
   const eligible: EligibleSalesOrderPlan[] = [];
   const blocked: BlockedSalesOrder[] = [];
 
+  const pedidoExternalIds = [
+    ...new Set(pedidos.map((p) => toInt(p.id)).filter((id): id is number => id != null)),
+  ];
+  const existingCustomerRows =
+    pedidoExternalIds.length === 0
+      ? []
+      : await prisma.salesOrder.findMany({
+          where: { sourceSystem: SOURCE_SYSTEM, externalSalesOrderId: { in: pedidoExternalIds } },
+          select: { externalSalesOrderId: true, customerId: true },
+        });
+  const existingCustomerIdByExternalOrderId = new Map(
+    existingCustomerRows
+      .filter((row) => row.externalSalesOrderId != null)
+      .map((row) => [row.externalSalesOrderId as number, row.customerId] as const)
+  );
+
   for (const pedido of pedidos) {
     const { eligible: el, blocked: bl } = analyzeOrder(
       pedido,
@@ -1728,7 +1823,8 @@ export async function executeNomusSalesOrdersSync(
       proposalIndex,
       nomusProductById,
       productBySku,
-      productById
+      productById,
+      existingCustomerIdByExternalOrderId
     );
     if (el) eligible.push(el);
     if (bl) blocked.push(bl);
@@ -1736,53 +1832,17 @@ export async function executeNomusSalesOrdersSync(
 
   timeLog(`FIM analyzeOrder loop eligible=${eligible.length} blocked=${blocked.length}`);
 
-  const proposalIdsForSo = [
-    ...new Set(
-      eligible
-        .map((e) => e.proposalId)
-        .filter((x): x is string => typeof x === "string" && x.length > 0)
-    ),
-  ];
-  const salesOrdersForProposals =
-    proposalIdsForSo.length === 0
-      ? []
-      : await prisma.salesOrder.findMany({
-          where: { proposalId: { in: proposalIdsForSo } },
-          select: { id: true, proposalId: true, externalSalesOrderId: true, sourceSystem: true },
-        });
-  const salesOrderByProposalId = new Map(salesOrdersForProposals.map((s) => [s.proposalId, s]));
-
-  const eligibleAfterProposalSlot: EligibleSalesOrderPlan[] = [];
+  // Vínculo com proposta: evidências por produto LOCAL das propostas (Nomus e IndusCost) dos clientes do lote.
+  timeLog("INICIO loadProposalLinkCandidateIndex");
+  const proposalLinkIndex = await loadProposalLinkCandidateIndex(
+    prisma,
+    eligible.map((plan) => plan.customerId)
+  );
+  timeLog(`FIM loadProposalLinkCandidateIndex proposals=${proposalLinkIndex.proposals.size}`);
+  const proposalLinkPreview = await previewProposalLinkDecisions(eligible, proposalLinkIndex);
   for (const plan of eligible) {
-    if (!plan.proposalId) {
-      eligibleAfterProposalSlot.push(plan);
-      continue;
-    }
-
-    const existingSo = salesOrderByProposalId.get(plan.proposalId);
-    if (!existingSo) {
-      eligibleAfterProposalSlot.push(plan);
-      continue;
-    }
-
-    const sameNomusKey =
-      existingSo.sourceSystem === SOURCE_SYSTEM &&
-      existingSo.externalSalesOrderId === plan.externalSalesOrderId;
-
-    if (sameNomusKey) {
-      eligibleAfterProposalSlot.push(plan);
-      continue;
-    }
-
-    // Como proposalId agora é opcional, não bloqueia o pedido por colisão de proposta.
-    // Mantém o pedido como espelho do Nomus e remove apenas o vínculo ambíguo com a proposta.
-    eligibleAfterProposalSlot.push({
-      ...plan,
-      proposalId: null,
-    });
+    plan.proposalId = proposalLinkPreview.byExternalSalesOrderId.get(plan.externalSalesOrderId) ?? null;
   }
-  eligible.length = 0;
-  eligible.push(...eligibleAfterProposalSlot);
 
   const blockedReasons: Record<string, number> = {};
   for (const b of blocked) {
@@ -1796,7 +1856,7 @@ export async function executeNomusSalesOrdersSync(
   timeLog("FIM runDry");
 
   const criticalSchemaNote =
-    "SalesOrder.proposalId e SalesOrderItem.proposalItemId são opcionais. Pedidos criados diretamente no Nomus podem ser espelhados sem vínculo com proposta; quando o vínculo com Proposal/ProposalItem for único e seguro, ele será preenchido. Produto inativo no Nomus não bloqueia pedido histórico se o SKU for resolvido localmente. Vendedor comissionável: apenas idPessoaVendedor/nomeVendedor do pedido Nomus (SalesOrder.externalSellerId + nomusSellerName). Responsável comercial CRM não é usado para comissão.";
+    "SalesOrder.proposalId e SalesOrderItem.proposalItemId são opcionais. Pedidos criados diretamente no Nomus podem ser espelhados sem vínculo com proposta; o vínculo com Proposal segue a política oficial (src/lib/sales/proposalSalesOrderLinkPolicy.ts): referência explícita confirmada, vínculo existente preservado (nunca apagado nem trocado), inferência só com uma única proposta do mesmo cliente; situação/origem/evidência em SalesOrder.proposalLink* e histórico em SalesOrderProposalLinkEvent. Produto inativo no Nomus não bloqueia pedido histórico se o SKU for resolvido localmente. Vendedor comissionável: apenas idPessoaVendedor/nomeVendedor do pedido Nomus (SalesOrder.externalSellerId + nomusSellerName). Responsável comercial CRM não é usado para comissão.";
 
   const result: DryRunResult = {
     totalRead: pedidos.length,
@@ -1810,6 +1870,7 @@ export async function executeNomusSalesOrdersSync(
     changedHeaderTotals: preview.changedHeaderTotals,
     changedItems: preview.changedItems,
     blockedPreview: blocked.slice(0, 50),
+    proposalLinks: proposalLinkPreview.summary,
     criticalSchemaNote,
   };
 
@@ -1975,10 +2036,15 @@ export async function executeNomusSalesOrdersSync(
     const existingRowsForApply = await loadExistingSalesOrdersForNomusSync(eligible);
     const existingIndexes = indexExistingSalesOrdersByNomusKey(existingRowsForApply);
     applied = isApply
-      ? await runApply(eligible, existingIndexes, {
-          runId: sourceSyncRunId,
-          executedAt: new Date(),
-        })
+      ? await runApply(
+          eligible,
+          existingIndexes,
+          {
+            runId: sourceSyncRunId,
+            executedAt: new Date(),
+          },
+          proposalLinkIndex
+        )
       : null;
     timeLog(isApply ? "FIM runApply" : "FIM dry-run sem apply");
 

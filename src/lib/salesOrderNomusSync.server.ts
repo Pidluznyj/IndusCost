@@ -404,7 +404,8 @@ export function buildNomusSyncItemWritePlan(input: {
     const row: NomusSyncItemWriteRow = {
       id: matched?.id,
       salesOrderId: input.salesOrderId,
-      proposalItemId: line.proposalItemId,
+      // Vínculo com o item da proposta já gravado é preservado (nunca apagado nem trocado pelo sync).
+      proposalItemId: matched?.proposalItemId ?? line.proposalItemId,
       productId: line.productId,
       externalProductId: line.externalProductId,
       skuSnapshot: line.skuSnapshot,

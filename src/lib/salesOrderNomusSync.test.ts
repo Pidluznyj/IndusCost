@@ -151,6 +151,49 @@ describe("salesOrderNomusSync", () => {
     assert.equal(plan.upserts[0]?.totalCost, "0.000000");
   });
 
+  it("buildNomusSyncItemWritePlan preserva o vínculo do item com a proposta (nunca apaga nem troca)", () => {
+    const existing = (proposalItemId: string | null) => ({
+      id: "item-1",
+      productId: "p1",
+      externalProductId: 100,
+      proposalItemId,
+      skuSnapshot: "SKU-1",
+      productNameSnapshot: "Produto 1",
+      unit: "UN",
+      unitCost: "10.000000",
+      totalCost: "0.000000",
+      marginValue: "0.000000",
+      marginPerc: "0.000000",
+      quantity: "1.000000",
+      negotiatedPrice: "10.000000",
+      totalNetValue: "10.000000",
+      notes: null,
+      nomusItemExternalId: 501,
+    });
+    const planned = (proposalItemId: string | null) => ({
+      externalLineId: 501,
+      productId: "p1",
+      externalProductId: 100,
+      proposalItemId,
+      skuSnapshot: "SKU-1",
+      productNameSnapshot: "Produto 1",
+      unit: "UN",
+      quantity: 1,
+      negotiatedPrice: 10,
+      totalNetValue: 10,
+      notes: null,
+    });
+    // inferência ficou ambígua (linha sem candidato): vínculo existente mantido
+    const kept = buildNomusSyncItemWritePlan({ salesOrderId: "so-1", plannedLines: [planned(null)], existingItems: [existing("pi-1")] });
+    assert.equal(kept.upserts[0]?.proposalItemId, "pi-1");
+    // inferência aponta outro item: não troca
+    const notReplaced = buildNomusSyncItemWritePlan({ salesOrderId: "so-1", plannedLines: [planned("pi-2")], existingItems: [existing("pi-1")] });
+    assert.equal(notReplaced.upserts[0]?.proposalItemId, "pi-1");
+    // sem vínculo anterior: preenche
+    const filled = buildNomusSyncItemWritePlan({ salesOrderId: "so-1", plannedLines: [planned("pi-2")], existingItems: [existing(null)] });
+    assert.equal(filled.upserts[0]?.proposalItemId, "pi-2");
+  });
+
   it("buildNomusSyncItemWritePlan marca linha removida no Nomus sem delete físico", () => {
     const plan = buildNomusSyncItemWritePlan({
       salesOrderId: "so-1",
