@@ -256,7 +256,13 @@ g AS (
   FROM d WHERE length(digits) BETWEEN 11 AND 14
   GROUP BY digits HAVING count(*) > 1
 )
-SELECT count(*) AS grupos, coalesce(sum(clientes), 0) AS clientes_envolvidos FROM g;
+SELECT count(*) AS grupos, coalesce(sum(clientes), 0) AS clientes_envolvidos,
+       -- Grupo sem nenhum cliente com id de pessoa do Nomus: unico caso em que pedido NOVO ainda fica bloqueado
+       -- (CUSTOMER_IDENTITY_CONFLICT) ate o cadastro ser saneado ou o id da pessoa ser gravado no cliente correto.
+       count(*) FILTER (WHERE ids_pessoa_nomus = 0) AS grupos_que_podem_bloquear_pedido_novo,
+       -- Grupo com mais de um id de pessoa do Nomus: o mesmo documento em pessoas diferentes no proprio Nomus.
+       count(*) FILTER (WHERE ids_pessoa_nomus > 1) AS grupos_com_varias_pessoas_nomus
+FROM g;
 
 WITH d AS (
   SELECT c.id, regexp_replace(coalesce(c."taxId", ''), '[^0-9]', '', 'g') AS digits,

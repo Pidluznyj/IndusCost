@@ -6,8 +6,9 @@
  *   2. NOMUS_PERSON_ID     — Customer.nomusExternalPersonId (id estável da pessoa no Nomus);
  *   3. DOCUMENT_DIGITS     — CPF/CNPJ comparado só pelos dígitos (com ou sem máscara).
  *
- * Mais de um cliente numa etapa é CONFLITO: a etapa seguinte só resolve se apontar um único cliente que esteja
- * entre os conflitantes. Nunca escolhe arbitrariamente e nunca cria cliente.
+ * Mais de um cliente numa etapa é CONFLITO: a etapa seguinte só resolve se, entre os conflitantes, restar um
+ * único cliente também apontado por ela (interseção das evidências). Cliente já ligado a OUTRA pessoa do Nomus é
+ * excluído da etapa de documento pelo chamador. Nunca escolhe arbitrariamente e nunca cria cliente.
  */
 
 export type CustomerIdentityVia = "SALES_ORDER_HISTORY" | "NOMUS_PERSON_ID" | "DOCUMENT_DIGITS";
@@ -36,12 +37,18 @@ export function documentDigits(value: unknown): string | null {
 export type CustomerIdentityIndexes = {
   byDocument: CustomerDocumentIndex;
   byPersonId: Map<number, string[]>;
+  /** Customer.id → nomusExternalPersonId (null = nunca veio do Nomus). */
+  personIdByCustomerId: Map<string, number | null>;
 };
 
 /** Índices a partir de todos os clientes (uma consulta; comparação por dígitos não usa índice de texto). */
 export function buildCustomerIdentityIndexes(rows: Iterable<CustomerIdentityRow>): CustomerIdentityIndexes {
   const list = [...rows];
-  return { byDocument: buildCustomerDocumentIndex(list), byPersonId: buildCustomerPersonIdIndex(list) };
+  return {
+    byDocument: buildCustomerDocumentIndex(list),
+    byPersonId: buildCustomerPersonIdIndex(list),
+    personIdByCustomerId: new Map(list.map((row) => [row.id, row.nomusExternalPersonId ?? null] as const)),
+  };
 }
 
 export type CustomerDocumentIndex = Map<string, string[]>;
@@ -88,8 +95,10 @@ export function decideCustomerIdentity(steps: {
     const ids = [...new Set(raw ?? [])].sort();
     if (ids.length === 0) continue;
     if (conflict) {
-      // Etapa posterior só desempata dentro do conjunto conflitante.
-      if (ids.length === 1 && conflict.ids.includes(ids[0]!)) return { status: "RESOLVED", customerId: ids[0]!, via };
+      // Etapa posterior só desempata DENTRO do conjunto conflitante: um único cliente presente nas duas evidências.
+      const narrowed = ids.filter((id) => conflict!.ids.includes(id));
+      if (narrowed.length === 1) return { status: "RESOLVED", customerId: narrowed[0]!, via };
+      if (narrowed.length > 1) conflict = { via: conflict.via, ids: narrowed };
       continue;
     }
     if (ids.length === 1) return { status: "RESOLVED", customerId: ids[0]!, via };

@@ -46,6 +46,16 @@ describe("identidade de cliente por documento (syncs Nomus)", () => {
       decideCustomerIdentity({ salesOrderHistoryCustomerIds: ["a", "b"], personIdCustomerIds: ["b"] }),
       { status: "RESOLVED", customerId: "b", via: "NOMUS_PERSON_ID" }
     );
+    // interseção: documento aponta A e X; só A está no conflito do histórico → A
+    assert.deepEqual(
+      decideCustomerIdentity({ salesOrderHistoryCustomerIds: ["a", "b"], documentCustomerIds: ["a", "x"] }),
+      { status: "RESOLVED", customerId: "a", via: "DOCUMENT_DIGITS" }
+    );
+    // interseção com mais de um continua conflito (restrito aos dois)
+    assert.deepEqual(
+      decideCustomerIdentity({ salesOrderHistoryCustomerIds: ["a", "b", "c"], documentCustomerIds: ["a", "b"] }),
+      { status: "CONFLICT", via: "SALES_ORDER_HISTORY", candidateCustomerIds: ["a", "b"] }
+    );
     // desempate fora do conjunto conflitante não vale
     assert.equal(
       decideCustomerIdentity({ salesOrderHistoryCustomerIds: ["a", "b"], personIdCustomerIds: ["z"] }).status,

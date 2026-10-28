@@ -162,7 +162,7 @@ export async function resolveNomusCustomerBridge(
         bridge.set(extId, entry);
         customerBridgeMemoryCache.set(extId, entry);
       } else if (decision.status === "CONFLICT") {
-        // Conflito não consulta o Nomus: o documento não desempata clientes já divergentes no histórico.
+        // Conflito provisório: o documento da pessoa no Nomus ainda pode desempatar DENTRO do conjunto conflitante.
         bridge.set(extId, {
           customerId: null,
           taxId: null,
@@ -170,6 +170,7 @@ export async function resolveNomusCustomerBridge(
           via: decision.via,
           candidateCustomerIds: decision.candidateCustomerIds,
         });
+        needsNomusPerson.push(extId);
       } else {
         needsNomusPerson.push(extId);
       }
@@ -234,7 +235,17 @@ export async function resolveNomusCustomerBridge(
   for (const idCliente of needsNomusPerson) {
     const taxId = pessoaTaxIdByNomusId.get(idCliente) ?? null;
     const digits = documentDigits(taxId);
-    const decision = decideCustomerIdentity({ documentCustomerIds: digits ? (idx.byDocument.get(digits) ?? []) : [] });
+    // Cliente já ligado a OUTRA pessoa do Nomus (nomusExternalPersonId diferente) não é esta pessoa: sai da lista.
+    const documentCustomerIds = (digits ? (idx.byDocument.get(digits) ?? []) : []).filter((customerId) => {
+      const personId = idx.personIdByCustomerId.get(customerId);
+      return personId == null || personId === idCliente;
+    });
+    const history = historyByExtId.get(idCliente);
+    const decision = decideCustomerIdentity({
+      salesOrderHistoryCustomerIds: history ? [...history.keys()] : [],
+      personIdCustomerIds: idx.byPersonId.get(idCliente) ?? [],
+      documentCustomerIds,
+    });
     if (decision.status === "RESOLVED") {
       const entry: CustomerBridgeEntry = { taxId, customerId: decision.customerId, via: decision.via };
       bridge.set(idCliente, entry);

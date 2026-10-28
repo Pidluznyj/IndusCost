@@ -246,7 +246,7 @@ describe("nomusCustomerBridgeResolution — Matriz P0 Customer Bridge", () => {
     }
   });
 
-  it("P0-11: Conflito de identidade em SalesOrder → não escolhe arbitrariamente, marca como conflito", async () => {
+  it("P0-11: Conflito de identidade em SalesOrder → não escolhe arbitrariamente; documento que não desempata mantém conflito", async () => {
     const mockPrisma = {
       salesOrder: {
         findMany: async () => [
@@ -260,20 +260,86 @@ describe("nomusCustomerBridgeResolution — Matriz P0 Customer Bridge", () => {
           },
         ],
       },
-      customer: { findMany: async () => [] },
+      customer: {
+        findMany: async () => [
+          { id: "cust-A", taxId: "11111111000111", nomusExternalPersonId: null },
+          { id: "cust-B", taxId: "22222222000222", nomusExternalPersonId: null },
+        ],
+      },
     };
+    const originalFetch = globalThis.fetch;
+    // Documento da pessoa no Nomus não pertence a nenhum dos dois clientes conflitantes.
+    globalThis.fetch = async () =>
+      new Response(JSON.stringify([{ id: 555, cnpj: "99999999000199" }]), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    try {
+      const result = await resolveNomusCustomerBridge(mockPrisma as any, "http://nomus.fake", [555]);
+      assert.equal(result.metrics.conflicts, 1);
+      assert.equal(result.metrics.resolvedFromSalesOrders, 0);
+      assert.equal(result.metrics.peopleBatchRequests, 1); // consulta o documento só para tentar desempatar
+      assert.equal(result.bridge.get(555)?.customerId, null);
+      assert.equal(result.bridge.get(555)?.conflict, true);
+      assert.deepEqual(result.bridge.get(555)?.candidateCustomerIds, ["cust-A", "cust-B"]);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
 
-    const result = await resolveNomusCustomerBridge(
-      mockPrisma as any,
-      "http://nomus.fake",
-      [555]
-    );
+  it("Duplicidade: documento da pessoa no Nomus desempata conflito do histórico dentro do conjunto", async () => {
+    const mockPrisma = {
+      salesOrder: {
+        findMany: async () => [
+          { externalCustomerId: 556, Customer: { id: "cust-A", taxId: "11111111000111" } },
+          { externalCustomerId: 556, Customer: { id: "cust-B", taxId: "22222222000222" } },
+        ],
+      },
+      customer: {
+        findMany: async () => [
+          { id: "cust-A", taxId: "11.111.111/0001-11", nomusExternalPersonId: null },
+          { id: "cust-B", taxId: "22222222000222", nomusExternalPersonId: null },
+        ],
+      },
+    };
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async () =>
+      new Response(JSON.stringify([{ id: 556, cnpj: "11111111000111" }]), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    try {
+      const result = await resolveNomusCustomerBridge(mockPrisma as any, "http://nomus.fake", [556]);
+      assert.equal(result.bridge.get(556)?.customerId, "cust-A");
+      assert.equal(result.bridge.get(556)?.via, "DOCUMENT_DIGITS");
+      assert.equal(result.metrics.conflicts, 0);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
 
-    assert.equal(result.metrics.conflicts, 1);
-    assert.equal(result.metrics.resolvedFromSalesOrders, 0);
-    assert.equal(result.metrics.peopleBatchRequests, 0); // Não busca no Nomus para ID em conflito!
-    assert.equal(result.bridge.get(555)?.customerId, null);
-    assert.equal(result.bridge.get(555)?.conflict, true);
+  it("Duplicidade: cliente ligado a OUTRA pessoa do Nomus sai da disputa pelo documento", async () => {
+    const mockPrisma = {
+      salesOrder: { findMany: async () => [] },
+      customer: {
+        findMany: async () => [
+          { id: "cust-outra-pessoa", taxId: "33.444.555/0001-66", nomusExternalPersonId: 9001 },
+          { id: "cust-sem-nomus", taxId: "33444555000166", nomusExternalPersonId: null },
+        ],
+      },
+    };
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async () =>
+      new Response(JSON.stringify([{ id: 557, cnpj: "33444555000166" }]), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    try {
+      const result = await resolveNomusCustomerBridge(mockPrisma as any, "http://nomus.fake", [557]);
+      assert.equal(result.bridge.get(557)?.customerId, "cust-sem-nomus");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 
   it("Vínculo proposta×pedido: dois clientes com o mesmo CNPJ (com e sem máscara) → conflito, nenhum escolhido", async () => {
