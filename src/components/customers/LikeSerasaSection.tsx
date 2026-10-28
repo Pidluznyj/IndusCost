@@ -393,7 +393,11 @@ export function LikeSerasaReport({ report, internalCreditLabel, customerId }: { 
             <Series title="Compromissos" indicator={sections.financialBehavior.commitments} />
             <Series title="Crédito obtido" indicator={sections.financialBehavior.creditObtained} />
             {sections.financialBehavior.latePayments.length > 0 ? (
-              sections.financialBehavior.latePayments.map((late, index) => <Series key={index} title={`Atrasos · ${text(late.description, "faixa não informada")}`} indicator={{ score: late.score, series: late.series }} />)
+              sections.financialBehavior.latePayments.map((late, index) => (
+                <div key={index}>
+                  <Series title={`Atrasos · ${text(late.description, "faixa não informada")}`} indicator={{ score: late.score, series: late.series }} />
+                </div>
+              ))
             ) : (
               <p className="text-xs text-slate-500">Atrasos: informação indisponível.</p>
             )}

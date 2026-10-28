@@ -99,7 +99,9 @@ rótulo); se `GERARCOMPROVANTE=Habilitar` tem custo adicional (padrão desligado
   autenticado lê status/histórico/relatório.
 - `Origin` igual ao `Host`, rate limit por usuário, consentimento + chave de idempotência (≥ 8 caracteres, UUID v4
   gerado com `crypto` seguro no cliente), reserva transacional por CNPJ (`IN_FLIGHT`), bloqueio por cobrança
-  desconhecida (`UNKNOWN_BILLING`), cache válido (`CACHE_VALID`), timeout sem repetição.
+  desconhecida (`UNKNOWN_BILLING`), cache válido (`CACHE_VALID`), timeout sem repetição, e intervalo mínimo entre
+  reconsultas manuais (`LIKE_SERASA_MIN_REFRESH_INTERVAL_MS`, 60 s): dois usuários clicando "atualizar" quase ao
+  mesmo tempo geram uma única cobrança (o segundo recebe o resultado em cache).
 - Auditoria: cada tentativa paga grava `CommercialAuditLog` (`entityType=LikeSerasaConsultation`,
   `action=LIKE_SERASA_QUERY`, código, modo, cobrança, ambiente, `creditEffect=NONE`).
 - Dados pessoais: documentos de sócios/administradores mascarados nas seções; e-mail e telefones não lidos; retorno

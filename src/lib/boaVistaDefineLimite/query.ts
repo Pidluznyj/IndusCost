@@ -63,6 +63,7 @@ export async function executeLiveLikeSerasaConsultation(
     authorizedCostCents: input.config.unitPriceCents,
     now,
     forceRefresh: input.forceRefresh === true,
+    minRefreshIntervalMs: input.config.minRefreshIntervalMs,
   });
   if (reserved.ok === false) {
     if (reserved.code === "IDEMPOTENT") return { code: "OK", charged: false, row: reserved.row };
@@ -100,6 +101,7 @@ export async function executeDemoLikeSerasaConsultation(
     authorizedCostCents: 0,
     now,
     forceRefresh: input.forceRefresh === true,
+    minRefreshIntervalMs: input.config.minRefreshIntervalMs,
   });
   if (reserved.ok === false) {
     if (reserved.code === "IDEMPOTENT") return { code: "OK", charged: false, row: reserved.row };

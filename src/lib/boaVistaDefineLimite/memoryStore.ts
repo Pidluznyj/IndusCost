@@ -37,8 +37,9 @@ export function createMemoryBoaVistaStore(): BoaVistaStore & { rows: BoaVistaCon
           return { ok: false, code: "UNKNOWN_BILLING" };
         }
         const latest = rows.filter((row) => row.customerId === input.customerId && row.mode === input.mode && row.status === "SUCCEEDED").at(-1);
-        if (!input.forceRefresh && latest?.validUntil && Date.parse(latest.validUntil) > input.now.getTime()) {
-          return { ok: false, code: "CACHE_VALID" };
+        if (latest?.validUntil && Date.parse(latest.validUntil) > input.now.getTime()) {
+          const recent = latest.consultedAt != null && input.now.getTime() - Date.parse(latest.consultedAt) < input.minRefreshIntervalMs;
+          if (!input.forceRefresh || recent) return { ok: false, code: "CACHE_VALID" };
         }
         const row: BoaVistaConsultationRecord = {
           id: randomUUID(),

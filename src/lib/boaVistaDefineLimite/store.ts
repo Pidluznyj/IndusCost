@@ -63,6 +63,8 @@ export type BoaVistaStore = {
     authorizedCostCents: number;
     now: Date;
     forceRefresh: boolean;
+    /** Com forceRefresh, uma consulta válida mais recente que este intervalo ainda é devolvida como CACHE_VALID. */
+    minRefreshIntervalMs: number;
   }): Promise<BoaVistaReserveResult>;
   markSent(id: string): Promise<void>;
   complete(

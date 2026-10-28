@@ -135,8 +135,9 @@ export function createPrismaBoaVistaStore(prisma: PrismaClient): BoaVistaStore {
             where: { customerId: input.customerId, mode: input.mode, status: "SUCCEEDED" },
             orderBy: { consultedAt: "desc" },
           });
-          if (!input.forceRefresh && latest?.validUntil && latest.validUntil.getTime() > input.now.getTime()) {
-            return { ok: false, code: "CACHE_VALID" };
+          if (latest?.validUntil && latest.validUntil.getTime() > input.now.getTime()) {
+            const recent = latest.consultedAt != null && input.now.getTime() - latest.consultedAt.getTime() < input.minRefreshIntervalMs;
+            if (!input.forceRefresh || recent) return { ok: false, code: "CACHE_VALID" };
           }
           const created = await tx.boaVistaDefineLimiteConsultation.create({
             data: {

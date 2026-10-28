@@ -336,11 +336,11 @@ describe("consulta LIKE SERASA — rotas, bloqueios e cobrança", () => {
     }
   });
 
-  it("cache válido: segunda consulta devolve o resultado anterior sem custo; vencida: nova consulta; atualização manual com forceRefresh", async () => {
+  it("cache válido: segunda consulta devolve o resultado anterior sem custo; forceRefresh dentro do intervalo mínimo não cobra de novo; depois dele cobra; vencida: nova consulta", async () => {
     resetLikeSerasaRateLimit();
     const fetcher = countingFetch(() => okResponse());
     let clock = Date.parse("2026-10-28T12:00:00Z");
-    const { app } = appFor("SUPER_ADMIN", { fetchImpl: fetcher.impl, now: () => new Date(clock) });
+    const { app } = appFor("SUPER_ADMIN", { fetchImpl: fetcher.impl, now: () => new Date(clock), env: { ...PRODUCTION_ENV, LIKE_SERASA_CACHE_TTL_MS: "600000", LIKE_SERASA_MIN_REFRESH_INTERVAL_MS: "60000" } });
     const server = await listen(app);
     try {
       assert.equal((await post(server.base, consent("k1"))).json.code, "OK");
@@ -350,12 +350,17 @@ describe("consulta LIKE SERASA — rotas, bloqueios e cobrança", () => {
       assert.equal(cached.json.charged, false);
       assert.ok(cached.json.consultation, "resultado anterior devolvido");
       assert.equal(fetcher.state.calls, 1);
-      const forced = await post(server.base, { ...consent("k3"), forceRefresh: true });
-      assert.equal(forced.json.code, "OK");
-      assert.equal(fetcher.state.calls, 2);
+      const tooSoon = await post(server.base, { ...consent("k3"), forceRefresh: true });
+      assert.equal(tooSoon.json.code, "CACHE_VALID", "dois usuários clicando 'atualizar' em seguida: uma cobrança só");
+      assert.equal(fetcher.state.calls, 1);
       clock += 61_000;
+      const forced = await post(server.base, { ...consent("k4"), forceRefresh: true });
+      assert.equal(forced.json.code, "OK");
+      assert.equal(forced.json.charged, true);
+      assert.equal(fetcher.state.calls, 2);
+      clock += 601_000;
       assert.equal((await get(server.base)).state, "STALE");
-      const renewed = await post(server.base, consent("k4"));
+      const renewed = await post(server.base, consent("k5"));
       assert.equal(renewed.json.code, "OK");
       assert.equal(fetcher.state.calls, 3);
     } finally {

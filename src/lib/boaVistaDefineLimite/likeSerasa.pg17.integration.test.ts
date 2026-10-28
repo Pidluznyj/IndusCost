@@ -36,6 +36,11 @@ describe("LIKE SERASA com PostgreSQL 17 real", { skip: SKIP }, () => {
     // O schema "final" vem do schema.prisma; o índice parcial existe só na migration: aplicada inteira, como no deploy.
     await executeSqlFile(db.url, join(REPO, "prisma/migrations/20261103120000_boa_vista_define_limite/migration.sql"));
     assert.ok(readFileSync(join(REPO, "prisma/migrations/20261103120000_boa_vista_define_limite/migration.sql"), "utf8").includes("inflight_live_cnpj_idx"));
+    const indexes = (await prisma.$queryRawUnsafe(`SELECT indexname, indexdef FROM pg_indexes WHERE tablename = 'BoaVistaDefineLimiteConsultation'`)) as Array<{ indexname: string; indexdef: string }>;
+    const inflight = indexes.find((index) => index.indexname === "BoaVistaDefineLimiteConsultation_inflight_live_cnpj_idx");
+    assert.ok(inflight, `índice parcial ausente; índices: ${indexes.map((index) => index.indexname).join(", ")}`);
+    assert.match(inflight.indexdef, /UNIQUE/);
+    assert.match(inflight.indexdef, /WHERE/);
     const customer = await prisma.customer.create({ data: { companyName: "Cliente PG17", taxId: "11.444.777/0001-61" } });
     customerId = customer.id;
   });
@@ -62,13 +67,14 @@ describe("LIKE SERASA com PostgreSQL 17 real", { skip: SKIP }, () => {
     });
   }
 
-  const ok = (): typeof fetch => async () => new Response(JSON.stringify(buildBoaVistaDemoResponse({ cnpj: CNPJ })), { status: 200, headers: { "content-type": "application/json" } });
+  const okResponse = () => new Response(JSON.stringify(buildBoaVistaDemoResponse({ cnpj: CNPJ })), { status: 200, headers: { "content-type": "application/json" } });
+  const ok = (): typeof fetch => async () => okResponse();
 
   it("consulta real gravada com BigInt do limite, seções JSON, cobrança estimada; cache válido devolve sem nova chamada; idempotência pela chave única", async () => {
     let calls = 0;
-    const fetchImpl: typeof fetch = async (...args) => {
+    const fetchImpl: typeof fetch = async () => {
       calls += 1;
-      return ok()(...args);
+      return okResponse();
     };
     const first = await run("pg-chave-1", fetchImpl);
     assert.equal(first.code, "OK", JSON.stringify(first));
@@ -92,16 +98,19 @@ describe("LIKE SERASA com PostgreSQL 17 real", { skip: SKIP }, () => {
 
   it("corrida real entre conexões com chaves diferentes e forceRefresh: exatamente uma chamada ao provedor (transação + índice parcial)", async () => {
     let calls = 0;
-    const slow: typeof fetch = async (...args) => {
+    const slow: typeof fetch = async () => {
       calls += 1;
       await new Promise((resolve) => setTimeout(resolve, 150));
-      return ok()(...args);
+      return okResponse();
     };
-    const results = await Promise.all(["pg-corrida-a", "pg-corrida-b", "pg-corrida-c", "pg-corrida-d"].map((key) => run(key, slow, { forceRefresh: true })));
+    // Depois do intervalo mínimo da consulta anterior (senão todas voltariam CACHE_VALID, sem exercitar a corrida).
+    const later = new Date(Date.now() + 120_000);
+    const results = await Promise.all(["pg-corrida-a", "pg-corrida-b", "pg-corrida-c", "pg-corrida-d"].map((key) => run(key, slow, { forceRefresh: true, now: later })));
     const codes = results.map((result) => result.code).sort();
     assert.equal(calls, 1, codes.join(","));
     assert.equal(codes.filter((code) => code === "OK").length, 1);
-    assert.equal(codes.filter((code) => code === "IN_FLIGHT").length, 3);
+    // Quem chegou durante a chamada: IN_FLIGHT (índice parcial); quem chegou logo depois: CACHE_VALID (intervalo mínimo).
+    assert.equal(codes.filter((code) => code === "IN_FLIGHT" || code === "CACHE_VALID").length, 3, codes.join(","));
     const inflight = await prisma.boaVistaDefineLimiteConsultation.count({ where: { cnpj: CNPJ, status: { in: ["RESERVED", "SENT"] } } });
     assert.equal(inflight, 0);
   });
@@ -111,12 +120,12 @@ describe("LIKE SERASA com PostgreSQL 17 real", { skip: SKIP }, () => {
       await new Promise((_resolve, reject) => init?.signal?.addEventListener("abort", () => reject(Object.assign(new Error("abort"), { name: "AbortError" }))));
       return new Response("{}");
     };
-    const timeout = await run("pg-timeout", hanging, { forceRefresh: true });
+    const timeout = await run("pg-timeout", hanging, { forceRefresh: true, now: new Date(Date.now() + 300_000) });
     assert.equal(timeout.code, "TIMEOUT");
     const row = await prisma.boaVistaDefineLimiteConsultation.findUniqueOrThrow({ where: { idempotencyKey: "pg-timeout" } });
     assert.equal(row.status, "UNKNOWN_BILLING");
     assert.equal(row.billingStatus, "UNKNOWN");
-    const blocked = await run("pg-depois-timeout", ok(), { forceRefresh: true });
+    const blocked = await run("pg-depois-timeout", ok(), { forceRefresh: true, now: new Date(Date.now() + 300_000) });
     assert.equal(blocked.code, "UNKNOWN_BILLING");
     // Conciliação manual: marcar como conciliada libera (simulada aqui por SQL direto, como o operador faria).
     await prisma.boaVistaDefineLimiteConsultation.update({ where: { id: row.id }, data: { billingStatus: "NOT_SENT", failureCode: "TIMEOUT_RECONCILED" } });
@@ -154,9 +163,9 @@ describe("LIKE SERASA com PostgreSQL 17 real", { skip: SKIP }, () => {
       idempotencyKey: "pg-live-after-demo",
       userId: "admin",
       role: "SUPER_ADMIN",
-      fetchImpl: async (...args) => {
+      fetchImpl: async () => {
         calls += 1;
-        return ok()(...args);
+        return okResponse();
       },
     });
     assert.equal(live.code, "OK");

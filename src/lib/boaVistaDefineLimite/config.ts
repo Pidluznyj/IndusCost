@@ -38,6 +38,9 @@ export type LikeSerasaConfig = {
   unitPriceCents: number;
   timeoutMs: number;
   cacheTtlMs: number;
+  /** Reconsulta manual (forceRefresh) só depois deste intervalo desde a última consulta válida: dois usuários
+   *  clicando "atualizar" quase ao mesmo tempo geram uma única cobrança. */
+  minRefreshIntervalMs: number;
   rateLimitPerMinute: number;
   /** GERARCOMPROVANTE=Habilitar na consulta real (a doc manda conferir as "Obs" do produto; padrão desligado). */
   receiptEnabled: boolean;
@@ -66,6 +69,7 @@ export function readLikeSerasaConfig(env: NodeJS.ProcessEnv = process.env): Like
     unitPriceCents: positiveInt(env.LIKE_SERASA_UNIT_PRICE_CENTS, DEFAULT_LIKE_SERASA_UNIT_PRICE_CENTS),
     timeoutMs: Math.max(1000, positiveInt(env.LIKE_SERASA_TIMEOUT_MS, 25000)),
     cacheTtlMs,
+    minRefreshIntervalMs: positiveInt(env.LIKE_SERASA_MIN_REFRESH_INTERVAL_MS, 60_000),
     rateLimitPerMinute: Math.max(1, positiveInt(env.LIKE_SERASA_RATE_LIMIT_PER_MINUTE, 5)),
     receiptEnabled: flag(env.LIKE_SERASA_RECEIPT_ENABLED),
     storeRawPayload: flag(env.LIKE_SERASA_STORE_RAW_PAYLOAD),
