@@ -13,6 +13,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSyn
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, it } from "node:test";
+import { isolatedHostEnv } from "./deployTestIsolation";
 
 const LIB = join(process.cwd(), "infra/deploy/induscost-deploy-safety.sh");
 const HOOK_SRC = join(process.cwd(), "infra/deploy/hooks/servidor01-checks.sh");
@@ -52,6 +53,10 @@ exit 1
 `,
   psql: `#!/usr/bin/env bash
 sql="\${*: -1}"; echo "psql $sql" >> "$STUB_SYSTEMD/calls"
+if [[ -n "\${STUB_PSQL_AUTH_FAIL:-}" ]]; then
+  echo 'psql: error: connection to server on socket "/var/run/postgresql/.s.PGSQL.5432" failed: FATAL:  Peer authentication failed for user "postgres"' >&2
+  exit 2
+fi
 case "$sql" in
   *pg_db_role_setting*) echo 0 ;;
   *pg_stat_activity*) [[ -n "\${STUB_SESSIONS:-}" ]] && printf '%s\\n' "$STUB_SESSIONS" ;;
@@ -62,12 +67,25 @@ exit 0
 `,
   pg_restore: `#!/usr/bin/env bash
 if [[ "$1" == "-l" ]]; then
+  # Como o pg_restore real: arquivo inexistente não abre (determinístico, independente do cenário).
+  [[ -f "$2" ]] || { echo "pg_restore: error: could not open input file \\"$2\\": No such file or directory" >&2; exit 1; }
   [[ "\${STUB_UNREADABLE:-0}" == 1 ]] && { echo "pg_restore: error: could not open input file: Permission denied" >&2; exit 1; }
   for i in $(seq 1 "\${STUB_TABLES:-3}"); do echo "$i; 2615 1 TABLE public t$i owner"; done
 fi
 exit 0
 `,
 };
+
+// Terceira camada: todo outro cliente PostgreSQL que a biblioteca pudesse chamar existe no PATH dos cenários como um
+// simulado que recusa e registra a tentativa — nenhum cenário simulado alcança um binário real, nem com autenticação
+// válida (root, peer/trust, .pgpass).
+for (const tool of ["pg_dump", "pg_dumpall", "createdb", "dropdb", "pg_ctl", "pg_isready", "vacuumdb", "reindexdb", "pg_basebackup"]) {
+  STUBS[tool] = `#!/usr/bin/env bash
+echo "BLOQUEADO ${tool} $*" >> "$STUB_SYSTEMD/calls"
+echo "${tool}: bloqueado em teste simulado (nenhum cliente PostgreSQL real pode ser chamado)" >&2
+exit 97
+`;
+}
 
 const work = mkdtempSync(join(tmpdir(), "deploy-safety-test-"));
 const stubs = join(work, "bin");
@@ -91,7 +109,13 @@ function host(units: Record<string, string> = {}, cronFiles: Record<string, stri
   writeFileSync(join(sysd, "calls"), "");
   const run = (script: string, env: Record<string, string> = {}) => {
     const full = [
+      // Segunda camada (a primeira é isolatedHostEnv): nada do cluster real sobrevive dentro do bash; a biblioteca
+      // fala só com os simulados do PATH e, se algo escapar, com um socket inexistente deste sandbox.
+      `unset $(compgen -e | grep -E '^(IDS_|PG)')`,
       `export PATH="${toPosix(stubs)}:$PATH"`,
+      `export IDS_PG_BIN="" IDS_PG_HOST="${toPosix(join(base, "sem-cluster"))}" IDS_PG_PORT=1 IDS_PG_ADMIN_ROLE=ids_teste_simulado IDS_PG_MAINT_DB=postgres`,
+      // libpq sem atalhos do host: nem .pgpass, nem serviço, nem espera longa.
+      `export PGPASSFILE=/nonexistent/pgpass PGSERVICEFILE=/nonexistent/pg_service.conf PGSYSCONFDIR=/nonexistent PGCONNECT_TIMEOUT=1`,
       `export IDS_PG="" IDS_PG_USER="" IDS_SYSTEMCTL="${toPosix(join(stubs, "systemctl"))}"`,
       `export IDS_STATE_DIR="${toPosix(join(base, "state"))}" IDS_MAINT_FLAG="${toPosix(join(base, "flag"))}" IDS_CRON_DIR="${toPosix(cron)}"`,
       `export IDS_CRON_SCAN_FILES="${toPosix(join(base, "crontab"))}" IDS_CRON_SPOOL_DIRS="${toPosix(join(base, "spool"))}" IDS_CRON_RELOAD_WAIT=0 IDS_STATS_SETTLE_SECONDS=0 IDS_WRITER_POLL_SECONDS=0`,
@@ -99,7 +123,7 @@ function host(units: Record<string, string> = {}, cronFiles: Record<string, stri
       `source "${toPosix(LIB)}"`,
       script,
     ].join("\n");
-    const r = spawnSync(BASH!, ["-c", full], { env: { ...process.env, ...env }, encoding: "utf8" });
+    const r = spawnSync(BASH!, ["-c", full], { env: { ...isolatedHostEnv(), ...env }, encoding: "utf8" });
     return `${r.stdout}\n${r.stderr}`;
   };
   const calls = () => readFileSync(join(sysd, "calls"), "utf8");
@@ -142,10 +166,15 @@ describe("biblioteca de segurança do deploy (sem banco)", { skip: SKIP }, () =>
     assert.deepEqual(offending, []);
   });
 
-  it("D3. backup ilegível pelo postgres aborta (31); sem tabelas aborta (32)", () => {
+  it("D3. backup ilegível pelo postgres aborta (31); inexistente aborta (31); existente sem tabelas aborta (32); válido passa", () => {
     const h = host();
-    assert.match(h.run(`echo x > "${toPosix(join(h.base, "d"))}"; ids_assert_backup_readable "${toPosix(join(h.base, "d"))}"; echo RC=$?`, { STUB_UNREADABLE: "1" }), /RC=31[\s\S]*|Permission denied[\s\S]*RC=31/);
-    assert.match(h.run(`ids_assert_backup_readable x; echo RC=$?`, { STUB_TABLES: "0" }), /RC=32/);
+    const dump = toPosix(join(h.base, "d"));
+    assert.match(h.run(`echo x > "${dump}"; ids_assert_backup_readable "${dump}"; echo RC=$?`, { STUB_UNREADABLE: "1" }), /Permission denied[\s\S]*RC=31/);
+    // Arquivo que não existe é ilegível (31), como no pg_restore real — não "sem tabelas". A versão anterior deste
+    // teste usava um caminho inexistente para o caso 32 e só passava porque o simulado ignorava o arquivo.
+    assert.match(h.run(`ids_assert_backup_readable "${toPosix(join(h.base, "inexistente"))}"; echo RC=$?`), /could not open input file[\s\S]*RC=31/);
+    assert.match(h.run(`echo x > "${dump}"; ids_assert_backup_readable "${dump}"; echo RC=$?`, { STUB_TABLES: "0" }), /backup sem tabelas[\s\S]*RC=32/);
+    assert.match(h.run(`echo x > "${dump}"; ids_assert_backup_readable "${dump}"; echo RC=$?`), /backup legível[\s\S]*RC=0/);
   });
 
   it("M1. janela seletiva: só cron induscost* sai (com hash) e só timers ATIVOS param; encerramento devolve tudo exatamente", () => {
@@ -497,6 +526,125 @@ describe("biblioteca de segurança do deploy (sem banco)", { skip: SKIP }, () =>
     assert.match(h.run(`IDS_TEST_RUNNER=false IDS_TEST_RUNNER_ARGS="" ids_run_test_gate; echo RC=$?`), /RC=1/);
   });
 
+  // --- Incidente de 29/10/2026: o gate de produção rodou os testes com a configuração do cluster REAL exportada pelo
+  // executor; a biblioteca carregada pelos testes chamou o psql/pg_restore do servidor (peer auth como postgres,
+  // RC=48 no lugar dos códigos esperados). Exatamente o que o executor exporta antes do gate, por ambiente:
+  const EXECUTOR_EXPORTS = {
+    producao: `export IDS_PG="runuser -u postgres --" IDS_PG_USER=postgres IDS_PG_BIN=/usr/lib/postgresql/17/bin IDS_PG_HOST=/var/run/postgresql IDS_PG_PORT=5432 IDS_PG_ADMIN_ROLE=postgres IDS_PG_EXPECT_MAJOR=17 IDS_PG_MAINT_DB=postgres IDS_PROTECTED_DATABASES="" IDS_PROTECTED_UNITS="" IDS_APP_SERVICE=induscost.service IDS_APP_MARK_PATTERN=/opt/induscost IDS_CRON_GLOB='induscost*' IDS_UNIT_GLOB='induscost-*' IDS_STATE_DIR=/var/lib/induscost/deploy-safety/producao IDS_MAINT_FLAG=/run/induscost/deploy-maintenance-producao IDS_EXECUTOR_NAME=deploy-induscost-producao IDS_LOCK_FD=9 PGHOST=/var/run/postgresql PGUSER=postgres PGPORT=5432 PGDATABASE=teste_bi PGPASSWORD=segredo-do-cluster`,
+    homologacao: `export IDS_PG="runuser -u pg17homolog --" IDS_PG_USER=pg17homolog IDS_PG_BIN=/opt/postgresql-17/bin IDS_PG_HOST=/run/induscost-pg17 IDS_PG_PORT=5433 IDS_PG_ADMIN_ROLE=pg17homolog IDS_PG_EXPECT_MAJOR=17 IDS_PG_MAINT_DB=postgres IDS_PROTECTED_DATABASES='teste_bi_homolog_prev teste_bi_cloud_standby teste_bi' IDS_PROTECTED_UNITS='induscost-db-backup.timer *postgres*' IDS_APP_SERVICE=induscost-homolog.service IDS_APP_MARK_PATTERN=/opt/induscost-homolog IDS_CRON_GLOB='induscost-homolog*' IDS_UNIT_GLOB='induscost-homolog-*' IDS_STATE_DIR=/var/lib/induscost/deploy-safety/homologacao IDS_EXECUTOR_NAME=deploy-induscost-homologacao PGHOST=/run/induscost-pg17 PGPORT=5433 PGUSER=pg17homolog`,
+  };
+
+  it("G3. gate nunca repassa IDS_*/PG* do deploy em curso (produção e homologação, usuário do SO ≠ papel do banco): os testes recebem o mesmo ambiente nos dois servidores; o código dos testes é propagado", () => {
+    const envs: Record<string, string> = {};
+    for (const [name, exports] of Object.entries(EXECUTOR_EXPORTS)) {
+      const h = host();
+      const out = h.run(`${exports}\nexport VARIAVEL_COMUM=preservada\nIDS_TEST_RUNNER=env IDS_TEST_RUNNER_ARGS="" ids_run_test_gate; echo RC=$?`);
+      assert.match(out, /RC=0/, `${name}\n${out}`);
+      const leaked = out.split("\n").filter((l) => /^(IDS_|PG)[A-Z0-9_]*=/.test(l));
+      assert.deepEqual(leaked, [], `${name}: configuração do cluster chegou aos testes`);
+      assert.doesNotMatch(out, /segredo-do-cluster|runuser -u|\/var\/run\/postgresql|\/run\/induscost-pg17/);
+      assert.match(out, /^VARIAVEL_COMUM=preservada$/m, "o resto do ambiente continua chegando");
+      envs[name] = out.split("\n").filter((l) => /^(DATABASE_URL|DIRECT_URL|INDUSCOST_TEST_GATE|NOMUS_TOKEN)=/.test(l)).sort().join("\n");
+      assert.match(h.run(`${exports}\nIDS_TEST_RUNNER=bash IDS_TEST_RUNNER_ARGS="-c" ids_run_test_gate 'exit 7'; echo RC=$?`), /RC=7/, `${name}: código dos testes propagado`);
+    }
+    assert.equal(envs.producao, envs.homologacao, "homologação e produção entregam o mesmo ambiente isolado aos testes");
+  });
+
+  // Cliente PostgreSQL "oficial" do servidor, em dois modos: recusando a autenticação (o que salvou a produção em
+  // 29/10) e ACEITANDO (root com peer/trust/.pgpass válidos): registra e "executa" todo SQL recebido.
+  for (const mode of ["recusa", "aceita"] as const) {
+    it(`G4-${mode}. configuração da produção no ambiente do processo de teste e cliente oficial que ${mode === "recusa" ? "recusa" : "ACEITA"} a autenticação (também primeiro no PATH): D3, janela M e homologação S produzem os códigos esperados e nenhum SQL chega ao cliente oficial`, () => {
+      const official = join(work, `oficial-${mode}-${seq}`);
+      mkdirSync(official, { recursive: true });
+      const marker = join(official, "sql-recebido");
+      for (const tool of ["psql", "pg_restore", "pg_dump", "pg_dumpall", "createdb", "dropdb"]) {
+        writeFileSync(
+          join(official, tool),
+          mode === "recusa"
+            ? `#!/usr/bin/env bash\necho "${tool} $*" >> "${toPosix(marker)}"\necho 'psql: error: connection to server on socket "/var/run/postgresql/.s.PGSQL.5432" failed: FATAL:  Peer authentication failed for user "postgres"' >&2\nexit 2\n`
+            : `#!/usr/bin/env bash\necho "${tool} $*" >> "${toPosix(marker)}"\necho 0\nexit 0\n`
+        );
+        chmodSync(join(official, tool), 0o755);
+      }
+      const saved = { ...process.env };
+      Object.assign(process.env, {
+        PATH: `${official}${process.platform === "win32" ? ";" : ":"}${process.env.PATH ?? ""}`,
+        IDS_PG: "",
+        IDS_PG_USER: "",
+        IDS_PG_BIN: toPosix(official),
+        IDS_PG_HOST: "/var/run/postgresql",
+        IDS_PG_PORT: "5432",
+        IDS_PG_ADMIN_ROLE: "postgres",
+        IDS_PG_MAINT_DB: "postgres",
+        IDS_APP_MARK_PATTERN: "/opt/induscost",
+        IDS_CRON_GLOB: "induscost*",
+        PGHOST: "/var/run/postgresql",
+        PGUSER: "postgres",
+        PGDATABASE: "teste_bi",
+      });
+      try {
+        const dump = (h: ReturnType<typeof host>) => toPosix(join(h.base, "d"));
+        // D3
+        const d = host();
+        assert.match(d.run(`echo x > "${dump(d)}"; ids_assert_backup_readable "${dump(d)}"; echo RC=$?`, { STUB_TABLES: "0" }), /RC=32/);
+        assert.match(d.run(`ids_assert_backup_readable "${toPosix(join(d.base, "inexistente"))}"; echo RC=$?`), /RC=31/);
+        // M1/M4 (janela, trava, sessão estranha 41)
+        const m = host(TIMERS, CRONS);
+        const out = m.run(`ids_maintenance_begin teste_bi; echo RC=$?`);
+        assert.match(out, /trava de escrita ligada em teste_bi[\s\S]*RC=0/, out);
+        assert.match(m.run(`ids_maintenance_end; echo RC=$?`), /RC=0/);
+        const m4 = host(TIMERS, CRONS);
+        assert.match(m4.run(`ids_maintenance_begin teste_bi; echo RC=$?`, { STUB_SESSIONS: "4242|bi|metabase" }), /RC=41/);
+        // S3/S5 (homologação no mesmo host)
+        const s = host({ "induscost-homolog.service": "active" }, { "induscost-homolog": "*/15 * * * * root cd /opt/induscost-homolog/app && npm run sync:x\n" });
+        const env = `IDS_APP_MARK_PATTERN=/opt/induscost-homolog IDS_CRON_GLOB='induscost-homolog*' IDS_UNIT_GLOB='induscost-homolog-*' IDS_APP_SERVICE=induscost-homolog.service`;
+        assert.match(s.run(`${env} ids_maintenance_begin teste_bi_homolog; echo RC=$?`), /RC=0/);
+        assert.match(s.run(`${env} ids_maintenance_end; echo RC=$?`), /RC=0/);
+        // Nenhum SQL, dump, restore ou createdb/dropdb chegou ao cliente oficial; os simulados atenderam tudo.
+        assert.ok(!existsSync(marker), `cliente oficial recebeu: ${existsSync(marker) ? readFileSync(marker, "utf8") : ""}`);
+        assert.match(m.calls(), /psql .*ALTER DATABASE "teste_bi" SET default_transaction_read_only = on/, "o SQL foi para o psql simulado do cenário");
+        for (const h of [d, m, m4, s]) assert.doesNotMatch(h.calls(), /BLOQUEADO/, "nenhum cliente sem simulado foi tentado");
+      } finally {
+        for (const key of Object.keys(process.env)) if (!(key in saved)) delete process.env[key];
+        Object.assign(process.env, saved);
+      }
+      assert.equal(process.env.IDS_PG_BIN, saved.IDS_PG_BIN, "ambiente do processo restaurado (independe da ordem dos testes)");
+    });
+  }
+
+  it("G6. biblioteca nos cenários simulados: PATH resolve todo cliente PostgreSQL para um simulado; IDS_PG_BIN vazio; host/porta do sandbox; nenhuma variável PG* do host", () => {
+    const saved = { ...process.env };
+    Object.assign(process.env, { IDS_PG_BIN: "/usr/lib/postgresql/17/bin", IDS_PG_HOST: "/var/run/postgresql", PGHOST: "/var/run/postgresql", PGUSER: "postgres", PGPASSWORD: "x" });
+    try {
+      const h = host();
+      const out = h.run(
+        `for t in psql pg_restore pg_dump pg_dumpall createdb dropdb; do printf '%s=%s\\n' "$t" "$(command -v "$t")"; done; echo "BIN=[$IDS_PG_BIN] HOST=$IDS_PG_HOST PORT=$IDS_PG_PORT ROLE=$IDS_PG_ADMIN_ROLE"; echo "conninfo=$(ids_conninfo teste_bi)"; env | grep -E '^PG(HOST|USER|PASSWORD|PORT|DATABASE)=' || echo SEM_PG_DO_HOST`
+      );
+      for (const tool of ["psql", "pg_restore", "pg_dump", "pg_dumpall", "createdb", "dropdb"]) {
+        assert.match(out, new RegExp(`^${tool}=${toPosix(join(work, "bin")).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/${tool}$`, "m"), `${tool} não resolve para o simulado\n${out}`);
+      }
+      assert.match(out, /BIN=\[\] HOST=\S+sem-cluster PORT=1 ROLE=ids_teste_simulado/);
+      assert.match(out, /conninfo=dbname='teste_bi' .*host='\S+sem-cluster' port=1 user='ids_teste_simulado'/);
+      assert.match(out, /SEM_PG_DO_HOST/);
+    } finally {
+      for (const key of Object.keys(process.env)) if (!(key in saved)) delete process.env[key];
+      Object.assign(process.env, saved);
+    }
+  });
+
+  it("G5. autenticação recusada pelo cluster durante a janela: código 50 (sem conexão administrativa), não 48 (trava de terceiros); a janela é desfeita sem perder agendamentos", () => {
+    const h = host(TIMERS, CRONS);
+    const out = h.run(`ids_maintenance_begin teste_bi; echo RC=$?`, { STUB_PSQL_AUTH_FAIL: "1" });
+    assert.match(out, /Peer authentication failed/);
+    assert.match(out, /sem conexão administrativa ao cluster para conferir a trava de escrita em teste_bi/);
+    assert.match(out, /RC=50/);
+    assert.doesNotMatch(out, /RC=48/);
+    assert.doesNotMatch(h.calls(), /ALTER DATABASE/, "nenhuma alteração tentada sem a conferência");
+    assert.match(h.run(`ids_maintenance_end; echo RC=$?`), /RC=0/);
+    assert.deepEqual(readdirSync(h.cron).sort(), Object.keys(CRONS).sort(), "crons devolvidos");
+    assert.equal(h.state("induscost-legal-djen.timer"), "active", "timer religado");
+  });
+
   const check = (file: string) => {
     const r = spawnSync(BASH!, [toPosix(CHECKER), toPosix(file)], { encoding: "utf8" });
     return { code: r.status, out: r.stdout };
@@ -631,7 +779,7 @@ systemctl start "$SERVICE"
       const r = spawnSync(BASH!, [toPosix(join(deploy, "install-induscost-deploy.sh")), "--env", "ensaio", ...args.split(" ")], {
         encoding: "utf8",
         env: {
-          ...process.env,
+          ...isolatedHostEnv(),
           IDS_INSTALL_ROOT: toPosix(join(base, "lib")),
           IDS_INSTALL_ETC: toPosix(join(base, "etc")),
           IDS_INSTALL_ALLOW_NONROOT: "1",

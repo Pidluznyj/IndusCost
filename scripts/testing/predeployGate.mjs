@@ -111,7 +111,37 @@ function pass(label, extraEnv) {
   return r.status === 0 && num("fail") === 0;
 }
 
-const ok1 = pass("1) gate isolado (executor protegido)", { isolated: true });
+// O executor exporta a configuração do cluster REAL antes do gate (induscost-deploy-executor.sh). A passagem 1
+// reproduz isso com clientes PostgreSQL que recusam a autenticação: se algum teste ainda alcançar a configuração do
+// deploy, falha aqui (incidente de 29/10/2026: peer authentication failed como postgres no gate da produção).
+const poisonBin = mkdtempSync(join(tmpdir(), "predeploy-pg-recusado-"));
+for (const tool of ["psql", "pg_dump", "pg_restore", "createdb"]) {
+  writeFileSync(
+    join(poisonBin, tool),
+    `#!/usr/bin/env bash\necho 'psql: error: connection to server on socket "/var/run/postgresql/.s.PGSQL.5432" failed: FATAL:  Peer authentication failed for user "postgres" (predeploy: configuração do deploy vazou para um teste)' >&2\nexit 2\n`,
+    { mode: 0o755 }
+  );
+}
+const EXECUTOR_EXPORTS = {
+  IDS_PG: "runuser -u postgres --",
+  IDS_PG_USER: "postgres",
+  IDS_PG_BIN: posix(poisonBin),
+  IDS_PG_HOST: "/var/run/postgresql",
+  IDS_PG_PORT: "5432",
+  IDS_PG_ADMIN_ROLE: "postgres",
+  IDS_PG_EXPECT_MAJOR: "17",
+  IDS_PG_MAINT_DB: "postgres",
+  IDS_APP_SERVICE: "induscost.service",
+  IDS_APP_MARK_PATTERN: "/opt/induscost",
+  IDS_CRON_GLOB: "induscost*",
+  IDS_UNIT_GLOB: "induscost-*",
+  IDS_STATE_DIR: "/var/lib/induscost/deploy-safety/producao",
+  IDS_EXECUTOR_NAME: "deploy-induscost-producao",
+  PGHOST: "/var/run/postgresql",
+  PGUSER: "postgres",
+  PGPORT: "5432",
+};
+const ok1 = pass("1) gate isolado (executor protegido, configuração do cluster exportada)", { isolated: true, env: EXECUTOR_EXPORTS });
 const ok2 = pass("2) ambiente de servidor (executor antigo, flags ligadas)", {
   isolated: false,
   env: {

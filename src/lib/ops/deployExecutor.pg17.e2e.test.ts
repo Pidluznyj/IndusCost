@@ -16,6 +16,7 @@ import { dirname, join, resolve } from "node:path";
 import { after, before, describe, it } from "node:test";
 import { PrismaClient } from "@prisma/client";
 import { commissionPg17BinDir, startCommissionPostgres17, type CommissionPg17Database } from "../../../scripts/testing/commissionPostgresHarness.js";
+import { isolatedHostEnv } from "./deployTestIsolation";
 
 const REPO = resolve(import.meta.dirname ?? ".", "..", "..", "..");
 const EXE = process.platform === "win32" ? ".exe" : "";
@@ -117,7 +118,7 @@ describe("executor de deploy instalado — ensaio com git, Prisma e PostgreSQL 1
 
   const urlOf = (name: string) => db.url.replace(/\/postgres\?/, `/${name}?`);
   const sh = (cwd: string, cmd: string, env: Record<string, string> = {}) => {
-    const r = spawnSync(BASH!, ["-c", cmd], { cwd, encoding: "utf8", env: { ...process.env, ...env } });
+    const r = spawnSync(BASH!, ["-c", cmd], { cwd, encoding: "utf8", env: { ...isolatedHostEnv(), ...env } });
     if (r.status !== 0) throw new Error(`${cmd}\n${r.stdout}\n${r.stderr}`);
     return r.stdout;
   };
@@ -244,11 +245,11 @@ describe("executor de deploy instalado — ensaio com git, Prisma e PostgreSQL 1
       IDS_INSTALL_ENV_SOURCE: posix(envFile),
     };
     const run = (args: string) => {
-      const r = spawnSync(BASH!, ["-c", `"${posix(executorPath)}" ${args}`], { cwd: w, encoding: "utf8", env: { ...process.env, ...env } });
+      const r = spawnSync(BASH!, ["-c", `"${posix(executorPath)}" ${args}`], { cwd: w, encoding: "utf8", env: { ...isolatedHostEnv(), ...env } });
       return { code: r.status, out: `${r.stdout}\n${r.stderr}` };
     };
     const install = (args: string) => {
-      const r = spawnSync(BASH!, [posix(join(REPO, "infra/deploy/install-induscost-deploy.sh")), "--env", "teste", ...args.split(" ").filter(Boolean)], { cwd: w, encoding: "utf8", env: { ...process.env, ...env } });
+      const r = spawnSync(BASH!, [posix(join(REPO, "infra/deploy/install-induscost-deploy.sh")), "--env", "teste", ...args.split(" ").filter(Boolean)], { cwd: w, encoding: "utf8", env: { ...isolatedHostEnv(), ...env } });
       return { code: r.status, out: `${r.stdout}\n${r.stderr}` };
     };
     const inst = install("--apply");
@@ -276,7 +277,7 @@ describe("executor de deploy instalado — ensaio com git, Prisma e PostgreSQL 1
     /** Executor em segundo plano, saída num arquivo; resolve com o código de saída. */
     const runAsync = (args: string) => {
       const log = join(w, "executor.log");
-      const child = spawn(BASH!, ["-c", `"${posix(executorPath)}" ${args} > "${posix(log)}" 2>&1`], { cwd: w, env: { ...process.env, ...env }, stdio: "ignore" });
+      const child = spawn(BASH!, ["-c", `"${posix(executorPath)}" ${args} > "${posix(log)}" 2>&1`], { cwd: w, env: { ...isolatedHostEnv(), ...env }, stdio: "ignore" });
       const done = new Promise<number | null>((res) => child.on("exit", (code) => res(code)));
       return { child, done, log: () => readFileSync(log, "utf8") };
     };
@@ -383,7 +384,7 @@ describe("executor de deploy instalado — ensaio com git, Prisma e PostgreSQL 1
 
   it("E6. executor morto no meio (durante os testes): próximo deploy recusa (46); --recover --resume devolve o estado anterior", async () => {
     const s = await server({ "src/a.test.ts": "HANG\n" });
-    const child = spawn(BASH!, ["-c", `"${posix(s.executorPath)}"`], { cwd: s.w, env: { ...process.env, ...s.env }, stdio: "ignore" });
+    const child = spawn(BASH!, ["-c", `"${posix(s.executorPath)}"`], { cwd: s.w, env: { ...isolatedHostEnv(), ...s.env }, stdio: "ignore" });
     const chainFile = join(s.w, "systemd", "executor-chain");
     for (let i = 0; i < 1200 && !existsSync(chainFile); i++) await new Promise((res) => setTimeout(res, 100));
     assert.ok(existsSync(chainFile), "executor chegou aos testes");

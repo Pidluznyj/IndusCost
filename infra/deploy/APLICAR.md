@@ -151,7 +151,7 @@ para o rollback normal. Um segundo sinal durante o rollback é ignorado.
 | 46 | Janela pendente |
 | 47 | Agendamento não gerenciado |
 | 48 | Trava já usada por terceiros |
-| 50 | Cluster diferente do configurado (versão, porta, socket, superusuário, clientes, usuário do SO) ou banco protegido |
+| 50 | Cluster diferente do configurado (versão, porta, socket, superusuário, clientes, usuário do SO) ou banco protegido; também sem conexão/autenticação administrativa ao conferir a trava de escrita (antes da v5.1 isso saía como 48) |
 | 51 | Espaço em disco insuficiente |
 | 52 | Escopo da janela amplo demais (glob casa unidade/cron de fora ou protegida) |
 | 53 | Health da aplicação nova falhou → rollback |

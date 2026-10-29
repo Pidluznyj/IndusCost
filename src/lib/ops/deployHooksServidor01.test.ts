@@ -14,6 +14,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSyn
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { after, describe, it } from "node:test";
+import { isolatedHostEnv } from "./deployTestIsolation";
 
 const HOOK = join(process.cwd(), "infra/deploy/hooks/servidor01-checks.sh");
 const ENV = join(process.cwd(), "infra/deploy/environments/homologacao.env");
@@ -134,7 +135,7 @@ function host(envOverrides: Record<string, string> = {}, opts: { keepPending?: b
     const r = spawnSync(BASH!, [toPosix(HOOK)], {
       encoding: "utf8",
       env: {
-        ...process.env,
+        ...isolatedHostEnv(),
         STUB: toPosix(stub),
         IDS_ENV_FILE: toPosix(envFile),
         IDS_DEPLOY_PHASE: phase,
@@ -150,7 +151,7 @@ function host(envOverrides: Record<string, string> = {}, opts: { keepPending?: b
     return { code: r.status, out: `${r.stdout}\n${r.stderr}` };
   };
   const manual = (mode: "--check" | "--validate") => {
-    const r = spawnSync(BASH!, [toPosix(HOOK), mode, "--env-file", toPosix(envFile)], { encoding: "utf8", env: { ...process.env, STUB: toPosix(stub), IDS_ENV_FILE: "" } });
+    const r = spawnSync(BASH!, [toPosix(HOOK), mode, "--env-file", toPosix(envFile)], { encoding: "utf8", env: { ...isolatedHostEnv(), STUB: toPosix(stub), IDS_ENV_FILE: "" } });
     return { code: r.status, out: `${r.stdout}\n${r.stderr}` };
   };
   const set = (name: string, content: string) => writeFileSync(join(stub, name), content);
@@ -392,12 +393,12 @@ describe("hook de segurança do servidor-01 (somente leitura)", { skip: SKIP }, 
     assert.match(rt.out, /OK {4}https:\/\/brasilapi\.com\.br\/ alcançável \(HTTP 200\)/, "segunda tentativa recupera");
     for (const code of ["404", "429"]) {
       const c = host();
-      const rc = spawnSync(BASH!, [toPosix(HOOK), "--check", "--env-file", toPosix(c.envFile)], { encoding: "utf8", env: { ...process.env, STUB: toPosix(join(c.base, "stub")), STUB_HTTP_CODE: code } });
+      const rc = spawnSync(BASH!, [toPosix(HOOK), "--check", "--env-file", toPosix(c.envFile)], { encoding: "utf8", env: { ...isolatedHostEnv(), STUB: toPosix(join(c.base, "stub")), STUB_HTTP_CODE: code } });
       assert.equal(rc.status, 0, rc.stdout);
       assert.match(rc.stdout, new RegExp(`alcançável \\(HTTP ${code}\\)`));
     }
     const e = host();
-    const re = spawnSync(BASH!, [toPosix(HOOK), "--check", "--env-file", toPosix(e.envFile)], { encoding: "utf8", env: { ...process.env, STUB: toPosix(join(e.base, "stub")), STUB_HTTP_CODE: "503" } });
+    const re = spawnSync(BASH!, [toPosix(HOOK), "--check", "--env-file", toPosix(e.envFile)], { encoding: "utf8", env: { ...isolatedHostEnv(), STUB: toPosix(join(e.base, "stub")), STUB_HTTP_CODE: "503" } });
     assert.equal(re.status, 0, "503 de terceiro: aviso (política warn)");
     assert.match(re.stdout, /ATENÇÃO CNPJ: .* \(HTTP 503\)/);
   });
@@ -490,7 +491,7 @@ describe("hook de segurança do servidor-01 (somente leitura)", { skip: SKIP }, 
     // (cópia temporária com A_COLETAR; nunca o arquivo do repositório, que no servidor apontaria para caminhos reais).
     const envCopy = join(p.base, "pendente.env");
     writeFileSync(envCopy, readFileSync(p.envFile, "utf8"));
-    const r = spawnSync(BASH!, [toPosix(EXECUTOR), "--env-file", toPosix(envCopy), "--check"], { encoding: "utf8", env: { ...process.env, IDS_ALLOW_UNINSTALLED: "1" } });
+    const r = spawnSync(BASH!, [toPosix(EXECUTOR), "--env-file", toPosix(envCopy), "--check"], { encoding: "utf8", env: { ...isolatedHostEnv(), IDS_ALLOW_UNINSTALLED: "1" } });
     assert.equal(r.status, 3, r.stdout);
     assert.match(r.stdout, /A_COLETAR/);
   });
