@@ -232,14 +232,14 @@ function CreateCycleOverlay({
   const [modelId, setModelId] = useState("");
   // Sugestão de calendário em etapas (duas semanas cada); o RH ajusta ou limpa os inícios para o modo antigo.
   const [schedule, setSchedule] = useState<StageScheduleForm>(() => ({
-    selfStartAt: addDaysIso(1),
-    selfDueAt: addDaysIso(14),
-    leaderStartAt: addDaysIso(15),
-    leaderDueAt: addDaysIso(28),
-    leadershipStartAt: addDaysIso(15),
-    leadershipDueAt: addDaysIso(28),
-    calibrationStartAt: addDaysIso(29),
-    calibrationDueAt: addDaysIso(42),
+    selfStartAt: addDaysIso(0),
+    selfDueAt: addDaysIso(13),
+    leaderStartAt: addDaysIso(14),
+    leaderDueAt: addDaysIso(27),
+    leadershipStartAt: addDaysIso(14),
+    leadershipDueAt: addDaysIso(27),
+    calibrationStartAt: addDaysIso(28),
+    calibrationDueAt: addDaysIso(41),
   }));
   const { selfDueAt, leaderDueAt } = schedule;
   // Sem padrão: quem cria escolhe se o ciclo é oficial ou de teste.

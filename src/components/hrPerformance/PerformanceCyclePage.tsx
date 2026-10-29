@@ -183,9 +183,8 @@ function PerformanceModule() {
       ) : null}
       {active === "minha" ? (
         <div className="max-w-2xl">
-          <React.Fragment key={version}>
-            <PerformancePortalPage api={myPerformanceApi} embedded onFinished={() => setVersion((v) => v + 1)} />
-          </React.Fragment>
+          {/* Sem remontar a tela: o envio só atualiza o aviso "Falta com você" (a confirmação continua à vista). */}
+          <PerformancePortalPage api={myPerformanceApi} embedded onFinished={() => setVersion((v) => v + 1)} />
         </div>
       ) : null}
       {active === "equipe" ? <PerformanceTeamTab onToast={toast.setToast} actorName={actorName} linkedEmployee={Boolean(me.actorEmployeeId)} /> : null}

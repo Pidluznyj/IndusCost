@@ -49,11 +49,14 @@ export function PerformanceTeamTab({ onToast, actorName, linkedEmployee = true }
     .filter((i) => (filter === "pending" ? i.status !== "SUBMITTED" : filter === "submitted" ? i.status === "SUBMITTED" : true))
     .sort((a, b) => a.dueAt.localeCompare(b.dueAt) || a.employeeName.localeCompare(b.employeeName, "pt-BR"));
   const pending = (items ?? []).filter((i) => i.status !== "SUBMITTED").length;
+  // Só conta como "falta com você" o que dá para fazer hoje; o resto abre depois no calendário.
+  const pendingNow = (items ?? []).filter((i) => i.status !== "SUBMITTED" && i.editable).length;
+  const pendingLater = (items ?? []).filter((i) => i.status !== "SUBMITTED" && !i.editable && i.stageMessage).length;
   const plansPending = (items ?? []).filter((i) => i.proposalEditable && !i.plan?.proposalDecision).length;
   // Resumo do que falta para o líder, numa linha: avaliações individuais, de liderança e calibrações.
   const leadershipPending = leadership.filter((i) => i.status !== "SUBMITTED").length;
   const calibrationsPending = leadership.filter((i) => i.leadershipStatus === "AVAILABLE").length;
-  const nextDue = (items ?? []).filter((i) => i.status !== "SUBMITTED").map((i) => i.dueAt).sort()[0] ?? null;
+  const nextDue = (items ?? []).filter((i) => i.status !== "SUBMITTED" && i.editable).map((i) => i.dueAt).sort()[0] ?? null;
   const nextTask = (() => {
     const ind = (items ?? []).filter((i) => i.status !== "SUBMITTED" && i.editable).sort((a, b) => a.dueAt.localeCompare(b.dueAt))[0];
     if (ind) return { kind: "individual" as const, id: ind.assignmentId };
@@ -71,7 +74,7 @@ export function PerformanceTeamTab({ onToast, actorName, linkedEmployee = true }
   // Liderança por pessoa: entra no mesmo cartão da avaliação individual dela.
   const leadershipByEmployee = new Map<string, SuperiorLeadershipItem>(leadership.map((l) => [`${l.cycleId}|${l.employeeName}`, l]));
   const todo = [
-    pending ? `${pending} avaliação(ões) da equipe` : null,
+    pendingNow ? `${pendingNow} avaliação(ões) da equipe` : null,
     leadershipPending ? `${leadershipPending} avaliação(ões) de liderança` : null,
     calibrationsPending ? `${calibrationsPending} calibração(ões) de liderança` : null,
     plansPending ? `${plansPending} proposta(s) de calibração e devolutiva` : null,
@@ -139,6 +142,7 @@ export function PerformanceTeamTab({ onToast, actorName, linkedEmployee = true }
                 {nextDue ? <span className="text-muted-foreground"> · prazo mais próximo {dateBr(nextDue)}</span> : null}
               </>
             )}
+            {pendingLater ? <span className="text-muted-foreground" data-testid="perf-team-later"> · {pendingLater} avaliação(ões) abrem depois, no calendário do ciclo</span> : null}
           </p>
           {nextTask ? (
             <button type="button" className={BTN_PRIMARY} onClick={doNext} data-testid="perf-team-do-next">
@@ -226,7 +230,7 @@ export function PerformanceTeamTab({ onToast, actorName, linkedEmployee = true }
                 <div className="flex flex-wrap gap-2">
                   <button type="button" className={item.editable && item.status !== "SUBMITTED" ? BTN_PRIMARY : BTN_SECONDARY} onClick={() => setOpen(item.assignmentId)} data-testid={`perf-team-open-${item.employeeName}`}>
                     <ClipboardCheck className="h-4 w-4" aria-hidden />
-                    {item.status === "NOT_STARTED" ? "Avaliar o trabalho" : item.status === "SUBMITTED" || !item.editable ? "Ver avaliação" : "Continuar a avaliação"}
+                    {item.status === "SUBMITTED" || !item.editable ? "Ver avaliação" : item.status === "NOT_STARTED" ? "Avaliar o trabalho" : "Continuar a avaliação"}
                   </button>
                   {item.planEditable && !item.feedback ? (
                     <button

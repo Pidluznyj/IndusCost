@@ -154,6 +154,18 @@ export function setCycleLeadershipModel(
   }
   const from = cycle.leadershipModelId;
   cycle.leadershipModelId = input.leadershipModelId;
+  // Ciclo com calendário de etapas: ligar a 180° cria a etapa de liderança na mesma janela da avaliação do líder
+  // (o RH ajusta em Editar); desligar remove as datas dela. Sem isso o calendário deixaria de valer em silêncio.
+  if (cycle.selfStartAt) {
+    if (input.leadershipModelId && !(cycle.leadershipStartAt && cycle.leadershipDueAt)) {
+      cycle.leadershipStartAt = cycle.leaderStartAt;
+      cycle.leadershipDueAt = cycle.leaderDueAt;
+    }
+    if (!input.leadershipModelId) {
+      cycle.leadershipStartAt = null;
+      cycle.leadershipDueAt = null;
+    }
+  }
   audit(db, options.now(), input.actorUserId, "CYCLE_LEADERSHIP_SET", cycle.id, { from, to: input.leadershipModelId });
   return { ok: true, db, value: { leadershipModelId: cycle.leadershipModelId } };
 }

@@ -6,7 +6,9 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { currentStage, kindWindowOpen, localDay, stageScheduleProblem, stageWindows, type StageCycle } from "./performanceStages.js";
 import { emptyPerformanceDatabase, type PerformanceDatabase } from "./performanceState.js";
+import { createLeadershipModel, setCycleLeadershipModel } from "./performanceLeadershipService.js";
 import {
+  applyParticipants,
   createCycle,
   leaderQueue,
   myForm,
@@ -14,13 +16,14 @@ import {
   mySave,
   mySubmit,
   publicForm,
+  publishModel,
   saveAnswers,
   saveFollowUpPlan,
   teamNotices,
   transitionCycle,
   updateCycle,
 } from "./performanceService.js";
-import { NOW, allAnswers, anaScope, assignmentOf, brunoScope, hrScope, marcosScope, must, openCycle, openOptions, participantOf, publishedModel, submitLeader, submitSelf } from "./performanceTestFixtures.js";
+import { NOW, allAnswers, ana, bia, bruno, anaScope, assignmentOf, brunoScope, hrScope, marcosScope, must, openCycle, openOptions, participantOf, publishedModel, submitLeader, submitSelf } from "./performanceTestFixtures.js";
 
 const TODAY = localDay(NOW); // 2026-10-16 em São Paulo
 
@@ -256,5 +259,69 @@ describe("avisos de Minha equipe", () => {
     const anaNotices = teamNotices(open.db, "ana", NOW);
     assert.equal(anaNotices.myJourney?.kind, "SELF");
     assert.equal(anaNotices.myJourney?.open, true);
+  });
+});
+
+/** Ciclo com 180° e calendário: Ana (liderada de Bruno) tem autoavaliação e avaliação do líder dela na jornada. */
+function stagedWithLeadership(schedule: { selfDueAt: string; leaderDueAt: string } & Record<string, string>) {
+  const published = publishedModel();
+  const lm = must(createLeadershipModel(published.db, { name: "Liderança 180°", actorUserId: "rh", scope: hrScope }, openOptions));
+  let db = must(publishModel(lm.db, { modelId: lm.value.modelId, actorUserId: "rh", scope: hrScope }, openOptions)).db;
+  const cycle = must(
+    createCycle(db, { name: "Ciclo 180", periodLabel: "2026", modelId: published.modelId, leadershipModelId: lm.value.modelId, ...schedule, actorUserId: "rh", classification: "TEST", scope: hrScope }, openOptions)
+  );
+  const cycleId = cycle.value.cycleId;
+  db = must(applyParticipants(cycle.db, { cycleId, employees: [ana, bia, bruno], selectedIds: ["ana", "bia", "bruno"], exceptions: {}, absenceIds: [], roleChangeIds: [], actorUserId: "rh", scope: hrScope }, openOptions)).db;
+  db = must(transitionCycle(db, { cycleId, to: "PREPARED", actorUserId: "rh", reversalReason: null, scope: hrScope }, openOptions)).db;
+  db = must(transitionCycle(db, { cycleId, to: "OPEN", actorUserId: "rh", reversalReason: null, leadershipSnapshot: { bruno: { directReportIds: ["ana", "bia"] } }, scope: hrScope }, openOptions)).db;
+  return { db, cycleId, leadershipModelId: lm.value.modelId };
+}
+
+describe("correções da validação", () => {
+  it("autoavaliação perdida não prende a pessoa fora da etapa de liderança", () => {
+    const { db } = stagedWithLeadership({
+      selfStartAt: "2026-10-01", selfDueAt: "2026-10-10", leaderStartAt: "2026-10-11", leaderDueAt: "2026-10-20",
+      leadershipStartAt: "2026-10-11", leadershipDueAt: "2026-10-20", calibrationStartAt: "2026-11-01", calibrationDueAt: "2026-11-10",
+    });
+    const form = must(myForm(db, { actorEmployeeId: "ana" }, openOptions));
+    assert.equal(form.value.step.kind, "LEADERSHIP_UPWARD");
+  });
+
+  it("avaliação do líder depois do fim fica atrasada mas ainda aceita resposta; antes do início não", () => {
+    const open = stagedOpen({ selfStartAt: "2026-09-20", selfDueAt: "2026-09-30", leaderStartAt: "2026-10-01", leaderDueAt: "2026-10-10" });
+    const leader = assignmentOf(open.db, "ana", "LEADER");
+    const late = saveAnswers(open.db, { assignmentId: leader.id, expectedVersion: leader.version, answers: allAnswers(3), actorUserId: "u-bruno", scope: brunoScope }, openOptions);
+    assert.equal(late.ok, true);
+    const item = leaderQueue(open.db, brunoScope, "bruno", NOW).find((i) => i.assignmentId === leader.id)!;
+    assert.equal(item.editable, true);
+    assert.equal(item.stageMessage, null);
+  });
+
+  it("ligar a 180° num ciclo com calendário cria a etapa de liderança; desligar remove", () => {
+    const published = publishedModel();
+    const lm = must(createLeadershipModel(published.db, { name: "Liderança 180°", actorUserId: "rh", scope: hrScope }, openOptions));
+    const db = must(publishModel(lm.db, { modelId: lm.value.modelId, actorUserId: "rh", scope: hrScope }, openOptions)).db;
+    const created = must(createCycle(db, { name: "Sem 180", periodLabel: "2026", modelId: published.modelId, ...SCHEDULE, actorUserId: "rh", classification: "TEST", scope: hrScope }, openOptions));
+    const on = must(setCycleLeadershipModel(created.db, { cycleId: created.value.cycleId, leadershipModelId: lm.value.modelId, actorUserId: "rh", scope: hrScope }, openOptions));
+    const cycle = on.db.cycles.find((c) => c.id === created.value.cycleId)!;
+    assert.deepEqual([cycle.leadershipStartAt, cycle.leadershipDueAt], [SCHEDULE.leaderStartAt, SCHEDULE.leaderDueAt]);
+    assert.equal(stageScheduleProblem(cycle, true), null);
+    const off = must(setCycleLeadershipModel(on.db, { cycleId: created.value.cycleId, leadershipModelId: null, actorUserId: "rh", scope: hrScope }, openOptions));
+    assert.equal(off.db.cycles.find((c) => c.id === created.value.cycleId)!.leadershipStartAt, null);
+  });
+
+  it("com dois ciclos abertos, vale o que tem a etapa aberta hoje", () => {
+    const first = stagedOpen();
+    const db = structuredClone(first.db) as PerformanceDatabase;
+    // Cópia do ciclo aberto mais recente, mas com a autoavaliação só no mês que vem.
+    const later = { ...db.cycles.find((c) => c.id === first.cycleId)!, id: "ciclo-futuro", name: "Ciclo futuro", openedAt: "2099-01-01T00:00:00.000Z", selfStartAt: "2026-11-20", selfDueAt: "2026-11-25", leaderStartAt: "2026-11-26", leaderDueAt: "2026-11-28", calibrationStartAt: "2026-12-01", calibrationDueAt: "2026-12-10" };
+    db.cycles.push(later);
+    const anaP = participantOf(db, "ana");
+    db.participants.push({ ...anaP, id: "p-futuro", cycleId: later.id });
+    const self = assignmentOf(db, "ana", "SELF");
+    db.assignments.push({ ...self, id: "a-futuro", participantId: "p-futuro", cycleId: later.id });
+    const summary = myJourneySummary(db, "ana", NOW);
+    assert.equal(summary?.cycleId, first.cycleId);
+    assert.equal(summary?.open, true);
   });
 });

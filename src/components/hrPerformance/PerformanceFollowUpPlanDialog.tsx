@@ -39,6 +39,12 @@ export function FollowUpPlanDialog({ item, onClose, onDone }: { item: LeaderQueu
     pdiDueAt: plan?.draftPdiDueAt ?? "",
   });
   const adjustIncomplete = decision === "ADJUST" && (!nineX || !nineY || note.trim().length < 8);
+  // A proposta só vai de novo quando mudou: salvar só a agenda ou o rascunho não reescreve a data da proposta.
+  const proposalChanged =
+    decision !== "" &&
+    (decision !== (plan?.proposalDecision ?? "") ||
+      (decision === "ADJUST" && (nineX !== (plan?.proposalNineX ?? "") || nineY !== (plan?.proposalNineY ?? ""))) ||
+      note !== (plan?.proposalNote ?? ""));
   const first = item.employeeName.split(" ")[0];
   return (
     <PerformanceModal
@@ -53,7 +59,7 @@ export function FollowUpPlanDialog({ item, onClose, onDone }: { item: LeaderQueu
       onClose={onClose}
       onSave={async () => {
         await savePerformancePlan(item.participantId, {
-          proposal: proposalEditable && decision ? { decision, nineX: decision === "ADJUST" ? (nineX as NineBand) : null, nineY: decision === "ADJUST" ? (nineY as NineBand) : null, note: note || null } : null,
+          proposal: proposalEditable && decision && proposalChanged ? { decision, nineX: decision === "ADJUST" ? (nineX as NineBand) : null, nineY: decision === "ADJUST" ? (nineY as NineBand) : null, note: note || null } : null,
           meeting: { at: meetingAt || null, place: meetingPlace || null },
           draft: {
             strength: draft.strength || null,
@@ -72,9 +78,11 @@ export function FollowUpPlanDialog({ item, onClose, onDone }: { item: LeaderQueu
         <p className="text-sm">
           {item.officialResult
             ? `Resultado oficial: ${quadrantText(item.officialResult.quadrant)}.`
-            : item.preliminaryResult
+            : item.preliminaryResult && item.preliminaryResult.nineX && item.preliminaryResult.nineY
               ? `Posição preliminar: ${quadrantText(item.preliminaryResult.quadrant)}${item.preliminaryResult.calibrated ? " (já calibrada pelo RH)" : ""}.`
-              : "A posição preliminar aparece quando a coleta fechar."}
+              : item.preliminaryResult
+                ? "Ainda sem posição calculada: falta a validação técnica do RH ou respostas suficientes. Você pode propor mesmo assim; o RH decide."
+                : "A posição preliminar aparece quando a coleta fechar."}
         </p>
         {proposalEditable ? (
           <>
@@ -149,7 +157,7 @@ export function FollowUpPlanDialog({ item, onClose, onDone }: { item: LeaderQueu
 
       <section className="space-y-2" data-testid="perf-plan-draft">
         <h4 className="text-sm font-semibold">3. Prepare a devolutiva e o PDI</h4>
-        <p className="text-xs text-muted-foreground">Rascunho só seu e do RH. Depois do resultado oficial, ele preenche “Registrar devolutiva” e “Criar PDI”.</p>
+        <p className="text-xs text-muted-foreground">Rascunho seu (a pessoa não vê). Depois do resultado oficial, ele preenche “Registrar devolutiva” e “Criar PDI”.</p>
         <OverlayField label="Principal ponto forte">
           {(p) => <OverlayTextarea {...p} rows={2} value={draft.strength} onChange={(e) => setDraft({ ...draft, strength: e.target.value })} data-testid="perf-plan-strength" />}
         </OverlayField>

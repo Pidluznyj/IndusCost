@@ -1276,7 +1276,7 @@ export function registerPerformanceRoutes(expressApp: express.Application, deps:
       // Alcance operacional não abre respostas de avaliação de terceiros.
       return res.status(403).json({ error: "FORBIDDEN", message: "Esta avaliação só é aberta por quem avalia ou por quem consulta resultados." });
     }
-    const result = kind === "LEADERSHIP_SUPERIOR" ? readSuperiorLeadershipForm(db, req.params.id, actorEmployeeId, scope) : readLeaderForm(db, req.params.id, scope, actorEmployeeId);
+    const result = kind === "LEADERSHIP_SUPERIOR" ? readSuperiorLeadershipForm(db, req.params.id, actorEmployeeId, scope) : readLeaderForm(db, req.params.id, scope, actorEmployeeId, now());
     if (result.ok === false) return res.status(403).json({ error: result.code, message: result.message });
     res.json(result);
   });

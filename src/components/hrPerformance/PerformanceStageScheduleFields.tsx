@@ -75,7 +75,7 @@ export function PerformanceStageScheduleFields({ value, leadership, onChange }: 
   return (
     <div className="space-y-3" data-testid="perf-stage-schedule">
       <p className="text-xs text-muted-foreground">
-        Cada etapa só aceita respostas entre o início e o fim (dias inclusivos). Deixe as datas de início em branco para manter tudo aberto até os prazos, como nos ciclos anteriores.
+        Cada etapa só aceita respostas entre o início e o fim (dias inclusivos); a avaliação do líder depois do fim fica atrasada, mas ainda aceita resposta até o RH fechar a coleta. Deixe as datas de início em branco para manter tudo aberto até os prazos, como nos ciclos anteriores. O QR vale no máximo 14 dias: quem tiver usuário responde a etapa de liderança em “Minha avaliação”; os demais recebem novo convite.
       </p>
       {rows.map((row, index) => (
         <div key={row.key} className="rounded-lg border border-border p-3" data-testid={`perf-stage-row-${row.key}`}>

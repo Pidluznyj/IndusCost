@@ -58,7 +58,6 @@ import { isLeadershipKind } from "./performanceLeadership.js";
 import {
   applyLeadershipAnswer,
   applyLeadershipSnapshot,
-  currentJourneyStep,
   ensureLeadershipAssignments,
   journeyDone,
   journeyOf,
@@ -1286,8 +1285,13 @@ function isJourneyKind(kind: AssignmentRecord["kind"]): boolean {
  * A tarefa aceita resposta agora? Com o ciclo Aberto e calendário de etapas, só dentro da janela da etapa dela
  * (autoavaliação, líder ou liderança). Depois da coleta, a avaliação do líder segue aberta para revisão devolvida.
  */
-function collectionOpenFor(cycle: CycleRecord, assignment: AssignmentRecord, now: Date = new Date()): boolean {
-  if (cycle.status === "OPEN" && !kindWindowOpen(cycle, assignment.kind, localDay(now))) return false;
+function collectionOpenFor(cycle: CycleRecord, assignment: AssignmentRecord, now: Date): boolean {
+  if (cycle.status === "OPEN" && !kindWindowOpen(cycle, assignment.kind, localDay(now))) {
+    // A avaliação do líder não abre antes do início; depois do fim fica atrasada (como o prazo antigo) e segue
+    // aceitando resposta até o RH fechar a coleta. Assim a revisão devolvida também continua possível.
+    const window = assignment.kind === "LEADER" ? kindWindow(cycle, assignment.kind) : null;
+    if (!window || windowState(window, localDay(now)) !== "AFTER") return false;
+  }
   if (isJourneyKind(assignment.kind)) return cycle.status === "OPEN";
   return cycle.status === "OPEN" || cycle.status === "CONSOLIDATION" || cycle.status === "CALIBRATION";
 }
@@ -1299,7 +1303,7 @@ export function stageClosedMessage(cycle: CycleRecord, kind: AssignmentRecord["k
   if (!window) return null;
   const state = windowState(window, localDay(now));
   if (state === "BEFORE") return `A etapa “${window.label}” abre em ${formatDateBr(window.startsAt)}.`;
-  if (state === "AFTER") return `A etapa “${window.label}” terminou em ${formatDateBr(window.endsAt)}. Fale com o RH se precisar.`;
+  if (state === "AFTER" && kind !== "LEADER") return `A etapa “${window.label}” terminou em ${formatDateBr(window.endsAt)}. Fale com o RH se precisar.`;
   return null;
 }
 
@@ -1929,8 +1933,9 @@ function formSession(db: PerformanceDatabase, token: string, now: Date) {
   if (!session || (session.phase !== "VERIFIED" && session.phase !== "ASSISTED")) return null;
   const { assignment: root, participant, cycle } = inviteContext(db, session.assignmentId);
   if (!root || !root.active || !participant || participant.removedAt || !cycle) return null;
-  // A sessão nasce na autoavaliação e acompanha a jornada: a etapa atual é a primeira não enviada.
-  const current = currentJourneyStep(db, participant.id);
+  // A sessão nasce na autoavaliação e acompanha a jornada: a etapa atual é a primeira não enviada (pulando a que já
+  // terminou no calendário, para a pessoa não ficar presa fora das etapas seguintes).
+  const current = journeyStepNow(db, participant.id, cycle, now);
   return { session, root, assignment: current ?? root, participant, cycle, done: current === null };
 }
 
@@ -2023,15 +2028,31 @@ function journeyFormValue(
  * ativo mais recente em que ela participa. Mesmas regras do portal: só a própria pessoa, só a etapa da vez, só na
  * janela da etapa. O RH e o super administrador não respondem por ninguém por aqui.
  */
-function myJourneyContext(db: PerformanceDatabase, actorEmployeeId: string | null) {
+/**
+ * Etapa da jornada a responder agora: a primeira não enviada cuja janela ainda não terminou. Se todas as pendentes
+ * já terminaram, a primeira delas (a tela explica que terminou). Sem calendário, igual a `currentJourneyStep`.
+ */
+function journeyStepNow(db: PerformanceDatabase, participantId: string, cycle: CycleRecord, now: Date): AssignmentRecord | null {
+  const pending = journeyOf(db, participantId).filter((a) => a.status !== "SUBMITTED");
+  if (cycle.status !== "OPEN") return pending[0] ?? null;
+  const today = localDay(now);
+  return pending.find((a) => {
+    const window = kindWindow(cycle, a.kind);
+    return !window || windowState(window, today) !== "AFTER";
+  }) ?? pending[0] ?? null;
+}
+
+function myJourneyContext(db: PerformanceDatabase, actorEmployeeId: string | null, now: Date) {
   if (!actorEmployeeId) return null;
   const candidates = db.participants
     .filter((p) => p.employeeId === actorEmployeeId && !p.removedAt)
     .map((participant) => ({ participant, cycle: db.cycles.find((c) => c.id === participant.cycleId) }))
     .filter((x): x is { participant: ParticipantRecord; cycle: CycleRecord } => Boolean(x.cycle && x.cycle.status === "OPEN" && x.cycle.activation === "ACTIVE"))
-    .map((x) => ({ ...x, assignment: currentJourneyStep(db, x.participant.id) }))
+    .map((x) => ({ ...x, assignment: journeyStepNow(db, x.participant.id, x.cycle, now) }))
     .filter((x): x is typeof x & { assignment: AssignmentRecord } => x.assignment !== null)
-    .sort((a, b) => (b.cycle.openedAt ?? "").localeCompare(a.cycle.openedAt ?? ""));
+    // Primeiro o ciclo em que a etapa da pessoa está aberta hoje; depois o aberto mais recente.
+    .map((x) => ({ ...x, openToday: stageClosedMessage(x.cycle, x.assignment.kind, now) === null }))
+    .sort((a, b) => Number(b.openToday) - Number(a.openToday) || (b.cycle.openedAt ?? "").localeCompare(a.cycle.openedAt ?? ""));
   return candidates[0] ?? null;
 }
 
@@ -2044,14 +2065,14 @@ const myScope = (actorEmployeeId: string): PerformanceScope => ({
 
 /** Resumo para o aviso "Falta com você": a etapa da pessoa e se ela está aberta hoje. */
 export function myJourneySummary(db: PerformanceDatabase, actorEmployeeId: string | null, now: Date) {
-  const ctx = myJourneyContext(db, actorEmployeeId);
+  const ctx = myJourneyContext(db, actorEmployeeId, now);
   if (!ctx) return null;
   const closed = stageClosedMessage(ctx.cycle, ctx.assignment.kind, now);
   return { cycleId: ctx.cycle.id, cycleName: ctx.cycle.name, kind: ctx.assignment.kind, title: STEP_TEXT[ctx.assignment.kind as PublicFormStep["kind"]].title, open: closed === null, message: closed };
 }
 
 export function myForm(source: PerformanceDatabase, input: { actorEmployeeId: string | null }, options: ServiceOptions): ServiceResult<PublicFormValue> {
-  const ctx = myJourneyContext(source, input.actorEmployeeId);
+  const ctx = myJourneyContext(source, input.actorEmployeeId, options.now());
   if (!ctx) return fail("NO_PENDING", "Você não tem pesquisa de desempenho aberta agora.");
   const closed = stageClosedMessage(ctx.cycle, ctx.assignment.kind, options.now());
   if (closed) return fail("STAGE_CLOSED", closed);
@@ -2063,7 +2084,7 @@ export function mySave(
   input: { actorEmployeeId: string | null; actorUserId: string | null; expectedVersion: number; answers: readonly { code: string; answer: AnswerInput }[]; step?: string | null },
   options: ServiceOptions
 ): ServiceResult<{ version: number }> {
-  const ctx = myJourneyContext(source, input.actorEmployeeId);
+  const ctx = myJourneyContext(source, input.actorEmployeeId, options.now());
   if (!ctx || !input.actorEmployeeId) return fail("NO_PENDING", "Você não tem pesquisa de desempenho aberta agora.");
   if (input.step && input.step !== ctx.assignment.kind) return fail("STEP_CHANGED", "Esta etapa já foi concluída. Atualize a tela para continuar.");
   const keepComment = isLeadershipKind(ctx.assignment.kind);
@@ -2085,7 +2106,7 @@ export function mySubmit(
   input: { actorEmployeeId: string | null; actorUserId: string | null; expectedVersion: number; step?: string | null },
   options: ServiceOptions
 ): ServiceResult<{ status: string; done: boolean; next: string | null }> {
-  const ctx = myJourneyContext(source, input.actorEmployeeId);
+  const ctx = myJourneyContext(source, input.actorEmployeeId, options.now());
   if (!ctx || !input.actorEmployeeId) return fail("NO_PENDING", "Você não tem pesquisa de desempenho aberta agora.");
   if (input.step && input.step !== ctx.assignment.kind) return fail("STEP_CHANGED", "Esta etapa já foi concluída. Atualize a tela para continuar.");
   const submitted = submitAssignment(
@@ -2094,7 +2115,7 @@ export function mySubmit(
     options
   );
   if (submitted.ok === false) return submitted;
-  const next = currentJourneyStep(submitted.db, ctx.participant.id);
+  const next = journeyStepNow(submitted.db, ctx.participant.id, ctx.cycle, options.now());
   return { ok: true, db: submitted.db, value: { status: submitted.value.status, done: next === null, next: next?.kind ?? null } };
 }
 
@@ -2152,7 +2173,7 @@ export function publicSubmit(
     options
   );
   if (submitted.ok === false) return submitted;
-  const next = currentJourneyStep(submitted.db, ctx.participant.id);
+  const next = journeyStepNow(submitted.db, ctx.participant.id, ctx.cycle, options.now());
   return { ok: true, db: submitted.db, value: { status: submitted.value.status, done: next === null, next: next?.kind ?? null } };
 }
 
@@ -2426,7 +2447,7 @@ export function teamNotices(db: PerformanceDatabase, actorEmployeeId: string | n
   };
 }
 
-export function readLeaderForm(db: PerformanceDatabase, assignmentId: string, scope: PerformanceScope, actorEmployeeId: string | null) {
+export function readLeaderForm(db: PerformanceDatabase, assignmentId: string, scope: PerformanceScope, actorEmployeeId: string | null, now: Date = new Date()) {
   const assignment = db.assignments.find((a) => a.id === assignmentId && a.active && a.kind === "LEADER");
   const allowed =
     assignment &&
@@ -2453,7 +2474,7 @@ export function readLeaderForm(db: PerformanceDatabase, assignmentId: string, sc
     },
     employee: { name: participant.employeeName, roleName: participant.roleName, departmentName: participant.departmentName },
     cycle: { id: cycle.id, name: cycle.name, periodLabel: cycle.periodLabel, status: cycle.status, dueAt: cycle.leaderDueAt },
-    editable: collectionOpenFor(cycle, assignment) && assignment.status !== "SUBMITTED",
+    editable: collectionOpenFor(cycle, assignment, now) && assignment.status !== "SUBMITTED",
     instructions: model?.instructions ?? PROPOSED_MODEL_INSTRUCTIONS,
     rules: { requireExtremeEvidence: rules.requireExtremeEvidence, evidenceMinChars: rules.evidenceMinChars },
     questions: questionsOf(db, cycle.modelId).map((q) => ({

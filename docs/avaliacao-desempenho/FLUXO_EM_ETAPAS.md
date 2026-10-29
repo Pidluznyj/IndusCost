@@ -31,7 +31,11 @@ O ciclo passa a ter **etapas com início e fim**. Os estados técnicos continuam
 - **Calendário:** é tudo ou nada. A calibração começa depois do fim da coleta. A avaliação do líder não começa antes da autoavaliação. A avaliação da liderança não começa antes da avaliação do líder.
 - **Mudança de datas:** depois da abertura do ciclo, exige motivo (≥ 8 caracteres). A auditoria `CYCLE_UPDATED` registra o calendário anterior e o novo.
 - **Ciclos sem calendário:** os ciclos já existentes têm os campos novos nulos e mantêm o comportamento anterior: tudo aberto enquanto o ciclo estiver Aberto. Nenhum ciclo em andamento muda.
-- **Convite da jornada:** a validade considera o fim da etapa de liderança, ainda limitada pelo teto de 14 dias.
+- **Convite da jornada:** a validade considera o fim da etapa de liderança, ainda limitada pelo teto de 14 dias. Quando a etapa de liderança começa mais de 14 dias depois do convite, o QR já venceu: quem tem usuário responde em **Minha avaliação**; os demais recebem novo convite.
+- **Etapa perdida não trava a jornada:** se a autoavaliação terminou sem resposta, a pessoa segue para a etapa de liderança quando ela abrir (portal e Minha avaliação).
+- **Avaliação do líder atrasada:** antes do início fica bloqueada; depois do fim fica marcada como atrasada, mas ainda aceita resposta até o RH fechar a coleta (como o prazo antigo). Assim a revisão devolvida pelo RH também continua possível.
+- **Ligar ou desligar a 180°** num ciclo com calendário: ao ligar, a etapa de liderança ganha a mesma janela da avaliação do líder (ajustável em Editar); ao desligar, as datas dela somem.
+- **Dois ciclos abertos:** Minha avaliação e o aviso usam o ciclo em que a etapa da pessoa está aberta hoje.
 
 **Telas:**
 
@@ -71,7 +75,8 @@ O ciclo passa a ter **etapas com início e fim**. Os estados técnicos continuam
 
 ## Validação local (sem PostgreSQL real)
 
-- `performanceStagedCycle.test.ts`: 20 testes (regra das janelas, calendário, jornada no sistema, plano do líder, avisos).
+- `performanceStagedCycle.test.ts`: 24 testes (regra das janelas, calendário, jornada no sistema, plano do líder, avisos, e as correções da validação: etapa perdida, líder atrasado, ligar a 180°, dois ciclos abertos).
+- Validação no navegador com as **rotas reais** e banco em memória (harness local, sem servidor nem banco do sistema): autoavaliação completa em Minha avaliação, aviso "Falta com você", fila e painel do líder, proposta usada na calibração pelo RH Gestor, RH Operacional sem acesso à proposta, criação de ciclo com calendário.
 - `performancePermissions.test.ts`:
   - 2 testes de API novos;
   - o teste rota a rota foi ajustado para `/me/*`, que é a jornada da própria pessoa. O RH Operacional sem cadastro ligado não grava nada.

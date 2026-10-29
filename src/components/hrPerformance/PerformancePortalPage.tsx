@@ -55,6 +55,8 @@ export function PerformancePortalPage({ api = PUBLIC_API, embedded = false, onFi
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [confirmed, setConfirmed] = useState(false);
   const [assisted, setAssisted] = useState(false);
+  /** Etapa que acabou de ser enviada: a tela confirma o envio mesmo quando a próxima etapa ainda não abriu. */
+  const [sentTitle, setSentTitle] = useState<string | null>(null);
   const versionRef = useRef(0);
   const stepRef = useRef<string | undefined>(undefined);
   const pendingRef = useRef<Map<string, Answer>>(new Map<string, Answer>());
@@ -275,8 +277,10 @@ export function PerformancePortalPage({ api = PUBLIC_API, embedded = false, onFi
       setMessage(result.offline ? "Sem internet. Toque em Enviar quando a conexão voltar." : result.message ?? "Não foi possível enviar.");
       return;
     }
+    onFinished?.();
     if (result.done === false) {
       // Próxima etapa na mesma sessão: nada de novo QR, código ou login.
+      setSentTitle(form?.step?.title ?? null);
       pendingRef.current.clear();
       setConfirmed(false);
       setIndex(0);
@@ -285,7 +289,6 @@ export function PerformancePortalPage({ api = PUBLIC_API, embedded = false, onFi
     }
     setStep("done");
     if (assisted) void api.logout();
-    onFinished?.();
   };
 
   const leave = async () => {
@@ -561,8 +564,13 @@ export function PerformancePortalPage({ api = PUBLIC_API, embedded = false, onFi
 
         {step === "expired" || step === "blocked" ? (
           <section className="pp-card" data-testid="portal-closed">
+            {sentTitle && step === "blocked" ? (
+              <p className="pp-alert pp-alert-ok" data-testid="portal-step-sent">
+                {sentTitle}: enviada ✓
+              </p>
+            ) : null}
             <h1 ref={headingRef} tabIndex={-1}>
-              {step === "expired" ? "Pesquisa indisponível" : "Pesquisa de desempenho"}
+              {step === "expired" ? "Pesquisa indisponível" : sentTitle ? "Próxima etapa" : "Pesquisa de desempenho"}
             </h1>
             <p>{message ?? (embedded ? "Você não tem pesquisa de desempenho aberta agora." : "Para responder, aponte a câmera do celular para o QR que o RH entregou.")}</p>
             <p className="pp-muted">Dúvidas: procure o RH da sua unidade.</p>
