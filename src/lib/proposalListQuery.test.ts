@@ -47,7 +47,10 @@ describe("proposalListQuery — valor líquido De/Até", () => {
     assert.match(page, /moneyAmountToFilterParam/);
     assert.match(page, /proposals-filter-net-value/);
     assert.match(server, /parseProposalListNetValueParam/);
-    assert.match(server, /buildProposalListNetValueWhere/);
+    // O `where` da listagem (com De/Até) é montado em proposalListPage.server.ts, chamado pela rota.
+    const listPage = readFileSync(join(process.cwd(), "src/lib/proposalListPage.server.ts"), "utf8");
+    assert.match(server, /loadProposalListPage\(/);
+    assert.match(listPage, /buildProposalListNetValueWhere\(filters\.minNetValue, filters\.maxNetValue\)/);
     assert.doesNotMatch(server, /function parseDecimalQuery/);
   });
 });

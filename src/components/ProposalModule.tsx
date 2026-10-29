@@ -83,6 +83,11 @@ import {
   resolveProposalCommercialDate,
 } from "@/src/lib/proposalCommercialDate";
 import { useAuth } from "@/src/contexts/AuthContext";
+import {
+  PROPOSAL_INCLUDE_WITHOUT_COMMERCIAL_VALUE_PARAM,
+  classifyProposalCommercialEligibility,
+  type ProposalCommercialEligibility,
+} from "@/src/lib/proposalCommercialEligibility";
 import { usePermissions } from "@/src/hooks/usePermissions";
 import {
   canCreateProposal,
@@ -123,7 +128,28 @@ type ProposalListResponse = {
   summary?: ProposalListSummary;
 };
 
-function buildProposalSummaryFromRows(rows: Proposal[]): ProposalListSummary {
+/** Elegibilidade da linha: a marca do servidor ou, sem ela, a mesma regra central calculada aqui. */
+function proposalRowEligibility(row: Proposal): ProposalCommercialEligibility {
+  const loose = row as Proposal & {
+    commercialEligibility?: ProposalCommercialEligibility;
+    sourceSystem?: string | null;
+    _count?: { items?: number } | null;
+    items?: unknown[];
+  };
+  return (
+    loose.commercialEligibility ??
+    classifyProposalCommercialEligibility({
+      sourceSystem: loose.sourceSystem ?? null,
+      totalNetValue: row.totalNetValue as never,
+      mappedItemCount: Number(loose._count?.items ?? (Array.isArray(loose.items) ? loose.items.length : 0)),
+      hasSalesOrder: Boolean(row.salesOrder?.id),
+    })
+  );
+}
+
+function buildProposalSummaryFromRows(allRows: Proposal[]): ProposalListSummary {
+  // Indicadores só sobre a população comercial (mesma regra do servidor).
+  const rows = allRows.filter((row) => proposalRowEligibility(row).countsInCommercialMetrics);
   const now = new Date();
   const currentYear = now.getFullYear();
   const currentMonth = now.getMonth();
@@ -677,6 +703,8 @@ export const ProposalModule = () => {
   const allowEdit = allowMutateProposal && canEditProposal(proposalCheck);
   const allowDelete = allowMutateProposal && canDeleteProposal(proposalCheck);
   const allowPrint = canPrintProposal(proposalCheck);
+  /** Filtro administrativo (o servidor confere a mesma chave proposals.edit). */
+  const allowShowWithoutCommercialValue = canEditProposal(proposalCheck);
 
   const navigate = useNavigate();
   const [view, setView] = useState<"list" | "form">("list");
@@ -692,6 +720,8 @@ export const ProposalModule = () => {
   const [listEndDate, setListEndDate] = useState(() => currentMonthProposalListRange().endDate);
   const [listMinValue, setListMinValue] = useState("");
   const [listMaxValue, setListMaxValue] = useState("");
+  const [showWithoutCommercialValue, setShowWithoutCommercialValue] = useState(false);
+  const [hiddenWithoutCommercialValue, setHiddenWithoutCommercialValue] = useState(0);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalProposals, setTotalProposals] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
@@ -925,6 +955,7 @@ export const ProposalModule = () => {
         listEndDate,
         listMinValue,
         listMaxValue,
+        showWithoutCommercialValue,
       }),
     [
       searchTerm,
@@ -935,6 +966,7 @@ export const ProposalModule = () => {
       listEndDate,
       listMinValue,
       listMaxValue,
+      showWithoutCommercialValue,
     ]
   );
 
@@ -992,6 +1024,9 @@ export const ProposalModule = () => {
           const maxParam = moneyAmountToFilterParam(listMaxValue);
           if (maxParam) params.set("maxNetValue", maxParam);
         }
+        if (showWithoutCommercialValue && allowShowWithoutCommercialValue) {
+          params.set(PROPOSAL_INCLUDE_WITHOUT_COMMERCIAL_VALUE_PARAM, "1");
+        }
 
         const response = await fetchJsonOk<ProposalListResponse | Proposal[]>(
           `/api/proposals?${params.toString()}`,
@@ -1016,6 +1051,7 @@ export const ProposalModule = () => {
           setTotalPages(Number.isFinite(Number(response.totalPages)) ? Math.max(1, Number(response.totalPages)) : 1);
           setTotalProposals(Number.isFinite(Number(response.total)) ? Number(response.total) : 0);
           setSummary(response.summary ?? buildProposalSummaryFromRows(response.data));
+          setHiddenWithoutCommercialValue(Number(response.summary?.hiddenWithoutCommercialValueCount ?? 0));
         } else {
           setProposals([]);
           setCurrentPage(1);
@@ -1040,6 +1076,8 @@ export const ProposalModule = () => {
       listEndDate,
       listMinValue,
       listMaxValue,
+      showWithoutCommercialValue,
+      allowShowWithoutCommercialValue,
     ]
   );
 
@@ -2861,7 +2899,26 @@ export const ProposalModule = () => {
                   de <span className="font-bold text-foreground">{totalProposals}</span> proposta(s).
                 </>
               )}
+              {!showWithoutCommercialValue && hiddenWithoutCommercialValue > 0 ? (
+                <span className="ml-1" data-testid="proposals-hidden-without-commercial-value">
+                  {hiddenWithoutCommercialValue} proposta(s) do Nomus sem valor comercial oculta(s) — fora dos indicadores.
+                </span>
+              ) : null}
             </p>
+            {allowShowWithoutCommercialValue ? (
+              <label
+                className="inline-flex items-center gap-2 text-xs text-muted-foreground"
+                title="Mostra no grid as propostas do Nomus sem valor, sem itens e sem pedido. Os indicadores não mudam."
+              >
+                <input
+                  type="checkbox"
+                  checked={showWithoutCommercialValue}
+                  onChange={(e) => setShowWithoutCommercialValue(e.target.checked)}
+                  data-testid="proposals-filter-show-without-commercial-value"
+                />
+                Exibir propostas sem valor comercial
+              </label>
+            ) : null}
             <button
               type="button"
               onClick={clearListFilters}
@@ -2981,6 +3038,19 @@ export const ProposalModule = () => {
                           </p>
                           {p.title?.trim() ? (
                             <p className="text-[10px] text-muted-foreground">#{p.number}</p>
+                          ) : null}
+                          {proposalRowEligibility(p).label ? (
+                            <p
+                              className="mt-0.5 inline-block rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-900"
+                              data-testid={`proposal-list-eligibility-${p.id}`}
+                              title={
+                                proposalRowEligibility(p).countsInCommercialMetrics
+                                  ? "Conta nos indicadores (há pedido de venda vinculado); o valor zerado merece revisão."
+                                  : "Fora dos indicadores comerciais (contagens, ticket médio e conversão)."
+                              }
+                            >
+                              {proposalRowEligibility(p).label}
+                            </p>
                           ) : null}
                         </div>
                       </div>

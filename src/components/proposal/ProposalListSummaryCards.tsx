@@ -27,6 +27,8 @@ export type ProposalListSummary = {
   convertedProposalsCount: number;
   convertedProposalsAmount: number;
   conversionRate: number | null;
+  /** Propostas Nomus sem valor comercial escondidas do grid pelos filtros atuais (fora dos indicadores). */
+  hiddenWithoutCommercialValueCount?: number;
 };
 
 export const ProposalListSummaryCards = memo(function ProposalListSummaryCards({

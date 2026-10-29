@@ -75,11 +75,17 @@ import {
   resolveProposalCommercialMarginFromItems,
 } from "./src/lib/proposalListMargin.js";
 import {
-  buildProposalListCommercialDateWhere,
-  buildProposalListNetValueWhere,
   buildProposalListOrderBy,
   parseProposalListNetValueParam,
 } from "./src/lib/proposalListQuery.js";
+import {
+  PROPOSAL_COMMERCIAL_METRICS_WHERE,
+  PROPOSAL_INCLUDE_WITHOUT_COMMERCIAL_VALUE_PARAM,
+  PROPOSAL_WITHOUT_COMMERCIAL_VALUE_FILTER_PERMISSION,
+  andProposalWhere,
+  withProposalCommercialEligibility,
+} from "./src/lib/proposalCommercialEligibility.js";
+import { buildProposalListWheres, loadProposalListPage } from "./src/lib/proposalListPage.server.js";
 import { loadProposalConversionYtd } from "./src/lib/proposalConversionYtd.server.js";
 import {
   applyProductionCostsToProposalDetail,
@@ -15410,10 +15416,11 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
           orderBy: [{ issueDate: "desc" }, { createdAt: "desc" }],
         }),
         prisma.proposal.findMany({
-          where: {
-            customerId,
-            status: { in: [...OPEN_NEGOTIATION_PROPOSAL_STATUSES] },
-          },
+          // Negociação aberta = proposta efetiva (mesma população dos indicadores de Propostas).
+          where: andProposalWhere(
+            { customerId, status: { in: [...OPEN_NEGOTIATION_PROPOSAL_STATUSES] } },
+            PROPOSAL_COMMERCIAL_METRICS_WHERE
+          ),
           orderBy: { updatedAt: "desc" },
           take: 5,
           select: {
@@ -16258,145 +16265,53 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
       minNet !== null ||
       maxNet !== null;
 
-    const where: Prisma.ProposalWhereInput = {
-      ...(status && isValidProposalStatus(status) ? { status } : {}),
-      ...(responsible ? { responsible } : {}),
-      ...(customerId ? { customerId } : {}),
-      // Recorte por DATA COMERCIAL (coluna gerada), não por `createdAt`.
-      // Para proposta do Nomus, `createdAt` é o instante do sync: filtrar por
-      // ele fazia a CP 01350 (aberta 03/08, importada 04/08) responder ao
-      // filtro de 04/08 e sumir do de 03/08.
-      ...buildProposalListCommercialDateWhere(startDate, endDate),
-      ...buildProposalListNetValueWhere(minNet, maxNet),
-      ...(search
-        ? {
-            OR: [
-              { title: { contains: search, mode: "insensitive" } },
-              { Customer: { companyName: { contains: search, mode: "insensitive" } } },
-              { Customer: { tradeName: { contains: search, mode: "insensitive" } } },
-              { Customer: { taxId: { contains: search, mode: "insensitive" } } },
-              ...(Number.isFinite(Number(search)) ? [{ number: Number.parseInt(search, 10) }] : []),
-            ],
-          }
-        : {}),
+    const auth = (req as { appAuth?: AppAuthContext }).appAuth ?? (await getCurrentAppUser(req));
+    // Filtro administrativo "Exibir propostas sem valor comercial": só para quem edita propostas (ACL oficial).
+    // Muda o grid; os indicadores continuam na população comercial.
+    const includeWithoutCommercialValue =
+      String(req.query[PROPOSAL_INCLUDE_WITHOUT_COMMERCIAL_VALUE_PARAM] ?? "") === "1" &&
+      Boolean(auth && hasPermission(auth, PROPOSAL_WITHOUT_COMMERCIAL_VALUE_FILTER_PERMISSION));
+    const filters = {
+      search,
+      status: status && isValidProposalStatus(status) ? status : null,
+      responsible,
+      customerId,
+      // Recorte por DATA COMERCIAL (coluna gerada), não por `createdAt` (instante do sync no Nomus).
+      startDate,
+      endDate,
+      minNetValue: minNet,
+      maxNetValue: maxNet,
+      includeWithoutCommercialValue,
     };
 
     if (!hasPagination && !hasAnyFilter) {
       const proposals = await prisma.proposal.findMany({
+        where: buildProposalListWheres(filters, new Date()).gridWhere,
         include: {
           Customer: true,
           salesOrder: { select: { id: true, orderCode: true, status: true } },
+          _count: { select: { items: true } },
         },
         orderBy: buildProposalListOrderBy(),
       });
-      const auth = (req as { appAuth?: AppAuthContext }).appAuth ?? (await getCurrentAppUser(req));
       const evaluatedAt = new Date();
       const withBlock = await attachSalesBlockToNestedCustomers(prisma, proposals, {
         includeFinancialDetails: canExposeCustomerSalesBlockFinancialDetails(auth),
         now: evaluatedAt,
       });
       const withCredit = await attachPortfolioCreditToNestedCustomers(prisma, withBlock, evaluatedAt);
-      return res.json(
-        await withOfficialProposalListMargin(
-          withCredit as Array<Record<string, unknown>>
-        )
-      );
+      const withMargin = await withOfficialProposalListMargin(withCredit as Array<Record<string, unknown>>);
+      return res.json(withMargin.map((row) => withProposalCommercialEligibility(row)));
     }
 
     const page = parsePositiveIntQuery(pageRaw, 1);
     const pageSize = Math.min(parsePositiveIntQuery(pageSizeRaw, 50), 200);
-    const skip = (page - 1) * pageSize;
+    const listed = await loadProposalListPage(prisma as never, { filters, page, pageSize });
 
-    const now = new Date();
-    const currentYearStart = new Date(now.getFullYear(), 0, 1);
-    const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-
-    const [
-      rowsRaw,
-      total,
-      aggregate,
-      yearToDateCount,
-      monthToDateCount,
-      openAggregate,
-      convertedAggregate,
-    ] = await Promise.all([
-      prisma.proposal.findMany({
-        where,
-        include: {
-          Customer: true,
-          salesOrder: { select: { id: true, orderCode: true, status: true } },
-        },
-        orderBy: buildProposalListOrderBy(),
-        skip,
-        take: pageSize,
-      }),
-      prisma.proposal.count({ where }),
-      prisma.proposal.aggregate({
-        where,
-        _count: { id: true },
-        _sum: {
-          totalNetValue: true,
-          totalGrossValue: true,
-        },
-      }),
-      // "Propostas no ano/mês" conta pela data COMERCIAL. Por `createdAt`, uma
-      // carga do Nomus jogava propostas antigas no mês corrente.
-      prisma.proposal.count({
-        where: { commercialDate: { gte: currentYearStart } },
-      }),
-      prisma.proposal.count({
-        where: { commercialDate: { gte: currentMonthStart } },
-      }),
-      prisma.proposal.aggregate({
-        where: {
-          ...where,
-          salesOrder: { is: null },
-          status: { in: ["DRAFT", "ANALYSIS", "SENT"] },
-        },
-        _count: { id: true },
-        _sum: { totalNetValue: true },
-      }),
-      prisma.proposal.aggregate({
-        where: {
-          ...where,
-          OR: [{ salesOrder: { isNot: null } }, { status: "APPROVED" }],
-        },
-        _count: { id: true },
-        _sum: { totalNetValue: true },
-      }),
-    ]);
-
-    const totalProposals = aggregate._count.id;
-    const totalNetAmount = Number(aggregate._sum.totalNetValue ?? 0);
-    const totalGrossAmount = Number(aggregate._sum.totalGrossValue ?? 0);
-    const averageNetValue = totalProposals > 0 ? totalNetAmount / totalProposals : 0;
-
-    const openProposalsCount = openAggregate._count.id;
-    const openProposalsAmount = Number(openAggregate._sum.totalNetValue ?? 0);
-
-    const convertedProposalsCount = convertedAggregate._count.id;
-    const convertedProposalsAmount = Number(convertedAggregate._sum.totalNetValue ?? 0);
-    const conversionRate = totalProposals > 0 ? (convertedProposalsCount / totalProposals) * 100 : null;
-
-    const summary = {
-      totalProposals,
-      totalNetAmount,
-      totalGrossAmount,
-      averageNetValue,
-      yearToDateCount,
-      monthToDateCount,
-      openProposalsCount,
-      openProposalsAmount,
-      convertedProposalsCount,
-      convertedProposalsAmount,
-      conversionRate,
-    };
-
-    const auth = (req as { appAuth?: AppAuthContext }).appAuth ?? (await getCurrentAppUser(req));
     const evaluatedAt = new Date();
     const withBlock = await attachSalesBlockToNestedCustomers(
       prisma,
-      rowsRaw.slice(0, pageSize) as Array<{ customerId: string; Customer?: { id: string } | null }>,
+      listed.rows as Array<{ customerId: string; Customer?: { id: string } | null }>,
       { includeFinancialDetails: canExposeCustomerSalesBlockFinancialDetails(auth), now: evaluatedAt }
     );
     const withCredit = await attachPortfolioCreditToNestedCustomers(prisma, withBlock, evaluatedAt);
@@ -16404,11 +16319,12 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
 
     res.json({
       data: rows,
-      page,
-      pageSize,
-      total,
-      totalPages: Math.max(1, Math.ceil(total / pageSize)),
-      summary,
+      page: listed.page,
+      pageSize: listed.pageSize,
+      total: listed.total,
+      totalPages: listed.totalPages,
+      summary: listed.summary,
+      includeWithoutCommercialValue,
     });
   });
 
@@ -16416,6 +16332,22 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     const payload = await loadProposalConversionYtd(prisma);
     res.json(payload);
   });
+
+  // Qualidade da integração (Nomus com líquido <= 0): diagnóstico separado da conversão comercial. Só leitura.
+  app.get(
+    "/api/proposals/integration-quality",
+    requireAppAuth,
+    requireResource("commercial.proposals", "update"),
+    async (_req, res) => {
+      try {
+        const { loadProposalIntegrationQuality } = await import("./src/lib/proposalIntegrationQuality.server.js");
+        res.json(await loadProposalIntegrationQuality(prisma as never));
+      } catch (error) {
+        console.error("proposal-integration-quality", error instanceof Error ? error.name : "error");
+        res.status(500).json({ error: "Diagnóstico de propostas indisponível." });
+      }
+    }
+  );
 
   app.get("/api/proposals/responsibles", requireAppAuth, requireResource("commercial.proposals", "view"), async (req, res) => {
     const rows = await prisma.proposal.findMany({

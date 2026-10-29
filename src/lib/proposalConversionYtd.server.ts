@@ -2,6 +2,7 @@
  * Série YTD de conversão de propostas. Sem filtros da listagem.
  */
 import type { PrismaClient } from "@prisma/client";
+import { PROPOSAL_COMMERCIAL_METRICS_WHERE, andProposalWhere } from "./proposalCommercialEligibility.js";
 import {
   buildProposalConversionYtdSeries,
   proposalCalendarYearWindow,
@@ -15,10 +16,9 @@ export async function loadProposalConversionYtd(
 ): Promise<ProposalConversionYtdPayload> {
   const { year, month: throughMonth } = saoPauloCivilYearMonth(now);
   const window = proposalCalendarYearWindow(year);
+  // Mesma população comercial dos cards da listagem (proposta efetiva: líquido > 0 ou pedido vinculado).
   const rows = await prisma.proposal.findMany({
-    where: {
-      commercialDate: { gte: window.gte, lt: window.lt },
-    },
+    where: andProposalWhere({ commercialDate: { gte: window.gte, lt: window.lt } }, PROPOSAL_COMMERCIAL_METRICS_WHERE),
     select: {
       status: true,
       totalNetValue: true,
