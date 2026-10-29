@@ -18,6 +18,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { after, before, describe, it } from "node:test";
 import { PrismaClient } from "@prisma/client";
+import { isolatedHostEnv } from "./deployTestIsolation";
 import {
   commissionPg17BinDir,
   executeSqlFile,
@@ -139,10 +140,10 @@ describe("biblioteca de deploy com PostgreSQL 17 e binários reais", { skip: SKI
     const script = (body: string, extraPath = "") =>
       [`export PATH="${extraPath ? `${posix(extraPath)}:` : ""}${posix(pg17Bin!)}:${posix(stubDir)}:$PATH"`, `DIR="${posix(dir)}"; DUMP="$DIR/database-before.dump"`, `source "${posix(LIB)}"`, body].join("\n");
     const run = (body: string, extra: Record<string, string> = {}, extraPath = "") => {
-      const r = spawnSync(BASH!, ["-c", script(body, extraPath)], { encoding: "utf8", env: { ...process.env, ...env, ...extra } });
+      const r = spawnSync(BASH!, ["-c", script(body, extraPath)], { encoding: "utf8", env: { ...isolatedHostEnv(), ...env, ...extra } });
       return `${r.stdout}\n${r.stderr}`;
     };
-    const runAsync = (body: string, extraPath = "") => spawn(BASH!, ["-c", script(body, extraPath)], { env: { ...process.env, ...env }, stdio: "ignore" });
+    const runAsync = (body: string, extraPath = "") => spawn(BASH!, ["-c", script(body, extraPath)], { env: { ...isolatedHostEnv(), ...env }, stdio: "ignore" });
     const file = (name: string) => readFileSync(join(dir, name), "utf8");
     return { dir, base, run, runAsync, file, name: dbName };
   }
@@ -483,7 +484,7 @@ describe("biblioteca de deploy com PostgreSQL 17 e binários reais", { skip: SKI
 
   it("R18. roteiro de ensaio do servidor (scripts/ops/rehearseDeploySafety.sh): todos os passos OK; --cleanup remove só ids_ensaio_*", async () => {
     const base = join(work, "ensaio");
-    const env = { ...process.env, ...pgEnv, IDS_PG: "", IDS_PG_USER: "", IDS_ENSAIO_ALLOW_ENV: "1", IDS_STATS_SETTLE_SECONDS: "1", IDS_ENSAIO_ROOT: posix(join(base, "backups")), IDS_ENSAIO_STATE: posix(join(base, "state")), IDS_SYSTEMCTL: posix(join(stubDir, "systemctl")) };
+    const env = { ...isolatedHostEnv(), ...pgEnv, IDS_PG: "", IDS_PG_USER: "", IDS_ENSAIO_ALLOW_ENV: "1", IDS_STATS_SETTLE_SECONDS: "1", IDS_ENSAIO_ROOT: posix(join(base, "backups")), IDS_ENSAIO_STATE: posix(join(base, "state")), IDS_SYSTEMCTL: posix(join(stubDir, "systemctl")) };
     const script = posix(join(REPO, "scripts/ops/rehearseDeploySafety.sh"));
     const path = `export PATH="${posix(pg17Bin!)}:${posix(stubDir)}:$PATH"`;
     const r = spawnSync(BASH!, ["-c", `${path}; bash "${script}"`], { encoding: "utf8", env });
@@ -500,7 +501,7 @@ describe("biblioteca de deploy com PostgreSQL 17 e binários reais", { skip: SKI
 
   it("R19. ensaio sem --env-file recusa (2) sem tocar no cluster; --cleanup remove só nomes do padrão ids_ensaio_<época>_<cenário> e deixa os demais (1)", async () => {
     const base = join(work, "ensaio2");
-    const env = { ...process.env, ...pgEnv, IDS_PG: "", IDS_PG_USER: "", IDS_ENSAIO_ROOT: posix(join(base, "backups")), IDS_ENSAIO_STATE: posix(join(base, "state")), IDS_SYSTEMCTL: posix(join(stubDir, "systemctl")) };
+    const env = { ...isolatedHostEnv(), ...pgEnv, IDS_PG: "", IDS_PG_USER: "", IDS_ENSAIO_ROOT: posix(join(base, "backups")), IDS_ENSAIO_STATE: posix(join(base, "state")), IDS_SYSTEMCTL: posix(join(stubDir, "systemctl")) };
     const script = posix(join(REPO, "scripts/ops/rehearseDeploySafety.sh"));
     const path = `export PATH="${posix(pg17Bin!)}:${posix(stubDir)}:$PATH"`;
     const r = spawnSync(BASH!, ["-c", `${path}; bash "${script}"`], { encoding: "utf8", env });
@@ -526,7 +527,7 @@ describe("biblioteca de deploy com PostgreSQL 17 e binários reais", { skip: SKI
       writeFileSync(f, ["IDS_ENV_NAME=teste", "DB=r1", `IDS_PG_OS_USER=none`, `IDS_PG_BIN=PATH`, `IDS_PG_HOST=${u.hostname}`, `IDS_PG_PORT=${u.port}`, `IDS_PG_ADMIN_ROLE=${decodeURIComponent(u.username)}`, `IDS_PG_EXPECT_MAJOR=17`, `PROTECTED_DATABASES='r2 r3'`, extra, ""].join("\n"));
       return posix(f);
     };
-    const env = { ...process.env, IDS_STATS_SETTLE_SECONDS: "1", IDS_ENSAIO_ROOT: posix(join(base, "backups")), IDS_ENSAIO_STATE: posix(join(base, "state")), IDS_SYSTEMCTL: posix(join(stubDir, "systemctl")), PGSSLMODE: "disable" };
+    const env = { ...isolatedHostEnv(), IDS_STATS_SETTLE_SECONDS: "1", IDS_ENSAIO_ROOT: posix(join(base, "backups")), IDS_ENSAIO_STATE: posix(join(base, "state")), IDS_SYSTEMCTL: posix(join(stubDir, "systemctl")), PGSSLMODE: "disable" };
     const script = posix(join(REPO, "scripts/ops/rehearseDeploySafety.sh"));
     const path = `export PATH="${posix(pg17Bin!)}:${posix(stubDir)}:$PATH"`;
     const wrong = spawnSync(BASH!, ["-c", `${path}; bash "${script}" --env-file "${envFile("IDS_PG_EXPECT_MAJOR=16")}"`], { encoding: "utf8", env });

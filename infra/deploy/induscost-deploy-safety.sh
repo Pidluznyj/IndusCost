@@ -26,7 +26,8 @@
 #       encoding/collation/dono/limite/ACL/configurações; pg_restore completo; conferência integral (tabelas e
 #       linhas, colunas, índices, constraints, sequências, triggers, views, funções, enums, extensões, donos, ACL,
 #       migrations); troca atômica (dois RENAME numa transação); <db>__failed_<ts> preservado; nenhum dropdb.
-#   G6. Gate de testes isolado: sem .env, banco inalcançável, chaves do .env vazias, locks temporários.
+#   G6. Gate de testes isolado: sem .env, banco inalcançável, chaves do .env vazias, locks temporários, e sem
+#       nenhuma variável IDS_*/PG* do deploy em curso ou do host (os testes nunca alcançam o cluster real).
 #
 #   G7. Cluster explícito e conferido: todo psql/pg_dump/pg_restore/createdb recebe host (socket), porta, papel
 #       administrador e diretório de binários configurados (IDS_PG_HOST/PORT/ADMIN_ROLE/BIN); antes de qualquer ação
@@ -50,7 +51,7 @@
 # IDS_STATS_SETTLE_SECONDS (2), IDS_WATCH_INTERVAL (0.05), IDS_MAINT_FLAG (/run/induscost/deploy-maintenance),
 # IDS_DISK_BACKUP_FACTOR (1), IDS_DISK_DATA_FACTOR (2): espaço livre mínimo em múltiplos do tamanho do banco.
 
-IDS_VERSION="5"
+IDS_VERSION="5.1"
 IDS_PG="${IDS_PG-runuser -u postgres --}"
 IDS_PG_USER="${IDS_PG_USER-postgres}"
 IDS_PG_BIN="${IDS_PG_BIN:-}"
@@ -484,7 +485,12 @@ ids_assert_quiescent() {
 
 ids_write_lock_on() {
   local db="$1" pre
-  pre="$(ids_psql "$IDS_PG_MAINT_DB" "SELECT count(*) FROM pg_db_role_setting s, unnest(s.setconfig) c WHERE s.setrole = 0 AND s.setdatabase = (SELECT oid FROM pg_database WHERE datname = '$db') AND c LIKE '$IDS_LOCK_GUC=%'")" || return 48
+  # Sem conexão/autenticação administrativa não dá para conferir a trava: 50 (cluster inacessível), não 48 — que
+  # significa trava aplicada por terceiros e levaria o operador a procurar uma configuração que não existe.
+  pre="$(ids_psql "$IDS_PG_MAINT_DB" "SELECT count(*) FROM pg_db_role_setting s, unnest(s.setconfig) c WHERE s.setrole = 0 AND s.setdatabase = (SELECT oid FROM pg_database WHERE datname = '$db') AND c LIKE '$IDS_LOCK_GUC=%'")" || {
+    ids_log "ERRO: sem conexão administrativa ao cluster para conferir a trava de escrita em $db (conexão ou autenticação recusada); nada foi alterado"
+    return 50
+  }
   if [[ "$pre" != 0 ]] && ! grep -qx "readonly $db" "$(ids_state_file)" 2>/dev/null; then
     ids_log "ERRO: $db já tem $IDS_LOCK_GUC configurado fora da janela de deploy; trava não aplicada"
     return 48
@@ -1183,8 +1189,14 @@ ids_rollback_db_if_needed() {
 
 ids_run_test_gate() {
   local lockdir rc had_errexit=0 key
-  local -a blanks=()
+  local -a blanks=() unsets=()
   lockdir="$(mktemp -d "${TMPDIR:-/tmp}/induscost-test-gate-locks.XXXXXX")"
+  # A configuração do deploy em curso (IDS_PG_BIN/HOST/PORT/ADMIN_ROLE, IDS_PG, globs, estado...) e qualquer PG*
+  # do host NUNCA chegam aos testes: com elas, a biblioteca carregada por um teste falaria com o cluster REAL
+  # (incidente de 29/10/2026: testes simulados tentaram autenticar como postgres no socket da produção).
+  while IFS= read -r key; do
+    [[ "$key" =~ ^(IDS_|PG) ]] && unsets+=(-u "$key")
+  done < <(compgen -e)
   # Toda chave do .env real (só os NOMES; valores nunca são lidos) entra vazia: dotenv e o Prisma Client
   # não sobrescrevem variável já definida, então nenhum segredo do servidor chega aos testes.
   if [[ -f "${IDS_ENV_FILE:-$PWD/.env}" ]]; then
@@ -1196,6 +1208,7 @@ ids_run_test_gate() {
   [[ $- == *e* ]] && had_errexit=1
   set +e
   env \
+    "${unsets[@]}" \
     "${blanks[@]}" \
     DOTENV_CONFIG_PATH="$lockdir/.env.inexistente" \
     DATABASE_URL="postgresql://offline:offline@127.0.0.1:1/induscost_test_gate_offline" \
