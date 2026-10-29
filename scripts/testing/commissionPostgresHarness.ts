@@ -189,10 +189,22 @@ export async function startCommissionTestDatabase(modulesDir: string): Promise<C
 /* ------------------------------------------------------------------------- */
 
 /**
- * Diretório `bin` de um PostgreSQL 17 local (initdb, pg_ctl, postgres). Ex.: os binários
- * do pacote npm `@embedded-postgres/windows-x64@17.x` instalados FORA do projeto.
+ * Política de testes (CLAUDE.md › Testes): PostgreSQL real só na homologação (servidor-01), com a opção explícita
+ * INDUSCOST_REAL_PG_TESTS=1 (normalmente via `npm run test:pg17`). Sem ela, nenhum teste inicia cluster, cria banco
+ * ou conecta a servidor — mesmo com COMMISSION_PG17_BIN no ambiente: os testes de integração ficam "ignorados".
+ */
+export const REAL_PG_TESTS_OPT_IN = "INDUSCOST_REAL_PG_TESTS";
+
+export function realPgTestsAllowed(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env[REAL_PG_TESTS_OPT_IN]?.trim() === "1";
+}
+
+/**
+ * Diretório `bin` do PostgreSQL 17 (initdb, pg_ctl, postgres) para o cluster DESCARTÁVEL dos testes de integração
+ * (diretório temporário próprio, porta de loopback livre; nunca o cluster da aplicação). null sem a opção explícita.
  */
 export function commissionPg17BinDir(env: NodeJS.ProcessEnv = process.env): string | null {
+  if (!realPgTestsAllowed(env)) return null;
   const dir = env.COMMISSION_PG17_BIN?.trim();
   if (!dir) return null;
   const exe = process.platform === "win32" ? ".exe" : "";
@@ -259,6 +271,9 @@ export async function startCommissionPostgres17(
   binDir: string,
   options: { schema?: "final" | "none" } = {}
 ): Promise<CommissionPg17Database> {
+  if (!realPgTestsAllowed()) {
+    throw new Error(`PostgreSQL real em testes só na homologação, com ${REAL_PG_TESTS_OPT_IN}=1 (npm run test:pg17). Nenhum cluster foi iniciado.`);
+  }
   const { mkdtempSync, rmSync, writeFileSync } = await import("node:fs");
   const { tmpdir } = await import("node:os");
   const exe = process.platform === "win32" ? ".exe" : "";
