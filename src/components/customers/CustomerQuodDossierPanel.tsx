@@ -14,6 +14,7 @@ import {
 import { QuodDossierReport } from "./QuodDossierSection";
 import { QuodDossierPrintReport } from "./QuodDossierPrintReport";
 import { LikeSerasaActionButton, LikeSerasaSection, useLikeSerasa } from "./LikeSerasaSection";
+import type { BureauSnapshot } from "./CreditScoreDashboard";
 
 type QuoteLine = {
   product: string;
@@ -75,6 +76,7 @@ export function CustomerQuodDossierPanel({
   creditLabel,
   isSuperAdmin,
   requestedBy,
+  onSnapshot,
 }: {
   customerId: string | null;
   companyName: string;
@@ -84,6 +86,8 @@ export function CustomerQuodDossierPanel({
   creditLabel: string;
   isSuperAdmin: boolean;
   requestedBy: string;
+  /** Resumo das consultas externas para o painel de crédito (score, limite, protestos). */
+  onSnapshot?: (snapshot: BureauSnapshot) => void;
 }) {
   const [status, setStatus] = useState<PackagePayload | null>(null);
   const [confirming, setConfirming] = useState(false);
@@ -161,6 +165,31 @@ export function CustomerQuodDossierPanel({
       : ieptbState === "NOT_CONSULTED"
         ? "Não consultado"
         : ieptbState;
+
+  const lsStatus = likeSerasa.status;
+  useEffect(() => {
+    if (!onSnapshot) return;
+    const bv = lsStatus?.consultation ?? null;
+    onSnapshot({
+      boaVista: lsStatus
+        ? {
+            state: lsStatus.state,
+            stateLabel: lsStatus.stateLabel,
+            simulated: bv?.mode != null && bv.mode !== "LIVE",
+            score: bv?.score ?? null,
+            scoreRaw: bv?.scoreRaw ?? null,
+            scoreClass: bv?.scoreClass ?? null,
+            defaultProbability: bv?.defaultProbability ?? null,
+            suggestedLimitCents: bv?.suggestedLimitCents ?? null,
+            consultedAt: bv?.consultedAt ?? null,
+          }
+        : null,
+      quod: status ? { state: quodState, score: quodScore, consultedAt: status.quod.consultation?.consultedAt ?? null } : null,
+      ieptb: status
+        ? { state: ieptbState, label: ieptbLabel, count: ieptb?.protestCount ?? null, totalAmount: ieptb?.totalAmount ?? null, consultedAt: ieptb?.consultedAt ?? null }
+        : null,
+    });
+  }, [onSnapshot, lsStatus, status, quodState, quodScore, ieptbState, ieptbLabel, ieptb]);
 
   return (
     <div className="space-y-3">

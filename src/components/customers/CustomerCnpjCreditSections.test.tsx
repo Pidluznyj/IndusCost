@@ -120,8 +120,10 @@ describe("Consulta CNPJ — score 91 e crédito bloqueado", () => {
     assert.ok(panel.includes("CustomerCnpjCreditSections"));
     assert.ok(panel.includes("Consulta CNPJ / Inteligência Comercial"));
     assert.ok(panel.includes('data-testid="customer-cnpj-intelligence-dialog"'));
-    // Redesign: cabeçalho executivo presente e nenhum bloco verde "VENDA LIBERADA" no painel.
-    assert.ok(panel.includes("CreditDecisionHeader"));
+    // Redesign: painel de crédito executivo (decisão + score + fontes por tipo de consulta) no topo, abas por tipo
+    // de consulta, e nenhum bloco verde "VENDA LIBERADA" no painel.
+    assert.ok(panel.includes("CreditScoreDashboard"));
+    assert.ok(panel.includes("IntelligenceTabs"));
     assert.ok(panel.includes("Ficha de inteligência comercial"));
     assert.ok(panel.includes("max-w-[1600px]"));
     assert.equal(panel.includes("VENDA LIBERADA"), false);

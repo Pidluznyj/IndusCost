@@ -2,8 +2,12 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   AlertTriangle,
+  Braces,
   Building2,
   Copy,
+  FileText,
+  Gauge,
+  Landmark,
   Loader2,
   Printer,
   RefreshCw,
@@ -13,7 +17,12 @@ import {
 import { CnpjCommercialIntelligencePrintReport } from "@/src/components/customers/CnpjCommercialIntelligencePrintReport";
 import { CustomerQuodDossierPanel } from "@/src/components/customers/CustomerQuodDossierPanel";
 import { useAuthOptional } from "@/src/contexts/AuthContext";
-import { CreditDecisionHeader, CustomerCnpjCreditSections } from "@/src/components/customers/CustomerCnpjCreditSections";
+import { CustomerCnpjCreditSections } from "@/src/components/customers/CustomerCnpjCreditSections";
+import {
+  CreditScoreDashboard,
+  EMPTY_BUREAU_SNAPSHOT,
+  type BureauSnapshot,
+} from "@/src/components/customers/CreditScoreDashboard";
 import { CustomerCreditOccurrenceHistory } from "@/src/components/customers/CustomerCreditOccurrenceHistory";
 import { fetchJsonOk } from "@/src/lib/http";
 import {
@@ -66,6 +75,61 @@ function JsonTree({ node, depth = 0 }: { node: ReturnType<typeof flatten>; depth
 
 type FlatNode = { key: string; display: string; children?: FlatNode[] };
 
+type IntelligenceTab = "internal" | "external" | "cadastral" | "raw";
+
+/** Dados agrupados por tipo de consulta: crédito interno, bureaus/protestos, cadastro oficial e retorno bruto. */
+const INTELLIGENCE_TABS: Array<{ id: IntelligenceTab; label: string; hint: string; Icon: typeof Shield }> = [
+  { id: "internal", label: "Crédito interno", hint: "Nomus · títulos · vínculos", Icon: Landmark },
+  { id: "external", label: "Consultas externas", hint: "Boa Vista · QUOD · IEPTB", Icon: Gauge },
+  { id: "cadastral", label: "Cadastro oficial", hint: "Receita Federal · comparação", Icon: FileText },
+  { id: "raw", label: "Dados brutos", hint: "JSON retornado", Icon: Braces },
+];
+
+function IntelligenceTabs({
+  active,
+  onChange,
+  disabled = [],
+}: {
+  active: IntelligenceTab;
+  onChange: (tab: IntelligenceTab) => void;
+  disabled?: IntelligenceTab[];
+}) {
+  return (
+    <div
+      role="tablist"
+      aria-label="Tipo de consulta"
+      className="cnpj-intelligence-no-print grid grid-cols-2 gap-2 rounded-2xl border border-slate-200 bg-white p-1.5 shadow-sm md:grid-cols-4"
+      data-testid="cnpj-intelligence-tabs"
+    >
+      {INTELLIGENCE_TABS.map(({ id, label, hint, Icon }) => {
+        const isDisabled = disabled.includes(id);
+        const selected = active === id;
+        return (
+          <button
+            key={id}
+            type="button"
+            role="tab"
+            aria-selected={selected}
+            disabled={isDisabled}
+            onClick={() => onChange(id)}
+            data-testid={`cnpj-tab-${id}`}
+            className={cn(
+              "flex items-center gap-2 rounded-xl px-3 py-2 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-40",
+              selected ? "bg-slate-900 text-white shadow" : "text-slate-700 hover:bg-slate-100"
+            )}
+          >
+            <Icon className={cn("h-4 w-4 shrink-0", selected ? "text-white" : "text-slate-500")} />
+            <span className="min-w-0">
+              <span className="block text-sm font-bold leading-tight">{label}</span>
+              <span className={cn("block truncate text-[11px]", selected ? "text-slate-300" : "text-slate-500")}>{hint}</span>
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 function flatten(value: unknown, key = "root"): FlatNode {
   if (value == null) return { key, display: "—" };
   if (typeof value === "boolean") return { key, display: value ? "Sim" : "Não" };
@@ -114,6 +178,11 @@ export function CustomerCnpjIntelligencePanel({
   const [usePublicContactAsPrimary, setUsePublicContactAsPrimary] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [simOpen, setSimOpen] = useState(false);
+  const [tab, setTab] = useState<IntelligenceTab>("internal");
+  const [bureau, setBureau] = useState<BureauSnapshot>(EMPTY_BUREAU_SNAPSHOT);
+  const canReviewCorporateLinks = (auth?.authUser?.effectivePermissions ?? []).some(
+    (key) => key === "commercial.credit.exception.grant" || key === "commercial.credit.exception.grant.board"
+  );
 
   const loadCredit = useCallback(async () => {
     if (!customerId) {
@@ -181,6 +250,8 @@ export function CustomerCnpjIntelligencePanel({
     setCredit(null);
     setCreditError(null);
     setError(null);
+    setTab("internal");
+    setBureau(EMPTY_BUREAU_SNAPSHOT);
     if (customerId || initialCnpj.replace(/\D/g, "").length === 14) {
       void load(false);
     }
@@ -414,31 +485,41 @@ export function CustomerCnpjIntelligencePanel({
 
           {customerId && !data && !loading ? (
             <>
-              <CreditDecisionHeader credit={credit} loading={creditLoading} error={creditError} />
-              <CustomerQuodDossierPanel
-                customerId={customerId}
-                companyName="Cliente"
-                cnpj={initialCnpj}
-                cadastralScore="Não consultado"
-                cadastralVerdict={null}
-                creditLabel={credit?.situationLabel ?? "Não consultado"}
-                isSuperAdmin={auth?.isSuperAdmin() === true}
-                requestedBy={auth?.authUser?.name || auth?.authUser?.email || "—"}
-              />
-              <CustomerCnpjCreditSections
+              <CreditScoreDashboard
                 credit={credit}
-                loading={creditLoading}
-                error={creditError}
-                customerId={customerId}
-                canReviewCorporateLinks={(auth?.authUser?.effectivePermissions ?? []).some(
-                  (key) =>
-                    key === "commercial.credit.exception.grant" ||
-                    key === "commercial.credit.exception.grant.board"
-                )}
-                onRefresh={() => void loadCredit()}
+                creditLoading={creditLoading}
+                creditError={creditError}
+                snapshot={bureau}
+                cadastralScore={null}
               />
-              <div className="cnpj-intelligence-no-print">
-                <CustomerCreditOccurrenceHistory customerId={customerId} />
+              <IntelligenceTabs active={tab} onChange={setTab} disabled={["cadastral", "raw"]} />
+              <div hidden={tab !== "internal"} data-testid="cnpj-tab-panel-internal">
+                <div className="space-y-4">
+                  <CustomerCnpjCreditSections
+                    credit={credit}
+                    loading={creditLoading}
+                    error={creditError}
+                    customerId={customerId}
+                    canReviewCorporateLinks={canReviewCorporateLinks}
+                    onRefresh={() => void loadCredit()}
+                  />
+                  <div className="cnpj-intelligence-no-print">
+                    <CustomerCreditOccurrenceHistory customerId={customerId} />
+                  </div>
+                </div>
+              </div>
+              <div hidden={tab !== "external"} data-testid="cnpj-tab-panel-external">
+                <CustomerQuodDossierPanel
+                  customerId={customerId}
+                  companyName="Cliente"
+                  cnpj={initialCnpj}
+                  cadastralScore="Não consultado"
+                  cadastralVerdict={null}
+                  creditLabel={credit?.situationLabel ?? "Não consultado"}
+                  isSuperAdmin={auth?.isSuperAdmin() === true}
+                  requestedBy={auth?.authUser?.name || auth?.authUser?.email || "—"}
+                  onSnapshot={setBureau}
+                />
               </div>
             </>
           ) : null}
@@ -533,38 +614,50 @@ export function CustomerCnpjIntelligencePanel({
                 </div>
               </div>
 
-              <CreditDecisionHeader credit={credit} loading={creditLoading} error={creditError} />
-
-              <CustomerQuodDossierPanel
-                customerId={customerId}
-                companyName={data.summary.companyName}
-                cnpj={data.summary.cnpjFormatted}
-                cadastralScore={`${data.risk.score}/100`}
-                cadastralVerdict={data.risk.verdict}
-                creditLabel={credit?.situationLabel ?? "Não consultado"}
-                isSuperAdmin={auth?.isSuperAdmin() === true}
-                requestedBy={auth?.authUser?.name || auth?.authUser?.email || "—"}
-              />
-
-              <CustomerCnpjCreditSections
+              <CreditScoreDashboard
                 credit={credit}
-                loading={creditLoading}
-                error={creditError}
-                sources={data.sources}
-                customerId={customerId}
-                canReviewCorporateLinks={(auth?.authUser?.effectivePermissions ?? []).some(
-                  (key) =>
-                    key === "commercial.credit.exception.grant" ||
-                    key === "commercial.credit.exception.grant.board"
-                )}
-                onRefresh={customerId ? () => void loadCredit() : undefined}
+                creditLoading={creditLoading}
+                creditError={creditError}
+                snapshot={bureau}
+                cadastralScore={`${data.risk.score}/100`}
               />
-              {customerId ? (
-                <div className="cnpj-intelligence-no-print">
-                  <CustomerCreditOccurrenceHistory customerId={customerId} />
-                </div>
-              ) : null}
 
+              <IntelligenceTabs active={tab} onChange={setTab} disabled={customerId ? [] : ["external"]} />
+
+              <div hidden={tab !== "internal"} data-testid="cnpj-tab-panel-internal">
+                <div className="space-y-4">
+                  <CustomerCnpjCreditSections
+                    credit={credit}
+                    loading={creditLoading}
+                    error={creditError}
+                    sources={data.sources}
+                    customerId={customerId}
+                    canReviewCorporateLinks={canReviewCorporateLinks}
+                    onRefresh={customerId ? () => void loadCredit() : undefined}
+                  />
+                  {customerId ? (
+                    <div className="cnpj-intelligence-no-print">
+                      <CustomerCreditOccurrenceHistory customerId={customerId} />
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+
+              <div hidden={tab !== "external"} data-testid="cnpj-tab-panel-external">
+                <CustomerQuodDossierPanel
+                  customerId={customerId}
+                  companyName={data.summary.companyName}
+                  cnpj={data.summary.cnpjFormatted}
+                  cadastralScore={`${data.risk.score}/100`}
+                  cadastralVerdict={data.risk.verdict}
+                  creditLabel={credit?.situationLabel ?? "Não consultado"}
+                  isSuperAdmin={auth?.isSuperAdmin() === true}
+                  requestedBy={auth?.authUser?.name || auth?.authUser?.email || "—"}
+                  onSnapshot={setBureau}
+                />
+              </div>
+
+              <div hidden={tab !== "cadastral"} data-testid="cnpj-tab-panel-cadastral" className="space-y-4">
               <details className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm" data-testid="cnpj-cadastral-score">
                 <summary className="cursor-pointer list-none">
                   <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Qualidade cadastral</p>
@@ -824,7 +917,9 @@ export function CustomerCnpjIntelligencePanel({
                   </div>
                 </div>
               )}
+              </div>
 
+              <div hidden={tab !== "raw"} data-testid="cnpj-tab-panel-raw">
               <section className="cnpj-intelligence-no-print rounded-lg border p-3">
                 <div className="flex justify-between items-center gap-2">
                   <h3 className="font-semibold text-sm">
@@ -854,6 +949,7 @@ export function CustomerCnpjIntelligencePanel({
                   </p>
                 )}
               </section>
+              </div>
             </>
           )}
           </div>
