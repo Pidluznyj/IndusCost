@@ -9,12 +9,13 @@
  */
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, it } from "node:test";
 
 const LIB = join(process.cwd(), "infra/deploy/induscost-deploy-safety.sh");
+const HOOK_SRC = join(process.cwd(), "infra/deploy/hooks/servidor01-checks.sh");
 const EXECUTOR = join(process.cwd(), "infra/deploy/induscost-deploy-executor.sh");
 const CHECKER = join(process.cwd(), "scripts/ops/checkDeployExecutorSafety.sh");
 
@@ -38,8 +39,8 @@ case "$1" in
     st="$(cat "$S/$u" 2>/dev/null || echo inactive)"; [[ $q == 0 ]] && echo "$st"; [[ "$st" == active ]]; exit $? ;;
   stop) echo inactive > "$S/$2" ;;
   start) [[ "$2" == "\${STUB_START_FAIL:-none}" ]] && exit 1; echo active > "$S/$2" ;;
-  list-units) t=""; for a in "$@"; do [[ "$a" == --type=* ]] && t="\${a#--type=}"; done
-    for f in "$S"/induscost-*."$t"; do [[ -f "$f" ]] && echo "$(basename "$f") loaded $(cat "$f") x x"; done ;;
+  list-units) t=""; pat=""; for a in "\${@:2}"; do case "$a" in --type=*) t="\${a#--type=}" ;; -*) ;; *) pat="$a" ;; esac; done
+    for f in "$S"/*."$t"; do [[ -f "$f" ]] || continue; b="$(basename "$f")"; [[ -z "$pat" || "$b" == $pat ]] && echo "$b loaded $(cat "$f") x x"; done ;;
   show) u="\${@: -1}"; if [[ -f "$S/$u.show" ]]; then cat "$S/$u.show"; else echo "WorkingDirectory=\${STUB_UNIT_DIR:-/opt/induscost}"; fi ;;
 esac
 exit 0
@@ -301,6 +302,100 @@ describe("biblioteca de segurança do deploy (sem banco)", { skip: SKIP }, () =>
     assert.match(run(`${fakeRoot}/opt/induscost-homolog`, cmd, `${fakeRoot}/inexistente`), /RC=40/, "sem cwd legível: conservador, espera");
   });
 
+  // Contratos do arquivo de ambiente REAL da homologação (globs e unidades protegidas confirmados em 29/10/2026).
+  const HOMOLOG_ENV = readFileSync(join(process.cwd(), "infra/deploy/environments/homologacao.env"), "utf8");
+  const envValue = (k: string) => {
+    const m = new RegExp(`^${k}=('([^']*)'|(\\S*))`, "m").exec(HOMOLOG_ENV);
+    assert.ok(m, `${k} ausente em homologacao.env`);
+    return m[2] ?? m[3]!;
+  };
+  const homologEnv = () =>
+    `IDS_APP_MARK_PATTERN='${envValue("APP_MARK_PATTERN")}' IDS_CRON_GLOB='${envValue("CRON_GLOB")}' IDS_UNIT_GLOB='${envValue("UNIT_GLOB")}' IDS_APP_SERVICE='${envValue("SERVICE")}' IDS_PROTECTED_UNITS='${envValue("PROTECTED_UNITS")}'`;
+  // O que existe no servidor-01 além da homologação: backup do PostgreSQL 12, os dois clusters, crons do legado.
+  const SERVIDOR01_UNITS = {
+    "induscost-homolog.service": "active",
+    "induscost-db-backup.timer": "active",
+    "induscost-db-backup.service": "inactive",
+    "postgresql@12-main.service": "active",
+    "postgresql-17.service": "active",
+    "nginx.service": "active",
+  };
+  const SERVIDOR01_CRONS = {
+    "induscost-nomus-purchase-orders": "37 * * * * root /opt/induscost/scripts/runNomusPurchaseOrdersSync.sh apply incremental\n",
+    "induscost-db-backup": "30 22 * * * postgres /usr/lib/postgresql/12/bin/pg_dump teste_bi\n",
+  };
+
+  it("S5. homologação sem agendamentos próprios: os globs reais casam 0 cron e 0 unidade; janela abre só com a trava (0), diz isso explicitamente e não toca backup, PostgreSQL nem legado", () => {
+    assert.equal(envValue("CRON_GLOB"), "induscost-homolog*");
+    assert.equal(envValue("UNIT_GLOB"), "induscost-homolog-*");
+    const h = host(SERVIDOR01_UNITS, SERVIDOR01_CRONS);
+    const out = h.run(`${homologEnv()} ids_maintenance_begin teste_bi_homolog; echo RC=$?`);
+    assert.match(out, /RC=0/, out);
+    assert.match(out, /nenhum agendamento desta instalação: 0 arquivo\(s\) .*induscost-homolog\* e 0 unidade\(s\) induscost-homolog-\*\.timer\/\.service — a janela só trava o banco/);
+    assert.match(out, /escopo da janela conferido: .*\(0\) e unidades induscost-homolog-\* \(0\)/);
+    assert.doesNotMatch(h.calls(), /systemctl (stop|start)/);
+    assert.deepEqual(readdirSync(h.cron).sort(), ["induscost-db-backup", "induscost-nomus-purchase-orders"]);
+    assert.match(h.run(`${homologEnv()} ids_maintenance_end; echo RC=$?`), /RC=0/);
+    for (const [u, st] of Object.entries(SERVIDOR01_UNITS)) assert.equal(h.state(u), st, u);
+    assert.doesNotMatch(h.calls(), /systemctl (stop|start)/);
+  });
+
+  it("S6. contrato estático e padrões protegidos: glob amplo recusa (52) o backup do PG12 mesmo sem a unidade carregada; *postgres*/*pg17* protegem unidades carregadas; padrão não expande contra o cwd; a lista real passa com os globs da homologação", () => {
+    const empty = host();
+    const a = empty.run(`IDS_UNIT_GLOB='induscost-*' IDS_PROTECTED_UNITS='induscost-db-backup.timer' ids_assert_isolation_scope; echo RC=$?`);
+    assert.match(a, /RC=52/, a);
+    assert.match(a, /casaria a unidade protegida induscost-db-backup\.timer \(mesmo sem estar carregada agora\)/);
+    const b = empty.run(`IDS_UNIT_GLOB='induscost-db-*' IDS_PROTECTED_UNITS='induscost-db-backup' ids_assert_glob_contract; echo RC=$?`);
+    assert.match(b, /RC=52/, "nome protegido sem sufixo também conferido");
+
+    const pg = host({ "postgresql@12-main.service": "active", "induscost-pg17.service": "active" });
+    const c = pg.run(`IDS_UNIT_GLOB='*' IDS_PROTECTED_UNITS="${envValue("PROTECTED_UNITS")}" ids_assert_isolation_scope; echo RC=$?`);
+    assert.match(c, /RC=52/, c);
+    assert.match(c, /casa a unidade protegida postgresql@12-main\.service/);
+    assert.match(c, /casa a unidade protegida induscost-pg17\.service/);
+    // Arquivos do cwd que casariam o padrão: com expansão de caminho, *postgres* viraria "xpostgresx" e nada protegeria.
+    const cwd = join(pg.base, "cwd");
+    mkdirSync(cwd);
+    writeFileSync(join(cwd, "xpostgresx"), "");
+    const d = pg.run(`cd "${toPosix(cwd)}" && IDS_UNIT_GLOB='*' IDS_PROTECTED_UNITS='*postgres*' ids_assert_isolation_scope; echo RC=$?`);
+    assert.match(d, /RC=52/, d);
+    assert.match(d, /casa a unidade protegida postgresql@12-main\.service/);
+    assert.match(pg.run(`IDS_PROTECTED_UNITS='*postgres*' ids_is_protected_unit nginx.service; echo RC=$?`), /RC=1/);
+    // Lista em várias linhas (aspas simples no arquivo de ambiente): nenhuma entrada é descartada.
+    assert.match(pg.run(`IDS_PROTECTED_UNITS=$'induscost-x.timer\\n*pg17*' ids_is_protected_unit induscost-pg17.service; echo RC=$?`), /RC=0/);
+
+    const real = host(SERVIDOR01_UNITS, SERVIDOR01_CRONS);
+    const e = real.run(`${homologEnv()} ids_assert_isolation_scope; echo RC=$?`);
+    assert.match(e, /RC=0/, e);
+    assert.doesNotMatch(e, /ERRO/);
+    assert.doesNotMatch(real.calls(), /systemctl (stop|start)/);
+  });
+
+  it("S7. homologação ganha um agendamento próprio: cron e timer induscost-homolog-* que executam no APP são pausados e devolvidos; timer do glob que executa fora do APP recusa (52) sem tocar nada", () => {
+    const units = { ...SERVIDOR01_UNITS, "induscost-homolog-sync.timer": "active" };
+    const crons = { ...SERVIDOR01_CRONS, "induscost-homolog-nomus": "*/5 * * * * root cd /opt/induscost-homolog/app && npm run sync:x\n" };
+    const h = host(units, crons);
+    writeFileSync(join(h.base, "systemd", "induscost-homolog-sync.timer.show"), "Unit=induscost-homolog-sync.service\n");
+    writeFileSync(join(h.base, "systemd", "induscost-homolog-sync.service.show"), "WorkingDirectory=/opt/induscost-homolog/app\n");
+    const out = h.run(`${homologEnv()} ids_maintenance_begin teste_bi_homolog; echo RC=$?`);
+    assert.match(out, /RC=0/, out);
+    assert.match(out, /cron pausado: .*induscost-homolog-nomus/);
+    assert.match(out, /timer pausado: induscost-homolog-sync\.timer/);
+    assert.doesNotMatch(h.calls(), /systemctl stop (induscost-db-backup|postgresql|nginx)/);
+    assert.match(h.run(`${homologEnv()} ids_maintenance_end; echo RC=$?`), /RC=0/);
+    assert.equal(h.state("induscost-homolog-sync.timer"), "active");
+    assert.ok(readdirSync(h.cron).includes("induscost-homolog-nomus"));
+
+    const bad = host(units, SERVIDOR01_CRONS);
+    writeFileSync(join(bad.base, "systemd", "induscost-homolog-sync.timer.show"), "Unit=induscost-homolog-sync.service\n");
+    writeFileSync(join(bad.base, "systemd", "induscost-homolog-sync.service.show"), "WorkingDirectory=/opt/induscost\n");
+    const r = bad.run(`${homologEnv()} ids_maintenance_begin teste_bi_homolog; echo RC=$?`);
+    assert.match(r, /RC=52/, r);
+    assert.match(r, /induscost-homolog-sync\.timer, que não executa em \/opt\/induscost-homolog/);
+    assert.doesNotMatch(bad.calls(), /systemctl stop/);
+    assert.ok(!existsSync(join(bad.base, "state", "maintenance.state")));
+  });
+
   const classify = (before: string[], now: string[]) => {
     const h = host();
     writeFileSync(join(h.base, "before.txt"), `${before.join("\n")}\n`);
@@ -493,12 +588,14 @@ systemctl start "$SERVICE"
   });
 
   /** Cópia isolada de infra/deploy (instalador + biblioteca + executor) com um ambiente de ensaio completo. */
-  function installerSandbox(crlfLib: boolean) {
+  function installerSandbox(crlfLib: boolean, opts: { hooks?: boolean; envExtra?: string[] } = {}) {
     seq += 1;
     const base = join(work, `inst-${seq}`);
     const deploy = join(base, "deploy");
     mkdirSync(deploy, { recursive: true });
-    for (const f of ["install-induscost-deploy.sh", "induscost-deploy-safety.sh", "induscost-deploy-executor.sh"]) {
+    const files = ["install-induscost-deploy.sh", "induscost-deploy-safety.sh", "induscost-deploy-executor.sh", ...(opts.hooks ? ["hooks/servidor01-checks.sh"] : [])];
+    if (opts.hooks) mkdirSync(join(deploy, "hooks"));
+    for (const f of files) {
       const content = toLf(readFileSync(join(process.cwd(), "infra/deploy", f), "utf8"));
       writeFileSync(join(deploy, f), crlfLib && f === "induscost-deploy-safety.sh" ? toCrlf(content) : content);
     }
@@ -526,6 +623,7 @@ systemctl start "$SERVICE"
         "CRON_GLOB='induscost*'",
         "UNIT_GLOB='induscost-*'",
         `IDS_STATE_DIR=${toPosix(join(base, "state"))}`,
+        ...(opts.envExtra ?? []),
         "",
       ].join("\n")
     );
@@ -569,5 +667,61 @@ systemctl start "$SERVICE"
     const v = s.run("--verify");
     assert.equal(v.code, 1, v.out);
     assert.match(v.out, /FALHA .*induscost-deploy-safety\.sh com fim de linha CRLF/);
+  });
+
+  it("I5. hooks versionados: instalados na release (0555) e no MANIFEST; @release/ inexistente recusa (3) sem instalar; hook adulterado reprova o --verify (MANIFEST)", () => {
+    const missing = installerSandbox(false, { hooks: true, envExtra: ["HOOKS_PRE_DEPLOY=@release/hooks/inexistente.sh"] });
+    for (const mode of ["--dry-run", "--apply"]) {
+      const r = missing.run(mode);
+      assert.equal(r.code, 3, r.out);
+      assert.match(r.out, /RECUSADO: HOOKS_PRE_DEPLOY referencia @release\/hooks\/inexistente\.sh, que não é um arquivo desta release/);
+    }
+    assert.ok(!existsSync(join(missing.base, "lib", "releases")));
+    assert.equal(readFileSync(missing.exec, "utf8"), "#!/usr/bin/env bash\necho executor antigo\n");
+
+    const s = installerSandbox(false, { hooks: true, envExtra: ["HOOKS_PRE_DEPLOY=@release/hooks/servidor01-checks.sh", "HOOKS_POST_START=none", "HOOKS_POST_ROLLBACK=@release/hooks/servidor01-checks.sh"] });
+    const r = s.run("--apply");
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /OK {4}HOOKS_PRE_DEPLOY: @release\/hooks\/servidor01-checks\.sh faz parte da release/);
+    assert.match(r.out, /OK {4}sintaxe \(.*hooks\/servidor01-checks\.sh/);
+    const release = readFileSync(join(s.base, "lib", "ensaio.current"), "utf8").trim().replace(/^\/([a-z])\//, (_m, d: string) => `${d.toUpperCase()}:/`);
+    const manifest = readFileSync(join(release, "MANIFEST.sha256"), "utf8");
+    assert.match(manifest, /\s\*?hooks\/servidor01-checks\.sh$/m);
+    const hook = join(release, "hooks", "servidor01-checks.sh");
+    assert.equal(readFileSync(hook, "utf8"), toLf(readFileSync(HOOK_SRC, "utf8")));
+    if (process.platform !== "win32") assert.equal(statSync(hook).mode & 0o777, 0o555);
+    const ok = s.run("--verify");
+    assert.equal(ok.code, 0, ok.out);
+    assert.match(ok.out, /OK {4}HOOKS_PRE_DEPLOY: @release\/hooks\/servidor01-checks\.sh está na release/);
+    // Checkout com outro conjunto de hooks (ex.: um hook novo ainda não instalado): só AVISO, a instalação segue íntegra.
+    const extra = join(s.base, "deploy", "hooks", "outro-hook.sh");
+    writeFileSync(extra, "#!/usr/bin/env bash\nexit 0\n");
+    const other = s.run("--verify");
+    assert.equal(other.code, 0, other.out);
+    assert.match(other.out, /AVISO hooks\/outro-hook\.sh do repositório não está na release instalada/);
+    rmSync(extra);
+    // Ambiente instalado que referencia hook fora da release: o --verify reprova (o executor recusaria rodar).
+    const etcEnv = join(s.base, "etc", "deploy-executor-ensaio.env");
+    const envText = readFileSync(etcEnv, "utf8");
+    chmodSync(etcEnv, 0o600);
+    writeFileSync(etcEnv, `${envText}HOOKS_POST_START=@release/hooks/outro-hook.sh\n`);
+    const bad = s.run("--verify");
+    assert.equal(bad.code, 1, bad.out);
+    assert.match(bad.out, /FALHA HOOKS_POST_START: @release\/hooks\/outro-hook\.sh não está na release instalada/);
+    writeFileSync(etcEnv, envText);
+    if (process.platform === "linux") {
+      // Release reutilizada com permissão alterada: o --apply devolve 0555 (o executor recusaria hook gravável).
+      chmodSync(hook, 0o775);
+      assert.equal(s.run("--verify").code, 1);
+      const again = s.run("--apply");
+      assert.equal(again.code, 0, again.out);
+      assert.match(again.out, /já instalada e íntegra: reutilizada/);
+      assert.equal(statSync(hook).mode & 0o777, 0o555);
+    }
+    chmodSync(hook, 0o755);
+    writeFileSync(hook, `${readFileSync(hook, "utf8")}\n/usr/local/bin/update-induscost-homolog-egress\n`);
+    const v = s.run("--verify");
+    assert.equal(v.code, 1, v.out);
+    assert.match(v.out, /FALHA MANIFEST/);
   });
 });

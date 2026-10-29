@@ -28,7 +28,9 @@
 # 4 biblioteca/executor adulterados; 5 outro deploy em andamento; 6 modo do servidor diferente do esperado;
 # 7 árvore git suja; 8 alvo não é avanço rápido; 9 hook prévio falhou (nada alterado); 30–52 códigos da biblioteca;
 # 53 health da aplicação nova; 54 migration com falha registrada; 55 concluído/rollback com janela pendente; 56 serviço
-# não parou; 57 commit final ≠ alvo; 58 DATABASE_URL da aplicação aponta para outro banco/porta/versão; 130/143
+# não parou; 57 commit final ≠ alvo; 58 DATABASE_URL da aplicação aponta para outro banco/porta/versão; 59 concluído,
+# mas um hook pós-subida reportou ALERTA (falha a investigar que um rollback daqui não corrige; sem rollback) — também
+# --recover --rollback concluído com hook pós-rollback em falha/ALERTA; 130/143
 # interrompido por SIGINT/SIGTERM (rollback feito ou nada alterado); demais = etapa que falhou (npm, prisma, build).
 # Toda execução que passa da leitura do ambiente termina com a linha RESULTADO: ... rc=<n> (exceto --recover sem
 # --rollback, --restore-backup, --stop, --abort-hard e --version, que são utilitários).
@@ -45,6 +47,8 @@ if [[ -z "$ENV_FILE" || ! -r "$ENV_FILE" ]]; then
   exit 3
 fi
 
+# Caminho absoluto: os hooks leem a própria configuração do mesmo arquivo (IDS_ENV_FILE).
+ENV_FILE="$(cd "$(dirname "$ENV_FILE")" && pwd)/$(basename "$ENV_FILE")"
 # shellcheck disable=SC1090
 source "$ENV_FILE"
 
@@ -170,15 +174,26 @@ check_server_mode() {
   fi
 }
 
-# Hooks: o que o executor antigo fazia além deste fluxo (saúde da AWS e do gateway, egress, BrasilAPI/cnpj.ws)
-# entra como executáveis listados por fase no arquivo de ambiente ("none" = nenhum). Exigências: caminho absoluto,
-# do root, não gravável por grupo/outros, com prazo. O executor nunca altera drop-ins, firewall ou egress: isso é
-# dos próprios hooks, auditados à parte.
+# Hooks: o que o executor antigo fazia além deste fluxo (saúde da AWS e do gateway, BrasilAPI/cnpj.ws) entra como
+# executáveis listados por fase no arquivo de ambiente ("none" = nenhum). Exigências: caminho absoluto (ou
+# @release/<caminho>, um arquivo desta release, coberto pelo MANIFEST), do root, não gravável por grupo/outros, com
+# prazo. O executor nunca altera drop-ins, firewall ou egress, e recusa listar o atualizador de egress como hook (ele
+# reinicia a homologação: só o operador o executa).
+# Contexto entregue a cada hook: IDS_DEPLOY_PHASE, IDS_TARGET, IDS_OLD_COMMIT, IDS_BACKUP_DIR, IDS_ENV_NAME,
+# IDS_ENV_FILE, IDS_DEPLOY_RUN_ID e IDS_HOOK_CONTEXT_DIR (diretório 0700 só desta execução, onde um hook prévio guarda o
+# que um hook posterior compara — também na retomada por --recover --rollback). Saída IDS_HOOK_RC_ALERT (10) de um hook
+# posterior = ALERTA: o deploy segue sem rollback e termina com 59; qualquer outra ≠ 0 segue a política da fase.
+IDS_HOOK_RC_ALERT=10
 hooks_of() {
-  local v="${!1:-}"
+  local v="${!1:-}" h
   [[ "$v" == none ]] && return 0
-  # shellcheck disable=SC2086
-  printf '%s\n' $v
+  local -a list
+  # -d '': a lista inteira, mesmo que o valor tenha quebras de linha (nenhum hook é descartado em silêncio).
+  read -r -d '' -a list <<< "$v" || true
+  for h in "${list[@]}"; do
+    [[ "$h" == @release/* ]] && h="$SELF_DIR/${h#@release/}"
+    printf '%s\n' "$h"
+  done
 }
 
 validate_hooks() {
@@ -187,6 +202,10 @@ validate_hooks() {
     for h in $(hooks_of "$phase"); do
       if [[ "$h" != /* || ! -f "$h" || ! -x "$h" ]]; then
         echo "ERRO: $phase: '$h' não é um executável com caminho absoluto"
+        exit 3
+      fi
+      if [[ "$(basename "$h")" == update-induscost-*egress* ]]; then
+        echo "ERRO: $phase: $h altera drop-in/egress e reinicia o serviço; não pode ser hook (o operador o executa à parte)"
         exit 3
       fi
       if [[ "$(uname -s)" == Linux ]]; then
@@ -198,19 +217,41 @@ validate_hooks() {
   done
 }
 
-# Executa os hooks de uma fase; ≠ 0 = código do primeiro que falhou.
+# Executa os hooks de uma fase; ≠ 0 = código do primeiro que falhou. Um ALERTA (só nas fases posteriores) não
+# interrompe os demais hooks da fase: a fase devolve IDS_HOOK_RC_ALERT se nenhum falhou de fato.
 run_hooks() {
-  local phase="$1" h rc
+  local phase="$1" h rc alert=0
   for h in $(hooks_of "$phase"); do
     echo "--- hook $phase: $h"
-    if IDS_DEPLOY_PHASE="$phase" IDS_TARGET="${TARGET:-}" IDS_OLD_COMMIT="${OLD_COMMIT:-}" IDS_BACKUP_DIR="${BACKUP_DIR:-}" $TIMEOUT "$HOOK_TIMEOUT" "$h" 9>&-; then
+    rc=0
+    IDS_DEPLOY_PHASE="$phase" IDS_TARGET="${TARGET:-}" IDS_OLD_COMMIT="${OLD_COMMIT:-}" IDS_BACKUP_DIR="${BACKUP_DIR:-}" \
+      IDS_ENV_NAME="$IDS_ENV_NAME" IDS_ENV_FILE="$ENV_FILE" IDS_DEPLOY_RUN_ID="${RUN_ID:-}" IDS_HOOK_CONTEXT_DIR="${HOOK_CONTEXT_DIR:-}" \
+      IDS_HOOK_RC_ALERT="$IDS_HOOK_RC_ALERT" IDS_APP_STARTED="${HOOK_APP_STARTED:-1}" $TIMEOUT "$HOOK_TIMEOUT" "$h" 9>&- || rc=$?
+    if [[ "$rc" == 0 ]]; then
       echo "--- hook $phase: $h OK"
+    elif [[ "$rc" == "$IDS_HOOK_RC_ALERT" && "$phase" != HOOKS_PRE_DEPLOY ]]; then
+      echo "ALERTA: hook $phase: $h reportou falha que não pede rollback (RC=$rc)"
+      alert=1
     else
-      rc=$?
       echo "ERRO: hook $phase: $h falhou (RC=$rc)"
       return "$rc"
     fi
   done
+  [[ "$alert" == 0 ]] || return "$IDS_HOOK_RC_ALERT"
+}
+
+# Contexto dos hooks desta execução: identificador único (data, pid, aleatório) e diretório 0700 próprio, criado
+# vazio. Um hook posterior só compara com o que um hook prévio DESTA execução gravou — nunca com o de outro deploy.
+RUN_ID=""
+HOOK_CONTEXT_DIR=""
+new_hook_context() {
+  local rnd
+  rnd="$(od -An -N6 -tx1 /dev/urandom 2>/dev/null | tr -d ' \n')" || rnd=""
+  [[ -n "$rnd" ]] || rnd="$(printf '%04x%04x%04x' "$RANDOM" "$RANDOM" "$RANDOM")"
+  RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)-$$-$rnd"
+  HOOK_CONTEXT_DIR="$IDS_STATE_DIR/hook-context/$RUN_ID"
+  # mkdir sem -p: falha se já existir (identificador repetido nunca reaproveita contexto); umask 077 → 0700.
+  mkdir -p "$IDS_STATE_DIR/hook-context" && chmod 0700 "$IDS_STATE_DIR" "$IDS_STATE_DIR/hook-context" && (umask 077 && mkdir "$HOOK_CONTEXT_DIR")
 }
 
 # pid gravado no PIDFILE pertence a um executor vivo? (confere a linha de comando quando /proc existe)
@@ -353,7 +394,12 @@ rollback() {
     if [[ "$HEALTH_RC" == 0 ]]; then health_ok || HEALTH_RC=1; fi
     if [[ "$HEALTH_RC" != 0 ]]; then $SYSTEMCTL stop "$SERVICE" >/dev/null 2>&1; $SYSTEMCTL reset-failed "$SERVICE" >/dev/null 2>&1; fi
     if [[ "$HEALTH_RC" == 0 ]]; then run_hooks HOOKS_POST_ROLLBACK || HOOK_RC=$?; fi
+  else
+    # Serviço mantido parado: os hooks pós-rollback (só verificações) rodam mesmo assim, sem a aplicação no ar.
+    HOOK_APP_STARTED=0 run_hooks HOOKS_POST_ROLLBACK || HOOK_RC=$?
   fi
+  # Um hook pós-rollback que reportou falha/ALERTA não muda o rollback, mas aparece no resultado (e 59 na retomada).
+  [[ "$HOOK_RC" != 0 && -n "$BACKUP_DIR" && -d "$BACKUP_DIR" ]] && : > "$BACKUP_DIR/hook-alert-rollback"
   echo "Banco:  $(grep '^decision=' "$BACKUP_DIR/rollback-decision.txt" 2>/dev/null | tail -n 1)"
   echo "Git RC:        $GIT_RC"
   echo "npm ci RC:     $NPM_RC"
@@ -383,6 +429,14 @@ load_interrupted_context() {
   TS="$(basename "$BACKUP_DIR")"
   DB_BACKUP="$BACKUP_DIR/database-before.dump"
   SERVICE_WAS_ACTIVE="$(cat "$BACKUP_DIR/service-was-active" 2>/dev/null || echo 1)"
+  # Contexto dos hooks do deploy interrompido (os pós-rollback comparam com o que os prévios dele gravaram).
+  RUN_ID="$(cat "$BACKUP_DIR/deploy-run-id" 2>/dev/null || true)"
+  if [[ "$RUN_ID" =~ ^[0-9]{8}T[0-9]{6}Z-[0-9]+-[0-9a-f]+$ && -d "$IDS_STATE_DIR/hook-context/$RUN_ID" ]]; then
+    HOOK_CONTEXT_DIR="$IDS_STATE_DIR/hook-context/$RUN_ID"
+  else
+    RUN_ID=""
+    HOOK_CONTEXT_DIR=""
+  fi
 }
 
 case "$ACTION" in
@@ -404,6 +458,7 @@ case "$ACTION" in
       rollback "retomada após interrupção (--recover --rollback)"
       rc=$?
       [[ "$rc" == 2 ]] && finish 2 "BLOQUEIO na retomada"
+      [[ "$rc" == 0 && -f "$BACKUP_DIR/hook-alert-rollback" ]] && finish 59 "ROLLBACK CONCLUÍDO COM ALERTA (retomada; hook pós-rollback)"
       [[ "$rc" == 0 ]] && finish 0 "ROLLBACK CONCLUÍDO (retomada)"
       [[ "$rc" == 55 ]] && finish 55 "ROLLBACK CONCLUÍDO COM JANELA PENDENTE (retomada)"
       finish "$rc" "RETOMADA INCOMPLETA"
@@ -503,10 +558,16 @@ if [[ "$OLD_COMMIT" == "$TARGET" ]]; then
   echo "Nada para instalar."
   finish 0 "NADA PARA INSTALAR"
 fi
+new_hook_context || finish 9 "ABORTADO (contexto dos hooks em $IDS_STATE_DIR/hook-context não criado)"
+echo "Execução:         $RUN_ID (contexto dos hooks: $HOOK_CONTEXT_DIR)"
 if ! run_hooks HOOKS_PRE_DEPLOY; then
   echo "ERRO: verificação prévia falhou — deploy abortado; nada foi alterado."
   finish 9 "ABORTADO (hook prévio)"
 fi
+# Sinal recebido durante as verificações prévias (o bash só o trata quando o hook termina): aborta ANTES de parar o
+# serviço, sem derrubar e religar a aplicação à toa.
+interrupted_rc() { [[ "$INTERRUPTED" == INT ]] && echo 130 || echo 143; }
+if [[ -n "$INTERRUPTED" ]]; then finish "$(interrupted_rc)" "ABORTADO (SIG$INTERRUPTED durante as verificações prévias; nada alterado)"; fi
 
 echo "===== 3/11 BACKUP E JANELA DE MANUTENÇÃO ====="
 TS="$(date +%Y%m%d_%H%M%S)"
@@ -515,6 +576,7 @@ BACKUP_DIR="$(ids_prepare_backup_dir "$BACKUP_ROOT" "$TS")" || finish $? "ABORTA
 DB_BACKUP="${BACKUP_DIR}/database-before.dump"
 printf '%s\n' "$OLD_COMMIT" > "$BACKUP_DIR/commit-before.txt"
 printf '%s\n' "$TARGET" > "$BACKUP_DIR/commit-target.txt"
+printf '%s\n' "$RUN_ID" > "$BACKUP_DIR/deploy-run-id"
 git diff --stat "$OLD_COMMIT..$TARGET" > "$BACKUP_DIR/git-diff-stat.txt"
 
 SERVICE_WAS_ACTIVE=0
@@ -527,6 +589,7 @@ restart_after_abort() {
   ids_maintenance_end || true
   if [[ "$SERVICE_WAS_ACTIVE" == 1 ]]; then $SYSTEMCTL start "$SERVICE" || true; fi
 }
+if [[ -n "$INTERRUPTED" ]]; then finish "$(interrupted_rc)" "ABORTADO (SIG$INTERRUPTED antes de parar o serviço; nada alterado)"; fi
 service_stop || { echo "ERRO: $SERVICE não parou; tentando religar"; restart_after_abort; finish 56 "ABORTADO (serviço não parou)"; }
 if [[ -n "$INTERRUPTED" ]]; then restart_after_abort; finish 143 "ABORTADO (SIG$INTERRUPTED antes da janela; nada alterado)"; fi
 
@@ -591,7 +654,12 @@ set +e
     echo "===== 9/11 HEALTH ====="
     health_ok || { echo "ERRO: health $HEALTH não respondeu"; exit 53; }
     echo "Health: OK"
-    if ! run_hooks HOOKS_POST_START; then
+    HOOK_RC=0
+    run_hooks HOOKS_POST_START || HOOK_RC=$?
+    if [[ "$HOOK_RC" == "$IDS_HOOK_RC_ALERT" ]]; then
+      echo "ALERTA: verificação pós-subida reportou falha que um rollback da homologação não corrige: deploy segue SEM rollback e termina com 59"
+      : > "$BACKUP_DIR/hook-alert"
+    elif [[ "$HOOK_RC" != 0 ]]; then
       if [[ "${HOOKS_POST_START_FAILURE:-rollback}" == rollback ]]; then
         echo "ERRO: verificação pós-subida falhou"
         exit 44
@@ -599,7 +667,15 @@ set +e
       echo "ATENÇÃO: verificação pós-subida falhou (HOOKS_POST_START_FAILURE=warn): deploy segue"
     fi
   else
-    echo "ATENÇÃO: $SERVICE estava parado antes do deploy: mantido parado (START_SERVICE_POLICY=$START_SERVICE_POLICY); health e hooks pós-subida NÃO executados."
+    echo "ATENÇÃO: $SERVICE estava parado antes do deploy: mantido parado (START_SERVICE_POLICY=$START_SERVICE_POLICY); health NÃO executado."
+    # Os hooks pós-subida rodam mesmo assim (IDS_APP_STARTED=0): as verificações da produção e do commit AWS não
+    # dependem da aplicação. Sem aplicação no ar não há o que desfazer: qualquer falha vira ALERTA (59).
+    HOOK_RC=0
+    HOOK_APP_STARTED=0 run_hooks HOOKS_POST_START || HOOK_RC=$?
+    if [[ "$HOOK_RC" != 0 ]]; then
+      echo "ALERTA: verificação pós-deploy falhou (RC=$HOOK_RC) com $SERVICE mantido parado: sem rollback, termina com 59"
+      : > "$BACKUP_DIR/hook-alert"
+    fi
   fi
 ) 9>&- &
 DEPLOY_PID=$!
@@ -626,21 +702,30 @@ if [[ "$DEPLOY_RC" -ne 0 ]]; then
   fi
   RB_RC=$?
   set -e
+  rb_note=""
+  [[ -f "$BACKUP_DIR/hook-alert-rollback" ]] && rb_note="; ALERTA de hook pós-rollback (ver linhas acima)"
   if [[ "$RB_RC" == 2 ]]; then finish 2 "BLOQUEIO (etapa rc=$DEPLOY_RC)"; fi
-  if [[ "$RB_RC" == 0 ]]; then finish "$DEPLOY_RC" "FALHOU, ROLLBACK CONCLUÍDO (etapa rc=$DEPLOY_RC)"; fi
-  if [[ "$RB_RC" == 55 ]]; then finish 55 "FALHOU, ROLLBACK CONCLUÍDO COM JANELA PENDENTE (etapa rc=$DEPLOY_RC)"; fi
-  finish "$DEPLOY_RC" "FALHOU, ROLLBACK INCOMPLETO rc_rollback=$RB_RC (etapa rc=$DEPLOY_RC)"
+  if [[ "$RB_RC" == 0 ]]; then finish "$DEPLOY_RC" "FALHOU, ROLLBACK CONCLUÍDO (etapa rc=$DEPLOY_RC)$rb_note"; fi
+  if [[ "$RB_RC" == 55 ]]; then finish 55 "FALHOU, ROLLBACK CONCLUÍDO COM JANELA PENDENTE (etapa rc=$DEPLOY_RC)$rb_note"; fi
+  finish "$DEPLOY_RC" "FALHOU, ROLLBACK INCOMPLETO rc_rollback=$RB_RC (etapa rc=$DEPLOY_RC)$rb_note"
 fi
 
+# Um ALERTA pós-subida não pode sumir atrás de outro resultado (55/57): o texto do RESULTADO o carrega.
+alert_note=""
+[[ -f "$BACKUP_DIR/hook-alert" ]] && alert_note="; ALERTA de hook pós-subida (ver linhas ALERTA)"
 echo "===== 10/11 ENCERRAMENTO DA JANELA ====="
 if ! ids_maintenance_end; then
   echo "ATENÇÃO: deploy concluído, mas algum agendamento não foi retomado; conferir e rodar $IDS_EXECUTOR_NAME --recover --resume"
-  finish 55 "CONCLUÍDO COM JANELA PENDENTE"
+  finish 55 "CONCLUÍDO COM JANELA PENDENTE$alert_note"
 fi
 
 echo "===== 11/11 VALIDAÇÃO FINAL ====="
 FINAL_COMMIT="$(git -C "$APP" rev-parse HEAD)"
 echo "Commit em execução: $FINAL_COMMIT"
-[[ "$FINAL_COMMIT" == "$TARGET" ]] || { echo "ERRO: commit final diferente do alvo"; finish 57 "COMMIT FINAL DIFERENTE DO ALVO"; }
+[[ "$FINAL_COMMIT" == "$TARGET" ]] || { echo "ERRO: commit final diferente do alvo"; finish 57 "COMMIT FINAL DIFERENTE DO ALVO$alert_note"; }
+if [[ -f "$BACKUP_DIR/hook-alert" ]]; then
+  echo "DEPLOY ($IDS_ENV_NAME) CONCLUÍDO COM ALERTA: ver as linhas ALERTA dos hooks pós-subida acima (nada foi desfeito). Backup: $BACKUP_DIR"
+  finish 59 "DEPLOY CONCLUÍDO COM ALERTA (hook pós-subida; sem rollback)"
+fi
 echo "DEPLOY ($IDS_ENV_NAME) CONCLUÍDO. Backup: $BACKUP_DIR"
 finish 0 "DEPLOY CONCLUÍDO"

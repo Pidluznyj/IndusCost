@@ -42,8 +42,10 @@ As camadas 1, 2 e 7 já protegem com o executor atual. As camadas 3 a 6 exigem i
 - systemd, cron e o health são simulados nas suítes locais (Windows). O ensaio no servidor
   (`scripts/ops/rehearseDeploySafety.sh --env-file <ambiente instalado>`) e a validação em homologação cobrem
   `runuser`, as permissões reais e os binários do servidor.
-- Hosts com mais de um cluster PostgreSQL (servidor-01: 12 em 5432 e 17 em 5433): biblioteca v4 só fala com o cluster
+- Hosts com mais de um cluster PostgreSQL (servidor-01: 12 em 5432 e 17 em 5433): biblioteca (v4+) só fala com o cluster
   configurado (socket, porta, papel, binários) e confere versão/porta/socket/superusuário antes de qualquer ação (50);
-  os globs da janela precisam casar só o que executa na instalação, e unidades protegidas nunca (52). Ver
-  `infra/deploy/APLICAR.md` (G7/G8).
+  os globs da janela precisam casar só o que executa na instalação, e unidades protegidas nunca (52; v5: por nome ou
+  padrão, como `*postgres*`, e também por nome sem a unidade carregada). Ver `infra/deploy/APLICAR.md` (G7/G8).
+- Hooks do servidor-01 (papel, produção local, Nginx, gateway, AWS, commit AWS, CNPJ): somente leitura, versionados na
+  release; ver `docs/deploy/hooks-servidor01.md`.
 - Collation ICU: restauração automática recusada (33) sem tocar no banco.

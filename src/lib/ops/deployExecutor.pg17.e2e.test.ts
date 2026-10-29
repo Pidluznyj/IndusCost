@@ -58,6 +58,24 @@ exit 22
 `,
   flock: `#!/usr/bin/env bash\nexit 0\n`,
   pgrep: `#!/usr/bin/env bash\nexit 1\n`,
+  // Simulados do hook do servidor-01 (gateway/AWS/CNPJ, SSH da AWS, papel do servidor); chamadas em hook-calls.
+  "hook-curl": `#!/usr/bin/env bash
+echo "curl $*" >> "$STUB_SYSTEMD/hook-calls"
+url="\${@: -1}"; k="\${url//[^A-Za-z0-9]/_}"
+if [[ "$*" == *http_code* ]]; then [[ -f "$STUB_SYSTEMD/hook-down-$k" ]] && { echo 000; exit 28; }; echo 200; exit 0; fi
+[[ -f "$STUB_SYSTEMD/hook-down-$k" ]] && exit 7
+exit 0
+`,
+  "hook-ssh": `#!/usr/bin/env bash
+echo "ssh $*" >> "$STUB_SYSTEMD/hook-calls"
+n=$(( $(cat "$STUB_SYSTEMD/ssh-n" 2>/dev/null || echo 0) + 1 )); echo "$n" > "$STUB_SYSTEMD/ssh-n"
+if [[ -f "$STUB_SYSTEMD/aws-sha-$n" ]]; then cat "$STUB_SYSTEMD/aws-sha-$n"; else echo 0123456789abcdef0123456789abcdef01234567; fi
+`,
+  "runtime-role": `#!/usr/bin/env bash
+echo "role $*" >> "$STUB_SYSTEMD/hook-calls"
+[[ "$1" == get ]] && echo CLOUD_PRIMARY
+exit 0
+`,
   // HANG: registra a cadeia de processos do executor (para o teste simular a queda com SIGKILL) e fica parado.
   "fake-test-runner": `#!/usr/bin/env bash
 ppid_of() { ps -o ppid= -p "$1" 2>/dev/null | tr -d ' ' | grep . || ps -p "$1" 2>/dev/null | awk 'NR == 2 { n = 0; for (i = 1; i <= NF; i++) if ($i ~ /^[0-9]+$/) { n++; if (n == 2) { print $i; exit } } }'; }
@@ -670,6 +688,195 @@ describe("executor de deploy instalado — ensaio com git, Prisma e PostgreSQL 1
     const un = s.install("--uninstall");
     assert.equal(un.code, 3, un.out);
     assert.match(un.out, /já não é o wrapper desta instalação/);
+  });
+
+  // --- hooks do servidor-01 (infra/deploy/hooks/servidor01-checks.sh) instalados na release e chamados pelo executor ---
+  const SHA_AWS = "0123456789abcdef0123456789abcdef01234567";
+  const GATEWAY_KEY = "http___192_168_100_5_3000_api_health";
+  const AWS_KEY = "http___100_85_97_124_3000_api_health";
+  const hookEnv = (extra: Record<string, string> = {}) => ({
+    HOOKS_PRE_DEPLOY: "@release/hooks/servidor01-checks.sh",
+    HOOKS_POST_START: "@release/hooks/servidor01-checks.sh",
+    HOOKS_POST_ROLLBACK: "@release/hooks/servidor01-checks.sh",
+    HOOK_RUNTIME_ROLE_CMD: posix(join(stubs, "runtime-role")),
+    HOOK_RUNTIME_ROLE_EXPECTED: "CLOUD_PRIMARY",
+    HOOK_RUNTIME_ROLE_CHECK_ARGS: "none",
+    HOOK_LOCAL_PROD_SERVICE: "producao-local.service",
+    HOOK_NGINX_SERVICE: "nginx.service",
+    HOOK_GATEWAY_HEALTH: "http://192.168.100.5:3000/api/health",
+    HOOK_AWS_HEALTH: "http://100.85.97.124:3000/api/health",
+    HOOK_AWS_SSH_TARGET: "deploy@aws-prod",
+    HOOK_AWS_APP_DIR: "/opt/induscost",
+    HOOK_CNPJ_URLS: "'https://brasilapi.com.br/ https://publica.cnpj.ws/'",
+    HOOK_CURL: posix(join(stubs, "hook-curl")),
+    HOOK_SSH: posix(join(stubs, "hook-ssh")),
+    HOOK_RETRY_DELAY: "0",
+    HOOK_HTTP_ATTEMPTS: "2",
+    ...extra,
+  });
+  const hookServer = async (c1: Record<string, string | null>, extra: Record<string, string> = {}) => {
+    const s = await server(c1, hookEnv(extra));
+    writeFileSync(join(s.sysd, "nginx.service"), "active");
+    // systemctl show simulado: a produção local existe (LoadState) e o serviço não tem restrição de egress.
+    writeFileSync(join(s.sysd, "producao-local.service.show"), "loaded\n");
+    writeFileSync(join(s.sysd, "induscost.service.show"), "IPAddressDeny=\nIPAddressAllow=\n");
+    const hookCalls = () => (existsSync(join(s.sysd, "hook-calls")) ? readFileSync(join(s.sysd, "hook-calls"), "utf8") : "");
+    const contexts = () => (existsSync(join(s.w, "state", "hook-context")) ? readdirSync(join(s.w, "state", "hook-context")) : []);
+    return { ...s, hookCalls, contexts };
+  };
+  /** O hook só leu: systemctl is-active/show, ssh com o git rev-parse fixo, nada que altere nginx/egress. */
+  const assertHookReadOnly = (s: { calls: () => string; hookCalls: () => string }) => {
+    assert.doesNotMatch(s.calls(), /systemctl (stop|start|restart|reload|enable|disable|set-property|daemon-reload) (nginx|producao-local)/);
+    for (const l of s.hookCalls().split("\n").filter((x) => x.startsWith("ssh "))) assert.match(l, / deploy@aws-prod git -C '\/opt\/induscost' rev-parse --verify HEAD$/, l);
+    assert.doesNotMatch(s.hookCalls(), /update-induscost-homolog-egress/);
+  };
+
+  it("X1. hooks do servidor-01 na release (@release): deploy OK; contexto próprio da execução (id no backup), commit AWS registrado antes e conferido depois; só leituras", async () => {
+    const s = await hookServer({ "src/a.test.ts": "pass 2\n" });
+    const r = s.run("");
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /--- hook HOOKS_PRE_DEPLOY: \S+\/hooks\/servidor01-checks\.sh OK/);
+    assert.match(r.out, /--- hook HOOKS_POST_START: \S+\/hooks\/servidor01-checks\.sh OK/);
+    assert.match(r.out, /commit da produção AWS inalterado durante o deploy/);
+    assert.match(r.out, /RESULTADO: DEPLOY CONCLUÍDO ambiente=teste rc=0/);
+    const runId = readFileSync(join(s.backupDir(), "deploy-run-id"), "utf8").trim();
+    assert.match(runId, /^\d{8}T\d{6}Z-\d+-[0-9a-f]+$/);
+    assert.deepEqual(s.contexts(), [runId], "um contexto por execução");
+    const before = readFileSync(join(s.w, "state", "hook-context", runId, "aws-commit.before"), "utf8");
+    assert.match(before, new RegExp(`^run_id=${runId}$`, "m"));
+    assert.match(before, new RegExp(`^target=${s.c1}$`, "m"));
+    assert.match(before, new RegExp(`^old_commit=${s.c0}$`, "m"));
+    assert.match(before, new RegExp(`^aws_commit=${SHA_AWS}$`, "m"));
+    assert.ok(existsSync(join(s.w, "state", "hook-context", runId, "aws-commit.after-HOOKS_POST_START")));
+    assert.equal(s.head(), s.c1);
+    assertHookReadOnly(s);
+    // Segundo deploy (nada para instalar) não reaproveita contexto; --check não executa hooks nem cria contexto.
+    assert.equal(s.run("--check").code, 0);
+    assert.deepEqual(s.contexts(), [runId]);
+  });
+
+  it("X2. gateway ou AWS indisponível antes do deploy: recusa (9) antes de qualquer alteração — sem backup, serviço ativo, sem janela, nada registrado", async () => {
+    for (const down of [GATEWAY_KEY, AWS_KEY]) {
+      const s = await hookServer({ "prisma/migrations/20261101120000_color/migration.sql": `ALTER TABLE "Item" ADD COLUMN "color" TEXT;\n` });
+      writeFileSync(join(s.sysd, `hook-down-${down}`), "");
+      const r = s.run("");
+      assert.equal(r.code, 9, r.out);
+      assert.match(r.out, down === GATEWAY_KEY ? /FALHA crítica: gateway indisponível/ : /FALHA crítica: produção AWS indisponível/);
+      assert.match(r.out, /RESULTADO: ABORTADO \(hook prévio\)/);
+      assert.equal(s.head(), s.c0);
+      assert.deepEqual(await s.columns(), ["id", "legacy", "name"]);
+      assert.ok(!existsSync(join(s.w, "backups")), "nenhum backup");
+      assert.ok(!existsSync(join(s.w, "state", "maintenance.state")), "janela não abriu");
+      assert.equal(s.state("induscost.service"), "active");
+      assert.doesNotMatch(s.calls(), /systemctl stop/);
+      const [ctx] = s.contexts();
+      assert.ok(ctx && !existsSync(join(s.w, "state", "hook-context", ctx, "aws-commit.before")), "sem registro quando a crítica falha");
+      assertSchedulersRestored(s);
+    }
+  });
+
+  it("X3. commit da produção AWS muda durante o deploy: concluído SEM rollback (59) — código novo no ar, janela encerrada, nenhuma ação na AWS", async () => {
+    const s = await hookServer({ "src/a.test.ts": "pass 2\n" });
+    writeFileSync(join(s.sysd, "aws-sha-2"), "fedcba9876543210fedcba9876543210fedcba98\n");
+    const r = s.run("");
+    assert.equal(r.code, 59, r.out);
+    assert.match(r.out, /ALTERAÇÃO INESPERADA no commit da produção AWS: antes do deploy 0123456789abcdef0123456789abcdef01234567, agora fedcba98/);
+    assert.match(r.out, /ALERTA: hook HOOKS_POST_START: .* reportou falha que não pede rollback \(RC=10\)/);
+    assert.match(r.out, /RESULTADO: DEPLOY CONCLUÍDO COM ALERTA \(hook pós-subida; sem rollback\) ambiente=teste rc=59/);
+    assert.doesNotMatch(r.out, /ROLLBACK/);
+    assert.equal(s.head(), s.c1);
+    assert.equal(s.state("induscost.service"), "active");
+    assert.equal(await s.lockOn(), 0);
+    assertSchedulersRestored(s);
+    assert.ok(existsSync(join(s.backupDir(), "hook-alert")));
+    assert.equal(s.hookCalls().split("\n").filter((l) => l.startsWith("ssh ")).length, 2, "duas leituras do commit, nenhuma outra chamada à AWS");
+    assertHookReadOnly(s);
+  });
+
+  it("X4. execução após rollback: build falha → rollback → hook pós-rollback compara com o registro da MESMA execução; CNPJ indisponível só avisa; queda + --recover --rollback recupera o contexto pelo backup", async () => {
+    const s = await hookServer({ BUILD_FAIL: "1", "src/a.test.ts": "pass 2\n" });
+    writeFileSync(join(s.sysd, "hook-down-https___brasilapi_com_br_"), "");
+    const r = s.run("");
+    assert.notEqual(r.code, 0, r.out);
+    assert.match(r.out, /ROLLBACK AUTOMÁTICO CONCLUÍDO/);
+    assert.match(r.out, /ATENÇÃO CNPJ: https:\/\/brasilapi\.com\.br\/ indisponível/);
+    assert.match(r.out, /--- hook HOOKS_POST_ROLLBACK: \S+servidor01-checks\.sh OK/);
+    assert.match(r.out, /Hooks RC: {6}0 \(HOOKS_POST_ROLLBACK/);
+    const runId = readFileSync(join(s.backupDir(), "deploy-run-id"), "utf8").trim();
+    assert.ok(existsSync(join(s.w, "state", "hook-context", runId, "aws-commit.after-HOOKS_POST_ROLLBACK")), "pós-rollback usou o contexto desta execução");
+    assert.equal(s.head(), s.c0);
+    assert.equal(s.state("induscost.service"), "active");
+    assertHookReadOnly(s);
+
+    const k = await hookServer({ "src/a.test.ts": "HANG\n" });
+    const bg = k.runAsync("");
+    assert.ok(await k.waitFor(join(k.sysd, "executor-chain")), "executor chegou aos testes");
+    assert.equal(k.run("--abort-hard").code, 0);
+    await Promise.race([bg.done, new Promise((res) => setTimeout(res, 15_000))]);
+    const kid = readFileSync(join(k.backupDir(), "deploy-run-id"), "utf8").trim();
+    const rb = k.run("--recover --rollback");
+    assert.equal(rb.code, 0, rb.out);
+    assert.match(rb.out, /--- hook HOOKS_POST_ROLLBACK: \S+servidor01-checks\.sh OK/);
+    assert.match(rb.out, /commit da produção AWS inalterado/);
+    assert.ok(existsSync(join(k.w, "state", "hook-context", kid, "aws-commit.after-HOOKS_POST_ROLLBACK")), "retomada usou o contexto da execução interrompida");
+    assert.deepEqual(k.contexts(), [kid], "a retomada não cria outro contexto");
+    assert.equal(k.head(), k.c0);
+  });
+
+  it("X5. atualizador de egress listado como hook: recusado (3) sem executar; hook da release adulterado: executor recusa (4) antes de qualquer hook", async () => {
+    const dir = join(root, "egress");
+    mkdirSync(dir, { recursive: true });
+    const updater = join(dir, "update-induscost-homolog-egress");
+    writeFileSync(updater, `#!/usr/bin/env bash\ntouch "$(dirname "$0")/EXECUTADO"\n`);
+    chmodSync(updater, 0o755);
+    const s = await hookServer({ "src/a.test.ts": "pass 2\n" }, { HOOKS_POST_START: posix(updater) });
+    for (const args of ["--check", ""]) {
+      const r = s.run(args);
+      assert.equal(r.code, 3, r.out);
+      assert.match(r.out, /altera drop-in\/egress e reinicia o serviço; não pode ser hook/);
+    }
+    assert.ok(!existsSync(join(dir, "EXECUTADO")));
+    assert.equal(s.head(), s.c0);
+
+    const t = await hookServer({ "src/a.test.ts": "pass 2\n" });
+    const release = readFileSync(join(t.w, "lib", "teste.current"), "utf8").trim().replace(/^\/([a-z])\//, (_m, d: string) => `${d.toUpperCase()}:/`);
+    const hook = join(release, "hooks", "servidor01-checks.sh");
+    chmodSync(hook, 0o755);
+    writeFileSync(hook, readFileSync(hook, "utf8").replace("set -Euo pipefail", "set -Euo pipefail\nexit 0"));
+    const r = t.run("");
+    assert.equal(r.code, 4, r.out);
+    assert.match(r.out, /instalação adulterada/);
+    assert.equal(t.hookCalls(), "", "nenhum hook executado");
+    assert.equal(t.head(), t.c0);
+  });
+
+  it("X6. serviço parado antes do deploy (if-was-active): hooks pós-subida rodam mesmo assim e o commit AWS alterado termina em 59 (serviço segue parado); retomada com ALERTA pós-rollback termina em 59", async () => {
+    const s = await hookServer({ "src/a.test.ts": "pass 2\n" });
+    writeFileSync(join(s.sysd, "induscost.service"), "inactive");
+    writeFileSync(join(s.sysd, "aws-sha-2"), "fedcba9876543210fedcba9876543210fedcba98\n");
+    const r = s.run("");
+    assert.equal(r.code, 59, r.out);
+    assert.match(r.out, /mantido parado \(START_SERVICE_POLICY=if-was-active\); health NÃO executado/);
+    assert.match(r.out, /ALTERAÇÃO INESPERADA no commit da produção AWS/);
+    assert.match(r.out, /ALERTA: verificação pós-deploy falhou \(RC=10\) com induscost\.service mantido parado/);
+    assert.match(r.out, /RESULTADO: DEPLOY CONCLUÍDO COM ALERTA/);
+    assert.equal(s.head(), s.c1);
+    assert.equal(s.state("induscost.service"), "inactive", "serviço continua parado");
+    assert.equal(await s.lockOn(), 0);
+
+    const k = await hookServer({ "src/a.test.ts": "HANG\n" });
+    writeFileSync(join(k.sysd, "aws-sha-2"), "fedcba9876543210fedcba9876543210fedcba98\n");
+    const bg = k.runAsync("");
+    assert.ok(await k.waitFor(join(k.sysd, "executor-chain")), "executor chegou aos testes");
+    assert.equal(k.run("--abort-hard").code, 0);
+    await Promise.race([bg.done, new Promise((res) => setTimeout(res, 15_000))]);
+    const rb = k.run("--recover --rollback");
+    assert.equal(rb.code, 59, rb.out);
+    assert.match(rb.out, /ROLLBACK AUTOMÁTICO CONCLUÍDO/);
+    assert.match(rb.out, /RESULTADO: ROLLBACK CONCLUÍDO COM ALERTA \(retomada; hook pós-rollback\)/);
+    assert.equal(k.head(), k.c0);
+    assert.equal(k.state("induscost.service"), "active");
+    assertHookReadOnly(k);
   });
 
   it("I2. ambiente com A_COLETAR: instalação recusada e executor recusa rodar (3)", async () => {
