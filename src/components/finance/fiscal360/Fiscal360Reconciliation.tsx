@@ -1,0 +1,162 @@
+import React, { useEffect, useMemo, useState } from "react";
+import { FISCAL360_CHECK_LABELS, FISCAL360_TAX_LABELS, fiscal360CompanyLabel } from "@/src/lib/finance/fiscal360/fiscal360Constants";
+import { buildFiscal360Query, formatFiscal360Date, formatFiscal360Month, type Fiscal360Capabilities, type Fiscal360UiFilters } from "@/src/lib/finance/fiscal360/fiscal360Client";
+import type { Fiscal360ApTitleRow, Fiscal360Page, Fiscal360ReconciliationResponse } from "@/src/lib/finance/fiscal360/fiscal360Types";
+import { Fiscal360DecisionForm, type DecisionTarget } from "./Fiscal360Decisions";
+import { Badge, ButtonLike, Callout, DataTable, ErrorState, KpiCard, KpiGrid, LoadingState, Pagination, Section, money, statusTone } from "./Fiscal360Shared";
+import { useFiscal360Resource } from "./useFiscal360Resource";
+
+export function Fiscal360Reconciliation({
+  filters,
+  refreshKey,
+  caps,
+  onOpenPayment,
+}: {
+  filters: Fiscal360UiFilters;
+  refreshKey: number;
+  caps: Fiscal360Capabilities;
+  onOpenPayment: (anchorKey: string) => void;
+}) {
+  const [checkType, setCheckType] = useState("");
+  const [status, setStatus] = useState("");
+  const [page, setPage] = useState(1);
+  const [apPage, setApPage] = useState(1);
+  const [decision, setDecision] = useState<DecisionTarget | null>(null);
+  const [done, setDone] = useState<string | null>(null);
+  useEffect(() => setPage(1), [filters, checkType, status]);
+  const query = useMemo(() => buildFiscal360Query(filters, { checkType, status, page, pageSize: 50 }), [filters, checkType, status, page]);
+  const { data, loading, error, reload } = useFiscal360Resource<Fiscal360ReconciliationResponse>("reconciliation", query, refreshKey);
+  const apQuery = useMemo(() => buildFiscal360Query(filters, { classification: "PENDING", page: apPage, pageSize: 20 }), [filters, apPage]);
+  const pending = useFiscal360Resource<Fiscal360Page<Fiscal360ApTitleRow>>("ap-titles", apQuery, refreshKey);
+
+  const count = (types: string[], statuses?: string[]) =>
+    (data?.summary ?? []).filter((s) => types.includes(s.checkType) && (!statuses || statuses.includes(s.status))).reduce((a, s) => a + s.count, 0);
+  const select = "rounded-md border border-[#E5E7EB] bg-white px-2 py-1.5 text-[12px]";
+  const afterDecision = () => {
+    setDecision(null);
+    setDone("Decisão registrada com trilha de auditoria. O processamento incremental aplicará o efeito.");
+    reload();
+    pending.reload();
+  };
+
+  return (
+    <div className="space-y-4" data-testid="fiscal360-reconciliation">
+      <KpiGrid>
+        <KpiCard label="Guias sem vínculo com AP" value={count(["GUIDE_WITHOUT_AP"])} tone={count(["GUIDE_WITHOUT_AP"]) ? "warn" : undefined} source="Guia × contas a pagar" />
+        <KpiCard label="Títulos tributários sem guia" value={count(["AP_TAX_WITHOUT_GUIDE"])} tone={count(["AP_TAX_WITHOUT_GUIDE"]) ? "warn" : undefined} source="AP classificado (confiança alta)" />
+        <KpiCard label="Possíveis pagamentos duplicados" value={count(["POSSIBLE_DUPLICATE", "DUPLICATE_AP_LINK"], ["REVIEW"])} tone={count(["POSSIBLE_DUPLICATE", "DUPLICATE_AP_LINK"], ["REVIEW"]) ? "danger" : undefined} source="Contados uma única vez" />
+        <KpiCard label="Apuração × guia divergente" value={count(["APURATION_VS_GUIDE"], ["DIVERGENT", "MISSING"])} hint={`${count(["COMPETENCE_WITHOUT_CLOSING"])} competência(s) sem fechamento · ${count(["CREDITS_UNRECONCILED"], ["REVIEW"])} crédito(s) a conciliar`} source="FiscalApurationLine × guias" />
+      </KpiGrid>
+      {done ? <Callout>{done}</Callout> : null}
+      {decision ? <Fiscal360DecisionForm target={decision} onCancel={() => setDecision(null)} onDone={afterDecision} /> : null}
+      <Section
+        title="Fila de conciliação"
+        subtitle="Apuração × guia × contas a pagar × baixa × comprovante. Itens OK ficam ocultos por padrão."
+        actions={
+          <div className="flex flex-wrap gap-2">
+            <select className={select} value={checkType} onChange={(e) => setCheckType(e.target.value)} aria-label="Checagem" data-testid="fiscal360-recon-check">
+              <option value="">Todas as checagens</option>
+              {Object.entries(FISCAL360_CHECK_LABELS).map(([v, l]) => (
+                <option key={v} value={v}>
+                  {l}
+                </option>
+              ))}
+            </select>
+            <select className={select} value={status} onChange={(e) => setStatus(e.target.value)} aria-label="Situação">
+              <option value="">Exceções (sem OK)</option>
+              {["DIVERGENT", "MISSING", "REVIEW", "ACCEPTED", "OK"].map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
+          </div>
+        }
+      >
+        {error ? <ErrorState message={error} /> : null}
+        {!data && loading ? <LoadingState /> : null}
+        {data ? (
+          <>
+            <DataTable
+              testId="fiscal360-recon-table"
+              rows={data.rows}
+              rowKey={(r) => r.itemKey}
+              onRowClick={(r) => (r.subjectType === "PAYMENT_FACT" && r.subjectId ? onOpenPayment(r.subjectId) : undefined)}
+              empty="Nenhuma exceção de conciliação no filtro."
+              columns={[
+                { key: "c", header: "Checagem", render: (r) => (<><b>{FISCAL360_CHECK_LABELS[r.checkType] ?? r.checkType}</b><br /><span className="text-[11px] text-[#6B7280]">{r.message}</span></>) },
+                { key: "e", header: "Empresa", render: (r) => fiscal360CompanyLabel(r.companyCnpj) },
+                { key: "m", header: "Competência", render: (r) => formatFiscal360Month(r.competenceMonth) },
+                { key: "t", header: "Tributo", render: (r) => (r.taxType ? FISCAL360_TAX_LABELS[r.taxType] ?? r.taxType : "—") },
+                { key: "x", header: "Esperado", align: "right", render: (r) => money(r.expectedAmount) },
+                { key: "a", header: "Encontrado", align: "right", render: (r) => money(r.actualAmount) },
+                { key: "d", header: "Diferença", align: "right", render: (r) => money(r.difference) },
+                { key: "s", header: "Situação", render: (r) => <Badge tone={statusTone(r.status)}>{r.status}</Badge> },
+                {
+                  key: "act",
+                  header: "",
+                  render: (r) =>
+                    caps.reconcile && r.status !== "OK" && r.status !== "ACCEPTED" ? (
+                      <button
+                        type="button"
+                        className="text-[11px] font-semibold text-[#1D4ED8] hover:underline"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setDecision({ decisionType: "ACCEPT_DIVERGENCE", itemKey: r.itemKey });
+                        }}
+                      >
+                        Aceitar com justificativa
+                      </button>
+                    ) : null,
+                },
+              ]}
+            />
+            <Pagination page={data.page} pageSize={data.pageSize} total={data.total} onPage={setPage} />
+          </>
+        ) : null}
+      </Section>
+      <Section title="Títulos do AP pendentes de classificação" subtitle="Indício tributário sem confiança suficiente. Não entram no total pago até revisão (o termo “imposto” sozinho nunca classifica).">
+        {pending.error ? <ErrorState message={pending.error} /> : null}
+        {pending.data ? (
+          <>
+            <DataTable
+              testId="fiscal360-pending-ap"
+              rows={pending.data.rows}
+              rowKey={(r) => String(r.apExternalId)}
+              empty="Nenhum título pendente de classificação."
+              columns={[
+                { key: "id", header: "AP Nomus", render: (r) => <b>{r.apExternalId}</b> },
+                { key: "d", header: "Descrição / favorecido", render: (r) => (<>{r.description ?? "—"}<br /><span className="text-[#6B7280]">{r.personName ?? "—"} · {r.nomusClassification ?? "sem classificação"}</span></>) },
+                { key: "e", header: "Empresa", render: (r) => fiscal360CompanyLabel(r.companyCnpj) },
+                { key: "v", header: "Vencimento", render: (r) => formatFiscal360Date(r.dueDate) },
+                { key: "a", header: "Valor", align: "right", render: (r) => money(r.amountOriginal) },
+                { key: "s", header: "Sugestão", render: (r) => (<>{r.suggestedTaxType ? FISCAL360_TAX_LABELS[r.suggestedTaxType] ?? r.suggestedTaxType : "—"}<br /><Badge tone="warn">{r.classificationConfidence}</Badge></>) },
+                {
+                  key: "act",
+                  header: "",
+                  render: (r) =>
+                    caps.reclassify ? (
+                      <div className="flex flex-col gap-1">
+                        <ButtonLike variant="quiet" onClick={() => setDecision({ decisionType: "AP_CONFIRM_TAX", apExternalId: r.apExternalId, suggestedTaxType: r.suggestedTaxType })}>
+                          É tributo
+                        </ButtonLike>
+                        <ButtonLike onClick={() => setDecision({ decisionType: "AP_REJECT_TAX", apExternalId: r.apExternalId })}>Não é tributo</ButtonLike>
+                      </div>
+                    ) : null,
+                },
+              ]}
+            />
+            <Pagination page={pending.data.page} pageSize={pending.data.pageSize} total={pending.data.total} onPage={setApPage} />
+          </>
+        ) : pending.loading ? (
+          <LoadingState />
+        ) : null}
+      </Section>
+      <Section title="Regras de vínculo automático">
+        <p className="text-[12px] text-[#4B5563]">
+          O processador vincula pela chave explícita da guia (título AP informado) ou por decisão manual. Correspondências apenas prováveis (mesma empresa, tributo, competência e valor) não viram pagamento: geram “possível duplicidade” e contam uma única vez. Pagamentos parciais, estornos e cancelamentos impedem conciliação silenciosa. Detalhes em docs/finance/fiscal-intelligence-360-reconciliation.md.
+        </p>
+      </Section>
+    </div>
+  );
+}

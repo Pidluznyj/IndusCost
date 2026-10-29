@@ -24,6 +24,8 @@ import { TourHelpButton } from "@/src/components/tour/TourHelpButton";
 import { TAX_TOUR_STEPS } from "@/src/tours/taxTourSteps";
 import { FiscalSettlementsPanel } from "@/src/components/finance/FiscalSettlementsPanel";
 import { FiscalTaxIntelligencePanel } from "@/src/components/finance/FiscalTaxIntelligencePanel";
+import { Fiscal360Panel } from "@/src/components/finance/fiscal360/Fiscal360Panel";
+import { FISCAL360_PERMISSIONS } from "@/src/lib/finance/fiscal360/fiscal360Client";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { canViewFiscalSettlements } from "@/src/lib/finance/fiscalSettlementPermissions";
 
@@ -58,7 +60,8 @@ interface TaxRule {
 export const TaxModule = () => {
   const auth = useAuth();
   const canSettlements = canViewFiscalSettlements(auth);
-  const [moduleTab, setModuleTab] = useState<"pricing" | "settlements" | "intelligence">(
+  const canFiscal360 = auth.hasPermission(FISCAL360_PERMISSIONS.view);
+  const [moduleTab, setModuleTab] = useState<"pricing" | "settlements" | "intelligence" | "fiscal360">(
     "settlements"
   );
   const [rules, setRules] = useState<TaxRule[]>([]);
@@ -94,8 +97,8 @@ export const TaxModule = () => {
 
   // default: settlements if permitted, else pricing
   useEffect(() => {
-    if (!canSettlements) setModuleTab("pricing");
-  }, [canSettlements]);
+    if (!canSettlements) setModuleTab(canFiscal360 ? "fiscal360" : "pricing");
+  }, [canSettlements, canFiscal360]);
 
   const handleOpenModal = (rule?: TaxRule) => {
     if (rule) {
@@ -188,6 +191,23 @@ export const TaxModule = () => {
             Apuração e guias
           </button>
         ) : null}
+        {canFiscal360 ? (
+          <button
+            type="button"
+            role="tab"
+            aria-selected={moduleTab === "fiscal360"}
+            className={cn(
+              "rounded-md px-3 py-1.5 text-[12px] font-semibold",
+              moduleTab === "fiscal360"
+                ? "bg-white text-[#111827] shadow-sm ring-1 ring-[#E5E7EB]"
+                : "text-[#4B5563] hover:bg-[#F3F4F6]"
+            )}
+            onClick={() => setModuleTab("fiscal360")}
+            data-testid="tax-module-tab-fiscal360"
+          >
+            Inteligência Fiscal 360°
+          </button>
+        ) : null}
         {canSettlements ? (
           <button
             type="button"
@@ -222,7 +242,9 @@ export const TaxModule = () => {
         </button>
       </nav>
 
-      {moduleTab === "settlements" && canSettlements ? (
+      {moduleTab === "fiscal360" && canFiscal360 ? (
+        <Fiscal360Panel />
+      ) : moduleTab === "settlements" && canSettlements ? (
         <FiscalSettlementsPanel />
       ) : moduleTab === "intelligence" && canSettlements ? (
         <FiscalTaxIntelligencePanel />

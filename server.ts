@@ -516,6 +516,8 @@ import { registerFinanceSalesOrdersRoutes } from "./src/lib/financeSalesOrdersRo
 import { registerFinanceCashFlowRoutes } from "./src/lib/financeCashFlowRoutes.js";
 import { registerFinancePortfolioReconciliationRoutes } from "./src/lib/financePortfolioReconciliationRoutes.js";
 import { registerFiscalSettlementRoutes } from "./src/lib/finance/fiscalSettlementRoutes.js";
+import { registerFiscal360Routes } from "./src/lib/finance/fiscal360/fiscal360Routes.js";
+import { startFiscal360WorkerIfEnabled } from "./src/lib/finance/fiscal360/fiscal360Worker.server.js";
 import { registerFinanceExecutiveReportRoutes } from "./src/lib/financeExecutiveReportRoutes.js";
 import { registerFinanceDreRoutes } from "./src/lib/financeDreRoutes.js";
 import { getFinanceOnePageDashboard } from "./src/lib/finance/onePageService.server.js";
@@ -17713,6 +17715,13 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     requireAppAuth,
     requireResource,
   });
+
+  // Inteligência Fiscal 360° — leituras materializadas; worker incremental só com FISCAL360_WORKER_ENABLED=1.
+  registerFiscal360Routes(app, {
+    requireAppAuth,
+    requireResource,
+  });
+  startFiscal360WorkerIfEnabled(prisma);
 
   registerFinanceApDueRadarRoutes(app, {
     requireAppAuth,

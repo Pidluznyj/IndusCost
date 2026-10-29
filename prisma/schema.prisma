@@ -5083,6 +5083,8 @@ model NomusAccountsPayable {
   @@index([paymentDate])
   @@index([scheduleDate])
   @@index([sourcePresenceStatus, dueDate])
+  /// Inteligência Fiscal 360° — descoberta incremental por watermark.
+  @@index([updatedAt])
 }
 
 /// Espelho read-only de Pedido de Compra oficial do Nomus (`GET /rest/pedidoscompra`).
@@ -5845,6 +5847,8 @@ model NomusNfe {
   @@index([xmlDestCnpjCpf])
   @@index([syncedAt])
   @@index([payloadHash])
+  /// Inteligência Fiscal 360° — descoberta incremental por watermark.
+  @@index([updatedAt])
 }
 
 /// Resumo fiscal 1:1 da NF-e (totais oficiais do XML — camada A / destacado).
@@ -5903,6 +5907,8 @@ model NomusNfeFiscalSummary {
   @@index([parserVersion])
   @@index([parsedAt])
   @@index([isCancelled])
+  /// Inteligência Fiscal 360° — descoberta incremental por watermark.
+  @@index([updatedAt])
 }
 
 /// Linha de tributo oficial (HEADER = ICMSTot; ITEM = det/imposto).
@@ -6026,6 +6032,8 @@ model FiscalApurationPeriod {
   @@index([jurisdiction, status])
   @@index([uf])
   @@index([companyName])
+  /// Inteligência Fiscal 360° — descoberta incremental por watermark.
+  @@index([updatedAt])
 }
 
 /// Linha de apuração (débito/crédito/compensação/juros/multa).
@@ -6053,6 +6061,8 @@ model FiscalApurationLine {
   @@index([periodId, taxType])
   @@index([nature])
   @@index([revenueCode])
+  /// Inteligência Fiscal 360° — descoberta incremental por watermark.
+  @@index([updatedAt])
 }
 
 /// Guia / documento de arrecadação (camada C) — recolhimento.
@@ -6116,6 +6126,8 @@ model FiscalPaymentGuide {
   @@index([accountsPayableExternalId])
   @@index([periodStart, periodEnd])
   @@index([periodId])
+  /// Inteligência Fiscal 360° — descoberta incremental por watermark.
+  @@index([updatedAt])
 }
 
 /// Comprovante / anexo de pagamento da guia.
@@ -6134,6 +6146,8 @@ model FiscalPaymentProof {
   uploadedAt       DateTime @default(now())
 
   @@index([guideId, uploadedAt(sort: Desc)])
+  /// Inteligência Fiscal 360° — descoberta incremental por watermark.
+  @@index([uploadedAt])
 }
 
 /// Alocação gerencial do recolhimento a pedido/NF (camada D).
@@ -6185,6 +6199,526 @@ model FiscalSettlementAuditLog {
   @@index([userId])
   @@index([createdAt])
   @@index([action])
+}
+
+// —— Inteligência Fiscal 360° — fatos materializados, snapshots e fila incremental ——
+// Tabelas DERIVADAS: escritas somente pelo processador (scripts/fiscal360Process.ts / worker).
+// Fontes oficiais continuam sendo NomusNfe(+Summary/TaxLine), NomusAccountsPayable,
+// FiscalApuration*, FiscalPaymentGuide/Proof e Tesouraria — nunca alteradas por aqui.
+// companyCnpj = 14 dígitos de empresa do grupo (FINANCE_INTERNAL_GROUP_COMPANIES) ou "UNKNOWN".
+// competenceMonth = "YYYY-MM" ("0000-00" quando a fonte não tem data).
+
+/// Fato normalizado por documento fiscal (1:1 NomusNfe). Camada A + classificação da operação.
+/// isOfficialBilling vem do predicado canônico fiscalNfeWhereSql (não há classificador paralelo).
+model FiscalDocumentFact {
+  id                    String    @id @default(uuid())
+  /// NFE | NFSE (NFS-e: sem fonte operacional hoje — suporte arquitetural)
+  documentKind          String    @default("NFE")
+  nomusNfeId            String    @unique
+  nomusExternalId       Int
+  chave                 String?
+  numero                String?
+  serie                 String?
+  companyCnpj           String
+  issuerCnpj            String?
+  recipientCnpj         String?
+  /// Destinatário pertencente ao grupo econômico (operação intercompany).
+  recipientGroupCnpj    String?
+  issueDate             DateTime? @db.Date
+  competenceMonth       String
+  natOp                 String?
+  tpNF                  Int?
+  finalidade            Int?
+  nomusStatus           Int?
+  /// AUTHORIZED | CANCELLED | OTHER
+  fiscalStatus          String
+  /// MARKET_SALE | INTERCOMPANY | REMESSA | RETORNO | DEVOLUCAO | BONIFICACAO | OTHER_MOVEMENT | INBOUND
+  operationClass        String
+  billingClassification String?
+  isMarketSale          Boolean   @default(false)
+  isOfficialBilling     Boolean   @default(false)
+  officialRevenueAmount Decimal   @default(0) @db.Decimal(20, 2)
+  valorLiquido          Decimal?  @db.Decimal(20, 2)
+  vProd                 Decimal?  @db.Decimal(20, 2)
+  vDesc                 Decimal?  @db.Decimal(20, 2)
+  vNF                   Decimal?  @db.Decimal(20, 2)
+  /// Soma dos tributos de efeito DEBIT do cabeçalho (sem ST, desonerado e informativos).
+  highlightedTaxTotal   Decimal   @default(0) @db.Decimal(20, 2)
+  /// XML | PARTIAL | MISSING | NOT_PARSED
+  xmlStatus             String
+  parserVersion         String?
+  qualityFlags          String[]  @default([])
+  sourceHash            String
+  ruleVersion           String
+  version               Int       @default(1)
+  materializedAt        DateTime
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  taxes FiscalDocumentTaxFact[]
+
+  @@index([companyCnpj, competenceMonth])
+  @@index([competenceMonth, operationClass])
+  @@index([isOfficialBilling, competenceMonth])
+  @@index([recipientGroupCnpj, competenceMonth])
+  @@index([nomusExternalId])
+  @@index([numero])
+}
+
+/// Tributo documental por documento (totais de cabeçalho do XML persistido). Nunca é "pago".
+model FiscalDocumentTaxFact {
+  id              String             @id @default(uuid())
+  documentFactId  String
+  documentFact    FiscalDocumentFact @relation(fields: [documentFactId], references: [id], onDelete: Cascade)
+  nomusNfeId      String
+  companyCnpj     String
+  competenceMonth String
+  taxType         String
+  /// DEBIT | ST | DESONERATED | INFORMATIVE | DOCUMENTARY_CREDIT
+  effect          String
+  baseAmount      Decimal?           @db.Decimal(20, 2)
+  amount          Decimal            @db.Decimal(20, 2)
+  fiscalStatus    String
+  operationClass  String
+  sourcePath      String?
+
+  @@unique([documentFactId, taxType])
+  @@index([companyCnpj, competenceMonth, taxType])
+  @@index([nomusNfeId])
+}
+
+/// Fato por título de Contas a Pagar Nomus (1:1): classificação tributária, intercompany e evidência bancária.
+model FiscalApTitleFact {
+  id                          String    @id @default(uuid())
+  apExternalId                Int       @unique
+  apId                        String
+  companyCnpj                 String
+  companyName                 String?
+  personName                  String?
+  personCnpj                  String?
+  description                 String?
+  nomusClassification         String?
+  documentNumber              String?
+  dueDate                     DateTime? @db.Date
+  competenceDate              DateTime? @db.Date
+  competenceMonth             String
+  amountOriginal              Decimal   @default(0) @db.Decimal(20, 2)
+  amountPaid                  Decimal   @default(0) @db.Decimal(20, 2)
+  balance                     Decimal   @default(0) @db.Decimal(20, 2)
+  /// OPEN | SETTLED | CANCELLED | REMOVED_AT_SOURCE
+  effectiveStatus             String
+  apPaymentDate               DateTime? @db.Date
+  treasuryPaidDate            DateTime? @db.Date
+  treasuryMatchedAmount       Decimal?  @db.Decimal(20, 2)
+  treasuryMatchCount          Int       @default(0)
+  /// TAX | NOT_TAX | PENDING
+  classificationStatus        String
+  taxType                     String?
+  suggestedTaxType            String?
+  revenueCode                 String?
+  /// HIGH | MEDIUM | LOW | NONE
+  classificationConfidence    String
+  classificationRule          String?
+  classificationEvidence      Json?
+  classifierVersion           String
+  manualDecisionId            String?
+  /// Guia que reivindica este título (vínculo FK ou decisão manual).
+  claimedByGuideId            String?
+  isIntercompany              Boolean   @default(false)
+  intercompanyCounterpartyCnpj String?
+  sourceHash                  String
+  ruleVersion                 String
+  version                     Int       @default(1)
+  materializedAt              DateTime
+  createdAt                   DateTime  @default(now())
+  updatedAt                   DateTime  @updatedAt
+
+  @@index([classificationStatus, competenceMonth])
+  @@index([companyCnpj, competenceMonth])
+  @@index([taxType])
+  @@index([isIntercompany, intercompanyCounterpartyCnpj, competenceMonth])
+  @@index([claimedByGuideId])
+}
+
+/// Obrigação de pagamento tributário (camada C) — UMA linha por obrigação.
+/// Âncora: GUIDE (FiscalPaymentGuide) ou AP_TITLE (título AP tributário sem guia).
+/// Guia, AP, comprovante e Tesouraria são evidências da mesma obrigação, nunca pagamentos distintos.
+model FiscalPaymentFact {
+  id                  String    @id @default(uuid())
+  anchorKey           String    @unique
+  /// GUIDE | AP_TITLE
+  anchorType          String
+  guideId             String?   @unique
+  /// Título AP reivindicado por esta obrigação — único: um título nunca conta duas vezes.
+  apExternalId        Int?      @unique
+  companyCnpj         String
+  /// PERIOD | AP | DECISION | UNKNOWN
+  companyResolution   String
+  taxType             String
+  jurisdiction        String?
+  revenueCode         String?
+  guideType           String?
+  guideNumber         String?
+  competenceMonth     String
+  periodStart         DateTime? @db.Date
+  periodEnd           DateTime? @db.Date
+  dueDate             DateTime? @db.Date
+  amountOriginal      Decimal   @default(0) @db.Decimal(20, 2)
+  creditsAmount       Decimal   @default(0) @db.Decimal(20, 2)
+  compensationsAmount Decimal   @default(0) @db.Decimal(20, 2)
+  interestAmount      Decimal   @default(0) @db.Decimal(20, 2)
+  fineAmount          Decimal   @default(0) @db.Decimal(20, 2)
+  amountDue           Decimal   @default(0) @db.Decimal(20, 2)
+  paidAmount          Decimal   @default(0) @db.Decimal(20, 2)
+  openBalance         Decimal   @default(0) @db.Decimal(20, 2)
+  paidAt              DateTime? @db.Date
+  /// TREASURY | AP | GUIDE
+  paidAtSource        String?
+  paidMonth           String?
+  paymentAccount      String?
+  proofCount          Int       @default(0)
+  hasBankMatch    Boolean   @default(false)
+  /// GUIDE_ONLY | GUIDE_WITH_AP | AP_ONLY
+  linkState           String
+  /// FK | DECISION | NONE
+  apLinkSource        String
+  /// AP_LINK | GUIDE_MANUAL | AP_TITLE | NONE
+  paidSource          String
+  /// NONE | MANUAL_DECLARED | ERP_SETTLEMENT | DOCUMENTARY_PROOF | BANK_MATCH
+  evidenceLevel       String
+  /// OPEN | OVERDUE | PARTIAL | PAID_ERP | PAID_PROVEN | PAID_DECLARED | REVERSED | CANCELLED | INSUFFICIENT_DATA
+  status              String
+  /// false quando a obrigação está em revisão (ex.: possível duplicidade) — fora do total pago.
+  countsInPaidTotals  Boolean   @default(true)
+  reviewReason        String?
+  flags               String[]  @default([])
+  sourceHash          String
+  ruleVersion         String
+  version             Int       @default(1)
+  materializedAt      DateTime
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@index([companyCnpj, competenceMonth])
+  @@index([companyCnpj, paidMonth])
+  @@index([status])
+  @@index([taxType, competenceMonth])
+  @@index([dueDate])
+}
+
+/// Resultado das checagens de conciliação por partição (empresa × competência). Reconstruído por partição.
+model FiscalReconciliationItem {
+  id              String   @id @default(uuid())
+  companyCnpj     String
+  competenceMonth String
+  taxType         String?
+  /// APURATION_VS_GUIDE | GUIDE_VS_AP | AP_VS_SETTLEMENT | SETTLEMENT_VS_PROOF | GUIDE_WITHOUT_AP |
+  /// AP_TAX_WITHOUT_GUIDE | POSSIBLE_DUPLICATE | DUPLICATE_AP_LINK | COMPETENCE_WITHOUT_CLOSING |
+  /// CREDITS_UNRECONCILED | PENDING_CLASSIFICATION
+  checkType       String
+  /// OK | DIVERGENT | MISSING | REVIEW | ACCEPTED
+  status          String
+  subjectType     String?
+  subjectId       String?
+  relatedType     String?
+  relatedId       String?
+  expectedAmount  Decimal? @db.Decimal(20, 2)
+  actualAmount    Decimal? @db.Decimal(20, 2)
+  difference      Decimal? @db.Decimal(20, 2)
+  message         String
+  details         Json?
+  itemKey         String
+  snapshotVersion Int
+  computedAt      DateTime
+
+  @@unique([itemKey])
+  @@index([companyCnpj, competenceMonth])
+  @@index([checkType, status])
+  @@index([subjectType, subjectId])
+}
+
+/// Revisão manual autorizada da conciliação/classificação. Não altera lançamentos do Nomus.
+model FiscalReconciliationDecision {
+  id              String    @id @default(uuid())
+  /// AP_CONFIRM_TAX | AP_REJECT_TAX | LINK_GUIDE_AP | MARK_DISTINCT | ASSIGN_GUIDE_COMPANY | ACCEPT_DIVERGENCE
+  decisionType    String
+  apExternalId    Int?
+  guideId         String?
+  itemKey         String?
+  payload         Json
+  reason          String
+  evidence        Json?
+  active          Boolean   @default(true)
+  createdByUserId String?
+  createdByName   String?
+  createdAt       DateTime  @default(now())
+  revokedAt       DateTime?
+  revokedByUserId String?
+  revokedByName   String?
+  revokeReason    String?
+
+  @@index([apExternalId, active])
+  @@index([guideId, active])
+  @@index([itemKey, active])
+  @@index([decisionType, active])
+  @@index([createdAt])
+  @@index([revokedAt])
+}
+
+/// Agregado consolidado empresa × competência × tributo ("*" = totais do documento e receita).
+/// Lido pelo dashboard; nunca recalculado na requisição.
+model FiscalMonthlySnapshot {
+  id                             String   @id @default(uuid())
+  companyCnpj                    String
+  competenceMonth                String
+  taxType                        String
+  highlightedAmount              Decimal  @default(0) @db.Decimal(20, 2)
+  highlightedMarketAmount        Decimal  @default(0) @db.Decimal(20, 2)
+  highlightedIntercompanyAmount  Decimal  @default(0) @db.Decimal(20, 2)
+  highlightedOtherAmount         Decimal  @default(0) @db.Decimal(20, 2)
+  stAmount                       Decimal  @default(0) @db.Decimal(20, 2)
+  desoneratedAmount              Decimal  @default(0) @db.Decimal(20, 2)
+  informativeAmount              Decimal  @default(0) @db.Decimal(20, 2)
+  documentaryCreditAmount        Decimal  @default(0) @db.Decimal(20, 2)
+  assessedAmount                 Decimal  @default(0) @db.Decimal(20, 2)
+  creditsAmount                  Decimal  @default(0) @db.Decimal(20, 2)
+  retentionAmount                Decimal  @default(0) @db.Decimal(20, 2)
+  compensationAmount             Decimal  @default(0) @db.Decimal(20, 2)
+  apurationAmountDue             Decimal  @default(0) @db.Decimal(20, 2)
+  /// NONE | OPEN | CLOSED | MIXED
+  apurationStatus                String   @default("NONE")
+  obligationAmountDue            Decimal  @default(0) @db.Decimal(20, 2)
+  paidAmount                     Decimal  @default(0) @db.Decimal(20, 2)
+  paidProvenAmount               Decimal  @default(0) @db.Decimal(20, 2)
+  paidUnprovenAmount             Decimal  @default(0) @db.Decimal(20, 2)
+  paidDeclaredAmount             Decimal  @default(0) @db.Decimal(20, 2)
+  reviewAmount                   Decimal  @default(0) @db.Decimal(20, 2)
+  paidByCashDateAmount           Decimal  @default(0) @db.Decimal(20, 2)
+  paidWithoutCashDateAmount      Decimal  @default(0) @db.Decimal(20, 2)
+  openBalance                    Decimal  @default(0) @db.Decimal(20, 2)
+  officialRevenue                Decimal  @default(0) @db.Decimal(20, 2)
+  intercompanyRevenue            Decimal  @default(0) @db.Decimal(20, 2)
+  documentaryMovement            Decimal  @default(0) @db.Decimal(20, 2)
+  documentCount                  Int      @default(0)
+  officialDocumentCount          Int      @default(0)
+  cancelledDocumentCount         Int      @default(0)
+  missingXmlCount                Int      @default(0)
+  paymentFactCount               Int      @default(0)
+  pendingClassificationCount     Int      @default(0)
+  pendingClassificationAmount    Decimal  @default(0) @db.Decimal(20, 2)
+  reconciliationOkCount          Int      @default(0)
+  reconciliationItemCount        Int      @default(0)
+  openIssueCount                 Int      @default(0)
+  snapshotVersion                Int
+  ruleVersion                    String
+  computedAt                     DateTime
+
+  @@unique([companyCnpj, competenceMonth, taxType])
+  @@index([competenceMonth, taxType])
+}
+
+/// Operações entre empresas do grupo por par emitente → destinatário e competência.
+model FiscalIntercompanySnapshot {
+  id                  String   @id @default(uuid())
+  issuerCnpj          String
+  recipientCnpj       String
+  competenceMonth     String
+  documentCount       Int      @default(0)
+  documentValue       Decimal  @default(0) @db.Decimal(20, 2)
+  highlightedTaxAmount Decimal @default(0) @db.Decimal(20, 2)
+  apTitleCount        Int      @default(0)
+  apAmount            Decimal  @default(0) @db.Decimal(20, 2)
+  apPaidAmount        Decimal  @default(0) @db.Decimal(20, 2)
+  apOpenAmount        Decimal  @default(0) @db.Decimal(20, 2)
+  /// documentValue − apAmount (indicativo: prazos e escopos diferem).
+  divergenceAmount    Decimal  @default(0) @db.Decimal(20, 2)
+  snapshotVersion     Int
+  computedAt          DateTime
+
+  @@unique([issuerCnpj, recipientCnpj, competenceMonth])
+  @@index([competenceMonth])
+}
+
+/// Cenário de projeção tributária com premissas versionadas (não altera dados oficiais).
+model FiscalForecastScenario {
+  id                 String    @id @default(uuid())
+  /// BASE | CONSERVATIVE | EXPANSION (sistema) | CUSTOM
+  kind               String
+  systemKey          String?   @unique
+  name               String
+  description        String?
+  assumptions        Json
+  horizonMonths      Int       @default(6)
+  /// ACTIVE | ARCHIVED
+  status             String    @default("ACTIVE")
+  methodologyVersion String
+  inputVersion       String?
+  computedAt         DateTime?
+  createdByUserId    String?
+  createdByName      String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  snapshots FiscalForecastSnapshot[]
+
+  @@index([kind, status])
+}
+
+/// Resultado persistido da projeção por cenário × empresa × mês × tributo × natureza.
+model FiscalForecastSnapshot {
+  id                String                 @id @default(uuid())
+  scenarioId        String
+  scenario          FiscalForecastScenario @relation(fields: [scenarioId], references: [id], onDelete: Cascade)
+  companyCnpj       String
+  month             String
+  taxType           String
+  /// DETERMINISTIC | ESTIMATED
+  kind              String
+  /// AVAILABLE | UNAVAILABLE
+  availability      String
+  unavailableReason String?
+  amount            Decimal?               @db.Decimal(20, 2)
+  lowAmount         Decimal?               @db.Decimal(20, 2)
+  highAmount        Decimal?               @db.Decimal(20, 2)
+  revenueBase       Decimal?               @db.Decimal(20, 2)
+  ratioUsed         Decimal?               @db.Decimal(12, 6)
+  cashMonth         String?
+  methodology       String
+  details           Json?
+  forecastVersion   String
+  computedAt        DateTime
+
+  @@unique([scenarioId, companyCnpj, month, taxType, kind])
+  @@index([scenarioId, month])
+}
+
+/// Fila de processamento fiscal incremental (PostgreSQL — FOR UPDATE SKIP LOCKED).
+model FiscalProcessingJob {
+  id              String    @id @default(uuid())
+  /// MATERIALIZE_DOCUMENT | MATERIALIZE_AP_TITLE | MATERIALIZE_GUIDE | REBUILD_PARTITION | REBUILD_FORECAST
+  jobType         String
+  sourceEntity    String
+  sourceId        String
+  sourceHash      String?
+  ruleVersion     String
+  /// PENDING | RUNNING | SUCCEEDED | FAILED | CANCELLED
+  status          String    @default("PENDING")
+  priority        Int       @default(50)
+  attempts        Int       @default(0)
+  maxAttempts     Int       @default(5)
+  lastError       String?
+  /// Único entre PENDING (índice parcial na migration).
+  dedupeKey       String
+  availableAt     DateTime  @default(now())
+  leasedBy        String?
+  leaseToken       String?
+  leaseUntil     DateTime?
+  startedAt       DateTime?
+  finishedAt      DateTime?
+  durationMs      Int?
+  affectedPeriods String[]  @default([])
+  auditMeta       Json?
+  requestedByUserId String?
+  runId           String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([status, priority, availableAt])
+  @@index([jobType, status])
+  @@index([sourceEntity, sourceId])
+  @@index([dedupeKey])
+  @@index([createdAt])
+  @@index([runId])
+}
+
+/// Watermark/cursor persistente de descoberta e backfill.
+model FiscalProcessingCheckpoint {
+  id              String    @id @default(uuid())
+  key             String    @unique
+  cursorUpdatedAt DateTime?
+  cursorId        String?
+  lastRunAt       DateTime?
+  lastSuccessAt   DateTime?
+  metadata        Json?
+  updatedAt       DateTime  @updatedAt
+}
+
+/// Execução do processador (CLI, worker ou backfill) — histórico operacional.
+model FiscalProcessingRun {
+  id                String    @id @default(uuid())
+  /// CLI | WORKER | BACKFILL
+  trigger           String
+  workerId          String
+  /// RUNNING | SUCCEEDED | PARTIAL | FAILED
+  status            String
+  startedAt         DateTime
+  finishedAt        DateTime?
+  durationMs        Int?
+  discovered        Json?
+  jobsSucceeded     Int       @default(0)
+  jobsFailed        Int       @default(0)
+  documentsNew      Int       @default(0)
+  documentsChanged  Int       @default(0)
+  apTitlesChanged   Int       @default(0)
+  guidesChanged     Int       @default(0)
+  partitionsRebuilt Int       @default(0)
+  monthsAffected    String[]  @default([])
+  ruleVersions      Json?
+  error             String?
+
+  @@index([startedAt])
+  @@index([status])
+}
+
+/// Pendências de qualidade de dados (abertas/resolvidas por escopo; nunca apagadas).
+model FiscalDataQualityIssue {
+  id              String    @id @default(uuid())
+  dedupeKey       String    @unique
+  scopeKey        String
+  issueType       String
+  /// INFO | WARNING | CRITICAL
+  severity        String
+  entityType      String
+  entityId        String
+  companyCnpj     String?
+  competenceMonth String?
+  taxType         String?
+  message         String
+  details         Json?
+  /// OPEN | RESOLVED | ACKNOWLEDGED
+  status          String    @default("OPEN")
+  firstDetectedAt DateTime
+  lastDetectedAt  DateTime
+  resolvedAt      DateTime?
+  acknowledgedBy  String?
+  ruleVersion     String
+
+  @@index([status, issueType])
+  @@index([scopeKey, status])
+  @@index([companyCnpj, competenceMonth])
+}
+
+/// Regras versionadas (classificador AP, parâmetros tributários por CNPJ, reforma tributária).
+/// Nunca aplicar retroativamente: effectiveFrom/effectiveTo delimitam a vigência.
+model FiscalRuleVersion {
+  id              String    @id @default(uuid())
+  ruleKey         String
+  version         Int
+  /// DRAFT | ACTIVE | RETIRED
+  status          String
+  effectiveFrom   DateTime? @db.Date
+  effectiveTo     DateTime? @db.Date
+  normativeSource String?
+  description     String?
+  parameters      Json
+  createdByUserId String?
+  createdByName   String?
+  createdAt       DateTime  @default(now())
+  activatedAt     DateTime?
+  retiredAt       DateTime?
+
+  @@unique([ruleKey, version])
+  @@index([ruleKey, status])
 }
 
 enum NomusOptionalPricingSelectionMode {
