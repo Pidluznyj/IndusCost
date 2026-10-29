@@ -117,6 +117,13 @@ O que só o servidor prova (ensaio §1 e roteiro de VALIDACAO-HOMOLOGACAO.md): `
 socket `/run/induscost-pg17`, `systemctl show` real, `/proc` real, `flock` real (nas suítes é simulado), permissões
 de `/var/backups/induscost-homolog`.
 
+Gate de pré-publicação (`npm run predeploy:gate -- --base=4cab35b5`, os mesmos três arquivos nas duas passagens,
+locks reais das rotinas Nomus ocupados): OK nas duas passagens (68/68 e 68/68, ~30 min cada). Na primeira execução, a passagem isolada reprovou R8
+(sessão estranha de 0,6 s não vista pelo observador): o observador amostra `pg_stat_activity` por `psql`, e com as
+três suítes em paralelo no Windows uma amostra demorou mais que a sessão. O teste passou a manter a sessão aberta até
+o observador a registrar (e afirma o registro), o que é o cenário real (uma sessão de relatório dura mais que uma
+amostra); o gate agora imprime o nome dos testes reprovados e guarda a saída completa de cada passagem.
+
 ## 5. Critério de aceite
 
 Com os valores de §3 preenchidos, a instalação é reversível (`--apply` guarda o executor antigo com sha256 conferido;

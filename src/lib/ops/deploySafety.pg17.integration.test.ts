@@ -328,9 +328,15 @@ describe("biblioteca de deploy com PostgreSQL 17 e binários reais", { skip: SKI
   it("R8. sessão estranha durante as migrations: prova inválida; schema incompatível → BLOQUEIO", async () => {
     await createLive("r8");
     const r = prepared("r8");
+    // A sessão estranha fica aberta até o observador (que amostra pg_stat_activity por psql) a registrar: com um
+    // pg_sleep fixo, sob carga (gate com três suítes em paralelo no Windows) uma amostra pode demorar mais que a
+    // sessão e o teste falharia por tempo, não por defeito.
     const bi = new PrismaClient({ datasourceUrl: urlOf("r8", "&application_name=bi-relatorios") });
-    await bi.$queryRawUnsafe(`SELECT pg_sleep(0.6)::text`);
+    await bi.$queryRawUnsafe(`SELECT 1`);
+    const raw = join(r.dir, "migrate-sessions.raw");
+    for (let i = 0; i < 600 && !(existsSync(raw) && readFileSync(raw, "utf8").includes("bi-relatorios")); i++) await new Promise((res) => setTimeout(res, 100));
     await bi.$disconnect();
+    assert.match(readFileSync(raw, "utf8"), /bi-relatorios/, "observador registrou a sessão estranha enquanto ela estava aberta");
     await migrate("r8", `ALTER TABLE "Item" DROP COLUMN legacy`);
     const out = r.run(`ids_rollback_db_if_needed "$DIR" r8 "$DUMP" 8; echo RC=$?`);
     assert.match(out, /sessões estranhas durante as migrations/);
