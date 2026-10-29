@@ -97,8 +97,16 @@ function pass(label, extraEnv) {
   });
   const out = `${r.stdout}\n${r.stderr}`;
   const num = (k) => Number((out.match(new RegExp(`ℹ ${k} (\\d+)`)) ?? [])[1] ?? NaN);
-  const failing = [...out.matchAll(/^not ok \d+ - (.+)$/gm)].map((m) => m[1]);
-  console.log(`[predeploy] ${label}: testes=${num("tests")} ok=${num("pass")} falhas=${num("fail")} (${Math.round((Date.now() - started) / 1000)} s)`);
+  // Nomes dos testes que falharam: formato TAP (`not ok N - nome`) ou do reporter spec (`✖ nome (ms)`), que é o
+  // padrão do node quando a saída não é um terminal.
+  const failing = [
+    ...[...out.matchAll(/^not ok \d+ - (.+)$/gm)].map((m) => m[1]),
+    ...[...out.matchAll(/^\s*✖ (.+?) \(\d+(?:\.\d+)?ms\)$/gm)].map((m) => m[1]),
+  ].filter((name, i, all) => all.indexOf(name) === i);
+  // Saída completa de cada passagem, para diagnóstico (o resumo abaixo não basta para achar a causa).
+  const logFile = join(mkdtempSync(join(tmpdir(), "predeploy-out-")), "saida.log");
+  writeFileSync(logFile, out);
+  console.log(`[predeploy] ${label}: testes=${num("tests")} ok=${num("pass")} falhas=${num("fail")} (${Math.round((Date.now() - started) / 1000)} s) — saída completa em ${logFile}`);
   for (const f of failing.slice(0, 20)) console.log(`   ✖ ${f}`);
   return r.status === 0 && num("fail") === 0;
 }
