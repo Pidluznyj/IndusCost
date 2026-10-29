@@ -21,7 +21,14 @@ import {
 } from "@/src/lib/salesOrderInvoicingSql.js";
 import { endOfYear, startOfYear } from "@/src/lib/executiveDashboardWorkdays.js";
 import { salesOrderOperationalPresenceSql } from "@/src/lib/nomus/nomusSourcePresencePolicy.server.js";
+import {
+  salesOrderHasNomusEligibleItemsSql,
+  salesOrderNomusForecastValueSql,
+} from "@/src/lib/sales/salesOrderNomusLifecycle.js";
 
+// Cabeçalho CANCELLED = cancelamento no IndusCost. Cancelamento no Nomus vem pelos itens: a previsão usa
+// salesOrderHasNomusEligibleItemsSql / salesOrderNomusForecastValueSql (src/lib/sales/salesOrderNomusLifecycle.ts);
+// o realizado (NF-e) não é filtrado por itens — faturamento ocorrido não some com cancelamento posterior.
 const NOT_CANCELLED = Prisma.sql`so.status != 'CANCELLED'`;
 const MARKET_CUSTOMER = billingMarketCustomerFilterSql("c");
 
@@ -106,7 +113,7 @@ export async function queryBillingForecastHorizonOrders(
         so."orderCode" AS order_code,
         COALESCE(NULLIF(TRIM(c."tradeName"), ''), c."companyName") AS customer_name,
         so."expectedDeliveryDate" AS expected_delivery_date,
-        so."totalNetValue" AS total_net_value,
+        ${salesOrderNomusForecastValueSql("so")} AS total_net_value,
         so.status,
         EXISTS (
           SELECT 1 FROM ${nomusNfesElementsSql("so")}
@@ -117,6 +124,7 @@ export async function queryBillingForecastHorizonOrders(
         AND ${salesOrderOperationalPresenceSql("so")}
         AND ${MARKET_CUSTOMER}
         AND ${orderNotInvoicedSql("so")}
+        AND ${salesOrderHasNomusEligibleItemsSql("so")}
         AND so."expectedDeliveryDate" IS NOT NULL
         AND so."expectedDeliveryDate" >= ${fromYmd}::date
         AND so."expectedDeliveryDate" <= ${toYmd}::date
@@ -137,7 +145,7 @@ async function queryOpenForecastOrders(year: number): Promise<RawForecastOrder[]
         so."orderCode" AS order_code,
         COALESCE(NULLIF(TRIM(c."tradeName"), ''), c."companyName") AS customer_name,
         so."expectedDeliveryDate" AS expected_delivery_date,
-        so."totalNetValue" AS total_net_value,
+        ${salesOrderNomusForecastValueSql("so")} AS total_net_value,
         so.status,
         EXISTS (
           SELECT 1 FROM ${nomusNfesElementsSql("so")}
@@ -148,6 +156,7 @@ async function queryOpenForecastOrders(year: number): Promise<RawForecastOrder[]
         AND ${salesOrderOperationalPresenceSql("so")}
         AND ${MARKET_CUSTOMER}
         AND ${orderNotInvoicedSql("so")}
+        AND ${salesOrderHasNomusEligibleItemsSql("so")}
         AND (
           so."expectedDeliveryDate" IS NULL
           OR (

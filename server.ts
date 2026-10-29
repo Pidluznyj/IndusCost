@@ -567,6 +567,11 @@ import { loadOfficialCommercial360MarginBundle } from "./src/lib/salesMarginRule
 import { loadSalesOrderLinkedNfeContextMap } from "./src/lib/salesOrderLinkedNfe.js";
 import { resolveSalesOrderBillingStatus } from "./src/lib/sales/salesOrderListBillingStatus.js";
 import {
+  generatedSalesOrderLinkData,
+  lockProposalSlotForGeneratedOrderInTx,
+  recordGeneratedSalesOrderLinkEventInTx,
+} from "./src/lib/sales/proposalSalesOrderLinkWriter.server.js";
+import {
   SALES_ORDER_LIST_PAGE_PRISMA_SELECT,
   toSalesOrderListHttpRow,
 } from "./src/lib/salesOrderListApiDto.js";
@@ -16530,11 +16535,27 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
       throw error;
     }
 
+    const linkActor = await getCurrentAppUser(req);
     try {
+      let generatedConcurrently = false;
       const salesOrder = await prisma.$transaction(async (tx) => {
+        // Vaga 1:1 da proposta travada: outra geração (ou o sync de pedidos) não ocupa a mesma proposta em paralelo.
+        const slotOwner = await lockProposalSlotForGeneratedOrderInTx(tx, proposal.id);
+        if (slotOwner) {
+          generatedConcurrently = true;
+          return tx.salesOrder.findUnique({
+            where: { id: slotOwner.id },
+            include: {
+              items: { include: { Product: true } },
+              Customer: true,
+              Proposal: { select: { id: true, number: true, title: true, externalProposalCode: true } },
+            },
+          });
+        }
+        const linkedAt = new Date();
         const header = await tx.salesOrder.create({
           data: {
-            proposalId: proposal.id,
+            ...generatedSalesOrderLinkData(proposal.id, linkedAt),
             sourceSystem: proposal.sourceSystem ?? null,
             orderCode,
             customerId: proposal.customerId,
@@ -16597,6 +16618,13 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
           });
         }
 
+        await recordGeneratedSalesOrderLinkEventInTx(tx, {
+          salesOrderId: header.id,
+          proposalId: proposal.id,
+          actor: `generate-sales-order:${linkActor?.id ?? "desconhecido"}`,
+          now: linkedAt,
+        });
+
         return tx.salesOrder.findUnique({
           where: { id: header.id },
           include: {
@@ -16607,6 +16635,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
         });
       });
 
+      if (generatedConcurrently) return res.status(200).json({ existing: true, salesOrder });
       return res.status(201).json({ existing: false, salesOrder });
     } catch (e: any) {
       console.error("generate-sales-order", e);

@@ -23,7 +23,7 @@ cliente.
 | `INVOICED` | Faturado | NF vinculada cobrindo o valor líquido | verde |
 | `PARTIALLY_INVOICED` | Parcialmente faturado | Há NF vinculada, mas cobertura < 100% | âmbar |
 | `NOT_INVOICED` | Não faturado | Nenhuma NF vinculada | cinza |
-| `CANCELED` | Cancelado | `SalesOrder.status === "CANCELLED"` | vermelho |
+| `CANCELED` | Cancelado | `SalesOrder.status === "CANCELLED"` (cancelamento no IndusCost; o sync do Nomus nunca grava esse status — cancelamento do Nomus vem pelos itens, ver `docs/sales/sales-order-nomus-status-lifecycle.md`) | vermelho |
 
 ## Fonte oficial
 

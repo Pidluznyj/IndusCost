@@ -1,6 +1,9 @@
 # Mapeamento de status — Pedidos de Venda Nomus × IndusCost
 
 Documento gerado a partir da auditoria do código e evidências em produção.
+
+> Atualização 28/10/2026: mapa vigente de códigos de item (1–6), regras de cancelamento total/parcial, corte e
+> reativação, e auditoria SQL somente leitura em `docs/sales/sales-order-nomus-status-lifecycle.md`.
 Atualize após rodar `npm run audit:sales-order-statuses` no ambiente com banco.
 
 ## 1. Status de cabeçalho

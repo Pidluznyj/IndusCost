@@ -38,6 +38,10 @@ import {
 import { fetchCrmManualOwnerCustomerIds } from "@/src/lib/crmCustomersList";
 import { crmOrderWithoutFollowUpNotExistsSql } from "@/src/lib/crmOrderPortfolioSql";
 import {
+  salesOrderHasNomusEligibleItemsSql,
+  salesOrderNomusForecastValueSql,
+} from "@/src/lib/sales/salesOrderNomusLifecycle";
+import {
   buildSellerDashboardSourceInfo,
   mergeOfficialMetricsIntoSellerSummary,
   resolveSelectedCommercialOwnerLabel,
@@ -473,7 +477,9 @@ export async function buildCrmSellerDashboardResponse(
   const soOrdersScopeSql = hasPeriodFilter ? soIssueDateInPeriodSql() : Prisma.sql`TRUE`;
   const soValidMetricsSql = Prisma.sql`so.status::text NOT IN ('CANCELLED', 'ERROR')`;
   const soValidOrdersScopeSql = Prisma.sql`${soOrdersScopeSql} AND ${soValidMetricsSql}`;
-  const soOpenPortfolioScopeSql = Prisma.sql`${soValidOrdersScopeSql} AND NOT ${orderIsInvoicedSql("so")}`;
+  // Carteira em aberto: não faturado e com item ainda elegível (cancelamento no Nomus vem pelos itens).
+  const soOpenPortfolioScopeSql = Prisma.sql`${soValidOrdersScopeSql} AND NOT ${orderIsInvoicedSql("so")} AND ${salesOrderHasNomusEligibleItemsSql("so")}`;
+  const soOpenPortfolioValueSql = salesOrderNomusForecastValueSql("so");
   const orderNoFollowUpSql = crmOrderWithoutFollowUpNotExistsSql("so");
 
   // Opções do seletor = responsáveis comerciais (não vendedores Nomus do pedido).
@@ -695,7 +701,7 @@ export async function buildCrmSellerDashboardResponse(
         so."externalSellerId" AS external_seller_id,
         so."issueDate" AS issue_date,
         so."expectedDeliveryDate" AS expected_delivery_date,
-        so."totalNetValue" AS total_net_value
+        ${soOpenPortfolioValueSql} AS total_net_value
       FROM "SalesOrder" so
       INNER JOIN "Customer" c ON c.id = so."customerId"
       LEFT JOIN "CrmCustomerCommercialOwner" own
@@ -827,7 +833,7 @@ export async function buildCrmSellerDashboardResponse(
         so."customerId" AS customer_id,
         ${customerNameSql} AS customer_name,
         so."issueDate" AS issue_date,
-        so."totalNetValue" AS total_net_value,
+        ${soOpenPortfolioValueSql} AS total_net_value,
         so."updatedAt" AS updated_at
       FROM "SalesOrder" so
       INNER JOIN "Customer" c ON c.id = so."customerId"
@@ -1025,7 +1031,7 @@ export async function buildCrmSellerDashboardResponse(
       COUNT(*) FILTER (WHERE ${soValidOrdersScopeSql} AND ${soInvoicedMetricSql})::int AS invoiced_orders_count,
       COALESCE(SUM(so."totalNetValue") FILTER (WHERE ${soValidOrdersScopeSql} AND ${soInvoicedMetricSql}), 0) AS invoiced_orders_value,
       COUNT(*) FILTER (WHERE ${soOpenPortfolioScopeSql})::int AS open_orders_count,
-      COALESCE(SUM(so."totalNetValue") FILTER (WHERE ${soOpenPortfolioScopeSql}), 0) AS open_orders_value
+      COALESCE(SUM(${soOpenPortfolioValueSql}) FILTER (WHERE ${soOpenPortfolioScopeSql}), 0) AS open_orders_value
     FROM "SalesOrder" so
     WHERE ${soOrdersAxisScope}
     GROUP BY so."externalSellerId", ${orderSellerNameSql}

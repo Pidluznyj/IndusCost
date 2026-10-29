@@ -16,6 +16,7 @@ import type {
 } from "@/src/lib/financeBillingHorizonDrilldownTypes.js";
 import { SALES_ORDER_STATUS_LABELS } from "@/src/lib/materialDemandFilters.js";
 import { prisma } from "@/src/lib/prisma.js";
+import { salesOrderHasNomusEligibleItemsSql, salesOrderNomusForecastValueSql } from "@/src/lib/sales/salesOrderNomusLifecycle.js";
 import {
   nomusNfesElementsSql,
   orderNotInvoicedSql,
@@ -131,7 +132,7 @@ export async function queryBillingHorizonDrilldownOrders(
         COALESCE(NULLIF(TRIM(c."tradeName"), ''), c."companyName") AS customer_name,
         c."taxId" AS customer_tax_id,
         so."expectedDeliveryDate" AS expected_delivery_date,
-        so."totalNetValue" AS total_net_value,
+        ${salesOrderNomusForecastValueSql("so")} AS total_net_value,
         so.status,
         so.notes,
         so."deliveryLocation" AS delivery_location,
@@ -156,6 +157,7 @@ export async function queryBillingHorizonDrilldownOrders(
       WHERE ${NOT_CANCELLED}
         AND ${MARKET_CUSTOMER}
         AND ${orderNotInvoicedSql("so")}
+        AND ${salesOrderHasNomusEligibleItemsSql("so")}
         AND so."expectedDeliveryDate" IS NOT NULL
         AND so."expectedDeliveryDate" >= ${fromYmd}::date
         AND so."expectedDeliveryDate" <= ${toYmd}::date

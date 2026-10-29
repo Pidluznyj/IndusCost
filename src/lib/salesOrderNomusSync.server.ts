@@ -61,12 +61,36 @@ export type NomusSyncExistingItem = {
   totalNetValue: unknown;
   notes: string | null;
   nomusItemExternalId?: number | null;
+  nomusItemStatusRaw?: string | null;
   nomusItemStatusNormalized?: string | null;
+  nomusQuantityFulfilled?: unknown;
+  nomusQuantityPending?: unknown;
   nomusIsCanceled?: boolean | null;
   nomusIsStale?: boolean | null;
   nomusIsCut?: boolean | null;
   nomusMatchConfidence?: string | null;
 };
+
+/** Status do Nomus que não comprova nada (ausente ou código não mapeado). */
+export function isNomusItemStatusWithoutEvidence(normalized: string | null | undefined): boolean {
+  const value = (normalized ?? "").trim().toUpperCase();
+  return value === "" || value === "UNKNOWN";
+}
+
+/**
+ * Linha cujo status veio ausente/desconhecido nesta leitura, mas o item já tinha status conhecido gravado: o
+ * estado anterior (cancelado, cortado, atendido…) é preservado — payload sem evidência não cancela nem reativa.
+ */
+export function shouldPreservePreviousNomusItemStatus(
+  line: Pick<NomusSyncPlannedLine, "nomusItemStatusNormalized">,
+  matched: Pick<NomusSyncExistingItem, "nomusItemStatusNormalized" | "nomusIsStale"> | null | undefined
+): boolean {
+  if (!matched || matched.nomusIsStale === true) return false;
+  return (
+    isNomusItemStatusWithoutEvidence(line.nomusItemStatusNormalized) &&
+    !isNomusItemStatusWithoutEvidence(matched.nomusItemStatusNormalized)
+  );
+}
 
 export type NomusSyncPlannedLine = {
   externalLineId: number | null;
@@ -131,6 +155,8 @@ export type NomusSyncItemWriteRow = {
   nomusMatchReason?: string | null;
   nomusLastSeenAt?: Date | null;
   nomusRawItem?: Record<string, unknown> | null;
+  /** Status anterior preservado porque a leitura atual não trouxe evidência (não é gravado; alimenta o histórico). */
+  nomusStatusPreservedFromPrevious?: boolean;
 };
 
 export type NomusSyncUpdatePreview = {
@@ -290,6 +316,12 @@ export function mergeNomusSyncHeaderPreservingHistoricalCosts<T extends Record<s
   };
 }
 
+function previousDecimalString(value: unknown): string | null {
+  if (value == null) return null;
+  const n = Number(typeof value === "object" && value !== null && "toString" in value ? String(value) : value);
+  return Number.isFinite(n) ? decimalString(n) : null;
+}
+
 function formatCommercialUnitCostDecimal(unitPrice: number): string {
   if (!Number.isFinite(unitPrice) || unitPrice < 0) return "0.000000";
   return unitPrice.toFixed(6);
@@ -382,8 +414,9 @@ export function buildNomusSyncItemWritePlan(input: {
     }
 
     const economics = commercialLineEconomics();
-    const isCanceled = line.nomusIsCanceled === true;
-    const isCut = line.nomusIsCut === true;
+    const preservePrevious = shouldPreservePreviousNomusItemStatus(line, matched);
+    const isCanceled = preservePrevious ? matched!.nomusIsCanceled === true : line.nomusIsCanceled === true;
+    const isCut = preservePrevious ? matched!.nomusIsCut === true : line.nomusIsCut === true;
     // Confidência do match: HIGH quando temos id/sequência do item; caso contrário
     // MEDIUM (product-sequence do sync não usa mais SKU-only para status).
     const matchConfidence =
@@ -404,7 +437,8 @@ export function buildNomusSyncItemWritePlan(input: {
     const row: NomusSyncItemWriteRow = {
       id: matched?.id,
       salesOrderId: input.salesOrderId,
-      proposalItemId: line.proposalItemId,
+      // Vínculo com o item da proposta já gravado é preservado (nunca apagado nem trocado pelo sync).
+      proposalItemId: matched?.proposalItemId ?? line.proposalItemId,
       productId: line.productId,
       externalProductId: line.externalProductId,
       skuSnapshot: line.skuSnapshot,
@@ -421,15 +455,21 @@ export function buildNomusSyncItemWritePlan(input: {
       nomusItemExternalId: line.externalLineId,
       nomusItemSequence: line.itemSequence ?? null,
       nomusItemStatusRaw: line.nomusItemStatusRaw ?? null,
-      nomusItemStatusNormalized: line.nomusItemStatusNormalized ?? null,
+      nomusItemStatusNormalized: preservePrevious
+        ? (matched!.nomusItemStatusNormalized ?? null)
+        : (line.nomusItemStatusNormalized ?? null),
       nomusQuantityFulfilled:
         line.nomusQuantityFulfilled != null
           ? decimalString(line.nomusQuantityFulfilled)
-          : null,
+          : preservePrevious
+            ? previousDecimalString(matched!.nomusQuantityFulfilled)
+            : null,
       nomusQuantityPending:
-        line.nomusQuantityPending != null
-          ? decimalString(line.nomusQuantityPending)
-          : null,
+        preservePrevious
+          ? previousDecimalString(matched!.nomusQuantityPending)
+          : line.nomusQuantityPending != null
+            ? decimalString(line.nomusQuantityPending)
+            : null,
       nomusIsCanceled: isCanceled,
       nomusIsCut: isCut,
       nomusIsStale: false,
@@ -437,6 +477,7 @@ export function buildNomusSyncItemWritePlan(input: {
       nomusMatchReason: matchReason,
       nomusLastSeenAt: seenAt,
       nomusRawItem: line.nomusRawItem ?? null,
+      ...(preservePrevious ? { nomusStatusPreservedFromPrevious: true } : {}),
     };
 
     if (matched) upserts.push(row);
