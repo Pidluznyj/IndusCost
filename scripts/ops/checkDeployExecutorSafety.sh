@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Verificação SOMENTE LEITURA de um executor de deploy (produção ou homologação).
 # Aceita o wrapper instalado por infra/deploy/install-induscost-deploy.sh (segue até o executor versionado e confere
-# o MANIFEST) ou um executor qualquer. Confere as garantias G1–G8 da biblioteca v4 (infra/deploy/induscost-deploy-safety.sh).
+# o MANIFEST) ou um executor qualquer. Confere as garantias G1–G8 da biblioteca v5 (infra/deploy/induscost-deploy-safety.sh).
 #
 #   sudo bash scripts/ops/checkDeployExecutorSafety.sh /usr/local/bin/deploy-induscost-producao
 #   sudo bash scripts/ops/checkDeployExecutorSafety.sh "$(command -v induscost-deploy-homologacao)"

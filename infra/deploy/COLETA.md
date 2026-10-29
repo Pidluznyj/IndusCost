@@ -20,7 +20,27 @@ tocar** e que já estão protegidos por configuração: PostgreSQL 12 (5432, ban
 (22h30, só PG12), crons Nomus do root para `/opt/induscost`, bancos `teste_bi_homolog_prev` e
 `teste_bi_cloud_standby`, drop-ins de systemd (egress, Direct Data/QUOD) e `/usr/local/bin/update-induscost-homolog-egress`.
 
-Ainda `A_COLETAR` (cada item diz qual chave preenche). Nos comandos, `<usuário>` e `<bin>` são os valores de H5.
+**Atualização de 29/10/2026** (confirmado pelo operador e preenchido): H2 — o wrapper repassa `"$@"`; H3 — sem
+agendamentos próprios da homologação (`CRON_GLOB='induscost-homolog*'`, `UNIT_GLOB='induscost-homolog-*'`, conferidos
+pela G8 a cada deploy); H5 — `IDS_PG_OS_USER=pg17homolog`, `IDS_PG_BIN=/opt/postgresql-17/bin`; H6 — sem arquivo de
+modo nem drop-in de pré-cutover (`none`); `START_SERVICE_POLICY=if-was-active`; H1/H7 — o executor antigo usa
+`induscost-runtime-role get/check` (exige `CLOUD_PRIMARY`), produção Node local desligada, Nginx ativo, gateway
+`http://192.168.100.5:3000/api/health`, AWS `http://100.85.97.124:3000/api/health` e o commit da AWS lido por SSH em
+`/opt/induscost` → hook versionado `hooks/servidor01-checks.sh` ([docs/deploy/hooks-servidor01.md](../../docs/deploy/hooks-servidor01.md)).
+Restam só as três chaves de **H12**. As seções abaixo ficam como registro de como cada valor foi obtido.
+
+### H12 — valores exatos das verificações do executor antigo → `HOOK_AWS_SSH_TARGET`, `HOOK_LOCAL_PROD_SERVICE`, `HOOK_RUNTIME_ROLE_CHECK_ARGS`
+
+```bash
+sudo grep -nE 'ssh|induscost-runtime-role|systemctl|is-active' /usr/local/bin/deploy-induscost-homologacao
+/usr/local/bin/induscost-runtime-role get
+```
+
+Da saída: o destino do `ssh` (e o comando remoto, que o hook só aceita como `git -C /opt/induscost rev-parse`), a
+unidade da produção Node local que o executor antigo exige parada e os argumentos de `induscost-runtime-role check`
+(`none` se ele só compara a saída de `get`). A segunda linha precisa imprimir exatamente `CLOUD_PRIMARY`.
+
+Ainda `A_COLETAR` antes de 29/10 (cada item diz qual chave preenche). Nos comandos, `<usuário>` e `<bin>` são os valores de H5.
 
 ### H1 — executor antigo completo, com segredos redigidos → `HOOKS_PRE_DEPLOY`, `HOOKS_POST_START`, `HOOKS_POST_ROLLBACK`, `START_SERVICE_POLICY`
 

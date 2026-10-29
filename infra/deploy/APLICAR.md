@@ -87,20 +87,28 @@ ou migration que apague dados, é **incompatível**.
 
 ### Hooks: o que o executor antigo fazia além deste fluxo
 
-Verificações de saúde da AWS e do gateway, controle de egress (`update-induscost-homolog-egress`) e validações
-BrasilAPI/cnpj.ws não são reimplementadas: entram como **executáveis listados por fase** no arquivo de ambiente
-(`HOOKS_PRE_DEPLOY`, `HOOKS_POST_START`, `HOOKS_POST_ROLLBACK`; `none` = nenhum), extraídos do executor antigo
-(COLETA H1/H7). Exigências: caminho absoluto, do root, não gravável por grupo/outros, prazo `HOOK_TIMEOUT`.
-Recebem `IDS_DEPLOY_PHASE`, `IDS_TARGET`, `IDS_OLD_COMMIT`, `IDS_BACKUP_DIR`.
+Verificações de saúde da AWS e do gateway, papel do servidor, commit da produção e validações BrasilAPI/cnpj.ws
+entram como **executáveis listados por fase** no arquivo de ambiente (`HOOKS_PRE_DEPLOY`, `HOOKS_POST_START`,
+`HOOKS_POST_ROLLBACK`; `none` = nenhum). Exigências: caminho absoluto **ou** `@release/<caminho>` (arquivo da
+própria release, instalado de `infra/deploy/hooks/` e coberto pelo `MANIFEST.sha256`), do root, não gravável por
+grupo/outros, prazo `HOOK_TIMEOUT`. Recebem `IDS_DEPLOY_PHASE`, `IDS_TARGET`, `IDS_OLD_COMMIT`, `IDS_BACKUP_DIR`,
+`IDS_ENV_NAME`, `IDS_ENV_FILE` (o hook lê a própria configuração `HOOK_*` daí), `IDS_DEPLOY_RUN_ID` e
+`IDS_HOOK_CONTEXT_DIR` (diretório 0700 só desta execução, também recuperado por `--recover --rollback`).
 
-| Fase | Quando | Falha |
-|---|---|---|
-| `HOOKS_PRE_DEPLOY` | Depois do plano, antes de parar o serviço | Saída 9; nada foi alterado |
-| `HOOKS_POST_START` | Depois do health OK da aplicação nova | `HOOKS_POST_START_FAILURE=rollback` (padrão): rollback normal, saída 44; `warn`: só avisa |
-| `HOOKS_POST_ROLLBACK` | Depois de o rollback subir o serviço com health OK | Só avisa |
+| Fase | Quando | Falha (≠ 0) | ALERTA (10) |
+|---|---|---|---|
+| `HOOKS_PRE_DEPLOY` | Depois do plano, antes de parar o serviço | Saída 9; nada foi alterado | — (conta como falha) |
+| `HOOKS_POST_START` | Depois do health OK da aplicação nova | `HOOKS_POST_START_FAILURE=rollback` (padrão): rollback normal, saída 44; `warn`: só avisa | Deploy concluído **sem rollback**, saída **59** |
+| `HOOKS_POST_START` com o serviço mantido parado (`if-was-active`) | Depois das migrations, sem health (`IDS_APP_STARTED=0`) | ALERTA (59), sem rollback | ALERTA (59) |
+| `HOOKS_POST_ROLLBACK` | Depois de o rollback subir o serviço com health OK (ou de mantê-lo parado) | Só avisa; o `RESULTADO` cita; `--recover --rollback` termina com 59 | idem |
 
-O executor nunca altera drop-ins de systemd, firewall ou egress: isso é dos próprios scripts, preservados como estão.
-`--check` lista os hooks e não os executa.
+Um SIGTERM/SIGINT durante os hooks prévios é tratado quando o hook termina, e o executor aborta (130/143) antes de
+parar o serviço.
+
+O executor nunca altera drop-ins de systemd, firewall ou egress e **recusa (3)** um hook chamado
+`update-induscost-*egress*` (o atualizador de egress reinicia a homologação: só o operador o executa).
+`--check` lista os hooks e não os executa. Servidor-01: `hooks/servidor01-checks.sh`, somente leitura — política,
+prazos, contexto e instruções em [docs/deploy/hooks-servidor01.md](../../docs/deploy/hooks-servidor01.md).
 
 ### Interrupção e recuperação (substitui `pkill -9 -f`)
 
@@ -152,6 +160,7 @@ para o rollback normal. Um segundo sinal durante o rollback é ignorado.
 | 56 | Serviço não parou (nada alterado; religado) |
 | 57 | Commit final diferente do alvo |
 | 58 | `DATABASE_URL` da aplicação aponta para outro banco/porta/versão (migrations iriam para o lugar errado) |
+| 59 | Deploy concluído, mas um hook pós-subida reportou ALERTA (ex.: commit da produção AWS mudou durante o deploy): nada desfeito, investigar; também `--recover --rollback` concluído com hook pós-rollback em falha/ALERTA |
 | 130 / 143 | Interrompido por SIGINT / SIGTERM (rollback feito, ou nada alterado se antes da etapa de deploy) |
 
 Toda execução que passa da leitura do arquivo de ambiente (deploy, `--check`, `--recover --rollback`) termina com a

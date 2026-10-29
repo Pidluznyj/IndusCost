@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Biblioteca de segurança dos executores de deploy do IndusCost (produção AWS e homologação) — v4 (G1–G8).
+# Biblioteca de segurança dos executores de deploy do IndusCost (produção AWS e homologação) — v5 (G1–G8).
 #
 # Uso: infra/deploy/induscost-deploy-executor.sh (instalado por infra/deploy/install-induscost-deploy.sh) faz
 # `source` desta biblioteca. Ver infra/deploy/APLICAR.md.
@@ -34,8 +34,10 @@
 #       clusters (servidor-01: PostgreSQL 12 em 5432 e 17 em 5433) os padrões do libpq levariam ao cluster errado.
 #   G8. Isolamento verificável: cada arquivo de cron casado por IDS_CRON_GLOB precisa referenciar o IDS_APP_MARK_PATTERN
 #       e cada timer casado por IDS_UNIT_GLOB precisa executar dentro dele (systemctl show); unidades de
-#       IDS_PROTECTED_UNITS jamais podem ser casadas; rotinas em execução só contam se forem desta instalação
+#       IDS_PROTECTED_UNITS (nomes ou padrões, ex.: *postgres*) jamais podem ser casadas — conferido também por nome,
+#       sem depender de a unidade estar carregada; rotinas em execução só contam se forem desta instalação
 #       (linha de comando ou cwd dentro do IDS_APP_MARK_PATTERN); bancos de IDS_PROTECTED_DATABASES nunca são tocados.
+#       Nenhum agendamento casado é um estado válido (a janela só trava o banco) e aparece explícito no log.
 #
 # Variáveis (padrão): IDS_PG (`runuser -u postgres --`), IDS_PG_USER (postgres), IDS_PG_BIN (vazio = PATH),
 # IDS_PG_HOST (vazio = libpq/PGHOST; diretório = socket), IDS_PG_PORT (vazio = libpq/PGPORT), IDS_PG_ADMIN_ROLE (vazio =
@@ -48,7 +50,7 @@
 # IDS_STATS_SETTLE_SECONDS (2), IDS_WATCH_INTERVAL (0.05), IDS_MAINT_FLAG (/run/induscost/deploy-maintenance),
 # IDS_DISK_BACKUP_FACTOR (1), IDS_DISK_DATA_FACTOR (2): espaço livre mínimo em múltiplos do tamanho do banco.
 
-IDS_VERSION="4"
+IDS_VERSION="5"
 IDS_PG="${IDS_PG-runuser -u postgres --}"
 IDS_PG_USER="${IDS_PG_USER-postgres}"
 IDS_PG_BIN="${IDS_PG_BIN:-}"
@@ -331,18 +333,46 @@ ids_unit_is_ours() {
   [[ "$props" =~ $(ids_mark_regex) ]]
 }
 
+# Lista de IDS_PROTECTED_UNITS sem expansão de caminho (um padrão como *postgres* não pode virar arquivos do cwd).
+ids_protected_units() {
+  local -a list
+  read -r -d '' -a list <<< "$IDS_PROTECTED_UNITS" || true
+  (( ${#list[@]} == 0 )) || printf '%s\n' "${list[@]}"
+}
+
+# Unidade protegida? Cada entrada é um nome exato ou um padrão do bash (*, ?, [...]).
 ids_is_protected_unit() {
   local u="$1" p
-  for p in $IDS_PROTECTED_UNITS; do [[ "$u" == "$p" ]] && return 0; done
+  while IFS= read -r p; do
+    # shellcheck disable=SC2053
+    [[ -n "$p" && ( "$u" == "$p" || "$u" == $p ) ]] && return 0
+  done < <(ids_protected_units)
   return 1
+}
+
+# Contrato estático do UNIT_GLOB (sem systemctl): nenhuma unidade protegida dada por nome pode ser casada pelo glob,
+# esteja ela carregada agora ou não. Padrões protegidos são conferidos contra as unidades listadas.
+ids_assert_glob_contract() {
+  local p rc=0
+  while IFS= read -r p; do
+    [[ -n "$p" && "$p" != *[*?[]* ]] || continue
+    # shellcheck disable=SC2053
+    if [[ "$p" == $IDS_UNIT_GLOB || "$p" == $IDS_UNIT_GLOB.timer || "$p" == $IDS_UNIT_GLOB.service ]]; then
+      ids_log "ERRO: IDS_UNIT_GLOB='$IDS_UNIT_GLOB' casaria a unidade protegida $p (mesmo sem estar carregada agora)"
+      rc=52
+    fi
+  done < <(ids_protected_units)
+  return "$rc"
 }
 
 # G8: os globs só podem casar o que é desta instalação (cada arquivo de cron executa o IDS_APP_MARK_PATTERN; cada
 # timer/serviço roda dentro dele; nenhuma unidade protegida). ≠ 0 (52) = escopo amplo demais; nada foi tocado.
 ids_assert_isolation_scope() {
-  local f unit state rc=0
+  local f unit state rc=0 crons=0 units=0
+  ids_assert_glob_contract || rc=$?
   for f in "$IDS_CRON_DIR"/$IDS_CRON_GLOB; do
     [[ -f "$f" ]] || continue
+    crons=$(( crons + 1 ))
     if ! grep -vE '^[[:space:]]*#' "$f" | grep -qE -e "$(ids_mark_regex)"; then
       ids_log "ERRO: IDS_CRON_GLOB='$IDS_CRON_GLOB' casa $f, que não executa $IDS_APP_MARK_PATTERN (escopo amplo demais)"
       rc=52
@@ -352,6 +382,7 @@ ids_assert_isolation_scope() {
   done
   while read -r unit _; do
     [[ -n "$unit" ]] || continue
+    units=$(( units + 1 ))
     state="$($IDS_SYSTEMCTL is-active "$unit" 2>/dev/null || true)"
     if ids_is_protected_unit "$unit"; then
       ids_log "ERRO: IDS_UNIT_GLOB='$IDS_UNIT_GLOB' casa a unidade protegida $unit"
@@ -363,7 +394,10 @@ ids_assert_isolation_scope() {
       ids_log "janela $([[ "$state" == active ]] && echo pausaria || echo "não tocaria") o timer $unit (${state:-?}; desta instalação)"
     fi
   done < <({ $IDS_SYSTEMCTL list-units --type=timer --all --no-legend --plain "${IDS_UNIT_GLOB}.timer"; $IDS_SYSTEMCTL list-units --type=service --all --no-legend --plain "${IDS_UNIT_GLOB}.service"; } 2>/dev/null)
-  if [[ "$rc" == 0 ]]; then ids_log "escopo da janela conferido: cron $IDS_CRON_DIR/$IDS_CRON_GLOB e unidades $IDS_UNIT_GLOB só desta instalação ($IDS_APP_MARK_PATTERN)"; fi
+  if [[ "$rc" == 0 && "$crons" == 0 && "$units" == 0 ]]; then
+    ids_log "nenhum agendamento desta instalação: 0 arquivo(s) $IDS_CRON_DIR/$IDS_CRON_GLOB e 0 unidade(s) $IDS_UNIT_GLOB.timer/.service — a janela só trava o banco"
+  fi
+  if [[ "$rc" == 0 ]]; then ids_log "escopo da janela conferido: cron $IDS_CRON_DIR/$IDS_CRON_GLOB ($crons) e unidades $IDS_UNIT_GLOB ($units) só desta instalação ($IDS_APP_MARK_PATTERN)"; fi
   return "$rc"
 }
 

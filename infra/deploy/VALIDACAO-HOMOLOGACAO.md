@@ -2,7 +2,8 @@
 
 Roteiro para quem opera o servidor-01. Nada aqui é executado automaticamente. Pré-requisitos:
 
-- a coleta H1–H11 de [COLETA.md](COLETA.md) foi feita e `environments/homologacao.env` está **sem `A_COLETAR`**;
+- a coleta H1–H12 de [COLETA.md](COLETA.md) foi feita e `environments/homologacao.env` está **sem `A_COLETAR`**
+  (em 29/10/2026 restam só as três chaves de H12, lidas do executor antigo com um único `grep`);
 - as três suítes locais passaram no commit (elas validam o código; o arquivo de ambiente é validado pelo instalador
   em `--dry-run` e pelo `--check` deste roteiro);
 - o commit com estes arquivos está no checkout `/opt/induscost-homolog/app` (deploy anterior) ou num clone à parte;
@@ -91,7 +92,24 @@ sudo bash scripts/ops/checkDeployExecutorSafety.sh /usr/local/bin/deploy-indusco
 Esperado: `RESULTADO: executor protegido.` (um `AVISO` sobre a biblioteca do checkout é aceitável; `FALTA` não).
 
 Se depois de um passo você corrigir `homologacao.env`, reaplique com `--apply --replace-env`: isso cria uma
-segunda instalação, e o `--uninstall` do passo 8 desfaz a cadeia inteira de uma vez.
+segunda instalação, e o `--uninstall` do passo 9 desfaz a cadeia inteira de uma vez.
+
+### 2.1 Hooks do servidor-01 (somente leitura)
+
+Antes do `--apply`, o `--dry-run` precisa listar `OK    HOOKS_PRE_DEPLOY: @release/hooks/servidor01-checks.sh faz
+parte da release` (idem pós-subida e pós-rollback). Depois da instalação, rode o hook à mão, com o ambiente instalado:
+
+```bash
+R="$(cat /usr/local/lib/induscost/homologacao.current)"
+sudo "$R/hooks/servidor01-checks.sh" --validate --env-file /etc/induscost/deploy-executor-homologacao.env
+sudo "$R/hooks/servidor01-checks.sh" --check --env-file /etc/induscost/deploy-executor-homologacao.env
+```
+
+Esperado: `RESULTADO: configuração válida` (com `pior caso das sondas: 245s`, ou 255 s com `check`) e `RESULTADO: --check OK …; nada foi
+gravado`, com `OK` para papel `CLOUD_PRIMARY`, produção Node local desligada, `nginx.service ativo`, gateway, produção
+AWS e o commit em execução na AWS (conferir o SHA). `ATENÇÃO CNPJ` é aviso (terceiros); se for de egress, o
+atualizador fica a cargo do operador, numa janela própria — nenhum passo deste roteiro o executa. Detalhes e
+significado de cada linha: [docs/deploy/hooks-servidor01.md](../../docs/deploy/hooks-servidor01.md) §7.
 
 ## 3. Plano sem alterar nada
 
@@ -223,6 +241,18 @@ Esperado durante a janela:
 Ao fim: `DEPLOY (homologacao) CONCLUÍDO` e `RESULTADO: DEPLOY CONCLUÍDO ambiente=homologacao rc=0 …`, tudo volta,
 `maintenance.state` vira `maintenance.<data>.done`, a trava some e `http://127.0.0.1:3001/api/health` responde.
 
+Hooks no deploy: `Execução: <RUN_ID> (contexto dos hooks: …/hook-context/<RUN_ID>)`, `--- hook HOOKS_PRE_DEPLOY: …
+OK` antes de `3/11`, `--- hook HOOKS_POST_START: … OK` depois de `Health: OK` e `commit da produção AWS inalterado
+durante o deploy`. Conferir o registro (nenhum outro arquivo é gravado pelos hooks):
+
+```bash
+sudo ls -l /var/lib/induscost/deploy-safety/homologacao/hook-context/"$(sudo cat /var/backups/induscost-homolog/deploys/<ts>/deploy-run-id)"
+```
+
+`rc=59` = deploy concluído com ALERTA (ex.: `ALTERAÇÃO INESPERADA no commit da produção AWS`): nada foi desfeito
+nem executado na AWS; investigar quem publicou na produção. `rc=9` com `FALHA crítica` = recusado antes de parar o
+serviço (gateway/AWS/papel/Nginx/produção local): nada foi alterado.
+
 ## 9. Desinstalação e reinstalação (reversibilidade)
 
 ```bash
@@ -252,6 +282,8 @@ mesmos arquivos em `/etc/cron.d`, mesma crontab do root, mesmos drop-ins e `IPAd
 
 - [ ] Ensaio com `16 OK`, bancos de ensaio só no cluster 17, `--cleanup` feito.
 - [ ] Instalação íntegra (sha256 do executor antigo conferido, wrapper do operador conferido) e verificador aprovado.
+- [ ] Hooks: `hooks/servidor01-checks.sh` na release e no MANIFEST; `--validate` e `--check` manuais OK (papel,
+      produção local, Nginx, gateway, AWS, commit AWS conferido com a AWS); nenhum `PROIBIDO`/escrita fora do contexto.
 - [ ] `--check` com cluster, disco, escopo e `DATABASE_URL` conferidos.
 - [ ] Falha pós-subida: rollback só do código, sistema de volta (rc 44).
 - [ ] `--stop`: rollback controlado, rc 143.

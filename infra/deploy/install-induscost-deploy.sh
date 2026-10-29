@@ -7,7 +7,8 @@
 #   sudo bash infra/deploy/install-induscost-deploy.sh --env producao --uninstall # volta ao executor anterior
 #
 # O que --apply faz (nada além disto):
-#   1. copia biblioteca + executor para $IDS_INSTALL_ROOT/releases/<versão>/ e grava MANIFEST.sha256 (somente leitura);
+#   1. copia biblioteca + executor + hooks versionados (hooks/*.sh) para $IDS_INSTALL_ROOT/releases/<versão>/ e grava
+#      MANIFEST.sha256 (somente leitura); recusa se o ambiente referenciar um @release/<hook> que não esteja na release;
 #   2. copia environments/<env>.env para $IDS_INSTALL_ETC/deploy-executor-<env>.env (0600) — recusa se já existir
 #      com conteúdo diferente, salvo --replace-env;
 #   3. guarda o executor atual (EXECUTOR_PATH do ambiente) em $IDS_INSTALL_ROOT/backups/ e registra em install-history;
@@ -49,6 +50,11 @@ DEST_ENV="$ETC/deploy-executor-$ENV_NAME.env"
 HISTORY="$ROOT/install-history"
 CURRENT="$ROOT/$ENV_NAME.current"
 FILES=(induscost-deploy-safety.sh induscost-deploy-executor.sh)
+# Hooks versionados (infra/deploy/hooks/*.sh): entram na release e no MANIFEST; o ambiente os referencia como
+# @release/hooks/<arquivo> (o executor resolve para a própria release, sem caminho fixo de versão).
+if [[ -d "$REPO_DEPLOY/hooks" ]]; then
+  while IFS= read -r f; do FILES+=("hooks/$(basename "$f")"); done < <(find "$REPO_DEPLOY/hooks" -maxdepth 1 -type f -name '*.sh' | LC_ALL=C sort)
+fi
 
 say() { echo "[install] $*"; }
 # CR em qualquer linha. Por comparação de tamanho: o grep do Git Bash ignora o CR do fim da linha.
@@ -136,6 +142,27 @@ legacy_executor_running() {
   return 1
 }
 
+# Todo hook @release/<caminho> do ambiente precisa ser um arquivo desta release (senão o executor recusaria rodar).
+check_release_hooks() {
+  local k v h rel ok=0
+  local -a list
+  for k in HOOKS_PRE_DEPLOY HOOKS_POST_START HOOKS_POST_ROLLBACK; do
+    v="$(env_key "$k")"
+    read -r -d '' -a list <<< "$v" || true
+    for h in "${list[@]}"; do
+      [[ "$h" == @release/* ]] || continue
+      rel="${h#@release/}"
+      if printf '%s\n' "${FILES[@]}" | grep -qxF -- "$rel"; then
+        say "OK    $k: $h faz parte da release"
+      else
+        say "RECUSADO: $k referencia $h, que não é um arquivo desta release (${FILES[*]})"
+        ok=1
+      fi
+    done
+  done
+  return "$ok"
+}
+
 maintenance_or_lock_busy() {
   local state_dir lock
   state_dir="$(set +u; source "$SRC_ENV" >/dev/null 2>&1; printf '%s' "${IDS_STATE_DIR:-/var/lib/induscost/deploy-safety/$ENV_NAME}")"
@@ -150,8 +177,25 @@ verify() {
   if [[ ! -f "$CURRENT" ]]; then say "FALHA: nada instalado para $ENV_NAME ($CURRENT ausente)"; return 1; fi
   release="$(cat "$CURRENT")"
   if (cd "$release" && sha256sum -c --quiet --strict MANIFEST.sha256); then say "OK    MANIFEST de $release confere"; else say "FALHA MANIFEST de $release"; ok=1; fi
-  for f in "${FILES[@]}"; do
+  # O que vale é o conjunto INSTALADO (MANIFEST da release), não o do checkout: um checkout com outro conjunto de
+  # hooks só gera AVISO.
+  local -a rel_files=()
+  mapfile -t rel_files < <(sed -E 's/^[0-9a-f]{64} [ *]//' "$release/MANIFEST.sha256" 2>/dev/null)
+  for f in "${rel_files[@]}"; do
     if cmp -s "$release/$f" "$REPO_DEPLOY/$f"; then say "OK    $f idêntico ao do repositório"; else say "AVISO $f difere do repositório em $REPO_DEPLOY (outra versão instalada)"; fi
+  done
+  for f in "${FILES[@]}"; do
+    printf '%s\n' "${rel_files[@]}" | grep -qxF -- "$f" || say "AVISO $f do repositório não está na release instalada (outra versão)"
+  done
+  # Todo hook @release/ do ambiente instalado precisa estar na release (senão o executor recusaria rodar).
+  local k h
+  local -a hooks
+  for k in HOOKS_PRE_DEPLOY HOOKS_POST_START HOOKS_POST_ROLLBACK; do
+    read -r -d '' -a hooks <<< "$( (set +u; source "$DEST_ENV" >/dev/null 2>&1; printf '%s' "${!k:-}") )" || true
+    for h in "${hooks[@]}"; do
+      [[ "$h" == @release/* ]] || continue
+      if printf '%s\n' "${rel_files[@]}" | grep -qxF -- "${h#@release/}"; then say "OK    $k: $h está na release"; else say "FALHA $k: $h não está na release instalada"; ok=1; fi
+    done
   done
   if [[ -f "$EXECUTOR_PATH" ]] && grep -qF "exec \"$release/induscost-deploy-executor.sh\" --env-file \"$DEST_ENV\"" "$EXECUTOR_PATH"; then
     say "OK    $EXECUTOR_PATH chama $release"
@@ -168,12 +212,25 @@ verify() {
     if [[ -f "$DEST_ENV" && "$(stat -c %a "$DEST_ENV")" != 600 ]]; then say "FALHA $DEST_ENV deveria ter permissão 600"; ok=1; fi
     if [[ -d "$ROOT/backups" && "$(stat -c '%U:%a' "$ROOT/backups")" != root:700 ]]; then say "FALHA $ROOT/backups deveria ser root:700 (executores antigos podem conter credenciais)"; ok=1; fi
     if [[ -f "$EXECUTOR_PATH" && "$(stat -c '%a' "$EXECUTOR_PATH")" =~ [2367].$|[2367]$ ]]; then say "FALHA $EXECUTOR_PATH gravável por grupo/outros"; ok=1; fi
+    # As mesmas exigências que o executor faz aos hooks (do root, não graváveis por grupo/outros, executáveis). Só
+    # ensaios locais (IDS_INSTALL_ALLOW_NONROOT=1) instalam sem root: aí o dono esperado é quem instalou.
+    local owner=0
+    [[ "${IDS_INSTALL_ALLOW_NONROOT:-0}" == 1 ]] && owner="$(id -u)"
+    for f in "${rel_files[@]}"; do
+      if [[ "$(stat -c %u "$release/$f")" != "$owner" || "$(stat -c %a "$release/$f")" =~ [2367].$|[2367]$ ]] || [[ "$f" == *.sh && ! -x "$release/$f" ]]; then
+        say "FALHA $release/$f precisa ser do root, executável e não gravável por grupo/outros ($(stat -c '%U %a' "$release/$f"))"; ok=1
+      fi
+    done
   else
     say "AVISO permissões de arquivo não conferidas fora do Linux"
   fi
-  if bash -n "$release/induscost-deploy-executor.sh" && bash -n "$release/induscost-deploy-safety.sh"; then say "OK    sintaxe"; else ok=1; fi
-  local f crlf_installed=0
-  for f in "$release/induscost-deploy-executor.sh" "$release/induscost-deploy-safety.sh" "$DEST_ENV" "$EXECUTOR_PATH"; do
+  local f syntax_ok=0 crlf_installed=0
+  for f in "${rel_files[@]}"; do
+    [[ "$f" == *.sh ]] || continue
+    bash -n "$release/$f" || syntax_ok=1
+  done
+  if [[ "$syntax_ok" == 0 ]]; then say "OK    sintaxe (${rel_files[*]})"; else ok=1; fi
+  for f in "${rel_files[@]/#/$release/}" "$DEST_ENV" "$EXECUTOR_PATH"; do
     if [[ -f "$f" ]] && has_cr "$f"; then say "FALHA $f com fim de linha CRLF"; crlf_installed=1; fi
   done
   if [[ "$crlf_installed" == 0 ]]; then say "OK    fim de linha LF"; else ok=1; fi
@@ -258,6 +315,7 @@ if (( ${#crlf[@]} > 0 )); then
   exit 3
 fi
 for f in "${FILES[@]}"; do bash -n "$REPO_DEPLOY/$f"; done
+check_release_hooks || exit 3
 check_old_executor || exit 3
 check_legacy_wrapper || exit 3
 if maintenance_or_lock_busy; then exit 3; fi
@@ -279,15 +337,18 @@ if [[ -f "$RELEASE/MANIFEST.sha256" ]] && (cd "$RELEASE" && sha256sum -c --quiet
   REUSE_RELEASE=1
 else
   REUSE_RELEASE=0
+  [[ " ${FILES[*]} " == *" hooks/"* ]] && do_or_show mkdir -p "$RELEASE/hooks"
   for f in "${FILES[@]}"; do do_or_show rm -f "$RELEASE/$f" "$RELEASE/MANIFEST.sha256"; do_or_show cp "$REPO_DEPLOY/$f" "$RELEASE/$f"; done
 fi
 if [[ "$MODE" == apply ]]; then
   chmod 0700 "$ROOT/backups"
   if [[ "$REUSE_RELEASE" == 0 ]]; then
     (cd "$RELEASE" && sha256sum "${FILES[@]}" > MANIFEST.sha256)
-    chmod 0555 "$RELEASE/induscost-deploy-executor.sh" "$RELEASE/induscost-deploy-safety.sh"
-    chmod 0444 "$RELEASE/MANIFEST.sha256"
   fi
+  # Também numa release reutilizada (idempotente): o executor recusa hook que não seja do root ou que seja gravável.
+  chmod 0555 "${FILES[@]/#/$RELEASE/}"
+  chmod 0444 "$RELEASE/MANIFEST.sha256"
+  if [[ "$(uname -s)" == Linux && "${EUID:-$(id -u)}" == 0 ]]; then chown root:root "${FILES[@]/#/$RELEASE/}" "$RELEASE/MANIFEST.sha256"; fi
   # O arquivo de ambiente anterior (se diferente) fica guardado: --replace-env nunca perde configuração.
   if [[ -f "$DEST_ENV" ]] && ! cmp -s "$SRC_ENV" "$DEST_ENV"; then cp -p "$DEST_ENV" "$ROOT/backups/$(basename "$DEST_ENV").$TS" && chmod 0400 "$ROOT/backups/$(basename "$DEST_ENV").$TS"; say "ambiente anterior guardado em $ROOT/backups/$(basename "$DEST_ENV").$TS"; fi
   cp "$SRC_ENV" "$DEST_ENV.ids-tmp.$$" && chmod 0600 "$DEST_ENV.ids-tmp.$$" && mv -f "$DEST_ENV.ids-tmp.$$" "$DEST_ENV"
