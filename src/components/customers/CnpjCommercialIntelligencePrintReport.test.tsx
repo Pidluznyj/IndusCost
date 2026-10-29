@@ -227,6 +227,52 @@ describe("CnpjCommercialIntelligencePrintReport", () => {
   });
 });
 
+describe("Relatório impresso — mesmo layout da Ficha (painel de crédito e tipos de consulta)", () => {
+  const bureau = {
+    boaVista: {
+      state: "VALID",
+      stateLabel: "Válida",
+      simulated: false,
+      score: 812,
+      scoreRaw: "812",
+      scoreClass: "B",
+      defaultProbability: "3,2%",
+      suggestedLimitCents: 4_500_000,
+      consultedAt: "2026-10-28T13:00:00.000Z",
+    },
+    quod: { state: "NOT_CONSULTED", score: null, consultedAt: null },
+    ieptb: { state: "VALID", label: "Ocorrência encontrada", count: 2, totalAmount: 1500.5, consultedAt: "2026-10-28T13:00:00.000Z" },
+  };
+
+  it("leva ao PDF o velocímetro com o score do bureau, limite, probabilidade, protestos e as fontes por tipo, na ordem das abas", () => {
+    const payload = toCnpjIntelligencePrintPayload(samplePayload(), { generatedAt: "2026-10-29T15:00:00.000Z", bureau });
+    assert.deepEqual(payload.bureau, bureau, "o payload de impressão carrega as consultas externas da tela");
+    const html = renderToStaticMarkup(<CnpjCommercialIntelligencePrintReport data={payload} />);
+    assert.match(html, /data-testid="cnpj-print-credit-panel"/);
+    assert.match(html, /data-testid="credit-score-gauge" data-score-band="Risco baixo"/);
+    assert.match(html, /data-testid="credit-score-value"[^>]*>812</);
+    assert.match(html, /R\$\s?45\.000,00/);
+    assert.match(html, /3,2%/);
+    assert.match(html, /2 · R\$\s?1\.500,50/);
+    assert.match(html, /data-testid="cnpj-print-sources-by-type"/);
+    for (const group of ["Interna", "Bureau", "Protestos", "Cadastral"]) assert.match(html, new RegExp(`<td>${group}</td>`));
+    const order = ["Painel de crédito", "1 · Crédito interno", "Decisão de crédito", "2 · Consultas externas", "Bureaus de crédito e protestos", "3 · Cadastro oficial", "Qualidade cadastral", "Dados oficiais da empresa"].map((t) => html.indexOf(t));
+    assert.ok(order.every((i) => i >= 0), `seções ausentes: ${JSON.stringify(order)}`);
+    assert.deepEqual([...order].sort((a, b) => a - b), order, "seções na ordem das abas da Ficha");
+  });
+
+  it("sem consultas externas (cliente novo, sem cadastro): velocímetro vazio e bureaus 'Não consultado'; crédito sem decisão não sai em caixa vermelha", () => {
+    const html = renderToStaticMarkup(<CnpjCommercialIntelligencePrintReport data={toCnpjIntelligencePrintPayload(samplePayload(), "2026-10-29T15:00:00.000Z")} />);
+    assert.match(html, /data-score-band="SEM_FAIXA"/);
+    assert.match(html, /Sem score externo/);
+    assert.match(html, /Boa Vista · LIKE SERASA<\/td><td>Não consultado/);
+    assert.match(html, /cnpj-intelligence-print-tone-undetermined/);
+    const css = readFileSync(join(__dirname, "..", "..", "cnpj-intelligence-print.css"), "utf8");
+    assert.match(css, /\.cnpj-intelligence-print-tone-released \{ border-color: #10b981 !important; color: #065f46; \}/);
+    assert.match(css, /print-color-adjust: exact/);
+  });
+});
+
 describe("CustomerCnpjIntelligencePanel — classes no-print", () => {
   it("marca controles interativos como cnpj-intelligence-no-print", () => {
     assert.ok(panelSource.includes("cnpj-intelligence-no-print"));

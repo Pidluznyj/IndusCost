@@ -228,4 +228,94 @@
   .cnpj-intelligence-print-footer p {
     margin: 2px 0;
   }
+
+  /* Painel de crédito e grupos por tipo de consulta (mesma organização da Ficha na tela). */
+  #cnpj-intelligence-print-root {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  .cnpj-intelligence-print-group {
+    margin: 18px 0 8px;
+    padding: 5px 10px;
+    border-left: 4px solid #0f172a;
+    background: #e2e8f0 !important;
+    font-size: 11pt;
+    font-weight: 800;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: #0f172a;
+    break-after: avoid;
+    page-break-after: avoid;
+  }
+
+  .cnpj-intelligence-print-group small {
+    font-size: 8.5pt;
+    font-weight: 600;
+    letter-spacing: 0;
+    text-transform: none;
+    color: #475569;
+  }
+
+  .cnpj-intelligence-print-credit-panel {
+    border: 2px solid #cbd5e1;
+    border-radius: 8px;
+    padding: 10px 12px;
+  }
+
+  .cnpj-intelligence-print-credit-grid {
+    display: grid;
+    grid-template-columns: 210px 1fr;
+    gap: 14px;
+    align-items: start;
+  }
+
+  .cnpj-intelligence-print-gauge {
+    border-radius: 6px;
+    background: #f8fafc !important;
+    padding: 6px 4px;
+  }
+
+  .cnpj-intelligence-print-decision {
+    margin: 0 0 4px;
+    font-size: 15pt;
+    font-weight: 900;
+    line-height: 1.15;
+    text-transform: uppercase;
+  }
+
+  .cnpj-intelligence-print-tone-released { border-color: #10b981 !important; color: #065f46; }
+  .cnpj-intelligence-print-tone-review { border-color: #f59e0b !important; color: #92400e; }
+  .cnpj-intelligence-print-tone-blocked,
+  .cnpj-intelligence-print-tone-critical { border-color: #dc2626 !important; color: #991b1b; }
+  .cnpj-intelligence-print-tone-undetermined { border-color: #94a3b8 !important; color: #334155; }
+
+  .cnpj-intelligence-print-kpis {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+    margin-top: 8px;
+  }
+
+  .cnpj-intelligence-print-kpi {
+    border-radius: 5px;
+    background: #f1f5f9 !important;
+    padding: 4px 8px;
+  }
+
+  .cnpj-intelligence-print-kpi span {
+    display: block;
+    font-size: 7.5pt;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: #64748b;
+  }
+
+  .cnpj-intelligence-print-kpi strong {
+    font-size: 10.5pt;
+    color: #0f172a;
+  }
+
+  .cnpj-intelligence-print-kpi-danger { background: #fef2f2 !important; }
+  .cnpj-intelligence-print-kpi-danger strong { color: #7f1d1d; }
 }

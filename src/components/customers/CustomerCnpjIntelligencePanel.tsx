@@ -291,6 +291,7 @@ export function CustomerCnpjIntelligencePanel({
       toCnpjIntelligencePrintPayload(data, {
         credit,
         creditState: creditError ? "error" : creditLoading ? "loading" : credit?.consulted ? "loaded" : "not_consulted",
+        bureau,
       })
     );
     await new Promise<void>((resolve) => {
@@ -303,7 +304,7 @@ export function CustomerCnpjIntelligencePanel({
     };
     window.addEventListener("afterprint", cleanup);
     window.print();
-  }, [data, credit, creditError, creditLoading]);
+  }, [data, credit, creditError, creditLoading, bureau]);
 
   const copyJson = async () => {
     if (!data) return;

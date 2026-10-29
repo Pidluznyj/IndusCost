@@ -5,6 +5,7 @@ import {
   formatCreditDateTime,
   type CommercialCreditIntelligenceView,
 } from "@/src/lib/commercial/commercialCreditIntelligenceView";
+import { EMPTY_BUREAU_SNAPSHOT, type BureauSnapshot } from "@/src/lib/commercial/creditBureauSnapshot";
 import { cn } from "@/src/lib/utils";
 
 /**
@@ -16,23 +17,7 @@ import { cn } from "@/src/lib/utils";
  * cabe nelas — com o aviso visível. A decisão de crédito continua sendo do motor comercial, nunca do score.
  */
 
-export type BureauSnapshot = {
-  boaVista: {
-    state: string;
-    stateLabel: string;
-    simulated: boolean;
-    score: number | null;
-    scoreRaw: string | null;
-    scoreClass: string | null;
-    defaultProbability: string | null;
-    suggestedLimitCents: number | null;
-    consultedAt: string | null;
-  } | null;
-  quod: { state: string; score: number | null; consultedAt: string | null } | null;
-  ieptb: { state: string; label: string; count: number | null; totalAmount: number | null; consultedAt: string | null } | null;
-};
-
-export const EMPTY_BUREAU_SNAPSHOT: BureauSnapshot = { boaVista: null, quod: null, ieptb: null };
+export { EMPTY_BUREAU_SNAPSHOT, type BureauSnapshot };
 
 /** Faixas de referência de mercado (0–1000) usadas só para posicionar o ponteiro. */
 export const SCORE_REFERENCE_BANDS = [
@@ -93,7 +78,7 @@ export function ScoreGauge({ score }: { score: ScoreSource | null }) {
   const marker = band && value != null ? polar(cx, cy, r, angleOf(value)) : null;
   return (
     <div className="flex flex-col items-center" data-testid="credit-score-gauge" data-score-band={band?.label ?? "SEM_FAIXA"}>
-      <svg viewBox="0 0 240 132" className="w-full max-w-[280px]" role="img" aria-label={score ? `Score ${score.raw ?? "—"} (${score.provider})` : "Sem score externo"}>
+      <svg viewBox="-14 0 268 132" className="w-full max-w-[280px]" role="img" aria-label={score ? `Score ${score.raw ?? "—"} (${score.provider})` : "Sem score externo"}>
         <path d={arcPath(cx, cy, r, 0, 1000)} stroke="#e2e8f0" strokeWidth={18} fill="none" strokeLinecap="round" />
         {SCORE_REFERENCE_BANDS.map((b) => (
           <path

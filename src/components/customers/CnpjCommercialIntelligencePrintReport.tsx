@@ -7,10 +7,169 @@ import {
   type CnpjIntelligencePrintPayload,
 } from "@/src/lib/customerCnpjIntelligencePrint";
 import { CNPJ_COMPARE_STATUS_LABEL } from "@/src/lib/customerCnpjIntelligenceTypes";
+import { formatCreditDateTime } from "@/src/lib/commercial/commercialCreditIntelligenceView";
+import { ScoreGauge, bureauSourceRows, pickHeadlineScore } from "./CreditScoreDashboard";
 
 type Props = {
   data: CnpjIntelligencePrintPayload;
 };
+
+const SOURCE_STATE_LABEL = { ok: "OK", alert: "Atenção", pending: "Pendente", na: "Não consultado" } as const;
+const centsLabel = (cents: number | null | undefined) => (cents == null ? null : formatCnpjPrintMoney(cents / 100));
+
+/** Painel de crédito do relatório: o mesmo da tela (velocímetro, decisão, indicadores, fontes por tipo). */
+function CreditPanelPrint({ data }: Props) {
+  const credit = data.credit;
+  const tone = data.creditState === "error" || !credit ? "undetermined" : credit.decisionTone;
+  const title =
+    data.creditState === "error" ? "CRÉDITO NÃO DETERMINADO" : credit?.decisionTitle ?? "CRÉDITO NÃO DETERMINADO";
+  const fallback = data.creditState === "error" ? "Indisponível" : "Não consultado";
+  const bv = data.bureau.boaVista?.state === "VALID" ? data.bureau.boaVista : null;
+  const ieptb = data.bureau.ieptb?.state === "VALID" ? data.bureau.ieptb : null;
+  const rows = bureauSourceRows(
+    credit,
+    data.creditState === "error" ? "indisponível" : null,
+    data.bureau,
+    data.risk.score != null ? formatCnpjPrintScore(data.risk.score) : null
+  );
+  const kpis: Array<{ label: string; value: string; danger?: boolean }> = [
+    { label: "Limite sugerido (Boa Vista)", value: centsLabel(bv?.suggestedLimitCents) ?? "Não consultado" },
+    { label: "Probabilidade de inadimplência", value: bv ? bv.defaultProbability ?? "Não informada" : "Não consultado" },
+    { label: "Valor vencido (Nomus)", value: credit?.overdueAmountLabel ?? fallback, danger: (credit?.overdueTitles.length ?? 0) > 0 },
+    { label: "Títulos vencidos", value: credit?.overdueTitleCountLabel ?? fallback },
+    { label: "Maior atraso", value: credit?.maxDaysOverdueLabel ?? fallback },
+    {
+      label: "Protestos (IEPTB)",
+      value: ieptb ? `${ieptb.count ?? 0}${ieptb.totalAmount != null ? ` · ${formatCnpjPrintMoney(ieptb.totalAmount)}` : ""}` : "Não consultado",
+    },
+  ];
+  return (
+    <section
+      className={`cnpj-intelligence-print-section cnpj-intelligence-print-credit-panel cnpj-intelligence-print-tone-${tone}`}
+      data-testid="cnpj-print-credit-panel"
+    >
+      <h2 className="cnpj-intelligence-print-section-title">Painel de crédito</h2>
+      <div className="cnpj-intelligence-print-credit-grid">
+        <div className="cnpj-intelligence-print-gauge">
+          <ScoreGauge score={pickHeadlineScore(data.bureau)} />
+        </div>
+        <div>
+          <p className={`cnpj-intelligence-print-decision cnpj-intelligence-print-tone-${tone}`}>{title}</p>
+          <p>
+            {data.creditState === "loading"
+              ? "Situação de crédito ainda carregando."
+              : data.creditState === "error"
+                ? "Situação de crédito indisponível."
+                : data.creditState === "not_consulted" || !credit
+                  ? "Situação de crédito não consultada."
+                  : credit.decisionDescription}
+          </p>
+          <p className="cnpj-intelligence-print-note">
+            Decisão do motor comercial · {credit?.decisionEvaluatedAtLabel ?? "não consultado"}. O score não decide crédito.
+          </p>
+          <div className="cnpj-intelligence-print-kpis">
+            {kpis.map((kpi) => (
+              <div key={kpi.label} className={`cnpj-intelligence-print-kpi${kpi.danger ? " cnpj-intelligence-print-kpi-danger" : ""}`}>
+                <span>{kpi.label}</span>
+                <strong>{formatCnpjPrintText(kpi.value)}</strong>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+      <table className="cnpj-intelligence-print-data-table" style={{ marginTop: 10 }} data-testid="cnpj-print-sources-by-type">
+        <thead>
+          <tr>
+            <th>Tipo de consulta</th>
+            <th>Fonte</th>
+            <th>Resultado</th>
+            <th>Situação</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.key}>
+              <td>{row.group}</td>
+              <td>{row.label}</td>
+              <td>{formatCnpjPrintText(row.value)}</td>
+              <td>{SOURCE_STATE_LABEL[row.state]}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </section>
+  );
+}
+
+/** Consultas externas (Boa Vista/LIKE SERASA, QUOD, IEPTB): o que foi consultado, quando e o resultado. */
+function ExternalConsultationsPrint({ data }: Props) {
+  const { boaVista: bv, quod, ieptb } = data.bureau;
+  const when = (iso: string | null | undefined) => (iso ? formatCreditDateTime(iso) : "—");
+  return (
+    <section className="cnpj-intelligence-print-section" data-testid="cnpj-print-external">
+      <h2 className="cnpj-intelligence-print-section-title">Bureaus de crédito e protestos</h2>
+      <table className="cnpj-intelligence-print-data-table">
+        <thead>
+          <tr>
+            <th>Fonte</th>
+            <th>Situação</th>
+            <th>Resultado</th>
+            <th>Consulta</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Boa Vista · LIKE SERASA{bv?.simulated ? " (simulação)" : ""}</td>
+            <td>{bv ? formatCnpjPrintText(bv.stateLabel) : "Não consultado"}</td>
+            <td>
+              {bv?.state === "VALID"
+                ? formatCnpjPrintText(
+                    [
+                      `Score ${bv.scoreRaw ?? bv.score ?? "—"}`,
+                      bv.scoreClass ? `Classe ${bv.scoreClass}` : null,
+                      bv.defaultProbability ? `Prob. inadimplência ${bv.defaultProbability}` : null,
+                      centsLabel(bv.suggestedLimitCents) ? `Limite sugerido ${centsLabel(bv.suggestedLimitCents)}` : null,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")
+                  )
+                : "—"}
+            </td>
+            <td>{when(bv?.consultedAt)}</td>
+          </tr>
+          <tr>
+            <td>QUOD</td>
+            <td>{quod?.state === "VALID" ? "Válida" : quod?.state && quod.state !== "NOT_CONSULTED" ? quod.state : "Não consultado"}</td>
+            <td>{quod?.state === "VALID" ? `Score ${quod.score ?? "—"}` : "—"}</td>
+            <td>{when(quod?.consultedAt)}</td>
+          </tr>
+          <tr>
+            <td>IEPTB · protestos nacionais</td>
+            <td>{ieptb ? formatCnpjPrintText(ieptb.label) : "Não consultado"}</td>
+            <td>
+              {ieptb?.state === "VALID"
+                ? `${ieptb.count ?? 0} ocorrência(s)${ieptb.totalAmount != null ? ` · ${formatCnpjPrintMoney(ieptb.totalAmount)}` : ""}`
+                : "—"}
+            </td>
+            <td>{when(ieptb?.consultedAt)}</td>
+          </tr>
+        </tbody>
+      </table>
+      <p className="cnpj-intelligence-print-note">
+        Scores exibidos como vieram dos provedores (escala não declarada no retorno). Faixas de referência de mercado 0–1000
+        só posicionam o velocímetro; a decisão de crédito é do motor comercial.
+      </p>
+    </section>
+  );
+}
+
+function PrintGroup({ index, title, sources }: { index: number; title: string; sources: string }) {
+  return (
+    <h2 className="cnpj-intelligence-print-group">
+      {index} · {title} <small>— {sources}</small>
+    </h2>
+  );
+}
 
 function cnaeLabel(code: string | null | undefined, description: string | null | undefined): string {
   const c = code?.trim();
@@ -59,9 +218,16 @@ export function CnpjCommercialIntelligencePrintReport({ data }: Props) {
         </table>
       </header>
 
+      <CreditPanelPrint data={data} />
+
+      <PrintGroup index={1} title="Crédito interno" sources="Nomus · títulos vencidos · empresas relacionadas" />
       <section className="cnpj-intelligence-print-section" data-testid="cnpj-print-credit">
         <h2 className="cnpj-intelligence-print-section-title">Decisão de crédito</h2>
-        <p className="cnpj-intelligence-print-blocked">
+        <p
+          className={`cnpj-intelligence-print-blocked cnpj-intelligence-print-tone-${
+            data.creditState === "error" || !data.credit ? "undetermined" : data.credit.decisionTone
+          }`}
+        >
           {data.creditState === "error"
             ? "CRÉDITO NÃO DETERMINADO"
             : data.credit?.decisionTitle ?? "CRÉDITO NÃO DETERMINADO"}
@@ -213,6 +379,10 @@ export function CnpjCommercialIntelligencePrintReport({ data }: Props) {
         ) : null}
       </section>
 
+      <PrintGroup index={2} title="Consultas externas" sources="Boa Vista (LIKE SERASA) · QUOD · IEPTB" />
+      <ExternalConsultationsPrint data={data} />
+
+      <PrintGroup index={3} title="Cadastro oficial" sources="Receita Federal · QSA · comparação com o ERP" />
       <section className="cnpj-intelligence-print-section cnpj-intelligence-print-risk">
         <h2 className="cnpj-intelligence-print-section-title">Qualidade cadastral</h2>
         <p className="cnpj-intelligence-print-lead">

@@ -1,5 +1,6 @@
 import type { CnpjIntelligencePayload } from "./customerCnpjIntelligenceTypes.js";
 import type { CommercialCreditIntelligenceView } from "./commercial/commercialCreditIntelligenceView.js";
+import { EMPTY_BUREAU_SNAPSHOT, type BureauSnapshot } from "./commercial/creditBureauSnapshot.js";
 
 export const CNPJ_INTELLIGENCE_PRINT_ROOT_ID = "cnpj-intelligence-print-root";
 export const CNPJ_INTELLIGENCE_PRINT_BODY_CLASS = "cnpj-intelligence-printing";
@@ -18,6 +19,8 @@ export type CnpjIntelligencePrintPayload = {
   publicContactSuggestion: CnpjIntelligencePayload["publicContactSuggestion"];
   credit: CommercialCreditIntelligenceView | null;
   creditState: "loaded" | "loading" | "error" | "not_consulted";
+  /** Consultas externas (Boa Vista/LIKE SERASA, QUOD, IEPTB) — as mesmas do painel de crédito da tela. */
+  bureau: BureauSnapshot;
 };
 
 export function canPrintCnpjIntelligenceReport(
@@ -41,6 +44,7 @@ export function toCnpjIntelligencePrintPayload(
         generatedAt?: string;
         credit?: CommercialCreditIntelligenceView | null;
         creditState?: "loaded" | "loading" | "error" | "not_consulted";
+        bureau?: BureauSnapshot;
       }
 ): CnpjIntelligencePrintPayload {
   const options = typeof extras === "string" ? { generatedAt: extras } : extras;
@@ -62,6 +66,7 @@ export function toCnpjIntelligencePrintPayload(
         : options && typeof options !== "string" && options.credit
           ? "loaded"
           : "not_consulted",
+    bureau: options && typeof options !== "string" && options.bureau ? options.bureau : EMPTY_BUREAU_SNAPSHOT,
   };
 }
 
