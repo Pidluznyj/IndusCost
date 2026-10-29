@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React from "react";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -18,6 +18,7 @@ import {
 } from "@/src/lib/commercial/commercialCreditIntelligenceView";
 import { cn } from "@/src/lib/utils";
 import { fetchJsonOk } from "@/src/lib/http";
+import { CorporateLinkReviewPanel, type CorporateLinkReviewSubmit } from "./CorporateLinkReviewPanel";
 
 type Props = {
   credit: CommercialCreditIntelligenceView | null;
@@ -209,27 +210,15 @@ export function CustomerCnpjCreditSections({
   canReviewCorporateLinks = false,
 }: Props) {
   const sourceFacts = sources.map((source) => presentCnpjSourceFact(source));
-  const [justification, setJustification] = useState("");
-  const [reviewError, setReviewError] = useState<string | null>(null);
-  const [reviewing, setReviewing] = useState(false);
-
-  const reviewLink = async (relatedCustomerId: string | null, action: "confirm" | "reject" | "close") => {
-    if (!customerId || !relatedCustomerId || reviewing) return;
-    setReviewing(true);
-    setReviewError(null);
-    try {
-      await fetchJsonOk(`/api/customers/${customerId}/corporate-links`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ relatedCustomerId, action, justification }),
-      });
-      setJustification("");
-      onRefresh?.();
-    } catch (reviewFailure) {
-      setReviewError(reviewFailure instanceof Error ? reviewFailure.message : "Não foi possível registrar o vínculo.");
-    } finally {
-      setReviewing(false);
-    }
+  // A falha volta para o painel (mensagem do servidor); o sucesso recarrega só o crédito, sem recarregar a página.
+  const reviewLink: CorporateLinkReviewSubmit = async ({ relatedCustomerId, action, justification }) => {
+    if (!customerId) throw new Error("Cliente não identificado.");
+    await fetchJsonOk(`/api/customers/${customerId}/corporate-links`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ relatedCustomerId, action, justification }),
+    });
+    onRefresh?.();
   };
 
   return (
@@ -391,96 +380,12 @@ export function CustomerCnpjCreditSections({
       </div>
 
       {credit ? (
-        <div className="min-w-0 rounded-lg border p-3 text-sm" data-testid="cnpj-credit-relations">
-          <h4 className="mb-2 font-semibold">Risco de crédito e empresas relacionadas</h4>
-          <p className="mb-2 text-xs text-slate-600">
-            Decisão individual: {credit.ownDecisionTitle}. Decisão consolidada: {credit.decisionTitle}. Dívida de
-            empresa relacionada não é dívida deste CNPJ.
-          </p>
-          {credit.relatedRiskNote ? <p className="mb-2 text-xs text-amber-900">{credit.relatedRiskNote}</p> : null}
-          {credit.corporateRelations.length === 0 ? (
-            <p>Nenhum vínculo societário confirmado entre CNPJs cadastrados.</p>
-          ) : (
-            <ul className="space-y-2">
-              {credit.corporateRelations.map((relation) => (
-                <li key={`${relation.kindLabel}-${relation.relatedCompany}`} className="break-words">
-                  <p className="font-medium">
-                    {relation.kindLabel} · {relation.relatedCompany}
-                  </p>
-                  <p className="text-xs text-slate-600">Crédito da relacionada: {relation.creditStatusLabel}</p>
-                  <p className="text-xs text-slate-600">{relation.evidence}</p>
-                  {canReviewCorporateLinks && relation.relatedCustomerId ? (
-                    <button
-                      type="button"
-                      className="mt-1 rounded border px-2 py-1 text-xs"
-                      disabled={reviewing}
-                      onClick={() => void reviewLink(relation.relatedCustomerId, "close")}
-                    >
-                      Encerrar vínculo
-                    </button>
-                  ) : null}
-                </li>
-              ))}
-            </ul>
-          )}
-          {credit.pendingCorporateRelations.length > 0 ? (
-            <p className="mt-2 text-xs font-semibold text-amber-900">
-              Existem possíveis vínculos societários pendentes de validação.
-            </p>
-          ) : null}
-          {credit.relatedRestrictionLines.length > 0 ? (
-            <ul className="mt-2 space-y-1 text-xs text-slate-700">
-              {credit.relatedRestrictionLines.map((line) => (
-                <li key={line}>{line}</li>
-              ))}
-            </ul>
-          ) : null}
-          {credit.pendingCorporateRelations.length > 0 ? (
-            <div className="mt-3">
-              <p className="mb-1 text-xs font-semibold text-slate-700">Pendentes de validação</p>
-              <ul className="space-y-2">
-                {credit.pendingCorporateRelations.map((relation) => (
-                  <li key={`pending-${relation.relatedCompany}`} className="break-words">
-                    <p className="font-medium">{relation.relatedCompany}</p>
-                    <p className="text-xs text-slate-600">{relation.evidence}</p>
-                    {canReviewCorporateLinks && relation.relatedCustomerId ? (
-                      <div className="mt-1 flex flex-wrap gap-2">
-                        <button
-                          type="button"
-                          className="rounded border px-2 py-1 text-xs"
-                          disabled={reviewing}
-                          onClick={() => void reviewLink(relation.relatedCustomerId, "confirm")}
-                        >
-                          Confirmar vínculo
-                        </button>
-                        <button
-                          type="button"
-                          className="rounded border px-2 py-1 text-xs"
-                          disabled={reviewing}
-                          onClick={() => void reviewLink(relation.relatedCustomerId, "reject")}
-                        >
-                          Rejeitar
-                        </button>
-                      </div>
-                    ) : null}
-                  </li>
-                ))}
-              </ul>
-              {canReviewCorporateLinks ? (
-                <label className="mt-2 block text-xs text-slate-600">
-                  Justificativa do vínculo
-                  <textarea
-                    className="mt-1 w-full rounded border px-2 py-1 text-sm"
-                    value={justification}
-                    onChange={(event) => setJustification(event.target.value)}
-                    minLength={20}
-                  />
-                </label>
-              ) : null}
-              {reviewError ? <p className="mt-1 text-xs text-red-700">{reviewError}</p> : null}
-            </div>
-          ) : null}
-        </div>
+        <CorporateLinkReviewPanel
+          credit={credit}
+          customerId={customerId}
+          canReview={canReviewCorporateLinks}
+          onSubmit={reviewLink}
+        />
       ) : null}
 
       <div className="min-w-0 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm" data-testid="cnpj-credit-decision">

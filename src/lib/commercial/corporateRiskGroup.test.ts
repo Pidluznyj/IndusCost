@@ -439,30 +439,46 @@ describe("governança do vínculo", () => {
   });
 
   it("T35 e T37 confirmação exige permissão, justificativa e é idempotente", async () => {
-    const rows = new Map<string, { id: string; status: string }>();
+    const rows = new Map<string, { id: string; customerId: string; relatedCustomerId: string; status: string }>();
     const audits: string[] = [];
     const db = {
       customerCorporateLink: {
+        findMany: async () =>
+          [...rows.values()].map((row) => ({
+            ...row,
+            evidenceKind: null,
+            justification: null,
+            actorUserId: null,
+            evidenceFingerprint: null,
+            closedAt: null,
+          })),
         upsert: async (args: {
           where: { customerId_relatedCustomerId: { customerId: string; relatedCustomerId: string } };
-          create: { status: string };
-          update: { status: string };
+          create: Record<string, unknown>;
+          update: Record<string, unknown>;
         }) => {
-          const key = `${args.where.customerId_relatedCustomerId.customerId}:${args.where.customerId_relatedCustomerId.relatedCustomerId}`;
-          const row = { id: key, status: args.update.status };
+          const { customerId, relatedCustomerId } = args.where.customerId_relatedCustomerId;
+          const key = `${customerId}:${relatedCustomerId}`;
+          const row = { id: key, customerId, relatedCustomerId, status: String(args.update.status) };
           rows.set(key, row);
           return row;
         },
       },
+      commercialAuditLog: {
+        create: async (args: { data: { action: string } }) => {
+          audits.push(args.data.action);
+          return {};
+        },
+      },
     };
+    const evidence = [{ relatedCustomerId: B, basis: "SHARED_NAME" as const, evidenceLabel: "MARIA MARGARETE DOS SANTOS" }];
     const first = await applyCorporateLinkReview(db, {
       actor,
       subjectCustomerId: A,
       relatedCustomerId: B,
       action: "confirm",
       justification: "QSA conferido manualmente com a mesma administradora.",
-    }, async (entry) => {
-      audits.push(entry.action);
+      evidence,
     });
     const second = await applyCorporateLinkReview(db, {
       actor,
@@ -470,7 +486,8 @@ describe("governança do vínculo", () => {
       relatedCustomerId: B,
       action: "confirm",
       justification: "QSA conferido manualmente com a mesma administradora.",
-    }, async () => undefined);
+      evidence,
+    });
     assert.equal(first.ok && first.status, "CONFIRMED");
     assert.equal(second.ok && second.status, "CONFIRMED");
     assert.equal(rows.size, 2);

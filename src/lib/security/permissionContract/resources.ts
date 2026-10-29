@@ -1385,10 +1385,10 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
     actions: [
       A(
         ["commercial.credit.exception.grant", "commercial.credit.exception.grant.board"],
-        "Exige a chave explícita no usuário. O papel SUPER_ADMIN não concede."
+        "Exige a chave explícita no usuário. O papel SUPER_ADMIN não concede. Também autoriza confirmar, rejeitar e encerrar vínculo empresarial na Ficha CNPJ."
       ),
     ],
-    relatedEndpoints: ["/api/commercial/credit-exceptions"],
+    relatedEndpoints: ["/api/commercial/credit-exceptions", "/api/customers/:id/corporate-links"],
     sensitivity: "critical",
     appearsInSidebar: false,
     isTab: false,

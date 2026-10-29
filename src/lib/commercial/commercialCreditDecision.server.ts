@@ -34,10 +34,14 @@ import {
   creditStatusLabel,
   loadCorporateLinkGraph,
   loadCorporateRelationAssessment,
-  presentCorporateCandidate,
+  presentCorporateCandidates,
+  presentCorporateLinkHistory,
   presentCorporateRelation,
+  presentManualCorporateLink,
+  type CorporateLinkHistoryView,
   type CorporateRelationView,
 } from "./corporateRelation.server.js";
+import { loadCorporateLinkReviews } from "./corporateLinkReview.server.js";
 import { loadCreditRelationSignals } from "./creditRelationFacts.server.js";
 import {
   IEPTB_READ_FAILED,
@@ -345,6 +349,9 @@ export async function readCommercialCreditDecision(
   occurrenceLines: string[];
   corporateRelations: CorporateRelationView[];
   pendingCorporateRelations: CorporateRelationView[];
+  corporateLinkHistory: CorporateLinkHistoryView[];
+  /** Há pendência que não vira item (leitura do Radar ou do QSA incompleta): explica o EM_ANALISE sem item. */
+  pendingRelationReadIncomplete: boolean;
   relatedRestrictionFacts: Array<{
     companyName: string;
     cnpj: string | null;
@@ -359,9 +366,10 @@ export async function readCommercialCreditDecision(
   confirmedPendingProtest: boolean;
 }> {
   const now = input.now ?? new Date();
-  const [delinquency, linkGraph, protests, exceptions, occurrences] = await Promise.all([
+  const [delinquency, linkGraph, reviews, protests, exceptions, occurrences] = await Promise.all([
     analyzeCustomerDelinquency(db, input.customerId, now),
     loadCorporateLinkGraph(db, input.customerId),
+    loadCorporateLinkReviews(db, input.customerId),
     db.commercialExternalProtest.findMany({
       where: { customerId: input.customerId },
       select: { status: true, effectiveFrom: true, effectiveUntil: true },
@@ -394,17 +402,18 @@ export async function readCommercialCreditDecision(
       cnpj: delinquency.evidence.cnpj,
       now,
       rejected: linkGraph.rejected,
+      manualConfirmedIds: linkGraph.confirmedIds,
     });
   } catch (error) {
     console.error("corporate-relation-assessment", error instanceof Error ? error.name : "error");
-    qsa = { relations: [], candidates: [], radarReadFailed: true };
+    qsa = { relations: [], candidates: [], evidenceCandidates: [], radarReadFailed: true };
   }
   const signals = await loadCreditRelationSignals(
     db,
     [{ id: input.customerId, taxId: delinquency.evidence.cnpj }],
     now,
     new Map([[input.customerId, linkGraph.rejected]]),
-    input.relationLimits
+    { ...input.relationLimits, manualConfirmedByCustomer: new Map([[input.customerId, linkGraph.confirmedIds]]) }
   );
   const signal = signals.byCustomer.get(input.customerId) ?? {
     confirmedIds: [],
@@ -447,10 +456,21 @@ export async function readCommercialCreditDecision(
         : creditStatusLabel(party.delinquency.status),
     ])
   );
-  const corporateRelations = qsa.relations
+  const formalRelations = qsa.relations
     .filter((relation) => relatedSlice.includes(relation.relatedCustomerId))
     .map((relation) => presentCorporateRelation(relation, statusByCustomer.get(relation.relatedCustomerId) ?? "Não consultado"));
-  const pendingCorporateRelations = qsa.candidates.map((candidate) => presentCorporateCandidate(candidate));
+  const formalIds = new Set(formalRelations.map((relation) => relation.relatedCustomerId));
+  // Vínculo manual confirmado aparece como relacionada confirmada (com quem, quando e por quê) e pode ser encerrado.
+  const manualRelations = reviews.rows
+    .filter((row) => row.status === "CONFIRMED" && !formalIds.has(row.relatedCustomerId))
+    .map((row) => presentManualCorporateLink(row, statusByCustomer.get(row.relatedCustomerId) ?? "Não consultado"));
+  const corporateRelations = [...formalRelations, ...manualRelations];
+  const pendingCorporateRelations = presentCorporateCandidates(qsa.candidates);
+  const corporateLinkHistory = reviews.rows
+    .filter((row): row is typeof row & { status: "REJECTED" | "CLOSED" } => row.status === "REJECTED" || row.status === "CLOSED")
+    .map((row) => presentCorporateLinkHistory(row));
+  const pendingRelationReadIncomplete =
+    signal.readFailed || reviews.readFailed || (signal.pendingCount > 0 && pendingCorporateRelations.length === 0);
   let relatedNames = new Map<string, { companyName: string; taxId: string | null }>();
   try {
     const named = await db.customer.findMany({
@@ -543,6 +563,8 @@ export async function readCommercialCreditDecision(
     occurrenceLines,
     corporateRelations,
     pendingCorporateRelations,
+    corporateLinkHistory,
+    pendingRelationReadIncomplete,
     relatedRestrictionFacts,
     ownCustomerStatus: ownDecision.customerStatus,
     activeExceptions: exceptions
@@ -754,6 +776,8 @@ export async function loadCustomerCommercialCreditIntelligence(
     occurrenceLines: read.occurrenceLines,
     corporateRelations: read.corporateRelations,
     pendingCorporateRelations: read.pendingCorporateRelations,
+    corporateLinkHistory: read.corporateLinkHistory,
+    pendingRelationReadIncomplete: read.pendingRelationReadIncomplete,
     relatedRestrictionFacts: read.relatedRestrictionFacts,
     ownCustomerStatus: read.ownCustomerStatus,
     authorizedExceptions: read.activeExceptions.map((row) =>

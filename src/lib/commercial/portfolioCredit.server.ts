@@ -119,7 +119,13 @@ export async function loadPortfolioCredit(
     const rejectedByCustomer = new Map(
       [...linkLoad.graphs.entries()].map(([id, graph]) => [id, graph.rejected])
     );
-    const signals = await loadCreditRelationSignals(db, customers, now, rejectedByCustomer, limits);
+    const manualConfirmedByCustomer = new Map(
+      [...linkLoad.graphs.entries()].map(([id, graph]) => [id, graph.confirmedIds])
+    );
+    const signals = await loadCreditRelationSignals(db, customers, now, rejectedByCustomer, {
+      ...limits,
+      manualConfirmedByCustomer,
+    });
     const sameRootPeersByCustomer = new Map(
       customers.map((customer) => [customer.id, signals.byCustomer.get(customer.id)?.confirmedIds ?? []])
     );

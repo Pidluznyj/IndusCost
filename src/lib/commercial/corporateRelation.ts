@@ -304,17 +304,53 @@ export function corporateCandidateFingerprint(candidate: {
   return createHash("sha256").update(`${candidate.basis}|${label}`).digest("hex");
 }
 
+/**
+ * Impressões de todas as evidências do par numa decisão humana (rejeitar ou encerrar).
+ * Ordenadas e sem repetição, separadas por vírgula, na coluna evidenceFingerprint.
+ * Linha antiga com uma só impressão continua válida.
+ */
+export function corporatePairFingerprints(
+  candidates: readonly CorporateCandidate[],
+  relatedCustomerId: string
+): string | null {
+  const values = [
+    ...new Set(
+      candidates
+        .filter((candidate) => candidate.relatedCustomerId === relatedCustomerId)
+        .map((candidate) => corporateCandidateFingerprint(candidate))
+    ),
+  ].sort();
+  return values.length > 0 ? values.join(",") : null;
+}
+
+export function splitCorporateFingerprints(value: string | null | undefined): string[] {
+  return (value ?? "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0);
+}
+
+/**
+ * Indícios ainda sem decisão humana.
+ * Some o indício cuja evidência já foi rejeitada ou encerrada (mesma impressão).
+ * Evidência nova do mesmo par reabre a revisão.
+ * Some também o par já confirmado manualmente (o vínculo confirmado entra no grupo, não fica pendente).
+ */
 export function visibleCorporateCandidates(
   candidates: readonly CorporateCandidate[],
-  rejected: readonly { relatedCustomerId: string; fingerprint: string | null }[]
+  rejected: readonly { relatedCustomerId: string; fingerprint: string | null }[],
+  manualConfirmedIds: readonly string[] = []
 ): CorporateCandidate[] {
   const blocked = new Set(
-    rejected
-      .filter((row) => row.fingerprint)
-      .map((row) => `${row.relatedCustomerId}:${row.fingerprint}`)
+    rejected.flatMap((row) =>
+      splitCorporateFingerprints(row.fingerprint).map((fingerprint) => `${row.relatedCustomerId}:${fingerprint}`)
+    )
   );
+  const confirmed = new Set(manualConfirmedIds);
   return candidates.filter(
-    (candidate) => !blocked.has(`${candidate.relatedCustomerId}:${corporateCandidateFingerprint(candidate)}`)
+    (candidate) =>
+      !confirmed.has(candidate.relatedCustomerId) &&
+      !blocked.has(`${candidate.relatedCustomerId}:${corporateCandidateFingerprint(candidate)}`)
   );
 }
 

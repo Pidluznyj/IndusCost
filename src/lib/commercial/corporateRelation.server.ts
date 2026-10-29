@@ -3,11 +3,13 @@
  * Não apaga consulta anterior e não varre a base para gravar em massa.
  */
 
+import { createHash } from "node:crypto";
 import { formatCnpj, normalizeCnpj } from "@/src/lib/companyCnpjFormat.js";
 import {
   CORPORATE_MEMBER_KIND_LABEL,
   CORPORATE_RELATION_COMPONENT_LIMIT,
   analyzeCorporateRelations,
+  corporateAddressKey,
   expandConfirmedCustomerIds,
   extractMembershipsFromLookup,
   registryKindOf,
@@ -17,7 +19,13 @@ import {
   type CorporateRelation,
   type RegisteredCorporateParty,
 } from "./corporateRelation.js";
-import { scanCorporateRadar, type RadarCorrelation, type RadarParty, type RadarScanResult } from "./corporateRadar.js";
+import {
+  classifyCorporateEmail,
+  scanCorporateRadar,
+  type RadarCorrelation,
+  type RadarParty,
+  type RadarScanResult,
+} from "./corporateRadar.js";
 import { loadRadarCatalog, type RadarCatalog } from "./corporateRadarCatalog.server.js";
 
 export type CorporateRelationView = {
@@ -26,7 +34,88 @@ export type CorporateRelationView = {
   relatedCustomerId: string | null;
   creditStatusLabel: string;
   evidence: string;
+  /** FORMAL = QSA ou mesma raiz (não se encerra aqui); MANUAL = confirmado por pessoa autorizada; PENDING = indício. */
+  origin?: "FORMAL" | "MANUAL" | "PENDING";
+  /** Só o vínculo manual confirmado pode ser encerrado. */
+  closable?: boolean;
+  companyName?: string;
+  cnpjLabel?: string;
+  evidenceTypeLabel?: string;
+  sourceLabel?: string;
+  reliabilityLabel?: string;
+  dateLabel?: string;
+  /** Quem decidiu, quando e por quê (vínculo manual ou histórico). */
+  reviewNote?: string | null;
 };
+
+export type CorporateLinkHistoryView = {
+  relatedCustomerId: string;
+  companyName: string;
+  cnpjLabel: string;
+  statusLabel: "Rejeitado" | "Encerrado";
+  reviewNote: string;
+};
+
+function formatReviewDate(value: string | null): string {
+  if (!value) return "data indisponível";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "data indisponível" : date.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
+}
+
+function reviewNote(row: { actorName: string | null; reviewedAt: string | null; justification: string | null }, verb: string): string {
+  const who = row.actorName ?? "usuário não identificado";
+  const why = row.justification?.trim() ? ` Justificativa: ${row.justification.trim()}` : "";
+  return `${verb} por ${who} em ${formatReviewDate(row.reviewedAt)}.${why}`;
+}
+
+/** Vínculo confirmado manualmente: entra no grupo de risco e pode ser encerrado por pessoa autorizada. */
+export function presentManualCorporateLink(
+  row: {
+    relatedCustomerId: string;
+    relatedCompanyName: string;
+    relatedCnpj: string | null;
+    actorName: string | null;
+    reviewedAt: string | null;
+    justification: string | null;
+  },
+  creditStatusLabel: string
+): CorporateRelationView {
+  const cnpjLabel = row.relatedCnpj ? formatCnpj(row.relatedCnpj) : "—";
+  return {
+    kindLabel: "Confirmado manualmente",
+    relatedCompany: `Cliente · ${row.relatedCompanyName} · ${cnpjLabel}`,
+    relatedCustomerId: row.relatedCustomerId,
+    creditStatusLabel,
+    evidence: "Vínculo confirmado por pessoa autorizada. Entra no grupo de risco; não transfere dívida.",
+    origin: "MANUAL",
+    closable: true,
+    companyName: row.relatedCompanyName,
+    cnpjLabel,
+    evidenceTypeLabel: "Confirmação manual",
+    sourceLabel: "Revisão de Financeiro ou Diretoria",
+    reliabilityLabel: "Decisão humana registrada",
+    dateLabel: formatReviewDate(row.reviewedAt),
+    reviewNote: reviewNote(row, "Confirmado"),
+  };
+}
+
+export function presentCorporateLinkHistory(row: {
+  relatedCustomerId: string;
+  relatedCompanyName: string;
+  relatedCnpj: string | null;
+  status: "REJECTED" | "CLOSED";
+  actorName: string | null;
+  reviewedAt: string | null;
+  justification: string | null;
+}): CorporateLinkHistoryView {
+  return {
+    relatedCustomerId: row.relatedCustomerId,
+    companyName: row.relatedCompanyName,
+    cnpjLabel: row.relatedCnpj ? formatCnpj(row.relatedCnpj) : "—",
+    statusLabel: row.status === "REJECTED" ? "Rejeitado" : "Encerrado",
+    reviewNote: reviewNote(row, row.status === "REJECTED" ? "Rejeitado" : "Encerrado"),
+  };
+}
 
 type MembershipRow = {
   subjectCnpj: string;
@@ -120,6 +209,15 @@ export function presentCorporateRelation(
     relatedCustomerId: relation.relatedCustomerId,
     creditStatusLabel,
     evidence: `${sourceLabel(relation.source)} · ${when} · ${basis}. Não transfere dívida.`,
+    origin: "FORMAL",
+    closable: false,
+    companyName: relation.relatedCompanyName,
+    cnpjLabel: formatCnpj(relation.relatedCnpj),
+    evidenceTypeLabel: basis.split(".")[0],
+    sourceLabel: sourceLabel(relation.source),
+    reliabilityLabel: "Comprovado por documento",
+    dateLabel: when,
+    reviewNote: null,
   };
 }
 
@@ -203,23 +301,42 @@ export function collectRadarCreditSignals(
   for (const formal of scan.formal) pushFormal(formal);
   for (const item of scan.reviewQueue) {
     const relatedId = otherPartyId(item, customerId);
-    const pattern = item.patterns.find((row) => row.code === "REL-05" || row.code === "REL-06" || row.code === "REL-07");
-    if (!relatedId || !pattern) continue;
+    // Uma evidência por padrão: telefone novo num par com endereço já rejeitado é evidência nova e reabre a revisão.
+    const patterns = item.patterns.filter((row) => row.code === "REL-05" || row.code === "REL-06" || row.code === "REL-07");
+    if (!relatedId || patterns.length === 0) continue;
     const peer = named.get(relatedId);
     if (!peer) continue;
-    candidates.push({
-      subjectCustomerId: customerId,
-      relatedCustomerId: relatedId,
-      relatedCompanyName: peer.companyName,
-      relatedCnpj: peer.cnpj,
-      registryKind: "CUSTOMER",
-      basis: pattern.code === "REL-06" ? "SHARED_PHONE" : pattern.code === "REL-07" ? "SHARED_EMAIL" : "SHARED_ADDRESS",
-      status: "PENDING_REVIEW",
-      consultedAt,
-      evidenceLabel: pattern.evidence,
-    });
+    for (const pattern of patterns) {
+      candidates.push({
+        subjectCustomerId: customerId,
+        relatedCustomerId: relatedId,
+        relatedCompanyName: peer.companyName,
+        relatedCnpj: peer.cnpj,
+        registryKind: "CUSTOMER",
+        basis: pattern.code === "REL-06" ? "SHARED_PHONE" : pattern.code === "REL-07" ? "SHARED_EMAIL" : "SHARED_ADDRESS",
+        status: "PENDING_REVIEW",
+        consultedAt,
+        evidenceLabel: radarEvidenceLabel(pattern.code, pattern.evidence, named.get(customerId)),
+      });
+    }
   }
   return { relations, candidates };
+}
+
+/**
+ * Texto do indício com uma referência do valor coincidente (hash curto, sem o dado).
+ * Assim a impressão da rejeição muda quando o endereço ou o e-mail em comum mudam e a revisão reabre;
+ * a mesma coincidência continua com a mesma impressão. O telefone já traz os 4 últimos dígitos no texto.
+ */
+function radarEvidenceLabel(code: string, evidence: string, subject: RadarParty | undefined): string {
+  const shared =
+    code === "REL-05" && subject
+      ? corporateAddressKey(subject)
+      : code === "REL-07" && subject
+        ? classifyCorporateEmail(subject.email).email
+        : null;
+  if (!shared) return evidence;
+  return `${evidence} ref ${createHash("sha256").update(shared).digest("hex").slice(0, 12)}`;
 }
 
 export async function loadCorporateRelationAssessment(
@@ -229,9 +346,17 @@ export async function loadCorporateRelationAssessment(
     cnpj: string | null;
     now: Date;
     rejected?: readonly { relatedCustomerId: string; fingerprint: string | null }[];
+    /** Empresas já confirmadas manualmente (grafo de CustomerCorporateLink): não ficam pendentes. */
+    manualConfirmedIds?: readonly string[];
   },
   options?: { includeRadar?: boolean; radarCatalog?: RadarCatalog }
-): Promise<{ relations: CorporateRelation[]; candidates: CorporateCandidate[]; radarReadFailed: boolean }> {
+): Promise<{
+  relations: CorporateRelation[];
+  candidates: CorporateCandidate[];
+  /** Todos os indícios atuais, antes das decisões humanas. Base das impressões ao rejeitar ou encerrar. */
+  evidenceCandidates: CorporateCandidate[];
+  radarReadFailed: boolean;
+}> {
   const cnpj = normalizeCnpj(input.cnpj);
   const stored = cnpj
     ? await db.commercialCorporateMembership.findMany({
@@ -351,13 +476,44 @@ export async function loadCorporateRelationAssessment(
       }
     }
   }
-  const candidates = visibleCorporateCandidates(
-    [...report.candidates, ...radarCandidates].filter(
-      (candidate) => candidate.subjectCustomerId === input.customerId && !confirmed.has(candidate.relatedCustomerId)
-    ),
-    input.rejected ?? []
+  const evidenceCandidates = [...report.candidates, ...radarCandidates].filter(
+    (candidate) => candidate.subjectCustomerId === input.customerId && !confirmed.has(candidate.relatedCustomerId)
   );
-  return { relations: [...relations, ...radarRelations], candidates, radarReadFailed };
+  const candidates = visibleCorporateCandidates(evidenceCandidates, input.rejected ?? [], input.manualConfirmedIds ?? []);
+  return { relations: [...relations, ...radarRelations], candidates, evidenceCandidates, radarReadFailed };
+}
+
+/**
+ * Radar de um cliente (GET /api/customers/:id/corporate-radar). Só leitura.
+ * Aplica as mesmas decisões humanas da ficha de crédito: rejeitado, encerrado ou confirmado não volta como pendente;
+ * o confirmado manualmente aparece em "manual".
+ */
+export async function loadCustomerCorporateRadarView(
+  db: CorporateRelationStore & { customerCorporateLink: { findMany(args: unknown): Promise<CorporateLinkRow[]> } },
+  customer: { id: string; taxId: string | null },
+  now: Date
+): Promise<{
+  writes: "NONE";
+  formal: CorporateRelationView[];
+  manual: string[];
+  review: CorporateRelationView[];
+  radarReadFailed: boolean;
+}> {
+  const graph = await loadCorporateLinkGraph(db, customer.id);
+  const assessment = await loadCorporateRelationAssessment(db, {
+    customerId: customer.id,
+    cnpj: customer.taxId,
+    now,
+    rejected: graph.rejected,
+    manualConfirmedIds: graph.confirmedIds,
+  });
+  return {
+    writes: "NONE",
+    formal: assessment.relations.map((relation) => presentCorporateRelation(relation, "Conferido pelo cadastro")),
+    manual: graph.confirmedIds,
+    review: presentCorporateCandidates(assessment.candidates),
+    radarReadFailed: assessment.radarReadFailed,
+  };
 }
 
 export async function loadCorporateRelations(
@@ -386,7 +542,41 @@ export function presentCorporateCandidate(candidate: CorporateCandidate): Corpor
     relatedCustomerId: candidate.relatedCustomerId,
     creditStatusLabel: "Não comprovado",
     evidence,
+    origin: "PENDING",
+    closable: false,
+    companyName: candidate.relatedCompanyName,
+    cnpjLabel: formatCnpj(candidate.relatedCnpj),
+    evidenceTypeLabel: CANDIDATE_BASIS_LABEL[candidate.basis],
+    sourceLabel: candidate.basis === "SHARED_NAME" ? "Quadro societário consultado" : "Radar · cadastro dos clientes",
+    reliabilityLabel: "Baixa · indício, não prova",
+    dateLabel: when,
+    reviewNote: null,
   };
+}
+
+const CANDIDATE_BASIS_LABEL: Record<CorporateCandidate["basis"], string> = {
+  SHARED_NAME: "Nome de sócio coincidente",
+  SHARED_ADDRESS: "Mesmo endereço fiscal",
+  SHARED_PHONE: "Mesmo telefone",
+  SHARED_EMAIL: "Mesmo e-mail",
+};
+
+/** Um item por empresa: a decisão vale para todas as evidências do par de uma vez. */
+export function presentCorporateCandidates(candidates: readonly CorporateCandidate[]): CorporateRelationView[] {
+  const byRelated = new Map<string, CorporateRelationView>();
+  for (const candidate of candidates) {
+    const view = presentCorporateCandidate(candidate);
+    const current = byRelated.get(candidate.relatedCustomerId);
+    if (!current) {
+      byRelated.set(candidate.relatedCustomerId, view);
+      continue;
+    }
+    if (!current.evidenceTypeLabel?.includes(view.evidenceTypeLabel ?? "")) {
+      current.evidenceTypeLabel = `${current.evidenceTypeLabel} + ${view.evidenceTypeLabel}`;
+    }
+    if (!current.evidence.includes(view.evidence)) current.evidence = `${current.evidence} ${view.evidence}`;
+  }
+  return [...byRelated.values()];
 }
 
 export async function recordCorporateMembershipsFromLookup(
@@ -493,7 +683,8 @@ export async function loadCorporateLinkGraph(
       if (!right || left === right) continue;
       const status = row.status || "CONFIRMED";
       const fingerprint = row.evidenceFingerprint ?? null;
-      if (status === "REJECTED") {
+      // Rejeitado ou encerrado: sai do grupo e a mesma evidência não volta a ficar pendente.
+      if (status === "REJECTED" || status === "CLOSED" || row.closedAt) {
         if (left === startId) rejected.push({ relatedCustomerId: right, fingerprint });
         else if (right === startId) rejected.push({ relatedCustomerId: left, fingerprint });
         continue;
@@ -544,7 +735,8 @@ export async function loadCorporateLinkGraphs(
       if (!left || !right || left === right) continue;
       const status = row.status || "CONFIRMED";
       const fingerprint = row.evidenceFingerprint ?? null;
-      if (status === "REJECTED") {
+      // Rejeitado ou encerrado: sai do grupo e a mesma evidência não volta a ficar pendente.
+      if (status === "REJECTED" || status === "CLOSED" || row.closedAt) {
         if (startSet.has(left)) {
           const list = rejectedByStart.get(left) ?? [];
           list.push({ relatedCustomerId: right, fingerprint });

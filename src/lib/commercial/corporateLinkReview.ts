@@ -14,6 +14,28 @@ export type CorporateLinkAction = (typeof CORPORATE_LINK_ACTIONS)[number];
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+export const CORPORATE_LINK_REVIEW_FORBIDDEN_MESSAGE = "Esta validação requer autorização de Financeiro ou Diretoria.";
+
+/**
+ * Quem pode revisar vínculo: a mesma regra da rota POST, calculada no servidor.
+ * Usa as permissões atribuídas ao usuário (cadastro oficial de permissões), nunca a lista
+ * efetiva compacta da sessão. SUPER_ADMIN sem a chave explícita não revisa.
+ */
+export function corporateLinkReviewCapability(actor: {
+  role: string;
+  assignedPermissions: readonly string[];
+}): { canReview: boolean; permission: string | null; reason: string | null } {
+  const permission = resolveCommercialCreditExceptionPermission(actor);
+  if (permission.ok) return { canReview: true, permission: permission.permission, reason: null };
+  return { canReview: false, permission: null, reason: CORPORATE_LINK_REVIEW_FORBIDDEN_MESSAGE };
+}
+
+export function corporateLinkActionStatus(action: CorporateLinkAction): "CONFIRMED" | "REJECTED" | "CLOSED" {
+  if (action === "confirm") return "CONFIRMED";
+  if (action === "reject") return "REJECTED";
+  return "CLOSED";
+}
+
 export function assessCorporateLinkReview(input: {
   actor: { role: string; assignedPermissions: readonly string[] };
   subjectCustomerId: string;
@@ -28,7 +50,7 @@ export function assessCorporateLinkReview(input: {
     return {
       ok: false,
       code: permission.code,
-      message: "Confirmar ou rejeitar vínculo exige permissão explícita de Financeiro ou Diretoria.",
+      message: CORPORATE_LINK_REVIEW_FORBIDDEN_MESSAGE,
     };
   }
   if (!UUID.test(input.subjectCustomerId) || !UUID.test(input.relatedCustomerId)) {
