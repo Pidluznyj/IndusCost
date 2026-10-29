@@ -5,7 +5,16 @@
  */
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useAuthOptional } from "@/src/contexts/AuthContext";
-import { fetchPerformanceCycles, fetchPerformanceMe, type PerformanceMe } from "@/src/lib/hrPerformance/performanceClient";
+import {
+  fetchMyPerformancePending,
+  fetchPerformanceCycles,
+  fetchPerformanceMe,
+  myPerformanceApi,
+  PERFORMANCE_NAVIGATE_EVENT,
+  type PerformanceMe,
+  type TeamNotices,
+} from "@/src/lib/hrPerformance/performanceClient";
+import { PerformancePortalPage } from "./PerformancePortalPage";
 import { usePerformanceFeature } from "./usePerformanceFeature";
 import { InfoBanner, PanelState, useToast } from "./performanceUi";
 import { cn } from "@/src/lib/utils";
@@ -18,7 +27,7 @@ import { PerformancePdiTab } from "./PerformancePdiTab";
 import { PerformanceDashboardTab } from "./PerformanceDashboardTab";
 import { PerformanceTrackingTab } from "./PerformanceTrackingTab";
 
-type TabId = "acompanhamento" | "ciclos" | "equipe" | "calibracao" | "ninebox" | "pdi" | "painel" | "modelos";
+type TabId = "acompanhamento" | "ciclos" | "minha" | "equipe" | "calibracao" | "ninebox" | "pdi" | "painel" | "modelos";
 const TAB_KEY = "ic-perf-tab";
 const CYCLE_KEY = "ic-perf-cycle";
 
@@ -57,6 +66,7 @@ function PerformanceModule() {
   const toast = useToast();
   // Ciclos ativos e existentes: as outras abas nunca trabalham com ciclo inativo ou excluído.
   const [activeCycleIds, setActiveCycleIds] = useState<string[] | null>(null);
+  const [pending, setPending] = useState<TeamNotices | null>(null);
 
   useEffect(() => {
     void fetchPerformanceMe()
@@ -66,7 +76,7 @@ function PerformanceModule() {
 
   const caps = me?.capabilities;
   // Grupos por intenção: operar o ciclo, avaliar e calibrar, ler resultados, configurar.
-  const GROUP_OF: Record<TabId, string> = { acompanhamento: "Operar", ciclos: "Operar", equipe: "Avaliar e calibrar", calibracao: "Avaliar e calibrar", ninebox: "Resultados", pdi: "Resultados", painel: "Resultados", modelos: "Configurar" };
+  const GROUP_OF: Record<TabId, string> = { acompanhamento: "Operar", ciclos: "Operar", minha: "Avaliar e calibrar", equipe: "Avaliar e calibrar", calibracao: "Avaliar e calibrar", ninebox: "Resultados", pdi: "Resultados", painel: "Resultados", modelos: "Configurar" };
   const tabs = useMemo(
     () =>
       [
@@ -74,6 +84,8 @@ function PerformanceModule() {
         // Nine-Box e devolutivas só para quem avalia a equipe ou consulta resultados.
         caps?.track ? { id: "acompanhamento" as const, label: "Acompanhamento" } : null,
         caps?.view ? { id: "ciclos" as const, label: "Ciclos" } : null,
+        // Autoavaliação dentro do sistema: quem tem o usuário ligado ao próprio cadastro responde aqui, sem QR.
+        caps?.view && me?.actorEmployeeId ? { id: "minha" as const, label: "Minha avaliação" } : null,
         caps?.evaluate ? { id: "equipe" as const, label: "Minha equipe" } : null,
         caps?.calibrate || caps?.calibrationView ? { id: "calibracao" as const, label: "Calibração" } : null,
         caps?.evaluate || caps?.results ? { id: "ninebox" as const, label: "Nine-Box" } : null,
@@ -81,7 +93,7 @@ function PerformanceModule() {
         caps?.view ? { id: "painel" as const, label: "Painel" } : null,
         caps?.view ? { id: "modelos" as const, label: "Modelos" } : null,
       ].filter((t): t is NonNullable<typeof t> => t !== null),
-    [caps]
+    [caps, me?.actorEmployeeId]
   );
   const active = tabs.some((t) => t.id === tab) ? tab : tabs[0]?.id ?? "ciclos";
 
@@ -93,10 +105,26 @@ function PerformanceModule() {
       .catch(() => setActiveCycleIds(null));
   }, [caps?.view, active, version]);
   const workingCycleId = activeCycleIds === null ? null : cycleId && activeCycleIds.includes(cycleId) ? cycleId : activeCycleIds[0] ?? null;
-  const selectTab = (id: TabId) => {
+  const selectTab = useCallback((id: TabId) => {
     setTab(id);
     store(TAB_KEY, id);
-  };
+  }, []);
+  // Outras abas pedem a troca (ex.: a dica do ciclo aberto leva a "Minha equipe").
+  useEffect(() => {
+    const go = (event: Event) => {
+      const tab = (event as CustomEvent<{ tab?: string }>).detail?.tab;
+      if (tab && tab in GROUP_OF) selectTab(tab as TabId);
+    };
+    window.addEventListener(PERFORMANCE_NAVIGATE_EVENT, go);
+    return () => window.removeEventListener(PERFORMANCE_NAVIGATE_EVENT, go);
+  }, [selectTab]);
+  // "Falta com você": recarrega ao trocar de aba (enviar a autoavaliação ou avaliar alguém muda a conta).
+  useEffect(() => {
+    if (!caps?.view || !me?.actorEmployeeId) return;
+    void fetchMyPerformancePending()
+      .then(setPending)
+      .catch(() => setPending(null));
+  }, [caps?.view, me?.actorEmployeeId, active, version]);
   const selectCycle = useCallback((id: string | null) => {
     setCycleId(id);
     store(CYCLE_KEY, id);
@@ -120,6 +148,7 @@ function PerformanceModule() {
           {me.actorEmployeeId ? "Você vê a sua equipe e as avaliações atribuídas a você." : "Seu usuário não está ligado a um colaborador. Peça ao RH o vínculo para ver a sua equipe."}
         </InfoBanner>
       ) : null}
+      {pending ? <PendingBanner pending={pending} canTeam={Boolean(caps.evaluate)} onGo={selectTab} /> : null}
       <nav role="tablist" aria-label="Seções de desempenho" data-testid="perf-tabs" className="flex flex-wrap gap-x-5 gap-y-2 rounded-xl border border-border bg-muted/40 px-3 py-2">
         {["Operar", "Avaliar e calibrar", "Resultados", "Configurar"].map((group) => {
           const inGroup = tabs.filter((t) => GROUP_OF[t.id] === group);
@@ -152,6 +181,13 @@ function PerformanceModule() {
           <PerformanceCyclesTab me={me} selectedId={cycleId} onSelect={selectCycle} onToast={toast.setToast} onGoToModels={() => selectTab("modelos")} />
         </React.Fragment>
       ) : null}
+      {active === "minha" ? (
+        <div className="max-w-2xl">
+          <React.Fragment key={version}>
+            <PerformancePortalPage api={myPerformanceApi} embedded onFinished={() => setVersion((v) => v + 1)} />
+          </React.Fragment>
+        </div>
+      ) : null}
       {active === "equipe" ? <PerformanceTeamTab onToast={toast.setToast} actorName={actorName} linkedEmployee={Boolean(me.actorEmployeeId)} /> : null}
       {active === "calibracao" ? (
         <PerformanceCalibrationTab cycleId={workingCycleId} onToast={toast.setToast} canCalibrate={Boolean(caps.calibrate)} canHomologate={Boolean(caps.homologate ?? caps.calibrate)} canSeeHistory={Boolean(caps.calibrate || caps.results)} />
@@ -161,6 +197,38 @@ function PerformanceModule() {
       {active === "painel" ? <PerformanceDashboardTab cycleId={workingCycleId} /> : null}
       {active === "modelos" ? <PerformanceModelsTab canManage={Boolean(caps.models ?? caps.manage)} onToast={toast.setToast} onChanged={() => setVersion((v) => v + 1)} /> : null}
       {toast.node}
+    </div>
+  );
+}
+
+/** O que está pendente com a pessoa agora, em linguagem simples e com o atalho para a aba certa. */
+function PendingBanner({ pending, canTeam, onGo }: { pending: TeamNotices; canTeam: boolean; onGo: (tab: TabId) => void }) {
+  const items: { key: string; text: string; tab: TabId; action: string }[] = [];
+  if (pending.myJourney?.open) items.push({ key: "self", text: `${pending.myJourney.title} (${pending.myJourney.cycleName})`, tab: "minha", action: "Minha avaliação" });
+  if (canTeam && pending.pendingLeader > 0)
+    items.push({ key: "leader", text: `${pending.pendingLeader} avaliação(ões) de liderado(s)`, tab: "equipe", action: "Minha equipe" });
+  if (canTeam && pending.pendingCalibration > 0)
+    items.push({ key: "calibration", text: `${pending.pendingCalibration} proposta(s) de calibração e devolutiva`, tab: "equipe", action: "Minha equipe" });
+  const waiting = pending.myJourney && !pending.myJourney.open ? pending.myJourney.message : null;
+  if (items.length === 0 && !waiting) return null;
+  return (
+    <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-100" data-testid="perf-pending-banner">
+      {items.length ? (
+        <>
+          <p className="font-semibold">Falta com você: {items.length}</p>
+          <ul className="mt-1 space-y-1">
+            {items.map((item) => (
+              <li key={item.key} className="flex flex-wrap items-center gap-2" data-testid={`perf-pending-${item.key}`}>
+                <span>{item.text}</span>
+                <button type="button" className="font-medium underline underline-offset-2" onClick={() => onGo(item.tab)}>
+                  → {item.action}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </>
+      ) : null}
+      {waiting ? <p className={items.length ? "mt-2 text-amber-900/80 dark:text-amber-100/80" : ""}>Sua próxima etapa: {waiting}</p> : null}
     </div>
   );
 }

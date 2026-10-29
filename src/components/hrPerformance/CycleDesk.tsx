@@ -8,6 +8,8 @@ import { QRCodeSVG } from "qrcode.react";
 import { CheckCircle2, ClipboardCopy, FileDown, Network, Pencil, Printer, QrCode, RotateCcw, Search, Settings2, ShieldOff, UserMinus, UserPlus, UserRoundCog, Users } from "lucide-react";
 import { CycleGovernanceBadges, CycleLifecycleOverlay } from "./CycleLifecyclePanel";
 import { LeadershipStatusBadge } from "./PerformanceLeadershipUi";
+import { PerformanceStageTimeline, toStageCycle } from "./PerformanceStageTimeline";
+import { PerformanceStageScheduleFields, scheduleBodyOf, scheduleFormOf, scheduleFormProblem } from "./PerformanceStageScheduleFields";
 import { OverlayBadge, OverlayField, OverlayFieldGrid, OverlayInput, OverlaySelect, OverlayTextarea } from "@/src/components/ui/overlay";
 import { CYCLE_STATUSES, CYCLE_STATUS_LABELS, ELIGIBILITY_LABELS, forwardStatus, planSurveyTasks, reversalStatus, surveyTaskSummary, type CycleStatus } from "@/src/lib/hrPerformance/performanceDomain";
 import {
@@ -15,6 +17,7 @@ import {
   issuePerformanceInvite,
   issuePerformanceInvitesBatch,
   homologatePerformanceCycle,
+  navigatePerformanceTab,
   openAssistedPerformance,
   performanceExportUrl,
   performanceReportPrintUrl,
@@ -249,7 +252,7 @@ export function CycleDesk({ cycleId, me: realMe, onToast, onChanged }: { cycleId
             {ws.cycle.leadershipModelId ? <OverlayBadge tone="violet" testId="perf-cycle-180">180° de liderança</OverlayBadge> : null}
           </div>
           <p className="mt-1 text-sm text-muted-foreground">
-            {ws.cycle.periodLabel} · {ws.model?.name} v{ws.model?.version} · autoavaliação até {dateBr(ws.cycle.selfDueAt)} · líder até {dateBr(ws.cycle.leaderDueAt)}
+            {ws.cycle.periodLabel} · {ws.model?.name} v{ws.model?.version}
           </p>
         </div>
         <div className="flex flex-wrap items-start gap-2">
@@ -263,7 +266,7 @@ export function CycleDesk({ cycleId, me: realMe, onToast, onChanged }: { cycleId
               ) : null}
               {canCycles && status !== "HOMOLOGATED" && status !== "CLOSED" ? (
                 <button type="button" className={BTN_GHOST} onClick={() => setDialog({ kind: "edit" })} data-testid="perf-cycle-edit">
-                  <Pencil className="h-4 w-4" aria-hidden /> Editar nome e prazos
+                  <Pencil className="h-4 w-4" aria-hidden /> Editar nome e etapas
                 </button>
               ) : null}
               {canCycles && preOpen ? (
@@ -311,7 +314,9 @@ export function CycleDesk({ cycleId, me: realMe, onToast, onChanged }: { cycleId
         </div>
       </header>
 
-      <ol className="flex flex-wrap gap-1" aria-label="Etapas do ciclo" data-testid="perf-cycle-steps">
+      <PerformanceStageTimeline cycle={toStageCycle(ws.cycle)} />
+      <ol className="flex flex-wrap items-center gap-1" aria-label="Estado do ciclo" data-testid="perf-cycle-steps">
+        <li className="text-xs text-muted-foreground">Estado:</li>
         {CYCLE_STATUSES.map((step, index) => {
           const reached = CYCLE_STATUSES.indexOf(status) >= index;
           return (
@@ -323,7 +328,7 @@ export function CycleDesk({ cycleId, me: realMe, onToast, onChanged }: { cycleId
                 step === status ? "border-primary bg-primary text-primary-foreground" : reached ? "border-primary/30 bg-primary/10 text-primary" : "border-border text-muted-foreground"
               )}
             >
-              {index + 1}. {CYCLE_STATUS_LABELS[step]}
+              {CYCLE_STATUS_LABELS[step]}
             </li>
           );
         })}
@@ -374,7 +379,11 @@ export function CycleDesk({ cycleId, me: realMe, onToast, onChanged }: { cycleId
       ) : null}
       {status === "OPEN" ? (
         <p className="text-sm text-muted-foreground" data-testid="perf-stage-hint">
-          Agora: gere e entregue os convites. Quem concluiu, quem falta e os prazos ficam na aba <strong>Acompanhamento</strong>.
+          Agora: gere e entregue os convites (ou peça que cada um responda em <strong>Minha avaliação</strong>). Quem concluiu e quem falta ficam na aba <strong>Acompanhamento</strong>. Os líderes avaliam os liderados em{" "}
+          <button type="button" className="font-medium text-primary underline underline-offset-2" onClick={() => navigatePerformanceTab("equipe")} data-testid="perf-go-team">
+            Minha equipe
+          </button>
+          .
         </p>
       ) : null}
       <div className={cn("grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6", preOpen && "hidden")} data-testid="perf-cycle-kpis">
@@ -705,7 +714,7 @@ function PersonRow({
         ) : null}
       </td>
       <td className="px-2 py-3">
-        <p className="text-sm">{p.managerName ?? <span className="text-amber-700">Sem líder</span>}</p>
+        <p className="text-sm">{p.managerName ?? <span className="text-amber-700">Sem avaliador</span>}</p>
         {p.managerSource === "RH" ? <OverlayBadge tone="violet" variant="outline">Exceção do RH</OverlayBadge> : null}
         {p.managerSource === "TOPO" ? <OverlayBadge tone="slate" variant="outline">Topo da estrutura</OverlayBadge> : null}
       </td>
@@ -713,7 +722,7 @@ function PersonRow({
         {p.eligibility === "ELIGIBLE" ? (
           <div className="flex flex-col items-start gap-1">
             <AssignmentBadge status={item.self?.status ?? (preOpen ? null : undefined)} />
-            {item.self && item.self.status !== "SUBMITTED" ? <InviteBadge status={item.invite.status} /> : null}
+            {item.self && item.self.status !== "SUBMITTED" ? <InviteBadge status={item.invite.status} reason={item.invite.revokedReason} /> : null}
             {item.invite.expiresAt && item.invite.status === "ACTIVE" ? <span className="text-xs text-muted-foreground">expira {dateBr(item.invite.expiresAt)}</span> : null}
             {item.self?.assisted ? <span className="text-xs text-muted-foreground">com assistência</span> : null}
           </div>
@@ -931,23 +940,27 @@ function TransitionDialog({
 }
 
 function EditCycleDialog({ ws, onClose, onDone }: { ws: CycleWorkspace; onClose: () => void; onDone: () => void }) {
-  const [form, setForm] = useState({ name: ws.cycle.name, periodLabel: ws.cycle.periodLabel, selfDueAt: ws.cycle.selfDueAt, leaderDueAt: ws.cycle.leaderDueAt, reason: "" });
+  const leadership = Boolean(ws.cycle.leadershipModelId);
+  const initial = scheduleFormOf(ws.cycle);
+  const [form, setForm] = useState({ name: ws.cycle.name, periodLabel: ws.cycle.periodLabel, reason: "" });
+  const [schedule, setSchedule] = useState(initial);
   const opened = ws.cycle.status !== "DRAFT" && ws.cycle.status !== "PREPARED";
-  const datesChanged = form.selfDueAt !== ws.cycle.selfDueAt || form.leaderDueAt !== ws.cycle.leaderDueAt;
+  const datesChanged = (Object.keys(initial) as (keyof typeof initial)[]).some((key) => schedule[key] !== initial[key]);
   const needsReason = opened && datesChanged;
+  const problem = scheduleFormProblem(schedule, leadership);
   return (
     <PerformanceModal
       open
       title="Editar ciclo"
-      subtitle="Mudança de prazo fica registrada com o valor anterior."
+      subtitle="Mudança de data fica registrada com o valor anterior."
       saveLabel="Salvar"
-      footerHint={needsReason ? "Prazo alterado depois da abertura pede motivo." : ""}
-      canSave={form.name.trim().length >= 3 && form.leaderDueAt >= form.selfDueAt && (!needsReason || form.reason.trim().length >= 8)}
-      size="md"
+      footerHint={needsReason ? "Data alterada depois da abertura pede motivo." : ""}
+      canSave={form.name.trim().length >= 3 && schedule.leaderDueAt >= schedule.selfDueAt && !problem && (!needsReason || form.reason.trim().length >= 8)}
+      size="lg"
       testId="perf-cycle-edit-dialog"
       onClose={onClose}
       onSave={async () => {
-        await updatePerformanceCycle(ws.cycle.id, form);
+        await updatePerformanceCycle(ws.cycle.id, { ...form, ...scheduleBodyOf(schedule, leadership) });
         onDone();
       }}
     >
@@ -958,14 +971,9 @@ function EditCycleDialog({ ws, onClose, onDone }: { ws: CycleWorkspace; onClose:
         <OverlayField label="Referência" required>
           {(p) => <OverlayInput {...p} value={form.periodLabel} onChange={(e) => setForm({ ...form, periodLabel: e.target.value })} />}
         </OverlayField>
-        <OverlayField label="Prazo da autoavaliação" required>
-          {(p) => <OverlayInput {...p} type="date" value={form.selfDueAt} onChange={(e) => setForm({ ...form, selfDueAt: e.target.value })} />}
-        </OverlayField>
-        <OverlayField label="Prazo do líder" required>
-          {(p) => <OverlayInput {...p} type="date" value={form.leaderDueAt} onChange={(e) => setForm({ ...form, leaderDueAt: e.target.value })} />}
-        </OverlayField>
       </OverlayFieldGrid>
-      {needsReason ? <ReasonField label="Motivo da mudança de prazo" value={form.reason} onChange={(reason) => setForm({ ...form, reason })} /> : null}
+      <PerformanceStageScheduleFields value={schedule} leadership={leadership} onChange={setSchedule} />
+      {needsReason ? <ReasonField label="Motivo da mudança de data" value={form.reason} onChange={(reason) => setForm({ ...form, reason })} /> : null}
     </PerformanceModal>
   );
 }

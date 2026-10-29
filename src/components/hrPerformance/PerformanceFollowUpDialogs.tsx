@@ -15,8 +15,32 @@ import {
 } from "@/src/lib/hrPerformance/performanceClient";
 import { PerformanceModal, ReasonField, addDaysIso, todayIso } from "./performanceUi";
 
-export function FeedbackDialog({ participantId, employeeName, ownerName, onClose, onDone }: { participantId: string; employeeName: string; ownerName: string; onClose: () => void; onDone: () => void }) {
-  const [form, setForm] = useState({ strength: "", improvement: "", action: "", ownerName, dueAt: addDaysIso(90), conversationAt: todayIso() });
+/** Rascunho preparado pelo líder na etapa Calibração e devolutiva: chega preenchido e continua editável. */
+export type FollowUpDraft = { strength?: string | null; improvement?: string | null; action?: string | null; conversationAt?: string | null; pdiTitle?: string | null; pdiObjective?: string | null; pdiDueAt?: string | null };
+
+export function FeedbackDialog({
+  participantId,
+  employeeName,
+  ownerName,
+  draft,
+  onClose,
+  onDone,
+}: {
+  participantId: string;
+  employeeName: string;
+  ownerName: string;
+  draft?: FollowUpDraft | null;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const [form, setForm] = useState({
+    strength: draft?.strength ?? "",
+    improvement: draft?.improvement ?? "",
+    action: draft?.action ?? "",
+    ownerName,
+    dueAt: addDaysIso(90),
+    conversationAt: draft?.conversationAt && draft.conversationAt <= todayIso() ? draft.conversationAt : todayIso(),
+  });
   const valid = form.strength.trim().length >= 3 && form.improvement.trim().length >= 3 && form.action.trim().length >= 3 && form.ownerName.trim().length >= 2;
   return (
     <PerformanceModal
@@ -106,6 +130,7 @@ export function PdiDialog({
   employeeName,
   ownerName,
   hasPriority,
+  draft,
   onClose,
   onDone,
 }: {
@@ -114,11 +139,12 @@ export function PdiDialog({
   employeeName: string;
   ownerName: string;
   hasPriority: boolean;
+  draft?: FollowUpDraft | null;
   onClose: () => void;
   onDone: () => void;
 }) {
   const [questions, setQuestions] = useState<{ code: string; pillar: string; competency: string }[]>([]);
-  const [form, setForm] = useState({ title: "", objective: "", competencyCode: "", ownerName, dueAt: addDaysIso(90), justification: "" });
+  const [form, setForm] = useState({ title: draft?.pdiTitle ?? "", objective: draft?.pdiObjective ?? "", competencyCode: "", ownerName, dueAt: draft?.pdiDueAt ?? addDaysIso(90), justification: "" });
   useEffect(() => {
     void fetchCycleWorkspace(cycleId)
       .then((ws) => {

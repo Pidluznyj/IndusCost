@@ -74,6 +74,7 @@ const DELEGATE: Record<PerformanceCollection, string> = {
   reminders: "hrPerformanceReminder",
   reports: "hrPerformanceReportIssue",
   leadershipResults: "hrPerformanceLeadershipResult",
+  plans: "hrPerformanceFollowUpPlan",
 };
 
 const DATE_FIELDS: Record<PerformanceCollection, readonly string[]> = {
@@ -94,6 +95,7 @@ const DATE_FIELDS: Record<PerformanceCollection, readonly string[]> = {
   reminders: [],
   reports: ["issuedAt"],
   leadershipResults: ["calibratedAt", "createdAt"],
+  plans: ["proposedAt", "createdAt", "updatedAt"],
 };
 
 /** Colunas Json anuláveis: o Prisma exige `Prisma.DbNull` em vez de `null`. */
@@ -169,6 +171,7 @@ export function fromDbRow(collection: PerformanceCollection, row: Record<string,
     out.classification = out.classification === "TEST" ? "TEST" : "OFFICIAL";
     out.activation = out.activation === "INACTIVE" ? "INACTIVE" : "ACTIVE";
     out.leadershipModelId = out.leadershipModelId ?? null;
+    for (const field of ["selfStartAt", "leaderStartAt", "leadershipStartAt", "leadershipDueAt", "calibrationStartAt", "calibrationDueAt"]) out[field] = out[field] ?? null;
   }
   if (collection === "audits") out.detail = (out.detail ?? {}) as object;
   if (collection === "reminders") out.status = "DRAFT";
@@ -195,6 +198,7 @@ const DELETE_DELEGATE: Record<DeletionCollection, string> = {
   reminders: "hrPerformanceReminder",
   participants: "hrPerformanceParticipant",
   leadershipResults: "hrPerformanceLeadershipResult",
+  plans: "hrPerformanceFollowUpPlan",
   cycles: "hrPerformanceCycle",
 };
 

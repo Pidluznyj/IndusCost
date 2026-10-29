@@ -20,6 +20,7 @@ import { FirstCycleGuide } from "./FirstCycleGuide";
 import { GlossaryList } from "./performanceGlossary";
 import { fetchCycleReadiness } from "@/src/lib/hrPerformance/performanceClient";
 import { CycleGovernanceBadges } from "./CycleLifecyclePanel";
+import { PerformanceStageScheduleFields, scheduleBodyOf, scheduleFormProblem, type StageScheduleForm } from "./PerformanceStageScheduleFields";
 import { cn } from "@/src/lib/utils";
 
 export function PerformanceCyclesTab({
@@ -229,8 +230,18 @@ function CreateCycleOverlay({
   const [name, setName] = useState("");
   const [periodLabel, setPeriodLabel] = useState("");
   const [modelId, setModelId] = useState("");
-  const [selfDueAt, setSelfDueAt] = useState(addDaysIso(30));
-  const [leaderDueAt, setLeaderDueAt] = useState(addDaysIso(45));
+  // Sugestão de calendário em etapas (duas semanas cada); o RH ajusta ou limpa os inícios para o modo antigo.
+  const [schedule, setSchedule] = useState<StageScheduleForm>(() => ({
+    selfStartAt: addDaysIso(1),
+    selfDueAt: addDaysIso(14),
+    leaderStartAt: addDaysIso(15),
+    leaderDueAt: addDaysIso(28),
+    leadershipStartAt: addDaysIso(15),
+    leadershipDueAt: addDaysIso(28),
+    calibrationStartAt: addDaysIso(29),
+    calibrationDueAt: addDaysIso(42),
+  }));
+  const { selfDueAt, leaderDueAt } = schedule;
   // Sem padrão: quem cria escolhe se o ciclo é oficial ou de teste.
   const [classification, setClassification] = useState<"" | CycleClassification>("");
   useEffect(() => {
@@ -239,7 +250,8 @@ function CreateCycleOverlay({
     if (open && !leadershipModelId && leadershipModels[0]) setLeadershipModelId(leadershipModels[0].id);
   }, [open, models, modelId, leadershipModels, leadershipModelId]);
   const needsLeadership = classification === "OFFICIAL" && !leadershipModelId;
-  const valid = name.trim().length >= 3 && periodLabel.trim().length >= 2 && Boolean(modelId) && Boolean(selfDueAt) && leaderDueAt >= selfDueAt && classification !== "" && !needsLeadership;
+  const scheduleProblem = scheduleFormProblem(schedule, Boolean(leadershipModelId));
+  const valid = name.trim().length >= 3 && periodLabel.trim().length >= 2 && Boolean(modelId) && Boolean(selfDueAt) && leaderDueAt >= selfDueAt && !scheduleProblem && classification !== "" && !needsLeadership;
   return (
     <PerformanceModal
       open={open}
@@ -251,15 +263,15 @@ function CreateCycleOverlay({
           ? "O prazo do líder não pode vir antes do prazo da pessoa."
           : needsLeadership
             ? "Ciclo oficial inclui a avaliação de liderança. Publique um modelo de liderança em Modelos."
-            : "Prazos podem ser ajustados depois, com registro."
+            : scheduleProblem ?? "Datas podem ser ajustadas depois, com registro."
       }
       canSave={valid}
       onClose={onClose}
-      size="md"
+      size="lg"
       testId="perf-cycle-create"
       onSave={async () => {
         if (classification === "") return;
-        const created = await createPerformanceCycle({ name, periodLabel, modelId, selfDueAt, leaderDueAt, classification, leadershipModelId: leadershipModelId || null });
+        const created = await createPerformanceCycle({ name, periodLabel, modelId, classification, leadershipModelId: leadershipModelId || null, ...scheduleBodyOf(schedule, Boolean(leadershipModelId)) });
         onCreated(created.cycleId);
       }}
     >
@@ -302,13 +314,8 @@ function CreateCycleOverlay({
             </OverlaySelect>
           )}
         </OverlayField>
-        <OverlayField label="Prazo da autoavaliação" required>
-          {(p) => <OverlayInput {...p} type="date" value={selfDueAt} onChange={(e) => setSelfDueAt(e.target.value)} />}
-        </OverlayField>
-        <OverlayField label="Prazo da avaliação do líder" required>
-          {(p) => <OverlayInput {...p} type="date" value={leaderDueAt} onChange={(e) => setLeaderDueAt(e.target.value)} />}
-        </OverlayField>
       </OverlayFieldGrid>
+      <PerformanceStageScheduleFields value={schedule} leadership={Boolean(leadershipModelId)} onChange={setSchedule} />
     </PerformanceModal>
   );
 }

@@ -402,8 +402,65 @@ describe("todas as rotas administrativas, uma a uma (sem tela)", () => {
       assert.ok(resultWrites.length >= 15, `${resultWrites.length} mutações de conteúdo`);
       for (const r of resultWrites) {
         const res = await call("rhop", r.method, fill(r.path), {});
+        // /me/*: a jornada da própria pessoa (autoavaliação no sistema). Sem cadastro ligado não há o que gravar.
+        if (r.path.startsWith("/api/hr/performance/me/")) {
+          assert.equal(res.status === 403 || res.json?.ok === false, true, `${r.method} ${r.path} → ${res.status} ${res.text.slice(0, 120)}`);
+          continue;
+        }
         assert.equal(res.status === 403 || res.json?.error === "FORBIDDEN", true, `${r.method} ${r.path} → ${res.status} ${res.text.slice(0, 120)}`);
       }
+    } finally {
+      server.close();
+    }
+  });
+});
+
+describe("fluxo em etapas pela API", () => {
+  it("colaborador responde a autoavaliação dentro do sistema (sem QR), no mesmo formato do portal", async () => {
+    const { db } = cycleInCalibration("OPEN");
+    const { server, call } = await serve(db);
+    try {
+      const form = await call("colaborador", "GET", "/api/hr/performance/me/form");
+      assert.equal(form.json.ok, true, form.text.slice(0, 160));
+      assert.equal(form.json.step.kind, "SELF");
+      const answers = form.json.questions.map((q: { code: string }) => ({ code: q.code, answer: { kind: "score", score: 3 } }));
+      const saved = await call("colaborador", "PUT", "/api/hr/performance/me/answers", { expectedVersion: form.json.version, answers, step: "SELF" });
+      assert.equal(saved.json.ok, true, saved.text.slice(0, 160));
+      const sent = await call("colaborador", "POST", "/api/hr/performance/me/submit", { expectedVersion: saved.json.version, step: "SELF" });
+      assert.equal(sent.json.ok, true, sent.text.slice(0, 160));
+      // A avaliação da liderança de Ana já veio respondida no cenário: a jornada termina na autoavaliação.
+      assert.equal(sent.json.done, true);
+      const pending = await call("colaborador", "GET", "/api/hr/performance/me/pending");
+      assert.equal(pending.json.myJourney, null);
+      assert.equal((await call("colaborador", "GET", "/api/hr/performance/me/form")).json.code, "NO_PENDING");
+      assert.equal((await call("semacesso", "GET", "/api/hr/performance/me/form")).status, 403);
+    } finally {
+      server.close();
+    }
+  });
+
+  it("líder propõe na calibração; o RH que calibra vê a proposta, o RH Operacional não; colaborador não propõe", async () => {
+    const { db } = cycleInCalibration();
+    const { server, call } = await serve(db);
+    const ana = db.participants.find((p) => p.employeeId === "ana")!;
+    try {
+      const team = await call("lider", "GET", "/api/hr/performance/team");
+      assert.equal(team.status, 200);
+      assert.equal(team.json.notices.linked, true);
+      const item = team.json.items.find((i: { participantId: string }) => i.participantId === ana.id);
+      assert.equal(item.proposalEditable, true);
+      const proposal = { proposal: { decision: "CONFIRM", note: "Coerente com o semestre" }, meeting: { at: "2026-11-05T14:00", place: "Sala 2" }, draft: { strength: "Organização do turno" } };
+      assert.equal((await call("colaborador", "PUT", `/api/hr/performance/plans/${ana.id}`, proposal)).status, 403);
+      assert.equal((await call("rhop", "PUT", `/api/hr/performance/plans/${ana.id}`, proposal)).status, 403);
+      const saved = await call("lider", "PUT", `/api/hr/performance/plans/${ana.id}`, proposal);
+      assert.equal(saved.status, 200, saved.text.slice(0, 160));
+      const cycleId = ana.cycleId;
+      const hr = await call("rhgestor", "GET", `/api/hr/performance/cycles/${cycleId}/calibration`);
+      const row = hr.json.rows.find((r: { participantId: string }) => r.participantId === ana.id);
+      assert.equal(row.leaderProposal.decision, "CONFIRM");
+      assert.equal(row.leaderProposal.meetingAt, "2026-11-05T14:00");
+      const op = await call("rhop", "GET", `/api/hr/performance/cycles/${cycleId}/calibration`);
+      assert.equal(op.text.includes("Coerente com o semestre"), false);
     } finally {
       server.close();
     }

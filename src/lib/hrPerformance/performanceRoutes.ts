@@ -70,6 +70,9 @@ import {
   markInviteDelivered,
   leaderQueue,
   moveDraftQuestion,
+  myForm,
+  mySave,
+  mySubmit,
   openAssisted,
   planReminders,
   publicForm,
@@ -87,8 +90,10 @@ import {
   returnForRevision,
   revokeInvite,
   saveAnswers,
+  saveFollowUpPlan,
   setEligibilityException,
   submitAssignment,
+  teamNotices,
   transitionCycle,
   updateCycle,
   updateDraftQuestion,
@@ -276,6 +281,30 @@ function strOrNull(value: unknown, max = 2000): string | null {
   return typeof value === "string" && value.trim() ? value.slice(0, max) : null;
 }
 
+/** Calendário das etapas vindo do corpo (criação/edição de ciclo); ausente fica fora, vazio limpa. */
+function scheduleBody(body: Record<string, unknown> | undefined) {
+  const out: Record<string, string | null> = {};
+  for (const field of ["selfStartAt", "leaderStartAt", "leadershipStartAt", "leadershipDueAt", "calibrationStartAt", "calibrationDueAt"]) {
+    if (body && field in body) out[field] = strOrNull(body[field], 10);
+  }
+  return out;
+}
+
+/** Proposta do líder para a calibração (decisão, faixas, nota, conversa agendada) ou null. */
+function leaderProposalOf(db: PerformanceDatabase, participantId: string) {
+  const plan = db.plans.find((p) => p.participantId === participantId && p.proposalDecision);
+  if (!plan) return null;
+  return {
+    decision: plan.proposalDecision,
+    nineX: plan.proposalNineX,
+    nineY: plan.proposalNineY,
+    note: plan.proposalNote,
+    proposedAt: plan.proposedAt,
+    leaderName: db.participants.find((x) => x.employeeId === plan.leaderEmployeeId && x.cycleId === plan.cycleId)?.employeeName ?? null,
+    meetingAt: plan.meetingAt,
+  };
+}
+
 function filtersFrom(query: express.Request["query"]) {
   return {
     department: typeof query.department === "string" && query.department ? query.department : null,
@@ -401,6 +430,9 @@ export function registerPerformanceRoutes(expressApp: express.Application, deps:
   const leadershipReadGuard = need("evaluate", "calibrate", "results");
   const leadershipCalibrateGuard = need("evaluate", "calibrate");
   const remindersGuard = need("cycles", "invites");
+  const planGuard = need("evaluate", "calibrate");
+  /** Autoavaliação dentro do sistema: a própria pessoa; o serviço exige o vínculo usuário → cadastro. */
+  const selfGuard = need("view");
   const publicLimit = createRateLimiter("perf-public", { windowMs: 60_000, max: 240 });
   const publicAuthLimit = createRateLimiter("perf-public-auth", { windowMs: 60_000, max: 20 });
   const pub = [gate, publicLimit, requireJson];
@@ -592,6 +624,7 @@ export function registerPerformanceRoutes(expressApp: express.Application, deps:
             leaderDueAt: str(req.body?.leaderDueAt),
             classification: str(req.body?.classification, 16),
             leadershipModelId: strOrNull(req.body?.leadershipModelId, 64),
+            ...scheduleBody(req.body),
             actorUserId,
             scope,
           },
@@ -614,6 +647,7 @@ export function registerPerformanceRoutes(expressApp: express.Application, deps:
           selfDueAt: str(req.body?.selfDueAt),
           leaderDueAt: str(req.body?.leaderDueAt),
           reason: strOrNull(req.body?.reason),
+          ...scheduleBody(req.body),
           actorUserId,
           scope,
         },
@@ -658,7 +692,9 @@ export function registerPerformanceRoutes(expressApp: express.Application, deps:
     if (!queue) return res.status(scope.kind === "ALL" ? 404 : 403).json({ error: scope.kind === "ALL" ? "NOT_FOUND" : "FORBIDDEN", message: "Fila de calibração indisponível." });
     const access = await accessOf(req);
     // Acompanhar calibração = situação de cada pessoa; médias, divergências e evidências só para quem calibra.
-    res.json(access.caps.calibrate || access.caps.results ? queue : redactCalibrationQueue(queue));
+    if (!(access.caps.calibrate || access.caps.results)) return res.json(redactCalibrationQueue(queue));
+    // Proposta de cada líder (etapa Calibração e devolutiva): o RH vê ao lado da decisão e pode usá-la.
+    res.json({ ...queue, rows: queue.rows.map((row) => ({ ...row, leaderProposal: leaderProposalOf(db, row.participantId) })) });
   });
 
   const signalsFor = async (ids: string[], cycleMinDays: number) => {
@@ -1146,7 +1182,83 @@ export function registerPerformanceRoutes(expressApp: express.Application, deps:
     const { scope, actorEmployeeId } = await scopeOf(req);
     const db = await deps.store.read();
     noStore(res);
-    res.json({ items: leaderQueue(db, scope, actorEmployeeId), leadership: superiorLeadershipQueue(db, actorEmployeeId) });
+    res.json({ items: leaderQueue(db, scope, actorEmployeeId, now()), leadership: superiorLeadershipQueue(db, actorEmployeeId), notices: teamNotices(db, actorEmployeeId, now()) });
+  });
+
+  // Etapa "Calibração e devolutiva": o líder propõe a posição, agenda a conversa e prepara devolutiva e PDI.
+  // Fora do alcance do RH que calibra, vale só a relação de liderança (nem o alcance da organização inteira basta).
+  app.put("/api/hr/performance/plans/:participantId", ...planGuard, async (req, res) => {
+    const actorUserId = await deps.actorUserId(req);
+    const access = await accessOf(req);
+    const scope: PerformanceScope = access.caps.calibrate ? access.scope : { kind: "LIMITED", actorEmployeeId: access.actorEmployeeId, visible: new Set(), writable: new Set() };
+    const body = req.body ?? {};
+    const proposal = body.proposal && typeof body.proposal === "object" ? { decision: str(body.proposal.decision, 16), nineX: strOrNull(body.proposal.nineX, 8), nineY: strOrNull(body.proposal.nineY, 8), note: strOrNull(body.proposal.note, 1000) } : null;
+    const meeting = body.meeting && typeof body.meeting === "object" ? { at: strOrNull(body.meeting.at, 16), place: strOrNull(body.meeting.place, 200) } : null;
+    const draft =
+      body.draft && typeof body.draft === "object"
+        ? {
+            strength: strOrNull(body.draft.strength),
+            improvement: strOrNull(body.draft.improvement),
+            action: strOrNull(body.draft.action),
+            pdiTitle: strOrNull(body.draft.pdiTitle, 200),
+            pdiObjective: strOrNull(body.draft.pdiObjective),
+            pdiDueAt: strOrNull(body.draft.pdiDueAt, 10),
+          }
+        : null;
+    await mutateAdmin(deps.store, res, (db) => saveFollowUpPlan(db, { participantId: req.params.participantId, proposal, meeting, draft, actorUserId, scope }, deps.options));
+  });
+
+  // ---------------------------------------------------------------- autoavaliação dentro do sistema
+  // A própria pessoa (usuário ligado ao cadastro) responde a jornada dela sem QR: mesmo formato e regras do portal.
+  /** Aviso "Falta com você": a própria etapa e o que a pessoa deve como líder (qualquer um com acesso ao módulo). */
+  app.get("/api/hr/performance/me/pending", ...selfGuard, async (req, res) => {
+    const { actorEmployeeId } = await scopeOf(req);
+    const db = await deps.store.read();
+    noStore(res);
+    res.json(teamNotices(db, actorEmployeeId, now()));
+  });
+
+  app.get("/api/hr/performance/me/form", ...selfGuard, async (req, res) => {
+    const { actorEmployeeId } = await scopeOf(req);
+    const db = await deps.store.read();
+    const result = myForm(db, { actorEmployeeId }, deps.options);
+    noStore(res);
+    if (result.ok === false) return res.json({ ok: false, code: result.code, message: result.message });
+    res.json({ ok: true, ...result.value });
+  });
+
+  app.put("/api/hr/performance/me/answers", ...selfGuard, async (req, res) => {
+    const answers = Array.isArray(req.body?.answers) ? req.body.answers.slice(0, 50) : [];
+    const parsed = [];
+    for (const row of answers) {
+      const answer = parseAnswer(row?.answer);
+      if (!answer || typeof row?.code !== "string") {
+        noStore(res);
+        return res.status(400).json({ ok: false, message: "Resposta inválida." });
+      }
+      parsed.push({ code: row.code, answer });
+    }
+    const actorUserId = await deps.actorUserId(req);
+    const { actorEmployeeId } = await scopeOf(req);
+    const outcome = await mutate(deps.store, res, (db) =>
+      mySave(db, { actorEmployeeId, actorUserId, expectedVersion: Number(req.body?.expectedVersion), answers: parsed, step: strOrNull(req.body?.step, 32) }, deps.options)
+    );
+    if (res.headersSent) return;
+    noStore(res);
+    if (outcome.ok === false) return res.json({ ok: false, code: outcome.code, message: outcome.message });
+    res.json({ ok: true, version: outcome.value.version });
+  });
+
+  app.post("/api/hr/performance/me/submit", ...selfGuard, async (req, res) => {
+    const actorUserId = await deps.actorUserId(req);
+    const { actorEmployeeId } = await scopeOf(req);
+    const outcome = await mutate(deps.store, res, (db) =>
+      mySubmit(db, { actorEmployeeId, actorUserId, expectedVersion: Number(req.body?.expectedVersion), step: strOrNull(req.body?.step, 32) }, deps.options)
+    );
+    if (res.headersSent) return;
+    noStore(res);
+    if (outcome.ok === false) return res.json({ ok: false, code: outcome.code, message: outcome.message });
+    res.json({ ok: true, status: outcome.value.status, done: outcome.value.done, next: outcome.value.next });
   });
 
   app.get("/api/hr/performance/assignments/:id", ...leaderFormGuard, async (req, res) => {
@@ -1240,7 +1352,8 @@ export function registerPerformanceRoutes(expressApp: express.Application, deps:
     const dossier = personDossier(db, req.params.id, access.resultScope, access.actorEmployeeId);
     noStore(res);
     if (dossier.ok === false) return res.status(statusOf(dossier.code)).json({ error: dossier.code, message: dossier.message });
-    res.json(dossier);
+    // A ficha individual traz os dados da calibração: quem pode vê-la vê também a proposta do líder.
+    res.json(dossier.individual ? { ...dossier, individual: { ...dossier.individual, leaderProposal: leaderProposalOf(db, req.params.id) } } : dossier);
   });
 
   /** Painel por avaliador: distribuição das notas dadas por cada líder (sem conteúdo de resposta). */
@@ -1688,7 +1801,7 @@ export function registerPerformanceRoutes(expressApp: express.Application, deps:
     const db = await deps.store.read();
     const result = publicForm(db, { sessionToken: sessionToken(req) }, deps.options);
     noStore(res);
-    if (result.ok === false) return res.json({ ok: false, expired: true, message: result.message });
+    if (result.ok === false) return res.json({ ok: false, expired: true, code: result.code, message: result.message });
     res.json({ ok: true, ...result.value });
   });
 

@@ -26,13 +26,25 @@ type SaveState = "idle" | "saving" | "saved" | "offline" | "error";
 
 const NEUTRAL = "Não foi possível abrir esta pesquisa.";
 
+/** Chamadas que a tela usa: o portal público (QR) ou a autoavaliação dentro do sistema (usuário logado). */
+export type PortalApi = {
+  fetchForm: typeof fetchPerformanceForm;
+  saveForm: typeof savePerformanceForm;
+  submitForm: typeof submitPerformanceForm;
+  logout: typeof logoutPerformancePortal;
+};
+const PUBLIC_API: PortalApi = { fetchForm: fetchPerformanceForm, saveForm: savePerformanceForm, submitForm: submitPerformanceForm, logout: logoutPerformancePortal };
+
 function answerLabel(answer: Answer | undefined): string | null {
   if (!answer || answer.kind === "pending") return null;
   if (answer.kind === "notObserved") return NOT_OBSERVED_LABEL;
   return FREQUENCY_SCALE.find((s) => s.score === answer.score)?.label ?? null;
 }
 
-export function PerformancePortalPage() {
+/**
+ * `embedded`: dentro do sistema (aba "Minha avaliação"). Sem QR, código ou botão Sair; a sessão é a do login.
+ */
+export function PerformancePortalPage({ api = PUBLIC_API, embedded = false, onFinished }: { api?: PortalApi; embedded?: boolean; onFinished?: () => void } = {}) {
   const [step, setStep] = useState<Step>("boot");
   const [message, setMessage] = useState<string | null>(null);
   const [otp, setOtp] = useState("");
@@ -70,14 +82,16 @@ export function PerformancePortalPage() {
 
   const loadForm = useCallback(
     async (opts: { resume: boolean; keepLocal?: boolean }) => {
-      const result = await fetchPerformanceForm();
+      const result = await api.fetchForm();
       if (!result.ok || !result.questions || result.version == null) {
         if (result.offline) {
           setMessage(result.message ?? "Sem internet.");
           return false;
         }
-        setStep(opts.resume ? "blocked" : "expired");
-        setMessage(opts.resume ? null : NEUTRAL);
+        // Etapa fora do calendário ("abre em dd/mm") ou nada pendente: a mensagem do servidor explica.
+        const explained = result.code === "STAGE_CLOSED" || result.code === "NO_PENDING";
+        setStep(opts.resume || explained ? "blocked" : "expired");
+        setMessage(explained ? result.message ?? NEUTRAL : opts.resume ? null : NEUTRAL);
         return false;
       }
       const loaded: Record<string, Answer> = applyForm(result as PublicForm, Boolean(opts.keepLocal));
@@ -88,7 +102,7 @@ export function PerformancePortalPage() {
       }
       return true;
     },
-    [applyForm]
+    [api, applyForm]
   );
 
   useEffect(() => {
@@ -96,6 +110,10 @@ export function PerformancePortalPage() {
     // executaria o efeito duas vezes).
     if (booted.current) return;
     booted.current = true;
+    if (embedded) {
+      void loadForm({ resume: true });
+      return;
+    }
     const params = new URLSearchParams(window.location.hash.replace(/^#/, ""));
     const assistToken = params.get("a");
     const linkToken = params.get("t");
@@ -123,9 +141,10 @@ export function PerformancePortalPage() {
       }
       await loadForm({ resume: true });
     })();
-  }, [loadForm]);
+  }, [embedded, loadForm]);
 
   useEffect(() => {
+    if (embedded && step === "boot") return;
     headingRef.current?.focus();
   }, [step, index]);
 
@@ -135,7 +154,7 @@ export function PerformancePortalPage() {
     const run = (async () => {
       const batch = [...pendingRef.current.entries()];
       setSaveState("saving");
-      const result = await savePerformanceForm(
+      const result = await api.saveForm(
         versionRef.current,
         batch.map(([code, answer]) => ({
           code,
@@ -178,7 +197,7 @@ export function PerformancePortalPage() {
     } finally {
       if (flushing.current === run) flushing.current = null;
     }
-  }, [loadForm]);
+  }, [api, loadForm]);
 
   useEffect(() => {
     const online = () => void flush();
@@ -245,7 +264,7 @@ export function PerformancePortalPage() {
       setMessage("Ainda não conseguimos salvar tudo. Confira a internet e toque em Enviar de novo.");
       return;
     }
-    const result = await submitPerformanceForm(versionRef.current, assisted ? confirmed : true, stepRef.current);
+    const result = await api.submitForm(versionRef.current, assisted ? confirmed : true, stepRef.current);
     setBusy(false);
     if (!result.ok) {
       if (result.code === "EXPIRED") {
@@ -265,12 +284,13 @@ export function PerformancePortalPage() {
       return;
     }
     setStep("done");
-    if (assisted) void logoutPerformancePortal();
+    if (assisted) void api.logout();
+    onFinished?.();
   };
 
   const leave = async () => {
     await flush();
-    await logoutPerformancePortal();
+    await api.logout();
     setForm(null);
     setAnswers({});
     setStep("blocked");
@@ -281,11 +301,11 @@ export function PerformancePortalPage() {
     saveState === "saving" ? "Salvando…" : saveState === "saved" ? "Resposta salva ✓" : saveState === "offline" ? "Sem internet: sua resposta está guardada e vamos tentar de novo." : saveState === "error" ? "Não salvou. Toque de novo." : "";
 
   return (
-    <div className="pp" lang="pt-BR">
+    <div className={embedded ? "pp pp-embedded" : "pp"} lang="pt-BR" data-testid={embedded ? "my-evaluation" : undefined}>
       <main className="pp-main">
         <div className="pp-top">
-          <span className="pp-brand">IndusCost · RH</span>
-          {form && (step === "form" || step === "review" || step === "intro") ? (
+          <span className="pp-brand">{embedded ? "Minha avaliação" : "IndusCost · RH"}</span>
+          {!embedded && form && (step === "form" || step === "review" || step === "intro") ? (
             <button type="button" className="pp-link" onClick={() => void leave()} data-testid="portal-leave">
               Sair
             </button>
@@ -471,7 +491,7 @@ export function PerformancePortalPage() {
             <h1 ref={headingRef} tabIndex={-1}>
               Confira suas respostas
             </h1>
-            <p className="pp-muted">Toque em “Alterar” se quiser mudar alguma. Depois do envio, não dá para mudar por este convite.</p>
+            <p className="pp-muted">Toque em “Alterar” se quiser mudar alguma. {embedded ? "Depois do envio, não dá para mudar." : "Depois do envio, não dá para mudar por este convite."}</p>
             <ol className="pp-review">
               {questions.map((q, i) => {
                 const text = answerLabel(answers[q.code]);
@@ -535,7 +555,7 @@ export function PerformancePortalPage() {
             <p>
               <strong>O que acontece agora:</strong> o seu líder faz a avaliação dele, o RH confere tudo com cuidado e, depois disso, vocês dois conversam sobre o resultado e sobre o seu desenvolvimento. Esse é o momento de ouvir e de ser ouvido.
             </p>
-            <p className="pp-muted">{assisted ? "Pode devolver o aparelho para o RH." : "Você já pode fechar esta página."}</p>
+            <p className="pp-muted">{assisted ? "Pode devolver o aparelho para o RH." : embedded ? "Você pode continuar usando o sistema normalmente." : "Você já pode fechar esta página."}</p>
           </section>
         ) : null}
 
@@ -544,7 +564,7 @@ export function PerformancePortalPage() {
             <h1 ref={headingRef} tabIndex={-1}>
               {step === "expired" ? "Pesquisa indisponível" : "Pesquisa de desempenho"}
             </h1>
-            <p>{message ?? "Para responder, aponte a câmera do celular para o QR que o RH entregou."}</p>
+            <p>{message ?? (embedded ? "Você não tem pesquisa de desempenho aberta agora." : "Para responder, aponte a câmera do celular para o QR que o RH entregou.")}</p>
             <p className="pp-muted">Dúvidas: procure o RH da sua unidade.</p>
           </section>
         ) : null}

@@ -1259,6 +1259,14 @@ model HrPerformanceCycle {
   activationReason          String?
   /// Avaliação 180° de liderança neste ciclo (modelo LEADERSHIP publicado). NULL = desligada.
   leadershipModelId         String?   @db.Uuid
+  /// Calendário de etapas (YYYY-MM-DD, dias de São Paulo). selfDueAt/leaderDueAt são o fim das duas primeiras.
+  /// Tudo NULL = ciclo anterior ao fluxo por etapas (coleta inteira aberta enquanto o ciclo estiver Aberto).
+  selfStartAt               String?
+  leaderStartAt             String?
+  leadershipStartAt         String?
+  leadershipDueAt           String?
+  calibrationStartAt        String?
+  calibrationDueAt          String?
   model               HrPerformanceModel @relation(fields: [modelId], references: [id], onDelete: Restrict, onUpdate: NoAction)
   leadershipModel     HrPerformanceModel? @relation("PerformanceLeadershipModel", fields: [leadershipModelId], references: [id], onDelete: Restrict, onUpdate: NoAction)
   participants        HrPerformanceParticipant[]
@@ -1306,9 +1314,42 @@ model HrPerformanceParticipant {
   results            HrPerformanceResult[]
   feedbacks          HrPerformanceFeedback[]
   leadershipResults  HrPerformanceLeadershipResult[]
+  followUpPlan       HrPerformanceFollowUpPlan?
 
   @@unique([cycleId, employeeId])
   @@index([employeeId])
+}
+
+/// Etapa "Calibração e devolutiva" conduzida pelo líder: proposta de posição (o RH decide na calibração), conversa
+/// agendada e rascunho de devolutiva e PDI (pré-preenchem os registros oficiais). Nada aqui é resultado oficial.
+model HrPerformanceFollowUpPlan {
+  id                String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  cycleId           String    @db.Uuid
+  participantId     String    @unique @db.Uuid
+  leaderEmployeeId  String    @db.Uuid
+  /// CONFIRM | ADJUST
+  proposalDecision  String?
+  /// LOW | MID | HIGH
+  proposalNineX     String?
+  proposalNineY     String?
+  proposalNote      String?
+  proposedAt        DateTime? @db.Timestamptz(6)
+  /// Data e hora locais da conversa (YYYY-MM-DDTHH:mm).
+  meetingAt         String?
+  meetingPlace      String?
+  draftStrength     String?
+  draftImprovement  String?
+  draftAction       String?
+  draftPdiTitle     String?
+  draftPdiObjective String?
+  draftPdiDueAt     String?
+  updatedByUserId   String?   @db.Uuid
+  createdAt         DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt         DateTime  @default(now()) @db.Timestamptz(6)
+  participant       HrPerformanceParticipant @relation(fields: [participantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([cycleId])
+  @@index([leaderEmployeeId])
 }
 
 model HrPerformanceAssignment {
