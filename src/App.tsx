@@ -110,6 +110,7 @@ import { ProposalPrintView } from "@/src/components/proposal/ProposalPrintView";
 import { ProposalInternalManagementPrintView } from "@/src/components/proposal/ProposalInternalManagementPrintView";
 import { SalesOrderPrintView } from "@/src/components/sales/SalesOrderPrintView";
 import { ExperienceEvaluationPrintView } from "@/src/components/employee/ExperienceEvaluationPrintView";
+import { EmployeeRecordSheetPrintView } from "@/src/components/employee/profile/EmployeeRecordSheetPrintView";
 import { SupplierServiceTerminationPrintView } from "@/src/components/finance/cost-centers/SupplierServiceTerminationPrintView";
 import { RequireAuth } from "@/src/components/RequireAuth";
 import { PasswordChangePage } from "@/src/components/security/PasswordChangePage";
@@ -258,6 +259,7 @@ export default function App() {
         path="/exposure/reports/group/print"
         element={<ExposureLegalReportPrintView kind="group" />}
       />
+      <Route path="/employees/:employeeId/ficha/print" element={<EmployeeRecordSheetPrintView />} />
       <Route
         path="/employees/:employeeId/evaluations/:evaluationId/print"
         element={<ExperienceEvaluationPrintView />}

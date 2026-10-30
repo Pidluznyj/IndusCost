@@ -344,6 +344,7 @@ export type PeopleHistoryEventDto = {
 };
 
 export const PEOPLE_PROFILE_TAB_IDS = [
+  "sheet",
   "overview",
   "professional",
   "career",

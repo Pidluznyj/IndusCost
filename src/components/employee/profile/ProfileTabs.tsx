@@ -4,6 +4,7 @@ import {
   Briefcase,
   CalendarDays,
   ClipboardCheck,
+  ClipboardList,
   FileText,
   Gift,
   GraduationCap,
@@ -23,6 +24,7 @@ import { cn } from "@/src/lib/utils";
 import type { PeopleProfileCapabilities, PeopleProfileTabId } from "@/src/lib/peopleProfileTypes";
 
 export const PEOPLE_PROFILE_TAB_DEFS: { id: PeopleProfileTabId; label: string }[] = [
+  { id: "sheet", label: "Ficha completa" },
   { id: "overview", label: "Visão geral" },
   { id: "professional", label: "Cargo & contrato" },
   { id: "career", label: "Carreira" },
@@ -44,13 +46,14 @@ export const PEOPLE_PROFILE_TAB_DEFS: { id: PeopleProfileTabId; label: string }[
 
 /** Grupos de navegação da ficha — ordem de leitura para quem não é técnico. */
 export const PEOPLE_PROFILE_TAB_GROUPS: { label: string; ids: PeopleProfileTabId[] }[] = [
-  { label: "Perfil", ids: ["overview", "personal", "emergency"] },
+  { label: "Perfil", ids: ["sheet", "overview", "personal", "emergency"] },
   { label: "Trabalho", ids: ["professional", "career", "compensation", "benefits"] },
   { label: "Rotina", ids: ["absences", "epi", "documents", "evaluations", "competencies", "certificates"] },
   { label: "Registro", ids: ["history", "notes", "links", "admin"] },
 ];
 
 const TAB_ICONS: Record<PeopleProfileTabId, LucideIcon> = {
+  sheet: ClipboardList,
   overview: LayoutGrid,
   professional: Briefcase,
   career: TrendingUp,
@@ -80,7 +83,7 @@ export function visibleProfileTabs(
     canViewTrainingCertificates?: boolean;
   }
 ): PeopleProfileTabId[] {
-  const ids: PeopleProfileTabId[] = ["overview"];
+  const ids: PeopleProfileTabId[] = ["sheet", "overview"];
   if (!caps || caps.canViewProfessional) ids.push("professional");
   if (!caps || caps.canViewCareer) ids.push("career");
   if (!caps || caps.canViewCompensationEvents) ids.push("compensation");

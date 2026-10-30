@@ -17,6 +17,9 @@ import type { UiPermissionAction } from "@/src/lib/actionPermissionAccess";
 import { useCompetenciesFeature } from "@/src/components/competencies/useCompetenciesFeature";
 import { PeoplePerformanceHistorySection } from "@/src/components/hrPerformance/PeoplePerformanceHistorySection";
 
+const PeopleRecordSheetTab = lazy(() =>
+  import("./PeopleRecordSheetTab").then((m) => ({ default: m.PeopleRecordSheetTab }))
+);
 const PeopleProfessionalTab = lazy(() =>
   import("./PeopleProfessionalTab").then((m) => ({ default: m.PeopleProfessionalTab }))
 );
@@ -137,7 +140,7 @@ export function PeopleEmployeeProfileDialog({
   const [summaryError, setSummaryError] = useState<string | null>(null);
   const [summaryErrorStatus, setSummaryErrorStatus] = useState<number | null>(null);
   const [summaryLoading, setSummaryLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<PeopleProfileTabId>("overview");
+  const [activeTab, setActiveTab] = useState<PeopleProfileTabId>("sheet");
   const [tabCache, setTabCache] = useState<TabCache>({});
   const [tabLoading, setTabLoading] = useState(false);
   const [tabError, setTabError] = useState<string | null>(null);
@@ -171,7 +174,7 @@ export function PeopleEmployeeProfileDialog({
     setSummaryErrorStatus(null);
     setSummaryLoading(true);
     setTabCache({});
-    setActiveTab("overview");
+    setActiveTab("sheet");
     const ac = new AbortController();
     const requestedId = employeeId;
     fetchJson(`/api/employees/${requestedId}/profile`, ac.signal)
@@ -345,7 +348,7 @@ export function PeopleEmployeeProfileDialog({
           </div>
         ) : summary ? (
           <>
-            <ProfileHeader summary={summary} />
+            <ProfileHeader summary={summary} compact={activeTab === "sheet"} />
             <div className="flex-1 min-h-0 grid grid-cols-[232px_minmax(0,1fr)] bg-overlay-surface-muted">
               <div className="min-h-0 border-r border-border bg-background">
                 <ProfileTabs
@@ -365,11 +368,12 @@ export function PeopleEmployeeProfileDialog({
                 ) : (
                   <div
                     className={
-                      activeTab === "overview" || activeTab === "benefits" || activeTab === "history"
+                      activeTab === "sheet" || activeTab === "overview" || activeTab === "benefits" || activeTab === "history"
                         ? undefined
                         : "rounded-xl border border-border bg-background p-6 shadow-sm"
                     }
                   >
+                {activeTab === "sheet" && <PeopleRecordSheetTab employeeId={employeeId} />}
                 {activeTab === "overview" && (
                   <PeopleOverviewTab summary={summary} onOpenHistory={() => setActiveTab("history")} />
                 )}
