@@ -183,7 +183,7 @@ describe("correlação do radar", () => {
 describe("governança e rotinas do radar", () => {
   it("T19 a T26 confirmação, rejeição, simetria e candidato rejeitado", async () => {
     const denied = assessCorporateLinkReview({
-      actor: { role: "SUPER_ADMIN", assignedPermissions: [] },
+      actor: { role: "USER", assignedPermissions: [] },
       subjectCustomerId: A,
       relatedCustomerId: B,
       action: "confirm",

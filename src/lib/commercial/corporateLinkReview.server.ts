@@ -14,7 +14,12 @@ import {
   corporatePairFingerprints,
   type CorporateCandidate,
 } from "./corporateRelation.js";
-import { assessCorporateLinkReview, corporateLinkActionStatus, type CorporateLinkAction } from "./corporateLinkReview.js";
+import {
+  assessCorporateLinkReview,
+  corporateLinkActionStatus,
+  type CorporateLinkAction,
+  type CorporateLinkReviewActor,
+} from "./corporateLinkReview.js";
 
 type LinkRow = { id: string; status: string };
 
@@ -86,7 +91,7 @@ function snapshot(row: CorporateLinkSnapshot | undefined) {
 export async function applyCorporateLinkReview(
   db: CorporateLinkReviewStore,
   input: {
-    actor: { id: string; role: string; assignedPermissions: readonly string[] };
+    actor: CorporateLinkReviewActor & { id: string };
     subjectCustomerId: string;
     relatedCustomerId: string;
     action: string;
@@ -106,7 +111,13 @@ export async function applyCorporateLinkReview(
       httpStatus: failure.code.startsWith("EXCEPTION_") ? 403 : 400,
     };
   }
-  const assessed = verdict as { ok: true; action: CorporateLinkAction; permission: string; justification: string };
+  const assessed = verdict as {
+    ok: true;
+    action: CorporateLinkAction;
+    authorizationBasis: "ROLE_SUPER_ADMIN" | "ASSIGNED_PERMISSION";
+    permission: string | null;
+    justification: string;
+  };
   const now = input.now ?? new Date();
   const status = corporateLinkActionStatus(assessed.action);
   const pairEvidence = input.evidence.filter((item) => item.relatedCustomerId === input.relatedCustomerId);
@@ -199,6 +210,7 @@ export async function applyCorporateLinkReview(
             at: now.toISOString(),
             actorUserId: input.actor.id,
             actorRole: input.actor.role,
+            authorizationBasis: assessed.authorizationBasis,
             permission: assessed.permission,
             reviewedFromCustomerId: input.subjectCustomerId,
             customerId,
@@ -228,7 +240,7 @@ export async function reviewCorporateLinkRequest(
     customer: { findUnique(args: unknown): Promise<{ id?: string; taxId?: string | null } | null> };
   },
   input: {
-    actor: { id: string; role: string; assignedPermissions: readonly string[] };
+    actor: CorporateLinkReviewActor & { id: string };
     subjectCustomerId: string;
     relatedCustomerId: string;
     action: string;

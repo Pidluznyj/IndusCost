@@ -122,6 +122,7 @@ export function registerCompanyIntelligenceRoutes(app: express.Express, auth: Au
         const capability = corporateLinkReviewCapability({
           role: user?.role ?? "",
           assignedPermissions: user?.permissions ?? [],
+          isActive: user?.isActive,
         });
         res.json({
           ...view,
@@ -151,9 +152,9 @@ export function registerCompanyIntelligenceRoutes(app: express.Express, auth: Au
         const justification = typeof body.justification === "string" ? body.justification : "";
         const { prisma } = await import("@/src/lib/prisma.js");
         const { reviewCorporateLinkRequest } = await import("@/src/lib/commercial/corporateLinkReview.server.js");
-        // Permissões atribuídas (cadastro oficial), nunca a lista efetiva: SUPER_ADMIN sem a chave não revisa.
+        // Mesma regra do canReviewCorporateLinks: SUPER_ADMIN pelo papel; demais pelas permissões atribuídas.
         const response = await reviewCorporateLinkRequest(prisma as never, {
-          actor: { id: user.id, role: user.role, assignedPermissions: user.permissions },
+          actor: { id: user.id, role: user.role, assignedPermissions: user.permissions, isActive: user.isActive },
           subjectCustomerId: id,
           relatedCustomerId,
           action,
@@ -223,14 +224,15 @@ export function registerCompanyIntelligenceRoutes(app: express.Express, auth: Au
       const dryRun = body.dryRun !== false;
       const user = await getCurrentAppUser(req);
       if (!dryRun) {
-        const { resolveCommercialCreditExceptionPermission } = await import(
-          "@/src/lib/commercial/commercialCreditDecision.js"
+        const { resolveCorporateLinkReviewAuthorization } = await import(
+          "@/src/lib/commercial/corporateLinkReview.js"
         );
-        const permission = resolveCommercialCreditExceptionPermission({
+        const authorization = resolveCorporateLinkReviewAuthorization({
           role: user?.role ?? "",
           assignedPermissions: user?.permissions ?? [],
+          isActive: user?.isActive,
         });
-        if (!permission.ok) return res.status(403).json({ error: permission.code });
+        if (authorization.ok === false) return res.status(403).json({ error: authorization.code });
       }
       const { prisma } = await import("@/src/lib/prisma.js");
       const customers = await prisma.customer.findMany({

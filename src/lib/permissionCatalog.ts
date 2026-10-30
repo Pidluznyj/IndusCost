@@ -129,7 +129,7 @@ export const PERMISSION_CATALOG: PermissionCatalogEntry[] = [
     group: FIN,
     module: "commercial-credit",
     description:
-      "Autorizar exceção formal de crédito comercial e revisar vínculo empresarial (confirmar, rejeitar, encerrar). Não é concedida pelo papel SUPER_ADMIN.",
+      "Autorizar exceção formal de crédito comercial e revisar vínculo empresarial (confirmar, rejeitar, encerrar). A exceção não é concedida pelo papel SUPER_ADMIN; a revisão de vínculo é autorizada também por esse papel.",
     type: "action",
     risk: "critical",
   }),
@@ -139,7 +139,7 @@ export const PERMISSION_CATALOG: PermissionCatalogEntry[] = [
     group: FIN,
     module: "commercial-credit",
     description:
-      "Autorizar exceção formal de crédito comercial e revisar vínculo empresarial pela Diretoria. Não é concedida pelo papel SUPER_ADMIN.",
+      "Autorizar exceção formal de crédito comercial e revisar vínculo empresarial pela Diretoria. A exceção não é concedida pelo papel SUPER_ADMIN; a revisão de vínculo é autorizada também por esse papel.",
     type: "action",
     risk: "critical",
   }),

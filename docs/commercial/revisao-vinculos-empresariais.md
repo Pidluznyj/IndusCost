@@ -23,6 +23,8 @@ Também: gravação das duas direções sem transação; auditoria sem estado an
 - **Servidor decide, tela obedece:** `GET /api/customers/:id/commercial-credit` devolve `canReviewCorporateLinks` calculado pela mesma função usada no `POST`. Sem permissão a tela mostra "Esta validação requer autorização de Financeiro ou Diretoria." e o `POST` responde 403.
 - Nenhum mecanismo paralelo, nenhum hardcode de usuário, nenhum seed, nenhuma alteração de usuário no banco.
 
+**Revisão de 30/10/2026 (decisão do negócio, substitui a regra anterior para SUPER_ADMIN):** o `SUPER_ADMIN` ativo revisa vínculo pelo papel, sem chave atribuída. Tela, `POST` e varredura do Radar usam `resolveCorporateLinkReviewAuthorization`. A auditoria registra `authorizationBasis` (`ROLE_SUPER_ADMIN` ou `ASSIGNED_PERMISSION`); pelo papel, `permission` fica nula. **Não muda:** conceder exceção de crédito e registrar ocorrência continuam exigindo a chave explícita (`resolveCommercialCreditExceptionPermission`).
+
 ## 3. Comportamento do vínculo
 
 | Ação | Exige | Grava | Efeito no crédito |
@@ -70,7 +72,7 @@ npx tsx scripts/auditCorporateLinkReview.ts --cnpj=66913253000164
 
 1. Rodar o relatório: esperado `individual LIBERADO · consolidada EM_ANALISE · RELATED_PARTY_UNVERIFIED` e 1 pendente GODOI & CARDOSO, "Mesmo endereço fiscal", "Baixa · indício, não prova". Se aparecer "leitura de vínculos incompleta", a causa é Radar/QSA indisponível, não o vínculo.
 2. Com usuário **sem** a chave: Ficha CNPJ da VICLA mostra o pendente sem botões e a frase "Esta validação requer autorização de Financeiro ou Diretoria.".
-3. Com SUPER_ADMIN **sem** a chave: idem (sem botões).
+3. Com SUPER_ADMIN (mesmo sem a chave): botões Confirmar/Rejeitar aparecem; a decisão grava `authorizationBasis=ROLE_SUPER_ADMIN` e `permission=null` na auditoria.
 4. Conceder `commercial.credit.exception.grant` a um usuário de Financeiro pela tela de Usuários (não pelo banco). Sair e entrar.
 5. Ficha CNPJ da VICLA: botões Confirmar/Rejeitar aparecem. Conferir o contrato social das duas empresas fora do sistema.
 6. Registrar a decisão com justificativa objetiva (o botão só habilita com 20+ caracteres). A ficha recarrega o crédito sozinha.

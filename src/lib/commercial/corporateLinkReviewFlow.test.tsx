@@ -12,15 +12,15 @@ import { fileURLToPath } from "node:url";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { CorporateLinkReviewPanel } from "../../components/customers/CorporateLinkReviewPanel.js";
-import { getEffectivePermissions, toAppAuthContext, toSafeAppUser } from "../auth/appAuth.server.js";
+import { toAppAuthContext, toSafeAppUser } from "../auth/appAuth.server.js";
 import { ALL_PERMISSION_KEYS, PERMISSION_CATALOG } from "../permissionCatalog.js";
 import { PERMISSION_CONTRACT_RESOURCES } from "../security/permissionContract/resources.js";
-import { COMMERCIAL_CREDIT_EXCEPTION_PERMISSIONS } from "./commercialCreditDecision.js";
+import { COMMERCIAL_CREDIT_EXCEPTION_PERMISSIONS, resolveCommercialCreditExceptionPermission } from "./commercialCreditDecision.js";
 import {
   loadCustomerCommercialCreditIntelligence,
   readCommercialCreditDecision,
 } from "./commercialCreditDecision.server.js";
-import { corporateLinkReviewCapability } from "./corporateLinkReview.js";
+import { corporateLinkReviewCapability, resolveCorporateLinkReviewAuthorization } from "./corporateLinkReview.js";
 import { applyCorporateLinkReview, reviewCorporateLinkRequest } from "./corporateLinkReview.server.js";
 import { splitCorporateFingerprints } from "./corporateRelation.js";
 import { loadCustomerCorporateRadarView } from "./corporateRelation.server.js";
@@ -403,15 +403,98 @@ describe("vínculo empresarial › autorização", () => {
     assert.equal(done.httpStatus, 200);
   });
 
-  it("T05 SUPER_ADMIN sem a chave não revisa, mesmo com o catálogo inteiro nas permissões efetivas", async () => {
-    const effective = getEffectivePermissions({ role: "SUPER_ADMIN", permissions: [] } as never);
-    assert.ok(effective.includes(GRANT), "a expansão implícita existe na lista efetiva (causa raiz C)");
-    assert.equal(corporateLinkReviewCapability({ role: "SUPER_ADMIN", assignedPermissions: [] }).canReview, false);
+  it("T05 SUPER_ADMIN sem chave revisa pelo papel; a exceção financeira segue exigindo a chave", async () => {
+    const auth = toAppAuthContext(appUser("SUPER_ADMIN", []), { id: "s1" });
+    assert.deepEqual(resolveCorporateLinkReviewAuthorization({ role: auth.role, assignedPermissions: auth.permissions, isActive: auth.isActive }), {
+      ok: true,
+      basis: "ROLE_SUPER_ADMIN",
+      permission: null,
+    });
+    assert.deepEqual(corporateLinkReviewCapability({ role: "SUPER_ADMIN", assignedPermissions: [] }), {
+      canReview: true,
+      permission: null,
+      reason: null,
+    });
+    assert.deepEqual(resolveCommercialCreditExceptionPermission({ role: "SUPER_ADMIN", assignedPermissions: [] }), {
+      ok: false,
+      code: "EXCEPTION_IMPLICIT_SUPER_ADMIN",
+    });
+  });
+
+  it("T05b SUPER_ADMIN inativo não revisa", async () => {
+    const inactive = { id: ACTOR, role: "SUPER_ADMIN", assignedPermissions: [] as string[], isActive: false };
+    assert.equal(corporateLinkReviewCapability(inactive).canReview, false);
     const scenario = viclaScenario();
-    const denied = await review(scenario.db, "confirm", { actor: { id: ACTOR, role: "SUPER_ADMIN", assignedPermissions: [] } });
+    const denied = await review(scenario.db, "confirm", { actor: inactive });
     assert.equal(denied.httpStatus, 403);
-    assert.equal(denied.body.code, "EXCEPTION_IMPLICIT_SUPER_ADMIN");
     assert.deepEqual(scenario.writes(), []);
+  });
+
+  it("T05c Financeiro e Diretoria autorizados registram a própria chave; papel comum sem chave recebe 403", async () => {
+    for (const permission of COMMERCIAL_CREDIT_EXCEPTION_PERMISSIONS) {
+      const actor = { id: ACTOR, role: "ADMIN", assignedPermissions: [permission] };
+      assert.equal(corporateLinkReviewCapability(actor).canReview, true);
+      const scenario = viclaScenario();
+      assert.equal((await review(scenario.db, "confirm", { actor })).httpStatus, 200);
+      for (const audit of scenario.audits()) {
+        const entry = JSON.parse(String(audit.newValue));
+        assert.equal(entry.authorizationBasis, "ASSIGNED_PERMISSION");
+        assert.equal(entry.permission, permission);
+      }
+    }
+    const denied = { id: ACTOR, role: "ADMIN", assignedPermissions: [] as string[] };
+    assert.equal(corporateLinkReviewCapability(denied).canReview, false);
+    const scenario = viclaScenario();
+    assert.equal((await review(scenario.db, "confirm", { actor: denied })).httpStatus, 403);
+    assert.deepEqual(scenario.writes(), []);
+  });
+
+  it("T05d VICLA × GODOI pelo SUPER_ADMIN: vê os botões, decide, audita pelo papel e atualiza o consolidado", async () => {
+    const actor = { id: ACTOR, role: "SUPER_ADMIN", assignedPermissions: [] as string[], isActive: true };
+    const capability = corporateLinkReviewCapability(actor);
+    for (const action of ["confirm", "reject"]) {
+      const scenario = viclaScenario();
+      const html = panel(await viewFor(scenario.db, capability.canReview));
+      assert.match(html, /data-testid="corporate-link-confirm"/);
+      assert.match(html, /data-testid="corporate-link-reject"/);
+      assert.equal((await read(scenario.db)).decision.customerStatus, "EM_ANALISE");
+      assert.equal((await review(scenario.db, action, { actor })).httpStatus, 200);
+      assert.deepEqual(new Set(scenario.writes()), new Set(["customerCorporateLink", "commercialAuditLog"]), "só vínculo e auditoria");
+      assert.equal(scenario.audits().length, 2);
+      for (const audit of scenario.audits()) {
+        const entry = JSON.parse(String(audit.newValue));
+        assert.equal(entry.actorRole, "SUPER_ADMIN");
+        assert.equal(entry.authorizationBasis, "ROLE_SUPER_ADMIN");
+        assert.equal(entry.permission, null, "nenhuma chave individual simulada");
+      }
+      assert.notEqual((await read(scenario.db)).decision.reason, "RELATED_PARTY_UNVERIFIED");
+      assert.notEqual((await read(scenario.db)).decision.customerStatus, "EM_ANALISE");
+    }
+  });
+
+  it("T05e SUPER_ADMIN não libera restrição financeira real ao decidir o vínculo", async () => {
+    const actor = { id: ACTOR, role: "SUPER_ADMIN", assignedPermissions: [] as string[] };
+    const debt = viclaScenario({ godoiOverdue: true });
+    assert.equal((await review(debt.db, "confirm", { actor })).httpStatus, 200);
+    assert.equal((await read(debt.db)).decision.customerStatus, "BLOQUEADO");
+    const protest = viclaScenario({ protest: true });
+    assert.equal((await review(protest.db, "reject", { actor })).httpStatus, 200);
+    assert.equal((await read(protest.db)).decision.customerStatus, "BLOQUEADO");
+  });
+
+  it("T05f justificativa curta, sem indício e repetição seguem valendo para o SUPER_ADMIN", async () => {
+    const actor = { id: ACTOR, role: "SUPER_ADMIN", assignedPermissions: [] as string[] };
+    const scenario = viclaScenario();
+    const short = await review(scenario.db, "confirm", { actor, justification: "curta demais" });
+    assert.equal(short.httpStatus, 400);
+    assert.deepEqual(scenario.writes(), []);
+    const closeWithoutLink = await review(scenario.db, "close", { actor });
+    assert.equal(closeWithoutLink.httpStatus, 409);
+    assert.deepEqual(scenario.writes(), []);
+    assert.equal((await review(scenario.db, "confirm", { actor })).body.changed, true);
+    const audits = scenario.audits().length;
+    assert.equal((await review(scenario.db, "confirm", { actor })).body.changed, false);
+    assert.equal(scenario.audits().length, audits);
   });
 
   it("T06 a revogação impede novas decisões", async () => {
@@ -429,7 +512,7 @@ describe("vínculo empresarial › autorização", () => {
       const entry = PERMISSION_CATALOG.find((row) => row.key === key)!;
       assert.equal(entry.risk, "critical");
       assert.match(entry.description ?? "", /revisar vínculo empresarial/);
-      assert.match(entry.description ?? "", /Não é concedida pelo papel SUPER_ADMIN/);
+      assert.match(entry.description ?? "", /A exceção não é concedida pelo papel SUPER_ADMIN/);
     }
     const resource = PERMISSION_CONTRACT_RESOURCES.find((row) => row.resourceKey === "finance.commercial_credit_exception")!;
     assert.deepEqual([...resource.actions[0]!.legacyPermissionKeys].sort(), [...COMMERCIAL_CREDIT_EXCEPTION_PERMISSIONS].sort());
@@ -438,7 +521,10 @@ describe("vínculo empresarial › autorização", () => {
     const post = /"\/api\/customers\/:id\/corporate-links"[\s\S]*?\n  \);/.exec(routes)?.[0] ?? "";
     assert.match(post, /assignedPermissions: user\.permissions/);
     assert.doesNotMatch(post, /effectivePermissions/);
-    const scan = /"\/api\/commercial\/corporate-radar\/scan"[\s\S]*?resolveCommercialCreditExceptionPermission\([\s\S]*?\}\);/.exec(routes)?.[0] ?? "";
+    assert.match(post, /isActive: user\.isActive/);
+    assert.match(routes, /corporateLinkReviewCapability\(\{/);
+    const scan = /"\/api\/commercial\/corporate-radar\/scan"[\s\S]*?resolveCorporateLinkReviewAuthorization\([\s\S]*?\}\);/.exec(routes)?.[0] ?? "";
+    assert.ok(scan, "a varredura usa a regra central");
     assert.doesNotMatch(scan, /effectivePermissions/);
     const panelSource = readFileSync(join(here, "../../components/customers/CustomerCnpjIntelligencePanel.tsx"), "utf8");
     assert.match(panelSource, /credit\?\.canReviewCorporateLinks === true/);

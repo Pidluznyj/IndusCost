@@ -429,7 +429,7 @@ describe("governança do vínculo", () => {
 
   it("T34 usuário sem permissão não confirma", () => {
     const denied = assessCorporateLinkReview({
-      actor: { role: "SUPER_ADMIN", assignedPermissions: [] },
+      actor: { role: "USER", assignedPermissions: [] },
       subjectCustomerId: A,
       relatedCustomerId: B,
       action: "confirm",

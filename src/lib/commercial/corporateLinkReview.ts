@@ -1,7 +1,8 @@
 /**
  * Confirmação administrativa de vínculo entre clientes.
- * Não confirma pelo nome. SUPER_ADMIN sem a permissão explícita não confirma.
- * A exceção de um CNPJ não é este módulo: cada cliente continua com a sua.
+ * Não confirma pelo nome. SUPER_ADMIN revisa pelo papel; os demais, pela permissão de Financeiro ou Diretoria.
+ * A exceção de um CNPJ não é este módulo: cada cliente continua com a sua, e o SUPER_ADMIN segue sem concedê-la
+ * pelo papel (resolveCommercialCreditExceptionPermission não muda).
  */
 
 import {
@@ -16,17 +17,38 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
 
 export const CORPORATE_LINK_REVIEW_FORBIDDEN_MESSAGE = "Esta validação requer autorização de Financeiro ou Diretoria.";
 
-/**
- * Quem pode revisar vínculo: a mesma regra da rota POST, calculada no servidor.
- * Usa as permissões atribuídas ao usuário (cadastro oficial de permissões), nunca a lista
- * efetiva compacta da sessão. SUPER_ADMIN sem a chave explícita não revisa.
- */
-export function corporateLinkReviewCapability(actor: {
+export type CorporateLinkReviewActor = {
   role: string;
   assignedPermissions: readonly string[];
-}): { canReview: boolean; permission: string | null; reason: string | null } {
+  isActive?: boolean;
+};
+
+/** Base gravada na auditoria. Pelo papel, `permission` fica nula: nenhuma chave individual é simulada. */
+export type CorporateLinkReviewAuthorization =
+  | { ok: true; basis: "ROLE_SUPER_ADMIN"; permission: null }
+  | { ok: true; basis: "ASSIGNED_PERMISSION"; permission: string }
+  | { ok: false; code: "EXCEPTION_FORBIDDEN" };
+
+/**
+ * Regra ÚNICA de quem revisa vínculo: tela (canReviewCorporateLinks), POST e varredura do Radar passam por aqui.
+ * SUPER_ADMIN ativo: autorizado pelo papel, com ou sem chave atribuída.
+ * Demais: permissões atribuídas (cadastro oficial), nunca a lista efetiva compacta da sessão.
+ */
+export function resolveCorporateLinkReviewAuthorization(actor: CorporateLinkReviewActor): CorporateLinkReviewAuthorization {
+  if (actor.isActive === false) return { ok: false, code: "EXCEPTION_FORBIDDEN" };
+  if (actor.role === "SUPER_ADMIN") return { ok: true, basis: "ROLE_SUPER_ADMIN", permission: null };
   const permission = resolveCommercialCreditExceptionPermission(actor);
-  if (permission.ok) return { canReview: true, permission: permission.permission, reason: null };
+  if (permission.ok) return { ok: true, basis: "ASSIGNED_PERMISSION", permission: permission.permission };
+  return { ok: false, code: "EXCEPTION_FORBIDDEN" };
+}
+
+export function corporateLinkReviewCapability(actor: CorporateLinkReviewActor): {
+  canReview: boolean;
+  permission: string | null;
+  reason: string | null;
+} {
+  const authorization = resolveCorporateLinkReviewAuthorization(actor);
+  if (authorization.ok) return { canReview: true, permission: authorization.permission, reason: null };
   return { canReview: false, permission: null, reason: CORPORATE_LINK_REVIEW_FORBIDDEN_MESSAGE };
 }
 
@@ -37,19 +59,25 @@ export function corporateLinkActionStatus(action: CorporateLinkAction): "CONFIRM
 }
 
 export function assessCorporateLinkReview(input: {
-  actor: { role: string; assignedPermissions: readonly string[] };
+  actor: CorporateLinkReviewActor;
   subjectCustomerId: string;
   relatedCustomerId: string;
   action: string;
   justification: string;
 }):
-  | { ok: true; action: CorporateLinkAction; permission: string; justification: string }
+  | {
+      ok: true;
+      action: CorporateLinkAction;
+      authorizationBasis: "ROLE_SUPER_ADMIN" | "ASSIGNED_PERMISSION";
+      permission: string | null;
+      justification: string;
+    }
   | { ok: false; code: string; message: string } {
-  const permission = resolveCommercialCreditExceptionPermission(input.actor);
-  if (!permission.ok) {
+  const authorization = resolveCorporateLinkReviewAuthorization(input.actor);
+  if (authorization.ok === false) {
     return {
       ok: false,
-      code: permission.code,
+      code: authorization.code,
       message: CORPORATE_LINK_REVIEW_FORBIDDEN_MESSAGE,
     };
   }
@@ -69,7 +97,8 @@ export function assessCorporateLinkReview(input: {
   return {
     ok: true,
     action: input.action as CorporateLinkAction,
-    permission: permission.permission,
+    authorizationBasis: authorization.basis,
+    permission: authorization.permission,
     justification,
   };
 }
