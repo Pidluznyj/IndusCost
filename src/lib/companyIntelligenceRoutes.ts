@@ -118,7 +118,16 @@ export function registerCompanyIntelligenceRoutes(app: express.Express, auth: Au
             Boolean(user && (user.permissions.includes(key) || user.effectivePermissions.includes(key))),
         });
         const view = await loadCustomerCommercialCreditIntelligence(prisma, id, { revealFinancial });
-        res.json(view);
+        const { corporateLinkReviewCapability } = await import("@/src/lib/commercial/corporateLinkReview.js");
+        const capability = corporateLinkReviewCapability({
+          role: user?.role ?? "",
+          assignedPermissions: user?.permissions ?? [],
+        });
+        res.json({
+          ...view,
+          canReviewCorporateLinks: capability.canReview,
+          corporateLinkReviewBlockedReason: capability.reason,
+        });
       } catch (e) {
         console.error("commercial-credit", e instanceof Error ? e.name : "error");
         res.status(500).json({ error: "Situação de crédito indisponível." });
@@ -141,44 +150,16 @@ export function registerCompanyIntelligenceRoutes(app: express.Express, auth: Au
         const action = typeof body.action === "string" ? body.action : "";
         const justification = typeof body.justification === "string" ? body.justification : "";
         const { prisma } = await import("@/src/lib/prisma.js");
-        const { applyCorporateLinkReview } = await import("@/src/lib/commercial/corporateLinkReview.server.js");
-        const { corporateCandidateFingerprint } = await import("@/src/lib/commercial/corporateRelation.js");
-        const { loadCorporateRelationAssessment } = await import("@/src/lib/commercial/corporateRelation.server.js");
-        const { writeCommercialAuditLog } = await import("@/src/lib/commercialAuditLog.js");
-        let evidenceFingerprint: string | null = null;
-        if (action === "reject") {
-          const customer = await prisma.customer.findUnique({ where: { id }, select: { taxId: true } });
-          const assessment = await loadCorporateRelationAssessment(prisma as never, {
-            customerId: id,
-            cnpj: customer?.taxId ?? null,
-            now: new Date(),
-          });
-          const candidate = assessment.candidates.find((item) => item.relatedCustomerId === relatedCustomerId);
-          evidenceFingerprint = candidate ? corporateCandidateFingerprint(candidate) : null;
-        }
-        const result = await applyCorporateLinkReview(
-          prisma as never,
-          {
-            actor: {
-              id: user.id,
-              role: user.role,
-              assignedPermissions: user.effectivePermissions,
-            },
-            subjectCustomerId: id,
-            relatedCustomerId,
-            action,
-            justification,
-            evidenceFingerprint,
-          },
-          async (entry) => {
-            await writeCommercialAuditLog(entry);
-          }
-        );
-        if (!result.ok) {
-          const status = result.code.startsWith("EXCEPTION_") ? 403 : 400;
-          return res.status(status).json({ error: result.message, code: result.code });
-        }
-        res.json({ status: result.status });
+        const { reviewCorporateLinkRequest } = await import("@/src/lib/commercial/corporateLinkReview.server.js");
+        // Permissões atribuídas (cadastro oficial), nunca a lista efetiva: SUPER_ADMIN sem a chave não revisa.
+        const response = await reviewCorporateLinkRequest(prisma as never, {
+          actor: { id: user.id, role: user.role, assignedPermissions: user.permissions },
+          subjectCustomerId: id,
+          relatedCustomerId,
+          action,
+          justification,
+        });
+        res.status(response.httpStatus).json(response.body);
       } catch (e) {
         console.error("corporate-link-review", e instanceof Error ? e.name : "error");
         res.status(500).json({ error: "Não foi possível registrar o vínculo." });
@@ -197,19 +178,8 @@ export function registerCompanyIntelligenceRoutes(app: express.Express, auth: Au
         const { prisma } = await import("@/src/lib/prisma.js");
         const customer = await prisma.customer.findUnique({ where: { id }, select: { id: true, taxId: true } });
         if (!customer) return res.status(404).json({ error: "Cliente não encontrado." });
-        const { loadCorporateRelationAssessment, presentCorporateCandidate, presentCorporateRelation } = await import(
-          "@/src/lib/commercial/corporateRelation.server.js"
-        );
-        const assessment = await loadCorporateRelationAssessment(prisma as never, {
-          customerId: id,
-          cnpj: customer.taxId,
-          now: new Date(),
-        });
-        res.json({
-          writes: "NONE",
-          formal: assessment.relations.map((relation) => presentCorporateRelation(relation, "Conferido pelo cadastro")),
-          review: assessment.candidates.map((candidate) => presentCorporateCandidate(candidate)),
-        });
+        const { loadCustomerCorporateRadarView } = await import("@/src/lib/commercial/corporateRelation.server.js");
+        res.json(await loadCustomerCorporateRadarView(prisma as never, customer, new Date()));
       } catch (error) {
         console.error("corporate-radar", error instanceof Error ? error.name : "error");
         res.status(500).json({ error: "Radar indisponível." });
@@ -258,7 +228,7 @@ export function registerCompanyIntelligenceRoutes(app: express.Express, auth: Au
         );
         const permission = resolveCommercialCreditExceptionPermission({
           role: user?.role ?? "",
-          assignedPermissions: user?.effectivePermissions ?? [],
+          assignedPermissions: user?.permissions ?? [],
         });
         if (!permission.ok) return res.status(403).json({ error: permission.code });
       }

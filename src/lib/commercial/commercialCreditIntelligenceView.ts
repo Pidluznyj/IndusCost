@@ -17,7 +17,7 @@ import {
   EXTERNAL_PROTEST_NOT_CONSULTED_DETAIL,
   type ExternalProtestCreditFact,
 } from "./externalProtest/externalProtestProvider.js";
-import type { CorporateRelationView } from "./corporateRelation.server.js";
+import type { CorporateLinkHistoryView, CorporateRelationView } from "./corporateRelation.server.js";
 
 export const INTELLIGENCE_FACT_STATES = [
   "NOT_CONSULTED",
@@ -282,6 +282,12 @@ export type CommercialCreditIntelligenceView = {
   ownDecisionTitle: string;
   relatedRiskNote: string | null;
   pendingCorporateRelations: CorporateRelationView[];
+  /** Vínculos rejeitados ou encerrados (histórico, não entram no grupo). */
+  corporateLinkHistory: CorporateLinkHistoryView[];
+  pendingRelationReadIncomplete: boolean;
+  /** Calculado no servidor por usuário (rota). Ausente = sem permissão. */
+  canReviewCorporateLinks?: boolean;
+  corporateLinkReviewBlockedReason?: string | null;
   relatedRestrictionLines: string[];
   situationLabel: string;
   reason: string | null;
@@ -526,6 +532,8 @@ export function notConsultedCommercialCreditView(): CommercialCreditIntelligence
     occurrenceLines: [],
     corporateRelations: [],
     pendingCorporateRelations: [],
+    corporateLinkHistory: [],
+    pendingRelationReadIncomplete: false,
     relatedRestrictionLines: [],
     cadastralScoreLabel: INTELLIGENCE_FACT_LABEL.NOT_CONSULTED,
     cadastralVerdict: null,
@@ -558,6 +566,8 @@ export function buildCommercialCreditIntelligenceView(input: {
   externalProtestConsultation?: ExternalProtestCreditFact | null;
   corporateRelations?: readonly CorporateRelationView[];
   pendingCorporateRelations?: readonly CorporateRelationView[];
+  corporateLinkHistory?: readonly CorporateLinkHistoryView[];
+  pendingRelationReadIncomplete?: boolean;
   relatedRestrictionFacts?: readonly RelatedCreditRestrictionFact[];
   ownCustomerStatus?: CommercialCreditDecisionStatus | null;
   authorizedExceptions?: readonly string[];
@@ -629,6 +639,8 @@ export function buildCommercialCreditIntelligenceView(input: {
     occurrenceLines: [...(input.occurrenceLines ?? [])],
     corporateRelations: [...(input.corporateRelations ?? [])],
     pendingCorporateRelations: [...(input.pendingCorporateRelations ?? [])],
+    corporateLinkHistory: [...(input.corporateLinkHistory ?? [])],
+    pendingRelationReadIncomplete: input.pendingRelationReadIncomplete === true,
     relatedRestrictionLines: (input.relatedRestrictionFacts ?? []).map((fact) =>
       relatedRestrictionLine(fact, input.revealFinancial)
     ),

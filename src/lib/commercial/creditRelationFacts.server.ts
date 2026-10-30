@@ -32,7 +32,12 @@ export async function loadCreditRelationSignals(
   customers: readonly { id: string; taxId?: string | null }[],
   now: Date,
   rejectedByCustomer: ReadonlyMap<string, readonly RejectedLink[]> = new Map(),
-  options?: { examineLimit?: number; maxCatalogRows?: number }
+  options?: {
+    examineLimit?: number;
+    maxCatalogRows?: number;
+    /** Grafo manual confirmado de cada cliente: a empresa confirmada entra no grupo e deixa de ser pendência. */
+    manualConfirmedByCustomer?: ReadonlyMap<string, readonly string[]>;
+  }
 ): Promise<{ byCustomer: Map<string, CreditRelationSignal>; readFailed: boolean }> {
   const byCustomer = new Map<string, CreditRelationSignal>();
   if (customers.length === 0) return { byCustomer, readFailed: false };
@@ -57,6 +62,7 @@ export async function loadCreditRelationSignals(
 
   for (const customer of customers) {
     const rejected = rejectedByCustomer.get(customer.id) ?? [];
+    const manualConfirmedIds = options?.manualConfirmedByCustomer?.get(customer.id) ?? [];
     let qsaRelations: string[] = [];
     let qsaCandidates: CorporateCandidate[] = [];
     let customerFailed = catalogFailed || roots.readFailed || probeFailed;
@@ -69,6 +75,7 @@ export async function loadCreditRelationSignals(
             cnpj: normalizeCnpj(customer.taxId) || null,
             now,
             rejected,
+            manualConfirmedIds,
           },
           { includeRadar: false, radarCatalog: catalog }
         );
@@ -94,11 +101,13 @@ export async function loadCreditRelationSignals(
       [...qsaCandidates, ...radar.candidates].filter(
         (candidate) => candidate.subjectCustomerId === customer.id && !confirmedIds.includes(candidate.relatedCustomerId)
       ),
-      rejected
+      rejected,
+      manualConfirmedIds
     );
     byCustomer.set(customer.id, {
       confirmedIds,
-      pendingCount: pending.length + (customerFailed ? 1 : 0),
+      // Empresas pendentes (uma por par, mesmo com várias evidências) e a leitura incompleta conta como pendência.
+      pendingCount: new Set(pending.map((candidate) => candidate.relatedCustomerId)).size + (customerFailed ? 1 : 0),
       overflow:
         customerFailed ||
         rootIncomplete ||

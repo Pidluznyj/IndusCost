@@ -320,8 +320,13 @@ export function CnpjCommercialIntelligencePrintReport({ data }: Props) {
                   {data.credit.corporateRelations.map((relation) => (
                     <p key={`${relation.kindLabel}-${relation.relatedCompany}`}>
                       {formatCnpjPrintText(
-                        `Confirmada · ${relation.kindLabel} · ${relation.relatedCompany} · ${relation.creditStatusLabel}. ${relation.evidence}`
+                        `Confirmada · ${relation.kindLabel} · ${relation.relatedCompany} · ${relation.creditStatusLabel}. ${relation.evidence}${relation.reviewNote ? ` ${relation.reviewNote}` : ""}`
                       )}
+                    </p>
+                  ))}
+                  {(data.credit.corporateLinkHistory ?? []).map((row) => (
+                    <p key={`history-${row.relatedCustomerId}`}>
+                      {formatCnpjPrintText(`${row.statusLabel} · ${row.companyName} · ${row.cnpjLabel}. ${row.reviewNote}`)}
                     </p>
                   ))}
                   {data.credit.pendingCorporateRelations.map((relation) => (

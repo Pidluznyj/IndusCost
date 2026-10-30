@@ -180,9 +180,8 @@ export function CustomerCnpjIntelligencePanel({
   const [simOpen, setSimOpen] = useState(false);
   const [tab, setTab] = useState<IntelligenceTab>("internal");
   const [bureau, setBureau] = useState<BureauSnapshot>(EMPTY_BUREAU_SNAPSHOT);
-  const canReviewCorporateLinks = (auth?.authUser?.effectivePermissions ?? []).some(
-    (key) => key === "commercial.credit.exception.grant" || key === "commercial.credit.exception.grant.board"
-  );
+  // Calculado no servidor com a mesma regra da gravação (a sessão compacta não traz as permissões atribuídas).
+  const canReviewCorporateLinks = credit?.canReviewCorporateLinks === true;
 
   const loadCredit = useCallback(async () => {
     if (!customerId) {
