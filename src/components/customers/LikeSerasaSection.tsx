@@ -3,7 +3,8 @@ import { formatCreditDateTime } from "@/src/lib/commercial/commercialCreditIntel
 import { fetchJsonOk, HttpError } from "@/src/lib/http";
 import { generateIdempotencyKey, SecureRandomUnavailableError } from "@/src/lib/quodDossier/idempotencyKey";
 import { BOA_VISTA_DEFINE_LIMITE_ATTRIBUTION, BOA_VISTA_DEFINE_LIMITE_PRODUCT, LIKE_SERASA_DISPLAY_NAME } from "@/src/lib/boaVistaDefineLimite/config";
-import type { BoaVistaMonthlyPoint, BoaVistaOccurrenceGroup, BoaVistaSections } from "@/src/lib/boaVistaDefineLimite/parse";
+import type { BoaVistaOccurrenceGroup, BoaVistaSections } from "@/src/lib/boaVistaDefineLimite/parse";
+import { FinancialBehaviorPanel } from "./LikeSerasaBehavior";
 import { likeSerasaMessage } from "@/src/lib/boaVistaDefineLimite/messages";
 import { LIKE_SERASA_STATE_LABEL, type LikeSerasaHistoryLine, type LikeSerasaPostResponse, type LikeSerasaReportView, type LikeSerasaStatusPayload } from "@/src/lib/boaVistaDefineLimite/view";
 import { cn } from "@/src/lib/utils";
@@ -277,28 +278,6 @@ function Tile({ label, value, tone = "neutral", testId }: { label: string; value
   );
 }
 
-function Series({ title, indicator }: { title: string; indicator: { score: string | null; series: BoaVistaMonthlyPoint[] } | null }) {
-  if (!indicator) return <p className="text-xs text-slate-500">{title}: informação indisponível.</p>;
-  return (
-    <div>
-      <p className="text-xs font-semibold text-slate-700">
-        {title} <span className="font-normal text-slate-500">· pontuação do provedor: {text(indicator.score, "—")} (unidade não documentada)</span>
-      </p>
-      {indicator.series.length > 0 ? (
-        <div className="mt-1 flex flex-wrap gap-1">
-          {indicator.series.map((point, index) => (
-            <span key={`${point.period}-${index}`} className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] tabular-nums text-slate-700">
-              {text(point.period, "?")}: {text(point.value, "—")}
-            </span>
-          ))}
-        </div>
-      ) : (
-        <p className="text-xs text-slate-500">Sem série mensal neste retorno.</p>
-      )}
-    </div>
-  );
-}
-
 function OccurrenceTable({ title, group, columns }: { title: string; group: BoaVistaOccurrenceGroup; columns: Array<[string, string]> }) {
   return (
     <div className="rounded-xl border border-slate-200 bg-white">
@@ -386,29 +365,8 @@ export function LikeSerasaReport({ report, internalCreditLabel, customerId }: { 
       </div>
 
       <div data-testid="like-serasa-section-behavior">
-        <h4 className="text-xs font-bold uppercase tracking-wider text-slate-600">C · Comportamento financeiro</h4>
-        {sections?.financialBehavior.present ? (
-          <div className="mt-2 space-y-2">
-            <Series title="Pagamento pontual" indicator={sections.financialBehavior.punctualPayments} />
-            <Series title="Compromissos" indicator={sections.financialBehavior.commitments} />
-            <Series title="Crédito obtido" indicator={sections.financialBehavior.creditObtained} />
-            {sections.financialBehavior.latePayments.length > 0 ? (
-              sections.financialBehavior.latePayments.map((late, index) => (
-                <div key={index}>
-                  <Series title={`Atrasos · ${text(late.description, "faixa não informada")}`} indicator={{ score: late.score, series: late.series }} />
-                </div>
-              ))
-            ) : (
-              <p className="text-xs text-slate-500">Atrasos: informação indisponível.</p>
-            )}
-            <p className="text-xs text-slate-500">
-              Relacionamento com fornecedores: {sections.financialBehavior.supplierRelationship ? `${text(sections.financialBehavior.supplierRelationship.score, "—")} · ${sections.financialBehavior.supplierRelationship.items.map((item) => `${text(item.period, "?")}: ${text(item.value, "—")}`).join("; ") || "sem detalhe"}` : "informação indisponível"}
-            </p>
-            <p className="text-xs text-slate-500">Capacidade estimada / faturamento presumido: {sections.revenue.presumedCents != null ? cents(sections.revenue.presumedCents) : text(sections.revenue.range ?? sections.revenue.annualLabel)} {sections.revenue.referenceDate ? `(ref. ${sections.revenue.referenceDate})` : ""} — estimativa externa, não faturamento realizado.</p>
-          </div>
-        ) : (
-          <p className="mt-2 text-xs text-slate-500">Informação indisponível neste retorno.</p>
-        )}
+        <h4 className="text-xs font-bold uppercase tracking-wider text-slate-600">C · Comportamento de pagamento no mercado (12 meses)</h4>
+        <FinancialBehaviorPanel sections={sections} cents={cents} />
       </div>
 
       <div data-testid="like-serasa-section-restrictions" className="space-y-2">
