@@ -85,14 +85,22 @@ export function EligibilityBadge({ state, title }: { state: string; title?: stri
   );
 }
 
-const INVITE_LABEL: Record<string, string> = { NONE: "Sem convite", ACTIVE: "Convite ativo", REVOKED: "Revogado", LOCKED: "Bloqueado", EXPIRED: "Expirado" };
+const INVITE_LABEL: Record<string, string> = { NONE: "Sem convite", ACTIVE: "Convite ativo", REVOKED: "Convite cancelado", LOCKED: "Bloqueado", EXPIRED: "Expirado" };
 const INVITE_TONE: Record<string, OverlayBadgeTone> = { NONE: "slate", ACTIVE: "sky", REVOKED: "slate", LOCKED: "rose", EXPIRED: "amber" };
 
-export function InviteBadge({ status }: { status: string }) {
-  return (
-    <OverlayBadge tone={INVITE_TONE[status] ?? "slate"} variant={status === "NONE" ? "outline" : "soft"}>
+/** Convite cancelado mostra o motivo: quem lê precisa saber se gera outro ou não. */
+export function InviteBadge({ status, reason }: { status: string; reason?: string | null }) {
+  const badge = (
+    <OverlayBadge tone={INVITE_TONE[status] ?? "slate"} variant={status === "NONE" ? "outline" : "soft"} title={status === "REVOKED" && reason ? reason : undefined}>
       {INVITE_LABEL[status] ?? status}
     </OverlayBadge>
+  );
+  if (status !== "REVOKED" || !reason) return badge;
+  return (
+    <span className="flex flex-col items-start gap-0.5">
+      {badge}
+      <span className="max-w-[220px] text-xs text-muted-foreground">Motivo: {reason}</span>
+    </span>
   );
 }
 

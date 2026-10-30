@@ -58,7 +58,6 @@ import { isLeadershipKind } from "./performanceLeadership.js";
 import {
   applyLeadershipAnswer,
   applyLeadershipSnapshot,
-  currentJourneyStep,
   ensureLeadershipAssignments,
   journeyDone,
   journeyOf,
@@ -85,6 +84,35 @@ import {
   type ResultRecord,
   type RoleExample,
 } from "./performanceState.js";
+import { formatDateBr } from "./performanceDomain.js";
+import { kindWindow, kindWindowOpen, localDay, stageScheduleProblem, windowState } from "./performanceStages.js";
+
+/** Datas de início/fim das etapas além dos dois prazos que já existiam (vazio = sem calendário de etapas). */
+export type StageScheduleInput = {
+  selfStartAt?: string | null;
+  leaderStartAt?: string | null;
+  leadershipStartAt?: string | null;
+  leadershipDueAt?: string | null;
+  calibrationStartAt?: string | null;
+  calibrationDueAt?: string | null;
+};
+const SCHEDULE_FIELDS = ["selfStartAt", "leaderStartAt", "leadershipStartAt", "leadershipDueAt", "calibrationStartAt", "calibrationDueAt"] as const;
+type ScheduleFields = { [K in (typeof SCHEDULE_FIELDS)[number]]: string | null };
+
+/** Campos do calendário: o informado (vazio vira nulo) ou, ausente, o atual do ciclo. Sem liderança, as datas dela somem. */
+function scheduleFrom(input: StageScheduleInput, current: ScheduleFields | null, leadership: boolean): ScheduleFields {
+  const out = {} as ScheduleFields;
+  for (const field of SCHEDULE_FIELDS) {
+    const given = input[field];
+    const value = given === undefined ? current?.[field] ?? null : typeof given === "string" && given.trim() ? given.trim() : null;
+    out[field] = value;
+  }
+  if (!leadership) {
+    out.leadershipStartAt = null;
+    out.leadershipDueAt = null;
+  }
+  return out;
+}
 
 export type ServiceOptions = {
   now: () => Date;
@@ -507,7 +535,7 @@ export function createCycle(
     leadershipModelId?: string | null;
     minObservationDays?: number;
     scope?: PerformanceScope;
-  },
+  } & StageScheduleInput,
   options: ServiceOptions
 ): ServiceResult<{ cycleId: string }> {
   const denied = hrOnly(input.scope ?? HR_SCOPE);
@@ -529,6 +557,9 @@ export function createCycle(
     return fail("CLASSIFICATION_REQUIRED", "Diga se o ciclo é oficial ou de teste.");
   }
   const classification = input.classification;
+  const schedule = scheduleFrom(input, null, Boolean(leadershipModel));
+  const scheduleProblem = stageScheduleProblem({ ...schedule, selfDueAt: input.selfDueAt, leaderDueAt: input.leaderDueAt }, Boolean(leadershipModel));
+  if (scheduleProblem) return fail("INVALID_DATE", scheduleProblem);
   const cycleId = newId();
   db.cycles.push({
     id: cycleId,
@@ -551,8 +582,9 @@ export function createCycle(
     activationChangedByUserId: null,
     activationReason: null,
     leadershipModelId: leadershipModel?.id ?? null,
+    ...schedule,
   });
-  audit(db, options.now(), input.actorUserId, "CYCLE_CREATED", cycleId, { status: "DRAFT", modelVersion: model.version, classification, leadership: Boolean(leadershipModel) });
+  audit(db, options.now(), input.actorUserId, "CYCLE_CREATED", cycleId, { status: "DRAFT", modelVersion: model.version, classification, leadership: Boolean(leadershipModel), staged: Boolean(schedule.selfStartAt) });
   return { ok: true, db, value: { cycleId } };
 }
 
@@ -567,7 +599,7 @@ export function updateCycle(
     reason: string | null;
     actorUserId: string | null;
     scope: PerformanceScope;
-  },
+  } & StageScheduleInput,
   options: ServiceOptions
 ): ServiceResult<{ cycleId: string }> {
   const denied = hrOnly(input.scope);
@@ -581,7 +613,11 @@ export function updateCycle(
   if (name.length < 3 || periodLabel.length < 2) return fail("INVALID_NAME", "Informe o nome e a referência do ciclo.");
   if (!isIsoDate(input.selfDueAt) || !isIsoDate(input.leaderDueAt)) return fail("INVALID_DATE", "Informe os prazos da pessoa e do líder.");
   if (input.leaderDueAt < input.selfDueAt) return fail("INVALID_DATE", "O prazo do líder não pode vir antes do prazo da pessoa.");
-  const datesChanged = cycle.selfDueAt !== input.selfDueAt || cycle.leaderDueAt !== input.leaderDueAt;
+  const schedule = scheduleFrom(input, cycle, Boolean(cycle.leadershipModelId));
+  const scheduleProblem = stageScheduleProblem({ ...schedule, selfDueAt: input.selfDueAt, leaderDueAt: input.leaderDueAt }, Boolean(cycle.leadershipModelId));
+  if (scheduleProblem) return fail("INVALID_DATE", scheduleProblem);
+  const scheduleChanged = SCHEDULE_FIELDS.some((field) => (cycle[field] ?? null) !== schedule[field]);
+  const datesChanged = cycle.selfDueAt !== input.selfDueAt || cycle.leaderDueAt !== input.leaderDueAt || scheduleChanged;
   const reason = clean(input.reason, 300);
   if (datesChanged && cycle.status !== "DRAFT" && cycle.status !== "PREPARED" && reason.length < 8) {
     return fail("NOTE_REQUIRED", "Diga por que o prazo mudou depois da abertura.");
@@ -591,12 +627,14 @@ export function updateCycle(
     selfDueTo: input.selfDueAt,
     leaderDueFrom: cycle.leaderDueAt,
     leaderDueTo: input.leaderDueAt,
+    ...(scheduleChanged ? { scheduleFrom: JSON.stringify(Object.fromEntries(SCHEDULE_FIELDS.map((f) => [f, cycle[f] ?? null]))), scheduleTo: JSON.stringify(schedule) } : {}),
     reason: reason || null,
   });
   cycle.name = name;
   cycle.periodLabel = periodLabel;
   cycle.selfDueAt = input.selfDueAt;
   cycle.leaderDueAt = input.leaderDueAt;
+  Object.assign(cycle, schedule);
   return { ok: true, db, value: { cycleId: cycle.id } };
 }
 
@@ -1243,9 +1281,30 @@ function isJourneyKind(kind: AssignmentRecord["kind"]): boolean {
   return kind === "SELF" || kind === "LEADERSHIP_UPWARD" || kind === "LEADERSHIP_SELF";
 }
 
-function collectionOpenFor(cycle: CycleRecord, assignment: AssignmentRecord): boolean {
+/**
+ * A tarefa aceita resposta agora? Com o ciclo Aberto e calendário de etapas, só dentro da janela da etapa dela
+ * (autoavaliação, líder ou liderança). Depois da coleta, a avaliação do líder segue aberta para revisão devolvida.
+ */
+function collectionOpenFor(cycle: CycleRecord, assignment: AssignmentRecord, now: Date): boolean {
+  if (cycle.status === "OPEN" && !kindWindowOpen(cycle, assignment.kind, localDay(now))) {
+    // A avaliação do líder não abre antes do início; depois do fim fica atrasada (como o prazo antigo) e segue
+    // aceitando resposta até o RH fechar a coleta. Assim a revisão devolvida também continua possível.
+    const window = assignment.kind === "LEADER" ? kindWindow(cycle, assignment.kind) : null;
+    if (!window || windowState(window, localDay(now)) !== "AFTER") return false;
+  }
   if (isJourneyKind(assignment.kind)) return cycle.status === "OPEN";
   return cycle.status === "OPEN" || cycle.status === "CONSOLIDATION" || cycle.status === "CALIBRATION";
+}
+
+/** Por que a etapa desta tarefa não aceita resposta hoje (null = aceita ou não há calendário). */
+export function stageClosedMessage(cycle: CycleRecord, kind: AssignmentRecord["kind"], now: Date): string | null {
+  if (cycle.status !== "OPEN") return null;
+  const window = kindWindow(cycle, kind);
+  if (!window) return null;
+  const state = windowState(window, localDay(now));
+  if (state === "BEFORE") return `A etapa “${window.label}” abre em ${formatDateBr(window.startsAt)}.`;
+  if (state === "AFTER" && kind !== "LEADER") return `A etapa “${window.label}” terminou em ${formatDateBr(window.endsAt)}. Fale com o RH se precisar.`;
+  return null;
 }
 
 export function saveAnswers(
@@ -1280,7 +1339,9 @@ export function saveAnswers(
     if (!assisted && actor !== assignment.employeeId) return fail("FORBIDDEN", "A autoavaliação é só da própria pessoa.");
   }
   if (assignment.status === "SUBMITTED") return fail("ASSIGNMENT_LOCKED", "Esta resposta já foi enviada.");
-  if (!collectionOpenFor(cycle, assignment)) return fail("COLLECTION_CLOSED", "A coleta deste ciclo está fechada.");
+  if (!collectionOpenFor(cycle, assignment, options.now())) {
+    return fail("COLLECTION_CLOSED", stageClosedMessage(cycle, assignment.kind, options.now()) ?? "A coleta deste ciclo está fechada.");
+  }
   if (assignment.version !== input.expectedVersion) return fail("VERSION_CONFLICT", "A avaliação mudou em outro lugar. Atualize a tela para ver a versão atual.");
   const rules = rulesOfCycle(db, cycle);
   for (const item of input.answers) {
@@ -1624,7 +1685,9 @@ export function returnForRevision(
 
 function inviteExpiry(cycle: CycleRecord, now: Date): Date {
   const max = now.getTime() + INVITE_TTL_DAYS * 86_400_000;
-  const dueEnd = new Date(`${cycle.selfDueAt}T23:59:59.000-03:00`).getTime();
+  // O mesmo convite vale para a jornada inteira (autoavaliação e, depois, liderança): vai até a última etapa dela.
+  const lastJourneyDay = cycle.leadershipModelId && cycle.leadershipDueAt && cycle.leadershipDueAt > cycle.selfDueAt ? cycle.leadershipDueAt : cycle.selfDueAt;
+  const dueEnd = new Date(`${lastJourneyDay}T23:59:59.000-03:00`).getTime();
   const floor = now.getTime() + 86_400_000;
   return new Date(Math.max(floor, Math.min(max, Number.isNaN(dueEnd) ? max : dueEnd)));
 }
@@ -1870,8 +1933,9 @@ function formSession(db: PerformanceDatabase, token: string, now: Date) {
   if (!session || (session.phase !== "VERIFIED" && session.phase !== "ASSISTED")) return null;
   const { assignment: root, participant, cycle } = inviteContext(db, session.assignmentId);
   if (!root || !root.active || !participant || participant.removedAt || !cycle) return null;
-  // A sessão nasce na autoavaliação e acompanha a jornada: a etapa atual é a primeira não enviada.
-  const current = currentJourneyStep(db, participant.id);
+  // A sessão nasce na autoavaliação e acompanha a jornada: a etapa atual é a primeira não enviada (pulando a que já
+  // terminou no calendário, para a pessoa não ficar presa fora das etapas seguintes).
+  const current = journeyStepNow(db, participant.id, cycle, now);
   return { session, root, assignment: current ?? root, participant, cycle, done: current === null };
 }
 
@@ -1906,6 +1970,16 @@ export type PublicFormValue = {
 export function publicForm(source: PerformanceDatabase, input: { sessionToken: string }, options: ServiceOptions): ServiceResult<PublicFormValue> {
   const ctx = formSession(source, input.sessionToken, options.now());
   if (!ctx || ctx.cycle.status !== "OPEN" || ctx.done) return fail("INVITE_REJECTED", publicFailureMessage());
+  const closed = stageClosedMessage(ctx.cycle, ctx.assignment.kind, options.now());
+  if (closed) return fail("STAGE_CLOSED", closed);
+  return { ok: true, db: source, value: journeyFormValue(source, { ...ctx, assisted: ctx.session.phase === "ASSISTED", expiresAt: ctx.session.expiresAt }) };
+}
+
+/** Formulário da etapa atual da jornada (portal ou dentro do sistema): o mesmo conteúdo nos dois caminhos. */
+function journeyFormValue(
+  source: PerformanceDatabase,
+  ctx: { cycle: CycleRecord; participant: ParticipantRecord; assignment: AssignmentRecord; assisted: boolean; expiresAt: string }
+): PublicFormValue {
   const model = modelOfCycle(source, ctx.cycle);
   const leadership = isLeadershipKind(ctx.assignment.kind);
   const questions = leadership
@@ -1919,10 +1993,8 @@ export function publicForm(source: PerformanceDatabase, input: { sessionToken: s
   const stepKind = ctx.assignment.kind as PublicFormStep["kind"];
   const subject = ctx.assignment.kind === "LEADERSHIP_UPWARD" ? source.participants.find((p) => p.id === ctx.assignment.subjectParticipantId) : null;
   const rules = leadership ? leadershipRulesOf(source, ctx.assignment.modelId) : null;
+  const window = kindWindow(ctx.cycle, ctx.assignment.kind);
   return {
-    ok: true,
-    db: source,
-    value: {
       step: {
         kind: stepKind,
         index: journey.findIndex((a) => a.id === ctx.assignment.id) + 1,
@@ -1941,11 +2013,110 @@ export function publicForm(source: PerformanceDatabase, input: { sessionToken: s
       answers,
       version: ctx.assignment.version,
       status: ctx.assignment.status,
-      assisted: ctx.session.phase === "ASSISTED",
-      expiresAt: ctx.session.expiresAt,
-      dueAt: ctx.cycle.selfDueAt,
-    },
+      assisted: ctx.assisted,
+      expiresAt: ctx.expiresAt,
+      dueAt: window?.endsAt ?? ctx.cycle.selfDueAt,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Autoavaliação dentro do sistema (quem tem usuário ligado ao cadastro)
+// ---------------------------------------------------------------------------
+
+/**
+ * A jornada da própria pessoa (autoavaliação → avaliação do líder dela → a própria liderança) no ciclo aberto e
+ * ativo mais recente em que ela participa. Mesmas regras do portal: só a própria pessoa, só a etapa da vez, só na
+ * janela da etapa. O RH e o super administrador não respondem por ninguém por aqui.
+ */
+/**
+ * Etapa da jornada a responder agora: a primeira não enviada cuja janela ainda não terminou. Se todas as pendentes
+ * já terminaram, a primeira delas (a tela explica que terminou). Sem calendário, igual a `currentJourneyStep`.
+ */
+function journeyStepNow(db: PerformanceDatabase, participantId: string, cycle: CycleRecord, now: Date): AssignmentRecord | null {
+  const pending = journeyOf(db, participantId).filter((a) => a.status !== "SUBMITTED");
+  if (cycle.status !== "OPEN") return pending[0] ?? null;
+  const today = localDay(now);
+  return pending.find((a) => {
+    const window = kindWindow(cycle, a.kind);
+    return !window || windowState(window, today) !== "AFTER";
+  }) ?? pending[0] ?? null;
+}
+
+function myJourneyContext(db: PerformanceDatabase, actorEmployeeId: string | null, now: Date) {
+  if (!actorEmployeeId) return null;
+  const candidates = db.participants
+    .filter((p) => p.employeeId === actorEmployeeId && !p.removedAt)
+    .map((participant) => ({ participant, cycle: db.cycles.find((c) => c.id === participant.cycleId) }))
+    .filter((x): x is { participant: ParticipantRecord; cycle: CycleRecord } => Boolean(x.cycle && x.cycle.status === "OPEN" && x.cycle.activation === "ACTIVE"))
+    .map((x) => ({ ...x, assignment: journeyStepNow(db, x.participant.id, x.cycle, now) }))
+    .filter((x): x is typeof x & { assignment: AssignmentRecord } => x.assignment !== null)
+    // Primeiro o ciclo em que a etapa da pessoa está aberta hoje; depois o aberto mais recente.
+    .map((x) => ({ ...x, openToday: stageClosedMessage(x.cycle, x.assignment.kind, now) === null }))
+    .sort((a, b) => Number(b.openToday) - Number(a.openToday) || (b.cycle.openedAt ?? "").localeCompare(a.cycle.openedAt ?? ""));
+  return candidates[0] ?? null;
+}
+
+const myScope = (actorEmployeeId: string): PerformanceScope => ({
+  kind: "LIMITED",
+  actorEmployeeId,
+  visible: new Set([actorEmployeeId]),
+  writable: new Set<string>(),
+});
+
+/** Resumo para o aviso "Falta com você": a etapa da pessoa e se ela está aberta hoje. */
+export function myJourneySummary(db: PerformanceDatabase, actorEmployeeId: string | null, now: Date) {
+  const ctx = myJourneyContext(db, actorEmployeeId, now);
+  if (!ctx) return null;
+  const closed = stageClosedMessage(ctx.cycle, ctx.assignment.kind, now);
+  return { cycleId: ctx.cycle.id, cycleName: ctx.cycle.name, kind: ctx.assignment.kind, title: STEP_TEXT[ctx.assignment.kind as PublicFormStep["kind"]].title, open: closed === null, message: closed };
+}
+
+export function myForm(source: PerformanceDatabase, input: { actorEmployeeId: string | null }, options: ServiceOptions): ServiceResult<PublicFormValue> {
+  const ctx = myJourneyContext(source, input.actorEmployeeId, options.now());
+  if (!ctx) return fail("NO_PENDING", "Você não tem pesquisa de desempenho aberta agora.");
+  const closed = stageClosedMessage(ctx.cycle, ctx.assignment.kind, options.now());
+  if (closed) return fail("STAGE_CLOSED", closed);
+  return { ok: true, db: source, value: journeyFormValue(source, { ...ctx, assisted: false, expiresAt: "" }) };
+}
+
+export function mySave(
+  source: PerformanceDatabase,
+  input: { actorEmployeeId: string | null; actorUserId: string | null; expectedVersion: number; answers: readonly { code: string; answer: AnswerInput }[]; step?: string | null },
+  options: ServiceOptions
+): ServiceResult<{ version: number }> {
+  const ctx = myJourneyContext(source, input.actorEmployeeId, options.now());
+  if (!ctx || !input.actorEmployeeId) return fail("NO_PENDING", "Você não tem pesquisa de desempenho aberta agora.");
+  if (input.step && input.step !== ctx.assignment.kind) return fail("STEP_CHANGED", "Esta etapa já foi concluída. Atualize a tela para continuar.");
+  const keepComment = isLeadershipKind(ctx.assignment.kind);
+  return saveAnswers(
+    source,
+    {
+      assignmentId: ctx.assignment.id,
+      expectedVersion: input.expectedVersion,
+      answers: input.answers.map((item) => ({ code: item.code, answer: keepComment || item.answer.kind !== "score" ? item.answer : { kind: "score", score: item.answer.score } })),
+      actorUserId: input.actorUserId,
+      scope: myScope(input.actorEmployeeId),
+    },
+    options
+  );
+}
+
+export function mySubmit(
+  source: PerformanceDatabase,
+  input: { actorEmployeeId: string | null; actorUserId: string | null; expectedVersion: number; step?: string | null },
+  options: ServiceOptions
+): ServiceResult<{ status: string; done: boolean; next: string | null }> {
+  const ctx = myJourneyContext(source, input.actorEmployeeId, options.now());
+  if (!ctx || !input.actorEmployeeId) return fail("NO_PENDING", "Você não tem pesquisa de desempenho aberta agora.");
+  if (input.step && input.step !== ctx.assignment.kind) return fail("STEP_CHANGED", "Esta etapa já foi concluída. Atualize a tela para continuar.");
+  const submitted = submitAssignment(
+    source,
+    { assignmentId: ctx.assignment.id, expectedVersion: input.expectedVersion, actorUserId: input.actorUserId, assistedConfirmation: true, scope: myScope(input.actorEmployeeId) },
+    options
+  );
+  if (submitted.ok === false) return submitted;
+  const next = journeyStepNow(submitted.db, ctx.participant.id, ctx.cycle, options.now());
+  return { ok: true, db: submitted.db, value: { status: submitted.value.status, done: next === null, next: next?.kind ?? null } };
 }
 
 export function publicSave(
@@ -2002,7 +2173,7 @@ export function publicSubmit(
     options
   );
   if (submitted.ok === false) return submitted;
-  const next = currentJourneyStep(submitted.db, ctx.participant.id);
+  const next = journeyStepNow(submitted.db, ctx.participant.id, ctx.cycle, options.now());
   return { ok: true, db: submitted.db, value: { status: submitted.value.status, done: next === null, next: next?.kind ?? null } };
 }
 
@@ -2070,7 +2241,7 @@ export function claimAssisted(
 // Liderança
 // ---------------------------------------------------------------------------
 
-export function leaderQueue(db: PerformanceDatabase, scope: PerformanceScope, actorEmployeeId: string | null) {
+export function leaderQueue(db: PerformanceDatabase, scope: PerformanceScope, actorEmployeeId: string | null, now: Date = new Date()) {
   return db.assignments
     .filter((a) => a.active && a.kind === "LEADER")
     .filter((a) => (actorEmployeeId ? a.evaluatorEmployeeId === actorEmployeeId && a.employeeId !== actorEmployeeId : false))
@@ -2099,13 +2270,23 @@ export function leaderQueue(db: PerformanceDatabase, scope: PerformanceScope, ac
         version: assignment.version,
         revision: assignment.revision,
         returnReason: assignment.returnReason,
-        editable: collectionOpenFor(cycle, assignment) && assignment.status !== "SUBMITTED",
+        editable: collectionOpenFor(cycle, assignment, now) && assignment.status !== "SUBMITTED",
+        /** Etapa do líder fora da janela (abre em / terminou em). */
+        stageMessage: assignment.status !== "SUBMITTED" ? stageClosedMessage(cycle, "LEADER", now) : null,
         selfVisible: showSelf,
         divergences:
           showSelf && self ? findDivergences(toStored(db, self.id), toStored(db, assignment.id), rulesOfCycle(db, cycle).divergenceThreshold) : [],
         officialResult: result?.official
           ? { quadrant: result.quadrant, cultureBand: result.cultureBand, technicalSum: result.technicalSum, technicalCount: result.technicalCount, potentialSum: result.potentialSum, potentialCount: result.potentialCount }
           : null,
+        /** Etapa de calibração: o líder vê a posição preliminar para propor (o RH decide). */
+        preliminaryResult:
+          result && !result.official && (cycle.status === "CONSOLIDATION" || cycle.status === "CALIBRATION")
+            ? { quadrant: result.quadrant, nineX: result.nineX, nineY: result.nineY, calibrated: result.reviewStatus === "CALIBRATED" }
+            : null,
+        plan: planView(db, participant.id),
+        planEditable: planStageOf(cycle) !== null,
+        proposalEditable: planStageOf(cycle) === "PROPOSAL",
         feedback: feedback ? { id: feedback.id, acknowledgedAt: feedback.acknowledgedAt, createdAt: feedback.createdAt } : null,
         pdis: db.pdis.filter((p) => p.participantId === participant.id).map((p) => ({ id: p.id, title: p.title, status: p.status, dueAt: p.dueAt })),
       };
@@ -2113,7 +2294,160 @@ export function leaderQueue(db: PerformanceDatabase, scope: PerformanceScope, ac
     .filter((item): item is NonNullable<typeof item> => item !== null);
 }
 
-export function readLeaderForm(db: PerformanceDatabase, assignmentId: string, scope: PerformanceScope, actorEmployeeId: string | null) {
+// ---------------------------------------------------------------------------
+// Calibração e devolutiva conduzidas pelo líder (plano por pessoa)
+// ---------------------------------------------------------------------------
+
+/**
+ * O que o plano aceita na situação do ciclo: proposta de posição só na consolidação/calibração (antes de o RH
+ * tornar oficial); agenda da conversa e rascunho de devolutiva/PDI da consolidação até o encerramento.
+ */
+export function planStageOf(cycle: CycleRecord): "PROPOSAL" | "FOLLOW_UP" | null {
+  if (cycle.activation !== "ACTIVE") return null;
+  if (cycle.status === "CONSOLIDATION" || cycle.status === "CALIBRATION") return "PROPOSAL";
+  if (cycle.status === "HOMOLOGATED") return "FOLLOW_UP";
+  return null;
+}
+
+export function planView(db: PerformanceDatabase, participantId: string) {
+  const plan = db.plans.find((p) => p.participantId === participantId);
+  if (!plan) return null;
+  const { id, proposalDecision, proposalNineX, proposalNineY, proposalNote, proposedAt, meetingAt, meetingPlace, draftStrength, draftImprovement, draftAction, draftPdiTitle, draftPdiObjective, draftPdiDueAt, updatedAt } = plan;
+  return { id, proposalDecision, proposalNineX, proposalNineY, proposalNote, proposedAt, meetingAt, meetingPlace, draftStrength, draftImprovement, draftAction, draftPdiTitle, draftPdiObjective, draftPdiDueAt, updatedAt };
+}
+
+/** Quem conduz a calibração e a devolutiva desta pessoa: o líder dela (tarefa de líder ou gestor no ciclo) ou o RH. */
+function leadsForPlan(db: PerformanceDatabase, scope: PerformanceScope, participant: ParticipantRecord): boolean {
+  if (scope.kind === "ALL") return true;
+  const actor = scope.actorEmployeeId;
+  if (!actor || participant.employeeId === actor) return false;
+  const leader = activeAssignment(db, participant.id, "LEADER");
+  return (leader?.evaluatorEmployeeId ?? participant.managerId) === actor;
+}
+
+export type FollowUpPlanInput = {
+  participantId: string;
+  proposal?: { decision: string; nineX?: string | null; nineY?: string | null; note?: string | null } | null;
+  meeting?: { at?: string | null; place?: string | null } | null;
+  draft?: {
+    strength?: string | null;
+    improvement?: string | null;
+    action?: string | null;
+    pdiTitle?: string | null;
+    pdiObjective?: string | null;
+    pdiDueAt?: string | null;
+  } | null;
+  actorUserId: string | null;
+  scope: PerformanceScope;
+};
+
+export function saveFollowUpPlan(source: PerformanceDatabase, input: FollowUpPlanInput, options: ServiceOptions): ServiceResult<{ planId: string }> {
+  const db = cloneDb(source);
+  const participant = db.participants.find((p) => p.id === input.participantId);
+  if (!participant || participant.removedAt) return fail("NOT_FOUND", "Pessoa não encontrada no ciclo.");
+  const cycle = db.cycles.find((c) => c.id === participant.cycleId);
+  if (!cycle) return fail("NOT_FOUND", "Ciclo não encontrado.");
+  if (!leadsForPlan(db, input.scope, participant)) return fail("FORBIDDEN", "Só o líder da pessoa (ou o RH) conduz a calibração e a devolutiva dela.");
+  const stage = planStageOf(cycle);
+  if (!stage) return fail("CYCLE_STAGE", "A calibração e a devolutiva começam quando a coleta fecha.");
+  if (input.proposal && stage !== "PROPOSAL") return fail("CYCLE_STAGE", "Os resultados já são oficiais: a proposta de posição não muda mais. Registre a devolutiva.");
+  const nowIso = iso(options.now());
+  let plan = db.plans.find((p) => p.participantId === participant.id);
+  if (!plan) {
+    const leader = activeAssignment(db, participant.id, "LEADER");
+    plan = {
+      id: newId(),
+      cycleId: cycle.id,
+      participantId: participant.id,
+      leaderEmployeeId: leader?.evaluatorEmployeeId ?? participant.managerId ?? (input.scope.kind === "LIMITED" ? input.scope.actorEmployeeId ?? "" : ""),
+      proposalDecision: null,
+      proposalNineX: null,
+      proposalNineY: null,
+      proposalNote: null,
+      proposedAt: null,
+      meetingAt: null,
+      meetingPlace: null,
+      draftStrength: null,
+      draftImprovement: null,
+      draftAction: null,
+      draftPdiTitle: null,
+      draftPdiObjective: null,
+      draftPdiDueAt: null,
+      updatedByUserId: null,
+      createdAt: nowIso,
+      updatedAt: nowIso,
+    };
+    if (!plan.leaderEmployeeId) return fail("LEADER_MISSING", "A pessoa não tem líder neste ciclo.");
+    db.plans.push(plan);
+  }
+  if (input.proposal) {
+    const decision = input.proposal.decision;
+    if (decision !== "CONFIRM" && decision !== "ADJUST") return fail("INVALID_DECISION", "Escolha confirmar a posição ou propor um ajuste.");
+    const note = cleanOrNull(input.proposal.note ?? null, 1000);
+    if (decision === "ADJUST") {
+      if (!isNineBoxBand(input.proposal.nineX) || !isNineBoxBand(input.proposal.nineY)) return fail("INVALID_BAND", "Informe o desempenho e o potencial propostos.");
+      if (!note || note.length < 8) return fail("NOTE_REQUIRED", "Explique o ajuste proposto (mínimo de 8 caracteres).");
+    }
+    plan.proposalDecision = decision;
+    plan.proposalNineX = decision === "ADJUST" ? (input.proposal.nineX as NineBoxBand) : null;
+    plan.proposalNineY = decision === "ADJUST" ? (input.proposal.nineY as NineBoxBand) : null;
+    plan.proposalNote = note;
+    plan.proposedAt = nowIso;
+  }
+  if (input.meeting) {
+    const at = cleanOrNull(input.meeting.at ?? null, 16);
+    if (at && !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(at)) return fail("INVALID_DATE", "Informe a data e a hora da conversa.");
+    if (at && !isIsoDate(at.slice(0, 10))) return fail("INVALID_DATE", "Informe uma data válida para a conversa.");
+    plan.meetingAt = at;
+    plan.meetingPlace = cleanOrNull(input.meeting.place ?? null, 200);
+  }
+  if (input.draft) {
+    const due = cleanOrNull(input.draft.pdiDueAt ?? null, 10);
+    if (due && !isIsoDate(due)) return fail("INVALID_DATE", "Informe uma data válida para o prazo do PDI.");
+    plan.draftStrength = cleanOrNull(input.draft.strength ?? null);
+    plan.draftImprovement = cleanOrNull(input.draft.improvement ?? null);
+    plan.draftAction = cleanOrNull(input.draft.action ?? null);
+    plan.draftPdiTitle = cleanOrNull(input.draft.pdiTitle ?? null, 200);
+    plan.draftPdiObjective = cleanOrNull(input.draft.pdiObjective ?? null);
+    plan.draftPdiDueAt = due;
+  }
+  plan.updatedAt = nowIso;
+  plan.updatedByUserId = input.actorUserId;
+  audit(db, options.now(), input.actorUserId, "FOLLOW_UP_PLAN_SAVED", participant.id, {
+    proposal: input.proposal ? plan.proposalDecision : undefined,
+    meetingAt: input.meeting ? plan.meetingAt : undefined,
+    draft: input.draft ? true : undefined,
+  });
+  return { ok: true, db, value: { planId: plan.id } };
+}
+
+/**
+ * Avisos de "Minha equipe": por que uma tarefa pode não aparecer (ciclo inativo) e quantas pendências o líder tem
+ * (base do aviso "Falta com você" no topo da página).
+ */
+export function teamNotices(db: PerformanceDatabase, actorEmployeeId: string | null, now: Date) {
+  if (!actorEmployeeId) return { linked: false, inactiveCycles: [] as { cycleId: string; cycleName: string; tasks: number }[], pendingLeader: 0, pendingCalibration: 0, myJourney: null };
+  const inactive = new Map<string, { cycleId: string; cycleName: string; tasks: number }>();
+  for (const a of db.assignments) {
+    if (!a.active || a.evaluatorEmployeeId !== actorEmployeeId || a.employeeId === actorEmployeeId) continue;
+    if (a.kind !== "LEADER" && a.kind !== "LEADERSHIP_SUPERIOR") continue;
+    const cycle = db.cycles.find((c) => c.id === a.cycleId);
+    if (!cycle || cycle.activation === "ACTIVE" || cycle.status === "CLOSED") continue;
+    const entry = inactive.get(cycle.id) ?? { cycleId: cycle.id, cycleName: cycle.name, tasks: 0 };
+    entry.tasks += 1;
+    inactive.set(cycle.id, entry);
+  }
+  const queue = leaderQueue(db, { kind: "LIMITED", actorEmployeeId, visible: new Set(), writable: new Set() }, actorEmployeeId, now);
+  return {
+    linked: true,
+    inactiveCycles: [...inactive.values()],
+    pendingLeader: queue.filter((item) => item.editable && item.status !== "SUBMITTED").length,
+    pendingCalibration: queue.filter((item) => item.proposalEditable && !item.plan?.proposalDecision).length,
+    myJourney: myJourneySummary(db, actorEmployeeId, now),
+  };
+}
+
+export function readLeaderForm(db: PerformanceDatabase, assignmentId: string, scope: PerformanceScope, actorEmployeeId: string | null, now: Date = new Date()) {
   const assignment = db.assignments.find((a) => a.id === assignmentId && a.active && a.kind === "LEADER");
   const allowed =
     assignment &&
@@ -2140,7 +2474,7 @@ export function readLeaderForm(db: PerformanceDatabase, assignmentId: string, sc
     },
     employee: { name: participant.employeeName, roleName: participant.roleName, departmentName: participant.departmentName },
     cycle: { id: cycle.id, name: cycle.name, periodLabel: cycle.periodLabel, status: cycle.status, dueAt: cycle.leaderDueAt },
-    editable: collectionOpenFor(cycle, assignment) && assignment.status !== "SUBMITTED",
+    editable: collectionOpenFor(cycle, assignment, now) && assignment.status !== "SUBMITTED",
     instructions: model?.instructions ?? PROPOSED_MODEL_INSTRUCTIONS,
     rules: { requireExtremeEvidence: rules.requireExtremeEvidence, evidenceMinChars: rules.evidenceMinChars },
     questions: questionsOf(db, cycle.modelId).map((q) => ({

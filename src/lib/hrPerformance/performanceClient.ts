@@ -192,6 +192,13 @@ export type CycleSummary = {
   periodLabel: string;
   selfDueAt: string;
   leaderDueAt: string;
+  /** Calendário das etapas (dias civis YYYY-MM-DD); nulos = ciclo sem calendário de etapas. */
+  selfStartAt?: string | null;
+  leaderStartAt?: string | null;
+  leadershipStartAt?: string | null;
+  leadershipDueAt?: string | null;
+  calibrationStartAt?: string | null;
+  calibrationDueAt?: string | null;
   modelId: string;
   modelName: string;
   modelVersion: number | null;
@@ -252,8 +259,16 @@ export const deletePerformanceTestCycle = (cycleId: string, reason: string, conf
   json<{ deleted: Record<string, number>; auditId: string }>(`${BASE}/cycles/${cycleId}`, { method: "DELETE", body: JSON.stringify({ reason, confirmation }) });
 
 export const fetchPerformanceCycles = () => json<{ cycles: CycleSummary[]; counts: Record<string, CycleCounts> }>(`${BASE}/cycles`);
-export const createPerformanceCycle = (input: { name: string; periodLabel: string; modelId: string; selfDueAt: string; leaderDueAt: string; classification: CycleClassification; leadershipModelId?: string | null }) => post<{ cycleId: string }>(`${BASE}/cycles`, input);
-export const updatePerformanceCycle = (id: string, input: { name: string; periodLabel: string; selfDueAt: string; leaderDueAt: string; reason?: string }) => put(`${BASE}/cycles/${id}`, input);
+export type StageScheduleDto = {
+  selfStartAt?: string | null;
+  leaderStartAt?: string | null;
+  leadershipStartAt?: string | null;
+  leadershipDueAt?: string | null;
+  calibrationStartAt?: string | null;
+  calibrationDueAt?: string | null;
+};
+export const createPerformanceCycle = (input: { name: string; periodLabel: string; modelId: string; selfDueAt: string; leaderDueAt: string; classification: CycleClassification; leadershipModelId?: string | null } & StageScheduleDto) => post<{ cycleId: string }>(`${BASE}/cycles`, input);
+export const updatePerformanceCycle = (id: string, input: { name: string; periodLabel: string; selfDueAt: string; leaderDueAt: string; reason?: string } & StageScheduleDto) => put(`${BASE}/cycles/${id}`, input);
 export const transitionPerformanceCycle = (id: string, input: { to: string; reason?: string; pilotAck?: boolean; acceptPending?: boolean }) =>
   post<{ status: string; pending?: number }>(`${BASE}/cycles/${id}/transition`, input);
 export const homologatePerformanceCycle = (id: string) => post<{ status: string }>(`${BASE}/cycles/${id}/homologate`);
@@ -458,8 +473,48 @@ export type LeaderQueueItem = {
   officialResult: { quadrant: string; cultureBand: string; technicalSum: number; technicalCount: number; potentialSum: number; potentialCount: number } | null;
   feedback: { id: string; acknowledgedAt: string | null; createdAt: string } | null;
   pdis: { id: string; title: string; status: string; dueAt: string | null }[];
+  /** Etapa "Avaliação do líder" fora da janela: "abre em dd/mm" ou "terminou em dd/mm". */
+  stageMessage?: string | null;
+  /** Posição preliminar (consolidação/calibração), antes de oficial. */
+  preliminaryResult?: { quadrant: string; nineX: NineBand | null; nineY: NineBand | null; calibrated: boolean } | null;
+  plan?: FollowUpPlanDto | null;
+  /** Agendar conversa e preparar devolutiva/PDI (consolidação até homologação). */
+  planEditable?: boolean;
+  /** Propor a posição ao RH (só consolidação/calibração). */
+  proposalEditable?: boolean;
 };
-export const fetchLeaderQueue = () => json<{ items: LeaderQueueItem[]; leadership?: SuperiorLeadershipItem[] }>(`${BASE}/team`);
+export type NineBand = "LOW" | "MID" | "HIGH";
+export type FollowUpPlanDto = {
+  id: string;
+  proposalDecision: "CONFIRM" | "ADJUST" | null;
+  proposalNineX: NineBand | null;
+  proposalNineY: NineBand | null;
+  proposalNote: string | null;
+  proposedAt: string | null;
+  meetingAt: string | null;
+  meetingPlace: string | null;
+  draftStrength: string | null;
+  draftImprovement: string | null;
+  draftAction: string | null;
+  draftPdiTitle: string | null;
+  draftPdiObjective: string | null;
+  draftPdiDueAt: string | null;
+  updatedAt: string;
+};
+export type TeamNotices = {
+  linked: boolean;
+  inactiveCycles: { cycleId: string; cycleName: string; tasks: number }[];
+  pendingLeader: number;
+  pendingCalibration: number;
+  myJourney: { cycleId: string; cycleName: string; kind: string; title: string; open: boolean; message: string | null } | null;
+};
+export const fetchLeaderQueue = () => json<{ items: LeaderQueueItem[]; leadership?: SuperiorLeadershipItem[]; notices?: TeamNotices }>(`${BASE}/team`);
+export type FollowUpPlanInput = {
+  proposal?: { decision: "CONFIRM" | "ADJUST"; nineX?: NineBand | null; nineY?: NineBand | null; note?: string | null } | null;
+  meeting?: { at?: string | null; place?: string | null } | null;
+  draft?: { strength?: string | null; improvement?: string | null; action?: string | null; pdiTitle?: string | null; pdiObjective?: string | null; pdiDueAt?: string | null } | null;
+};
+export const savePerformancePlan = (participantId: string, input: FollowUpPlanInput) => put<{ planId: string }>(`${BASE}/plans/${participantId}`, input);
 
 // ------------------------------------------------------------------ liderança (180°)
 export type LeadershipStatus = "NOT_APPLICABLE" | "PENDING" | "AVAILABLE" | "CALIBRATED" | "EXCEPTION" | "HOMOLOGATED";
@@ -592,7 +647,10 @@ export type CalibrationRow = {
   evidences: { questionCode: string; competency: string; score: number | null; notObserved: boolean; evidence: string | null }[];
   result: ResultSummary | null;
   versions: number;
+  /** Proposta do líder na etapa Calibração e devolutiva (só para quem calibra ou vê resultados). */
+  leaderProposal?: LeaderProposal | null;
 };
+export type LeaderProposal = { decision: "CONFIRM" | "ADJUST"; nineX: NineBand | null; nineY: NineBand | null; note: string | null; proposedAt: string | null; leaderName: string | null; meetingAt: string | null };
 export const fetchCalibrationQueue = (cycleId: string, filters: Record<string, string> = {}) =>
   json<{ cycle: { id: string; name: string; status: string }; rules: PerformanceRules; rows: CalibrationRow[] }>(`${BASE}/cycles/${cycleId}/calibration?${new URLSearchParams(filters)}`);
 export const validatePerformanceTechnical = (participantId: string, decision: "VALIDATED" | "INSUFFICIENT", note: string) =>
@@ -774,3 +832,31 @@ export function performanceReportPrintUrl(cycleId: string, kind: string, partici
 // ------------------------------------------------------------------ portal público
 // As chamadas do portal ficam em performancePortalClient.ts (bundle público separado).
 export * from "./performancePortalClient";
+
+// ------------------------------------------------------------------ minha avaliação (dentro do sistema)
+// Mesmo contrato do portal público: a tela de perguntas é a mesma, muda só o caminho e a sessão (o login).
+async function myCall<T>(path: string, init: RequestInit): Promise<T & { ok: boolean; message?: string; code?: string; offline?: boolean }> {
+  try {
+    const response = await fetch(path, { ...NO_STORE, ...init, headers: { "content-type": "application/json" } });
+    const body = await response.json().catch(() => ({ ok: false, message: "Resposta inválida do servidor." }));
+    if (!response.ok && body.ok !== false) return { ok: false, code: body.error || "ERROR", message: body.message || "Não foi possível concluir." } as never;
+    return body;
+  } catch {
+    return { ok: false, offline: true, code: "NETWORK", message: "Sem conexão no momento. Sua resposta fica guardada e vamos tentar de novo." } as never;
+  }
+}
+export const myPerformanceApi = {
+  fetchForm: () => myCall<Partial<import("./performancePortalClient").PublicForm> & { expired?: boolean }>(`${BASE}/me/form`, { method: "GET" }),
+  saveForm: (expectedVersion: number, answers: { code: string; answer: { kind: string; score?: number; evidence?: string | null } }[], step?: string) =>
+    myCall<{ version?: number }>(`${BASE}/me/answers`, { method: "PUT", body: JSON.stringify({ expectedVersion, answers, step }) }),
+  submitForm: (expectedVersion: number, _confirm: boolean, step?: string) =>
+    myCall<{ status?: string; done?: boolean; next?: string | null }>(`${BASE}/me/submit`, { method: "POST", body: JSON.stringify({ expectedVersion, step }) }),
+  /** Dentro do sistema não há sessão de portal para encerrar. */
+  logout: async () => ({ ok: true }) as { ok: boolean; message?: string; code?: string; offline?: boolean },
+};
+export const fetchMyPerformancePending = () => json<TeamNotices>(`${BASE}/me/pending`);
+/** Outras abas pedem troca de aba (ex.: dica do ciclo aberto → "Minha equipe") sem conhecer a página. */
+export const PERFORMANCE_NAVIGATE_EVENT = "performance:navigate";
+export function navigatePerformanceTab(tab: string) {
+  window.dispatchEvent(new CustomEvent(PERFORMANCE_NAVIGATE_EVENT, { detail: { tab } }));
+}

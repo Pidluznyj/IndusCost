@@ -38,6 +38,7 @@ import {
 } from "./performanceUi";
 import { ReasonDialog } from "./CycleDesk";
 import { LeadershipCalibrationSection } from "./PerformanceLeadershipUi";
+import { LeaderProposalNote } from "./PerformanceFollowUpPlanDialog";
 import { EvaluatorBiasBadges, PersonDossierOverlay } from "./PersonDossierOverlay";
 import { Term } from "./performanceGlossary";
 import { fetchCalibrationEvaluators, type EvaluatorStat } from "@/src/lib/hrPerformance/performanceClient";
@@ -453,6 +454,17 @@ function CalibrateDialog({ row, onClose, onDone }: { row: CalibrationRow; onClos
         onDone(decision === "ADJUST" ? `Ajustado para ${out.quadrant}` : withoutLeader ? "Exceção registrada: sem avaliação do líder" : "Calibração registrada");
       }}
     >
+      <LeaderProposalNote
+        proposal={row.leaderProposal}
+        canAdjust={canAdjust}
+        testId="perf-calibrate-leader-proposal"
+        onUse={(input) => {
+          setDecision(input.decision);
+          if (input.technicalBand) setTechnicalBand(input.technicalBand as typeof technicalBand);
+          if (input.potentialBand) setPotentialBand(input.potentialBand as typeof potentialBand);
+          setNote(input.note);
+        }}
+      />
       <OverlayField label="Decisão" required>
         {(p) => (
           <OverlaySelect {...p} value={decision} onChange={(e) => setDecision(e.target.value as typeof decision)} data-testid="perf-calibrate-decision">

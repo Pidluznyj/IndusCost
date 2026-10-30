@@ -78,6 +78,16 @@ export type CycleRecord = {
   activationReason: string | null;
   /** Avaliação 180° de liderança neste ciclo. Null = desligada. */
   leadershipModelId: string | null;
+  /**
+   * Calendário de etapas (YYYY-MM-DD, dias de São Paulo). selfDueAt/leaderDueAt são o fim das duas primeiras etapas.
+   * Tudo nulo = ciclo anterior ao fluxo por etapas (coleta inteira aberta enquanto o ciclo estiver Aberto).
+   */
+  selfStartAt: string | null;
+  leaderStartAt: string | null;
+  leadershipStartAt: string | null;
+  leadershipDueAt: string | null;
+  calibrationStartAt: string | null;
+  calibrationDueAt: string | null;
 };
 
 export type ModelKind = "INDIVIDUAL" | "LEADERSHIP";
@@ -319,6 +329,35 @@ export type LeadershipResultRecord = {
   createdAt: string;
 };
 
+/**
+ * Etapa "Calibração e devolutiva" conduzida pelo líder (uma por pessoa do ciclo): a proposta de posição na Nine-Box
+ * (o RH confere e decide na calibração), a conversa agendada e o rascunho da devolutiva e do PDI, que pré-preenchem
+ * os registros oficiais depois que os resultados ficam oficiais. Nada aqui é resultado oficial.
+ */
+export type FollowUpPlanRecord = {
+  id: string;
+  cycleId: string;
+  participantId: string;
+  leaderEmployeeId: string;
+  proposalDecision: "CONFIRM" | "ADJUST" | null;
+  proposalNineX: NineBoxBand | null;
+  proposalNineY: NineBoxBand | null;
+  proposalNote: string | null;
+  proposedAt: string | null;
+  /** Data e hora locais da conversa (YYYY-MM-DDTHH:mm). */
+  meetingAt: string | null;
+  meetingPlace: string | null;
+  draftStrength: string | null;
+  draftImprovement: string | null;
+  draftAction: string | null;
+  draftPdiTitle: string | null;
+  draftPdiObjective: string | null;
+  draftPdiDueAt: string | null;
+  updatedByUserId: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
 /** Emissão de documento. O código é o identificador rastreável impresso no PDF. */
 export type ReportIssueRecord = {
   id: string;
@@ -352,6 +391,7 @@ export type PerformanceDatabase = {
   reminders: ReminderRecord[];
   reports: ReportIssueRecord[];
   leadershipResults: LeadershipResultRecord[];
+  plans: FollowUpPlanRecord[];
 };
 
 /** Coleções gravadas pela persistência, na ordem que respeita as chaves estrangeiras. */
@@ -373,6 +413,7 @@ export const PERFORMANCE_COLLECTIONS = [
   "reminders",
   "reports",
   "leadershipResults",
+  "plans",
 ] as const satisfies readonly (keyof Omit<PerformanceDatabase, "graphRevision">)[];
 
 export type PerformanceCollection = (typeof PERFORMANCE_COLLECTIONS)[number];
@@ -397,6 +438,7 @@ export function emptyPerformanceDatabase(): PerformanceDatabase {
     reminders: [],
     reports: [],
     leadershipResults: [],
+    plans: [],
   };
 }
 

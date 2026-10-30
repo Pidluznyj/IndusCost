@@ -136,6 +136,7 @@ export function cycleIdOfRecord(collection: PerformanceCollection, row: Record<s
     case "reminders":
     case "reports":
     case "leadershipResults":
+    case "plans":
       return str(row.cycleId);
     case "answers":
     case "invites":
@@ -277,7 +278,7 @@ export function reactivateCycle(source: PerformanceDatabase, input: LifecycleInp
 // ---------------------------------------------------------------- exclusão física segura
 
 /** Ordem de exclusão: dependentes primeiro (respeita as chaves estrangeiras sem depender de cascata). */
-export const DELETION_ORDER = ["checkins", "pdis", "feedbacks", "results", "leadershipResults", "sessions", "invites", "answers", "assignments", "reminders", "participants", "cycles"] as const;
+export const DELETION_ORDER = ["checkins", "pdis", "feedbacks", "results", "leadershipResults", "plans", "sessions", "invites", "answers", "assignments", "reminders", "participants", "cycles"] as const;
 export type DeletionCollection = (typeof DELETION_ORDER)[number];
 
 export type CycleDeletionPlan = {
@@ -304,6 +305,7 @@ function collectIds(db: PerformanceDatabase, cycleId: string): Record<DeletionCo
     feedbacks,
     results: db.results.filter((r) => participantSet.has(r.participantId)).map((r) => r.id),
     leadershipResults: db.leadershipResults.filter((r) => r.cycleId === cycleId || participantSet.has(r.participantId)).map((r) => r.id),
+    plans: db.plans.filter((p) => p.cycleId === cycleId || participantSet.has(p.participantId)).map((p) => p.id),
     sessions: db.sessions.filter((s) => assignmentSet.has(s.assignmentId)).map((s) => s.id),
     invites: db.invites.filter((i) => assignmentSet.has(i.assignmentId)).map((i) => i.id),
     answers: db.answers.filter((a) => assignmentSet.has(a.assignmentId)).map((a) => a.id),

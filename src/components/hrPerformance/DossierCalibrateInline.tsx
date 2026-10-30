@@ -8,6 +8,7 @@ import { NINE_BOX_BANDS, NINE_BOX_BAND_LABELS } from "@/src/lib/hrPerformance/pe
 import { calibratePerformance, validatePerformanceTechnical, type CalibrationRow } from "@/src/lib/hrPerformance/performanceClient";
 import { BTN_PRIMARY, BTN_SECONDARY, ErrorBanner, InfoBanner, ReasonField, quadrantText } from "./performanceUi";
 import { Term } from "./performanceGlossary";
+import { LeaderProposalNote } from "./PerformanceFollowUpPlanDialog";
 
 export function DossierCalibrateInline({ row, onDone }: { row: CalibrationRow; onDone: (message: string) => void }) {
   const result = row.result;
@@ -71,6 +72,17 @@ export function DossierCalibrateInline({ row, onDone }: { row: CalibrationRow; o
       <p className="text-sm">
         Posição calculada: <strong>{quadrantText(result?.quadrant)}</strong>. <Term k="calibrar">Calibrar</Term> é confirmar ou ajustar com justificativa; a versão original fica guardada.
       </p>
+      <LeaderProposalNote
+        proposal={row.leaderProposal}
+        canAdjust={canAdjust}
+        testId="perf-dossier-leader-proposal"
+        onUse={(input) => {
+          setDecision(input.decision);
+          if (input.technicalBand) setTechnicalBand(input.technicalBand as typeof technicalBand);
+          if (input.potentialBand) setPotentialBand(input.potentialBand as typeof potentialBand);
+          setNote(input.note);
+        }}
+      />
       <OverlayField label="Decisão" required>
         {(p) => (
           <OverlaySelect {...p} value={decision} onChange={(e) => setDecision(e.target.value as typeof decision)} data-testid="perf-dossier-decision">

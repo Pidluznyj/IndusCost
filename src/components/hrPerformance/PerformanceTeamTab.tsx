@@ -3,8 +3,9 @@
  * Depois da homologação, mostra o resultado oficial, a devolutiva e o PDI da equipe.
  */
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { ClipboardCheck, MessageSquareText, Target } from "lucide-react";
-import { fetchLeaderQueue, type LeaderQueueItem, type SuperiorLeadershipItem } from "@/src/lib/hrPerformance/performanceClient";
+import { CalendarClock, ClipboardCheck, MessageSquareText, Target } from "lucide-react";
+import { fetchLeaderQueue, type LeaderQueueItem, type SuperiorLeadershipItem, type TeamNotices } from "@/src/lib/hrPerformance/performanceClient";
+import { FollowUpPlanDialog, planSummary } from "./PerformanceFollowUpPlanDialog";
 import { LeadershipCalibrationOverlay, LeadershipStatusBadge, SuperiorLeadershipOverlay } from "./PerformanceLeadershipUi";
 import { AssignmentBadge, BTN_GHOST, BTN_PRIMARY, BTN_SECONDARY, CultureBadge, ErrorBanner, InfoBanner, PANEL, PanelState, PdiBadge, dateBr, mean, quadrantText, todayIso } from "./performanceUi";
 import { LeaderAssignmentPanel } from "./LeaderAssignmentPanel";
@@ -12,7 +13,7 @@ import { AckDialog, FeedbackDialog, PdiDialog } from "./PerformanceFollowUpDialo
 import { cn } from "@/src/lib/utils";
 
 type Filter = "pending" | "submitted" | "all";
-type Dialog = { kind: "feedback" | "ack" | "pdi"; item: LeaderQueueItem } | null;
+type Dialog = { kind: "feedback" | "ack" | "pdi" | "plan"; item: LeaderQueueItem } | null;
 
 export function PerformanceTeamTab({ onToast, actorName, linkedEmployee = true }: { onToast: (message: string) => void; actorName: string; linkedEmployee?: boolean }) {
   const [items, setItems] = useState<LeaderQueueItem[] | null>(null);
@@ -23,11 +24,13 @@ export function PerformanceTeamTab({ onToast, actorName, linkedEmployee = true }
   const [dialog, setDialog] = useState<Dialog>(null);
   const [leadership, setLeadership] = useState<SuperiorLeadershipItem[]>([]);
   const [leadershipOpen, setLeadershipOpen] = useState<{ kind: "evaluate" | "calibrate"; item: SuperiorLeadershipItem } | null>(null);
+  const [notices, setNotices] = useState<TeamNotices | null>(null);
 
   const reload = useCallback(async () => {
     try {
       const queue = await fetchLeaderQueue();
       setLeadership(queue.leadership ?? []);
+      setNotices(queue.notices ?? null);
       setItems(queue.items);
       setError(null);
     } catch (cause) {
@@ -46,10 +49,14 @@ export function PerformanceTeamTab({ onToast, actorName, linkedEmployee = true }
     .filter((i) => (filter === "pending" ? i.status !== "SUBMITTED" : filter === "submitted" ? i.status === "SUBMITTED" : true))
     .sort((a, b) => a.dueAt.localeCompare(b.dueAt) || a.employeeName.localeCompare(b.employeeName, "pt-BR"));
   const pending = (items ?? []).filter((i) => i.status !== "SUBMITTED").length;
+  // Só conta como "falta com você" o que dá para fazer hoje; o resto abre depois no calendário.
+  const pendingNow = (items ?? []).filter((i) => i.status !== "SUBMITTED" && i.editable).length;
+  const pendingLater = (items ?? []).filter((i) => i.status !== "SUBMITTED" && !i.editable && i.stageMessage).length;
+  const plansPending = (items ?? []).filter((i) => i.proposalEditable && !i.plan?.proposalDecision).length;
   // Resumo do que falta para o líder, numa linha: avaliações individuais, de liderança e calibrações.
   const leadershipPending = leadership.filter((i) => i.status !== "SUBMITTED").length;
   const calibrationsPending = leadership.filter((i) => i.leadershipStatus === "AVAILABLE").length;
-  const nextDue = (items ?? []).filter((i) => i.status !== "SUBMITTED").map((i) => i.dueAt).sort()[0] ?? null;
+  const nextDue = (items ?? []).filter((i) => i.status !== "SUBMITTED" && i.editable).map((i) => i.dueAt).sort()[0] ?? null;
   const nextTask = (() => {
     const ind = (items ?? []).filter((i) => i.status !== "SUBMITTED" && i.editable).sort((a, b) => a.dueAt.localeCompare(b.dueAt))[0];
     if (ind) return { kind: "individual" as const, id: ind.assignmentId };
@@ -67,9 +74,10 @@ export function PerformanceTeamTab({ onToast, actorName, linkedEmployee = true }
   // Liderança por pessoa: entra no mesmo cartão da avaliação individual dela.
   const leadershipByEmployee = new Map<string, SuperiorLeadershipItem>(leadership.map((l) => [`${l.cycleId}|${l.employeeName}`, l]));
   const todo = [
-    pending ? `${pending} avaliação(ões) da equipe` : null,
+    pendingNow ? `${pendingNow} avaliação(ões) da equipe` : null,
     leadershipPending ? `${leadershipPending} avaliação(ões) de liderança` : null,
     calibrationsPending ? `${calibrationsPending} calibração(ões) de liderança` : null,
+    plansPending ? `${plansPending} proposta(s) de calibração e devolutiva` : null,
   ].filter(Boolean);
 
   return (
@@ -113,6 +121,16 @@ export function PerformanceTeamTab({ onToast, actorName, linkedEmployee = true }
         </div>
       </div>
       <ErrorBanner message={error} />
+      {notices?.inactiveCycles.length ? (
+        <InfoBanner tone="amber" testId="perf-team-inactive-notice">
+          {notices.inactiveCycles.map((c) => `${c.cycleName}: ${c.tasks} avaliação(ões) sua(s)`).join(" · ")} — ciclo inativo, por isso não aparece para avaliar. Fale com o RH se ele deveria estar ativo.
+        </InfoBanner>
+      ) : null}
+      {notices && !notices.linked ? (
+        <InfoBanner tone="amber" testId="perf-team-unlinked-notice">
+          Seu usuário não está ligado a um cadastro de colaborador. As avaliações são atribuídas ao colaborador líder; peça ao RH o vínculo em Configurações › Usuários.
+        </InfoBanner>
+      ) : null}
       {items !== null ? (
         <div className={`${PANEL} flex flex-wrap items-center justify-between gap-2 p-3`} data-testid="perf-team-todo">
           <p className="text-sm">
@@ -124,6 +142,7 @@ export function PerformanceTeamTab({ onToast, actorName, linkedEmployee = true }
                 {nextDue ? <span className="text-muted-foreground"> · prazo mais próximo {dateBr(nextDue)}</span> : null}
               </>
             )}
+            {pendingLater ? <span className="text-muted-foreground" data-testid="perf-team-later"> · {pendingLater} avaliação(ões) abrem depois, no calendário do ciclo</span> : null}
           </p>
           {nextTask ? (
             <button type="button" className={BTN_PRIMARY} onClick={doNext} data-testid="perf-team-do-next">
@@ -164,6 +183,11 @@ export function PerformanceTeamTab({ onToast, actorName, linkedEmployee = true }
                   </div>
                   <AssignmentBadge status={item.status} />
                 </div>
+                {item.stageMessage ? (
+                  <p className="text-xs text-amber-800" data-testid={`perf-team-stage-${item.employeeName}`}>
+                    {item.stageMessage}
+                  </p>
+                ) : null}
                 <p className={cn("text-xs", late ? "font-semibold text-rose-700" : "text-muted-foreground")}>
                   Prazo {dateBr(item.dueAt)}
                   {late ? " · atrasada" : ""}
@@ -198,11 +222,26 @@ export function PerformanceTeamTab({ onToast, actorName, linkedEmployee = true }
                     ))}
                   </ul>
                 ) : null}
+                {planSummary(item) ? (
+                  <p className="text-xs text-muted-foreground" data-testid={`perf-team-plan-summary-${item.employeeName}`}>
+                    {planSummary(item)}
+                  </p>
+                ) : null}
                 <div className="flex flex-wrap gap-2">
                   <button type="button" className={item.editable && item.status !== "SUBMITTED" ? BTN_PRIMARY : BTN_SECONDARY} onClick={() => setOpen(item.assignmentId)} data-testid={`perf-team-open-${item.employeeName}`}>
                     <ClipboardCheck className="h-4 w-4" aria-hidden />
-                    {item.status === "NOT_STARTED" ? "Avaliar o trabalho" : item.status === "SUBMITTED" || !item.editable ? "Ver avaliação" : "Continuar a avaliação"}
+                    {item.status === "SUBMITTED" || !item.editable ? "Ver avaliação" : item.status === "NOT_STARTED" ? "Avaliar o trabalho" : "Continuar a avaliação"}
                   </button>
+                  {item.planEditable && !item.feedback ? (
+                    <button
+                      type="button"
+                      className={item.proposalEditable && !item.plan?.proposalDecision ? BTN_PRIMARY : BTN_SECONDARY}
+                      onClick={() => setDialog({ kind: "plan", item })}
+                      data-testid={`perf-team-plan-${item.employeeName}`}
+                    >
+                      <CalendarClock className="h-4 w-4" aria-hidden /> Calibração e devolutiva
+                    </button>
+                  ) : null}
                   {item.officialResult && !item.feedback ? (
                     <button type="button" className={BTN_SECONDARY} onClick={() => setDialog({ kind: "feedback", item })} data-testid={`perf-team-feedback-${item.employeeName}`}>
                       <MessageSquareText className="h-4 w-4" aria-hidden /> Registrar devolutiva
@@ -266,6 +305,7 @@ export function PerformanceTeamTab({ onToast, actorName, linkedEmployee = true }
           participantId={dialog.item.participantId}
           employeeName={dialog.item.employeeName}
           ownerName={actorName}
+          draft={dialog.item.plan ? { strength: dialog.item.plan.draftStrength, improvement: dialog.item.plan.draftImprovement, action: dialog.item.plan.draftAction, conversationAt: dialog.item.plan.meetingAt?.slice(0, 10) ?? null } : null}
           onClose={() => setDialog(null)}
           onDone={() => {
             setDialog(null);
@@ -293,10 +333,22 @@ export function PerformanceTeamTab({ onToast, actorName, linkedEmployee = true }
           employeeName={dialog.item.employeeName}
           ownerName={actorName}
           hasPriority={dialog.item.pdis.some((p) => p.status !== "CANCELLED")}
+          draft={dialog.item.plan && dialog.item.pdis.length === 0 ? { pdiTitle: dialog.item.plan.draftPdiTitle, pdiObjective: dialog.item.plan.draftPdiObjective, pdiDueAt: dialog.item.plan.draftPdiDueAt } : null}
           onClose={() => setDialog(null)}
           onDone={() => {
             setDialog(null);
             onToast("Ação do PDI criada");
+            void reload();
+          }}
+        />
+      ) : null}
+      {dialog?.kind === "plan" ? (
+        <FollowUpPlanDialog
+          item={dialog.item}
+          onClose={() => setDialog(null)}
+          onDone={(message) => {
+            setDialog(null);
+            onToast(message);
             void reload();
           }}
         />
