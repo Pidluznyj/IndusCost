@@ -44,6 +44,8 @@ function answerLabel(answer: Answer | undefined): string | null {
 /**
  * `embedded`: dentro do sistema (aba "Minha avaliação"). Sem QR, código ou botão Sair; a sessão é a do login.
  */
+const brDate = (iso: string) => iso.slice(0, 10).split("-").reverse().join("/");
+
 export function PerformancePortalPage({ api = PUBLIC_API, embedded = false, onFinished }: { api?: PortalApi; embedded?: boolean; onFinished?: () => void } = {}) {
   const [step, setStep] = useState<Step>("boot");
   const [message, setMessage] = useState<string | null>(null);
@@ -369,6 +371,11 @@ export function PerformancePortalPage({ api = PUBLIC_API, embedded = false, onFi
             </h1>
             <p>{form.step.kind === "LEADERSHIP_UPWARD" ? form.step.intro.split(". ").slice(1).join(". ") : form.step.intro}</p>
             <p>São {questions.length} perguntas, uma por tela, no mesmo período de referência.</p>
+            {form.opensAt ? (
+              <p className="pp-alert pp-alert-ok" data-testid="portal-answer-ahead">
+                Esta etapa abre em {brDate(form.opensAt)}, mas você já pode responder agora, se quiser. Se preferir, volte até {brDate(form.dueAt)}.
+              </p>
+            ) : null}
             <p className="pp-muted">Nas respostas “Nunca ou quase nunca” e “Sempre ou quase sempre”, conte um comportamento ou situação que você observou. Não precisa citar nomes.</p>
             {form.step.kind === "LEADERSHIP_UPWARD" ? (
               <p className="pp-muted" data-testid="portal-upward-privacy">
@@ -376,8 +383,21 @@ export function PerformancePortalPage({ api = PUBLIC_API, embedded = false, onFi
               </p>
             ) : null}
             <button type="button" className="pp-btn pp-btn-primary" onClick={() => setStep("form")} data-testid="portal-start">
-              Começar
+              {form.opensAt ? "Responder agora" : "Começar"}
             </button>
+            {form.opensAt ? (
+              <button
+                type="button"
+                className="pp-link"
+                onClick={() => {
+                  setStep("blocked");
+                  setMessage(`Tudo certo. Você pode responder esta etapa quando quiser, até ${brDate(form.dueAt)}.`);
+                }}
+                data-testid="portal-answer-later"
+              >
+                Responder depois
+              </button>
+            ) : null}
           </section>
         ) : null}
 

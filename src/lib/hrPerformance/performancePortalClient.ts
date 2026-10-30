@@ -39,6 +39,8 @@ export type PublicForm = {
   assisted: boolean;
   expiresAt: string;
   dueAt: string;
+  /** Etapa sendo adiantada: a data em que ela abre para todos. */
+  opensAt?: string | null;
 };
 
 export const openPerformanceInvite = (token: string) => publicCall<{ phase?: string }>("/api/public/performance/session", { method: "POST", body: JSON.stringify({ token }) });

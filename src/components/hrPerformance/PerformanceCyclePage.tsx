@@ -203,7 +203,7 @@ function PerformanceModule() {
 /** O que está pendente com a pessoa agora, em linguagem simples e com o atalho para a aba certa. */
 function PendingBanner({ pending, canTeam, onGo }: { pending: TeamNotices; canTeam: boolean; onGo: (tab: TabId) => void }) {
   const items: { key: string; text: string; tab: TabId; action: string }[] = [];
-  if (pending.myJourney?.open) items.push({ key: "self", text: `${pending.myJourney.title} (${pending.myJourney.cycleName})`, tab: "minha", action: "Minha avaliação" });
+  if (pending.myJourney?.open) items.push({ key: "self", text: `${pending.myJourney.title} (${pending.myJourney.cycleName})${pending.myJourney.opensAt ? ", opcional por enquanto" : ""}`, tab: "minha", action: "Minha avaliação" });
   if (canTeam && pending.pendingLeader > 0)
     items.push({ key: "leader", text: `${pending.pendingLeader} avaliação(ões) de liderado(s)`, tab: "equipe", action: "Minha equipe" });
   if (canTeam && pending.pendingCalibration > 0)
