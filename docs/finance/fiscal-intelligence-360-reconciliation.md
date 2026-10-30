@@ -30,6 +30,13 @@ Cada fonte é uma **evidência** da obrigação — nunca um imposto adicional. 
 
 Âncoras são únicas (`anchorKey`, `guideId`, `apExternalId` com índice único): um título AP **não** vira duas obrigações.
 
+### Conciliação por lote
+Na aba Conciliação fiscal, a fila e os títulos do AP pendentes têm pesquisa por texto e por faixa de valor (na fila, a faixa vale para a diferença em valor absoluto, e itens sem diferença calculada saem do resultado). As linhas marcadas recebem uma decisão comum: aceitar a divergência, confirmar como tributo ou marcar como não tributário. Vale o mesmo motivo, com as mesmas permissões da decisão individual, até 500 itens por lote.
+
+* Cada item vira uma decisão própria, na própria transação, com trilha e revogação individuais. O `batchId` fica em `evidence`. Falha em um item não desfaz os demais.
+* O servidor confere cada item de novo e devolve o que ignorou e por quê: item conciliado ou aceito, título que saiu de pendente, título sem sugestão de tributo e nenhum tributo escolhido, ou decisão ativa existente. O lote nunca substitui uma decisão ativa; para mudar, use a decisão individual ou revogue.
+* Mudar um filtro limpa a marcação, para nenhum item fora da vista receber a decisão.
+
 ## 2. Níveis de evidência e situação
 
 `evidenceLevel`: `NONE` → `MANUAL_DECLARED` → `ERP_SETTLEMENT` (baixa no AP) → `DOCUMENTARY_PROOF` (comprovante) → `BANK_MATCH` (Tesouraria).

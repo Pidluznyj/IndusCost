@@ -2,12 +2,13 @@
  * Rotas HTTP — Inteligência Fiscal 360° (Financeiro › Tributos).
  *
  * Leitura (somente tabelas materializadas):
- *   GET  /api/finance/fiscal-360/overview | payments | payments/detail | reconciliation | ap-titles
+ *   GET  /api/finance/fiscal-360/overview | payments | payments/detail | reconciliation | reconciliation/keys | ap-titles | ap-titles/pending-keys
  *        | documents | documents/:nomusNfeId | intercompany | forecast | processing | issues | audit
  *        | decisions | rules
  *   GET  /api/finance/fiscal-360/export?dataset=payments|documents|reconciliation|issues|ap-titles&format=xlsx|csv
  * Escrita (enfileira processamento; nunca altera Nomus):
  *   POST /api/finance/fiscal-360/decisions               (approve = conciliar | update = reclassificar)
+ *   POST /api/finance/fiscal-360/decisions/batch         (mesmas permissões, por tipo de decisão)
  *   POST /api/finance/fiscal-360/decisions/:id/revoke
  *   POST /api/finance/fiscal-360/reprocess               (reprocess)
  *   POST /api/finance/fiscal-360/jobs/:id/retry|cancel   (execute = administrar jobs)
@@ -38,16 +39,20 @@ import {
   listFiscal360Documents,
   listFiscal360Issues,
   listFiscal360Payments,
+  listFiscal360PendingApKeys,
   listFiscal360Reconciliation,
+  listFiscal360ReconciliationKeys,
+  parseFiscal360AmountRange,
   parseFiscal360Filters,
   parseFiscal360Page,
 } from "./fiscal360QueryService.server.js";
-import { FISCAL360_DECISION_PERMISSION, FISCAL360_DECISION_TYPES, type Fiscal360DecisionType } from "./fiscal360Types.js";
+import { FISCAL360_BATCH_DECISION_TYPES, FISCAL360_DECISION_PERMISSION, FISCAL360_DECISION_TYPES, type Fiscal360BatchDecisionType, type Fiscal360DecisionType } from "./fiscal360Types.js";
 import {
   activateFiscal360RuleVersion,
   archiveFiscal360Scenario,
   cancelFiscal360Job,
   createFiscal360Decision,
+  createFiscal360DecisionBatch,
   createFiscal360RuleVersion,
   listFiscal360RuleVersions,
   previewFiscal360Scenario,
@@ -120,12 +125,15 @@ export function registerFiscal360Routes(app: express.Express, auth: AuthGuards):
   read("/api/finance/fiscal-360/overview", (req) => getFiscal360Overview(prisma, parseFiscal360Filters(q(req))));
   read("/api/finance/fiscal-360/payments", (req) => listFiscal360Payments(prisma, parseFiscal360Filters(q(req)), parseFiscal360Page(q(req))));
   read("/api/finance/fiscal-360/payments/detail", (req) => getFiscal360PaymentDetail(prisma, String(req.query.anchorKey ?? "")));
+  const checkTypeOf = (req: express.Request) => (typeof req.query.checkType === "string" && req.query.checkType ? req.query.checkType.toUpperCase() : null);
   read("/api/finance/fiscal-360/reconciliation", (req) =>
-    listFiscal360Reconciliation(prisma, parseFiscal360Filters(q(req)), parseFiscal360Page(q(req)), typeof req.query.checkType === "string" && req.query.checkType ? req.query.checkType.toUpperCase() : null)
+    listFiscal360Reconciliation(prisma, parseFiscal360Filters(q(req)), parseFiscal360Page(q(req)), checkTypeOf(req), parseFiscal360AmountRange(q(req)))
   );
+  read("/api/finance/fiscal-360/reconciliation/keys", (req) => listFiscal360ReconciliationKeys(prisma, parseFiscal360Filters(q(req)), checkTypeOf(req), parseFiscal360AmountRange(q(req))));
   read("/api/finance/fiscal-360/ap-titles", (req) =>
-    listFiscal360ApTitles(prisma, parseFiscal360Filters(q(req)), parseFiscal360Page(q(req)), typeof req.query.classification === "string" && req.query.classification ? req.query.classification.toUpperCase() : null)
+    listFiscal360ApTitles(prisma, parseFiscal360Filters(q(req)), parseFiscal360Page(q(req)), typeof req.query.classification === "string" && req.query.classification ? req.query.classification.toUpperCase() : null, parseFiscal360AmountRange(q(req)))
   );
+  read("/api/finance/fiscal-360/ap-titles/pending-keys", (req) => listFiscal360PendingApKeys(prisma, parseFiscal360Filters(q(req)), parseFiscal360AmountRange(q(req))));
   read("/api/finance/fiscal-360/documents", (req) => listFiscal360Documents(prisma, parseFiscal360Filters(q(req)), parseFiscal360Page(q(req))));
   read("/api/finance/fiscal-360/documents/:nomusNfeId", (req) => getFiscal360DocumentDetail(prisma, req.params.nomusNfeId ?? ""));
   read("/api/finance/fiscal-360/intercompany", (req) => getFiscal360Intercompany(prisma, parseFiscal360Filters(q(req)), parseFiscal360Page(q(req))));
@@ -209,6 +217,32 @@ export function registerFiscal360Routes(app: express.Express, auth: AuthGuards):
       res.json({ ok: true, data });
     } catch (error) {
       sendError(res, error, "POST decisions");
+    }
+  });
+  app.post("/api/finance/fiscal-360/decisions/batch", auth.requireAppAuth, (req, res, next) => {
+    const type = String((req.body as Record<string, unknown> | undefined)?.decisionType ?? "") as Fiscal360BatchDecisionType;
+    if (!FISCAL360_BATCH_DECISION_TYPES.includes(type)) {
+      res.status(400).json({ ok: false, error: "Esta decisão não pode ser aplicada em lote." });
+      return;
+    }
+    decisionGuards[FISCAL360_DECISION_PERMISSION[type]](req, res, next);
+  }, async (req, res) => {
+    try {
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const data = await createFiscal360DecisionBatch(
+        prisma,
+        {
+          decisionType: body.decisionType as Fiscal360BatchDecisionType,
+          itemKeys: body.itemKeys,
+          apExternalIds: body.apExternalIds,
+          payload: (body.payload ?? {}) as Record<string, unknown>,
+          reason: body.reason,
+        },
+        actorFromReq(req)
+      );
+      res.json({ ok: true, data });
+    } catch (error) {
+      sendError(res, error, "POST decisions/batch");
     }
   });
   app.post("/api/finance/fiscal-360/decisions/:id/revoke", auth.requireAppAuth, async (req, res, next) => {

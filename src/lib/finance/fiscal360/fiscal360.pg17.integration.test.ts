@@ -15,7 +15,8 @@ import { FISCAL360_COMPANIES } from "./fiscal360Constants.js";
 import { executeFiscal360Job, runFiscal360Processing } from "./fiscal360Processor.server.js";
 import { claimFiscal360Jobs, completeFiscal360Job, enqueueFiscal360Jobs, failFiscal360Job, partitionJob } from "./fiscal360Queue.server.js";
 import { getFiscal360Forecast, getFiscal360Overview, getFiscal360PaymentDetail, listFiscal360Payments, parseFiscal360Filters } from "./fiscal360QueryService.server.js";
-import { createFiscal360Decision, requestFiscal360Reprocess } from "./fiscal360WriteService.server.js";
+import { listFiscal360PendingApKeys } from "./fiscal360QueryService.server.js";
+import { createFiscal360Decision, createFiscal360DecisionBatch, requestFiscal360Reprocess } from "./fiscal360WriteService.server.js";
 
 const bin = commissionPg17BinDir();
 const SKIP = bin ? false : "COMMISSION_PG17_BIN ausente: suíte PostgreSQL 17 não executada.";
@@ -208,6 +209,34 @@ describe("Inteligência Fiscal 360° com PostgreSQL 17 real", { skip: SKIP }, ()
     assert.equal(paid, 1000, "pago não cresce quando o mesmo imposto aparece em duas fontes");
     snap = await total(KOP, "2026-08", "COFINS");
     assert.equal(Number(snap!.paidAmount), 1000);
+  });
+
+  it("lote: pesquisa acha os títulos, cada um recebe a própria decisão, e reenviar não duplica", async () => {
+    const a = await ap({ description: "Pagamento de imposto lote alfa", personName: "Prefeitura Lote", amountPaid: 111, balancePayable: 0, dueDate: new Date("2026-09-20T12:00:00Z") });
+    const b = await ap({ description: "Pagamento de imposto lote beta", personName: "Prefeitura Lote", amountPaid: 222, balancePayable: 0, dueDate: new Date("2026-09-20T12:00:00Z") });
+    await drain("lote-1");
+    const pendingNow = await prisma.fiscalApTitleFact.findMany({ where: { apExternalId: { in: [a.externalId, b.externalId] } } });
+    assert.ok(pendingNow.length === 2 && pendingNow.every((t) => t.classificationStatus === "PENDING"));
+    const month = pendingNow[0]!.competenceMonth;
+    const filters = parseFiscal360Filters({ company: "group", fromMonth: month, toMonth: month, q: "Prefeitura Lote" });
+    const found = await listFiscal360PendingApKeys(prisma, filters, null);
+    assert.deepEqual(found.keys.map(Number).sort((x, y) => x - y), [a.externalId, b.externalId]);
+    const narrowed = await listFiscal360PendingApKeys(prisma, filters, { min: 200, max: null });
+    assert.deepEqual(found.total, 2);
+    assert.ok(narrowed.total <= 2);
+
+    const reason = "Títulos conferidos com o extrato municipal";
+    const first = await createFiscal360DecisionBatch(prisma, { decisionType: "AP_REJECT_TAX", apExternalIds: [a.externalId, b.externalId, 999999], reason }, ACTOR);
+    assert.equal(first.applied, 2);
+    assert.equal(first.skipped.length, 1);
+    const decisions = await prisma.fiscalReconciliationDecision.findMany({ where: { apExternalId: { in: [a.externalId, b.externalId] }, active: true } });
+    assert.equal(decisions.length, 2);
+    assert.ok(decisions.every((d) => (d.evidence as { batchId?: string }).batchId === first.batchId));
+    const again = await createFiscal360DecisionBatch(prisma, { decisionType: "AP_CONFIRM_TAX", apExternalIds: [a.externalId], payload: { taxType: "ISS" }, reason }, ACTOR);
+    assert.equal(again.applied, 0, "não substitui decisão ativa");
+    await drain("lote-2");
+    const after = await prisma.fiscalApTitleFact.findMany({ where: { apExternalId: { in: [a.externalId, b.externalId] } } });
+    assert.ok(after.every((t) => t.classificationStatus === "NOT_TAX"));
   });
 
   it("decisões manuais: confirmar título como tributo, rejeitar, definir empresa da guia — com trilha, revogáveis e reprocessadas", async () => {

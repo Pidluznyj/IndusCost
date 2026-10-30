@@ -4,6 +4,7 @@
  * recalculado no ciclo da requisição, exceto a projeção de um cenário sobre agregados persistidos).
  * Toda escrita gera trilha em FiscalSettlementAuditLog (usuário, data, motivo, antes/depois).
  */
+import { randomUUID } from "node:crypto";
 import { Prisma, type PrismaClient } from "@prisma/client";
 import {
   FISCAL360_AP_RULES_KEY,
@@ -24,7 +25,15 @@ import {
 import { loadFiscal360ForecastInputs } from "./fiscal360Processor.server.js";
 import { enqueueFiscal360Jobs, partitionJob, forecastJob, type Fiscal360JobInput } from "./fiscal360Queue.server.js";
 import { Fiscal360InputError } from "./fiscal360QueryService.server.js";
-import { FISCAL360_DECISION_TYPES, type Fiscal360DecisionType } from "./fiscal360Types.js";
+import {
+  FISCAL360_BATCH_DECISION_TYPES,
+  FISCAL360_BATCH_MAX,
+  FISCAL360_DECISION_TYPES,
+  type Fiscal360BatchDecisionType,
+  type Fiscal360BatchIssue,
+  type Fiscal360BatchResult,
+  type Fiscal360DecisionType,
+} from "./fiscal360Types.js";
 
 type Db = PrismaClient;
 export type Fiscal360Actor = { userId: string | null; userName: string | null };
@@ -179,6 +188,90 @@ export async function createFiscal360Decision(db: Db, input: Fiscal360DecisionIn
     await enqueueFiscal360Jobs(tx, decisionJobs(d, actor, [...extra, ...(await itemPartitionJob(tx, d.itemKey))]));
     return created;
   });
+}
+
+export type Fiscal360BatchInput = {
+  decisionType: Fiscal360BatchDecisionType;
+  itemKeys?: unknown;
+  apExternalIds?: unknown;
+  /** AP_CONFIRM_TAX: tributo do lote. Sem ele, vale a sugestão de cada título. */
+  payload?: Record<string, unknown>;
+  reason: unknown;
+};
+
+/**
+ * Lote = uma decisão comum aplicada item a item. Cada item passa pelo mesmo caminho da decisão individual, na própria
+ * transação: uma falha não desfaz os demais. A elegibilidade é conferida aqui porque a tela pode estar defasada; item com
+ * decisão ativa é ignorado para o lote não substituir a decisão de outra pessoa, e isso também torna o reenvio seguro.
+ */
+export async function createFiscal360DecisionBatch(
+  db: Db,
+  input: Fiscal360BatchInput,
+  actor: Fiscal360Actor,
+  create: typeof createFiscal360Decision = createFiscal360Decision
+): Promise<Fiscal360BatchResult> {
+  if (!FISCAL360_BATCH_DECISION_TYPES.includes(input.decisionType)) throw new Fiscal360InputError("Esta decisão não pode ser aplicada em lote.");
+  const reason = requireReason(input.reason);
+  const isItem = input.decisionType === "ACCEPT_DIVERGENCE";
+  const raw = isItem ? input.itemKeys : input.apExternalIds;
+  const targets = [...new Set((Array.isArray(raw) ? raw : []).map((v) => String(v).trim()).filter(Boolean))];
+  if (targets.length === 0 || targets.length > FISCAL360_BATCH_MAX) throw new Fiscal360InputError(`Marque de 1 a ${FISCAL360_BATCH_MAX} itens.`);
+  const fixedTax = input.decisionType === "AP_CONFIRM_TAX" ? String(input.payload?.taxType ?? "").toUpperCase() : "";
+  if (fixedTax && !TAX_SET.has(fixedTax)) throw new Fiscal360InputError("Tributo inválido.");
+
+  const batchId = randomUUID();
+  const evidence = { batchId, batchSize: targets.length };
+  const skipped: Fiscal360BatchIssue[] = [];
+  const failed: Fiscal360BatchIssue[] = [];
+  // Alvo já validado, pronto para virar decisão individual.
+  const ready: Array<{ target: string; label: string; decision: Fiscal360DecisionInput }> = [];
+
+  if (isItem) {
+    const [items, active] = await Promise.all([
+      db.fiscalReconciliationItem.findMany({ where: { itemKey: { in: targets } }, select: { itemKey: true, status: true, message: true } }),
+      db.fiscalReconciliationDecision.findMany({ where: { decisionType: "ACCEPT_DIVERGENCE", active: true, itemKey: { in: targets } }, select: { itemKey: true } }),
+    ]);
+    const byKey = new Map(items.map((i) => [i.itemKey, i]));
+    const decided = new Set(active.map((d) => d.itemKey));
+    for (const target of targets) {
+      const item = byKey.get(target);
+      const label = item?.message ?? target;
+      if (!item) skipped.push({ target, label, reason: "item não existe mais na conciliação." });
+      else if (item.status === "OK" || item.status === "ACCEPTED") skipped.push({ target, label, reason: "item já está conciliado ou aceito." });
+      else if (decided.has(target)) skipped.push({ target, label, reason: "já tem decisão ativa aguardando processamento." });
+      else ready.push({ target, label, decision: { decisionType: "ACCEPT_DIVERGENCE", itemKey: target, reason, evidence } });
+    }
+  } else {
+    const ids = targets.filter((t) => /^\d{1,9}$/.test(t)).map(Number);
+    const [titles, active] = await Promise.all([
+      db.fiscalApTitleFact.findMany({ where: { apExternalId: { in: ids } }, select: { apExternalId: true, classificationStatus: true, suggestedTaxType: true } }),
+      db.fiscalReconciliationDecision.findMany({ where: { decisionType: { in: ["AP_CONFIRM_TAX", "AP_REJECT_TAX"] }, active: true, apExternalId: { in: ids } }, select: { apExternalId: true } }),
+    ]);
+    const byId = new Map(titles.map((t) => [String(t.apExternalId), t]));
+    const decided = new Set(active.map((d) => String(d.apExternalId)));
+    for (const target of targets) {
+      const title = byId.get(target);
+      const label = `Título AP ${target}`;
+      const taxType = fixedTax || title?.suggestedTaxType || "";
+      if (!title) skipped.push({ target, label, reason: "título não materializado na Inteligência Fiscal." });
+      else if (title.classificationStatus !== "PENDING") skipped.push({ target, label, reason: "título não está mais pendente de classificação." });
+      else if (decided.has(target)) skipped.push({ target, label, reason: "já tem decisão ativa aguardando processamento." });
+      else if (input.decisionType === "AP_CONFIRM_TAX" && !TAX_SET.has(taxType)) skipped.push({ target, label, reason: "título sem sugestão de tributo: escolha o tributo do lote." });
+      else ready.push({ target, label, decision: { decisionType: input.decisionType, apExternalId: title.apExternalId, payload: input.decisionType === "AP_CONFIRM_TAX" ? { taxType } : {}, reason, evidence } });
+    }
+  }
+
+  let applied = 0;
+  for (const { target, label, decision } of ready) {
+    try {
+      await create(db, decision, actor);
+      applied += 1;
+    } catch (error) {
+      if (!(error instanceof Fiscal360InputError)) console.error("[fiscal-360] decisão em lote", batchId, target, error instanceof Error ? error.message : error);
+      failed.push({ target, label, reason: error instanceof Fiscal360InputError ? error.message : "falha interna ao registrar; tente de novo." });
+    }
+  }
+  return { batchId, requested: targets.length, applied, skipped, failed };
 }
 
 export async function revokeFiscal360Decision(db: Db, id: string, reason: unknown, actor: Fiscal360Actor) {

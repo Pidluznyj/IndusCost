@@ -395,6 +395,23 @@ export const FISCAL360_DECISION_LABELS: Record<Fiscal360DecisionType, string> = 
   ACCEPT_DIVERGENCE: "Aceitar divergência justificada",
 };
 
+/** Decisões que podem ser aplicadas em lote: não dependem de dados próprios de cada item além do tributo. */
+export const FISCAL360_BATCH_DECISION_TYPES = ["ACCEPT_DIVERGENCE", "AP_CONFIRM_TAX", "AP_REJECT_TAX"] as const;
+export type Fiscal360BatchDecisionType = (typeof FISCAL360_BATCH_DECISION_TYPES)[number];
+export const FISCAL360_BATCH_MAX = 500;
+
+export type Fiscal360BatchKeys = { keys: string[]; total: number };
+
+export type Fiscal360BatchIssue = { target: string; label: string; reason: string };
+
+export type Fiscal360BatchResult = {
+  batchId: string;
+  requested: number;
+  applied: number;
+  skipped: Fiscal360BatchIssue[];
+  failed: Fiscal360BatchIssue[];
+};
+
 /** Ação de permissão exigida por tipo de decisão. */
 export const FISCAL360_DECISION_PERMISSION: Record<Fiscal360DecisionType, "reconcile" | "reclassify"> = {
   AP_CONFIRM_TAX: "reclassify",

@@ -16,6 +16,7 @@ import {
   isFiscal360Month,
   roundFiscal360,
 } from "./fiscal360Constants.js";
+import { FISCAL360_BATCH_MAX } from "./fiscal360Types.js";
 import { effectiveFiscal360PaymentStatus } from "./fiscal360PaymentFact.js";
 import { summarizeFiscal360Forecast, type ForecastRow } from "./fiscal360Forecast.js";
 import { num } from "./fiscal360Num.js";
@@ -41,6 +42,7 @@ import type {
   Fiscal360PaymentsResponse,
   Fiscal360ProcessingResponse,
   Fiscal360ReconciliationResponse,
+  Fiscal360BatchKeys,
   Fiscal360ReconciliationRow,
 } from "./fiscal360Types.js";
 
@@ -106,6 +108,21 @@ export function parseFiscal360Filters(query: Record<string, unknown>, now = new 
     includeUnknownCompany: str(query.includeUnknown) === "1" || str(query.includeUnknown) === "true",
     q: q ? q.slice(0, 80) : null,
   };
+}
+
+export type Fiscal360AmountRange = { min: number | null; max: number | null };
+
+export function parseFiscal360AmountRange(query: Record<string, unknown>): Fiscal360AmountRange {
+  const amount = (v: unknown) => {
+    const s = str(v);
+    if (!s) return null;
+    const n = Number(s);
+    if (!Number.isFinite(n) || n < 0) throw new Fiscal360InputError("Valor inválido na pesquisa.");
+    return n;
+  };
+  const range = { min: amount(query.minAmount), max: amount(query.maxAmount) };
+  if (range.min != null && range.max != null && range.min > range.max) throw new Fiscal360InputError("Valor inicial maior que o final.");
+  return range;
 }
 
 export function parseFiscal360Page(query: Record<string, unknown>): { page: number; pageSize: number } {
@@ -591,23 +608,50 @@ export async function getFiscal360PaymentDetail(db: Db, anchorKey: string, now =
 
 // ————————————————————————————————————————————— Conciliação
 
-export async function listFiscal360Reconciliation(
-  db: Db,
-  f: Fiscal360Filters,
-  page: { page: number; pageSize: number },
-  checkType: string | null
-): Promise<Fiscal360ReconciliationResponse> {
-  if (checkType && !ALLOWED_TOKEN.test(checkType)) throw new Fiscal360InputError("Checagem inválida.");
-  const base: Prisma.FiscalReconciliationItemWhereInput = {
+function reconciliationBaseWhere(f: Fiscal360Filters): Prisma.FiscalReconciliationItemWhereInput {
+  return {
     companyCnpj: { in: companyWhere(f) },
     competenceMonth: { gte: f.fromMonth, lte: f.toMonth },
     ...(f.taxType ? { taxType: f.taxType } : {}),
   };
-  const where: Prisma.FiscalReconciliationItemWhereInput = {
-    ...base,
+}
+
+/** A diferença pode ser negativa: a faixa pesquisada vale para o valor absoluto. Sem diferença calculada, o item sai. */
+function differenceRangeWhere(range: Fiscal360AmountRange | null): Prisma.FiscalReconciliationItemWhereInput[] {
+  if (!range || (range.min == null && range.max == null)) return [];
+  const min = range.min ?? 0;
+  return [
+    {
+      OR: [
+        { difference: { gte: min, ...(range.max != null ? { lte: range.max } : {}) } },
+        { difference: { lte: -min, ...(range.max != null ? { gte: -range.max } : {}) } },
+      ],
+    },
+  ];
+}
+
+function reconciliationWhere(f: Fiscal360Filters, checkType: string | null, range: Fiscal360AmountRange | null): Prisma.FiscalReconciliationItemWhereInput {
+  if (checkType && !ALLOWED_TOKEN.test(checkType)) throw new Fiscal360InputError("Checagem inválida.");
+  const text = f.q
+    ? [{ OR: (["message", "subjectId", "relatedId"] as const).map((field) => ({ [field]: { contains: f.q!, mode: "insensitive" as const } })) }]
+    : [];
+  return {
+    ...reconciliationBaseWhere(f),
     ...(checkType ? { checkType } : {}),
     ...(f.status ? { status: f.status } : { status: { not: "OK" } }),
+    AND: [...text, ...differenceRangeWhere(range)],
   };
+}
+
+export async function listFiscal360Reconciliation(
+  db: Db,
+  f: Fiscal360Filters,
+  page: { page: number; pageSize: number },
+  checkType: string | null,
+  range: Fiscal360AmountRange | null = null
+): Promise<Fiscal360ReconciliationResponse> {
+  const base = reconciliationBaseWhere(f);
+  const where = reconciliationWhere(f, checkType, range);
   const [rows, total, summary] = await Promise.all([
     db.fiscalReconciliationItem.findMany({ where, orderBy: [{ competenceMonth: "desc" }, { checkType: "asc" }, { itemKey: "asc" }], skip: (page.page - 1) * page.pageSize, take: page.pageSize }),
     db.fiscalReconciliationItem.count({ where }),
@@ -620,6 +664,16 @@ export async function listFiscal360Reconciliation(
     total,
     summary: summary.map((s) => ({ checkType: s.checkType, status: s.status, count: s._count._all })),
   };
+}
+
+/** "Marcar todos do filtro": só o que ainda pode receber a decisão, até o limite do lote. */
+export async function listFiscal360ReconciliationKeys(db: Db, f: Fiscal360Filters, checkType: string | null, range: Fiscal360AmountRange | null): Promise<Fiscal360BatchKeys> {
+  const where: Prisma.FiscalReconciliationItemWhereInput = { AND: [reconciliationWhere(f, checkType, range), { status: { notIn: ["OK", "ACCEPTED"] } }] };
+  const [rows, total] = await Promise.all([
+    db.fiscalReconciliationItem.findMany({ where, select: { itemKey: true }, orderBy: [{ competenceMonth: "desc" }, { checkType: "asc" }, { itemKey: "asc" }], take: FISCAL360_BATCH_MAX }),
+    db.fiscalReconciliationItem.count({ where }),
+  ]);
+  return { keys: rows.map((r) => r.itemKey), total };
 }
 
 function apRow(a: Awaited<ReturnType<Db["fiscalApTitleFact"]["findMany"]>>[number]): Fiscal360ApTitleRow {
@@ -649,20 +703,48 @@ function apRow(a: Awaited<ReturnType<Db["fiscalApTitleFact"]["findMany"]>>[numbe
   };
 }
 
+function apTitlesWhere(f: Fiscal360Filters, classificationStatus: string | null, range: Fiscal360AmountRange | null): Prisma.FiscalApTitleFactWhereInput {
+  if (classificationStatus && !["TAX", "NOT_TAX", "PENDING"].includes(classificationStatus)) throw new Fiscal360InputError("Classificação inválida.");
+  const and: Prisma.FiscalApTitleFactWhereInput[] = [];
+  if (f.taxType) and.push({ OR: [{ taxType: f.taxType }, { suggestedTaxType: f.taxType }] });
+  if (f.q) {
+    const q = f.q;
+    and.push({
+      OR: [
+        ...(["description", "personName", "documentNumber", "nomusClassification"] as const).map((field) => ({ [field]: { contains: q, mode: "insensitive" as const } })),
+        ...(/^\d{1,9}$/.test(q) ? [{ apExternalId: Number(q) }] : []),
+      ],
+    });
+  }
+  if (range && (range.min != null || range.max != null)) {
+    and.push({ amountOriginal: { ...(range.min != null ? { gte: range.min } : {}), ...(range.max != null ? { lte: range.max } : {}) } });
+  }
+  return {
+    companyCnpj: { in: [...companyWhere(f), FISCAL360_UNKNOWN_COMPANY] },
+    competenceMonth: { gte: f.fromMonth, lte: f.toMonth },
+    classificationStatus: classificationStatus ?? { in: ["TAX", "PENDING"] },
+    AND: and,
+  };
+}
+
+/** "Marcar todos do filtro" dos títulos pendentes de classificação. */
+export async function listFiscal360PendingApKeys(db: Db, f: Fiscal360Filters, range: Fiscal360AmountRange | null): Promise<Fiscal360BatchKeys> {
+  const where = apTitlesWhere(f, "PENDING", range);
+  const [rows, total] = await Promise.all([
+    db.fiscalApTitleFact.findMany({ where, select: { apExternalId: true }, orderBy: [{ competenceMonth: "desc" }, { apExternalId: "desc" }], take: FISCAL360_BATCH_MAX }),
+    db.fiscalApTitleFact.count({ where }),
+  ]);
+  return { keys: rows.map((r) => String(r.apExternalId)), total };
+}
+
 export async function listFiscal360ApTitles(
   db: Db,
   f: Fiscal360Filters,
   page: { page: number; pageSize: number },
-  classificationStatus: string | null
+  classificationStatus: string | null,
+  range: Fiscal360AmountRange | null = null
 ): Promise<Fiscal360Page<Fiscal360ApTitleRow>> {
-  if (classificationStatus && !["TAX", "NOT_TAX", "PENDING"].includes(classificationStatus)) throw new Fiscal360InputError("Classificação inválida.");
-  const where: Prisma.FiscalApTitleFactWhereInput = {
-    companyCnpj: { in: [...companyWhere(f), FISCAL360_UNKNOWN_COMPANY] },
-    competenceMonth: { gte: f.fromMonth, lte: f.toMonth },
-    classificationStatus: classificationStatus ?? { in: ["TAX", "PENDING"] },
-    ...(f.taxType ? { OR: [{ taxType: f.taxType }, { suggestedTaxType: f.taxType }] } : {}),
-    ...(f.q ? { description: { contains: f.q, mode: "insensitive" } } : {}),
-  };
+  const where = apTitlesWhere(f, classificationStatus, range);
   const [rows, total] = await Promise.all([
     db.fiscalApTitleFact.findMany({ where, orderBy: [{ competenceMonth: "desc" }, { apExternalId: "desc" }], skip: (page.page - 1) * page.pageSize, take: page.pageSize }),
     db.fiscalApTitleFact.count({ where }),

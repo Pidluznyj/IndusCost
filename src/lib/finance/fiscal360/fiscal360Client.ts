@@ -82,6 +82,13 @@ export function buildFiscal360Query(f: Fiscal360UiFilters, extra: Record<string,
   return params.toString();
 }
 
+/** Aceita "1.234,56", "1234,56" e "1234.56"; o que não for número segue como está e o servidor recusa. */
+export function normalizeFiscal360Amount(text: string): string {
+  const value = text.trim();
+  if (value.includes(",")) return value.replace(/\./g, "").replace(",", ".");
+  return /^\d{1,3}(\.\d{3})+$/.test(value) ? value.replace(/\./g, "") : value;
+}
+
 export async function fetchFiscal360<T>(path: string, query: string, signal?: AbortSignal): Promise<T> {
   const res = await fetchJsonOk<{ ok: boolean; data: T }>(`/api/finance/fiscal-360/${path}${query ? `?${query}` : ""}`, { signal });
   return res.data;

@@ -146,7 +146,7 @@ export function ErrorState({ message }: { message: string }) {
 
 export type Column<T> = {
   key: string;
-  header: string;
+  header: React.ReactNode;
   align?: "left" | "right";
   render: (row: T) => React.ReactNode;
   className?: string;

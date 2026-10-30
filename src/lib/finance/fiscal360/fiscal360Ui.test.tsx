@@ -5,7 +5,9 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { Fiscal360BatchForm, Fiscal360BatchResultNotice, Fiscal360SelectionBar } from "../../../components/finance/fiscal360/Fiscal360BatchActions.js";
 import { Fiscal360DecisionForm } from "../../../components/finance/fiscal360/Fiscal360Decisions.js";
+import { normalizeFiscal360Amount } from "./fiscal360Client.js";
 import { Badge, Callout, DataTable, Drawer, EmptyState, KeyValue, KpiCard, Meter, Pagination, money, pct, statusTone } from "../../../components/finance/fiscal360/Fiscal360Shared.js";
 
 describe("peças visuais da Inteligência Fiscal 360°", () => {
@@ -72,6 +74,49 @@ describe("peças visuais da Inteligência Fiscal 360°", () => {
     assert.match(renderToStaticMarkup(<KeyValue items={[["Empresa", "Koppetel"]]} />), /Koppetel/);
     assert.match(renderToStaticMarkup(<Callout tone="warn">atenção</Callout>), /FFFBEB/);
     assert.match(renderToStaticMarkup(<EmptyState>vazio</EmptyState>), /vazio/);
+  });
+});
+
+describe("conciliação por lote: peças visuais", () => {
+  it("valores digitados em pt-BR viram número para a pesquisa", () => {
+    assert.equal(normalizeFiscal360Amount("1.234,56"), "1234.56");
+    assert.equal(normalizeFiscal360Amount("1234,5"), "1234.5");
+    assert.equal(normalizeFiscal360Amount("1.234"), "1234");
+    assert.equal(normalizeFiscal360Amount("12.5"), "12.5");
+    assert.equal(normalizeFiscal360Amount(" "), "");
+  });
+
+  it("sem marcação, a ação do lote fica desativada; acima do limite, avisa", () => {
+    const bar = (count: number) =>
+      renderToStaticMarkup(
+        <Fiscal360SelectionBar count={count} selectingAll={false} onSelectAll={() => undefined} onClear={() => undefined} testId="b">
+          <span>ação</span>
+        </Fiscal360SelectionBar>
+      );
+    assert.match(bar(0), /Nenhum item marcado/);
+    assert.match(bar(0), /<fieldset[^>]*disabled=""/);
+    assert.ok(!/<fieldset[^>]*disabled=""/.test(bar(3)));
+    assert.match(bar(3), /3 marcado/);
+    assert.match(bar(501), /Máximo de 500/);
+    assert.match(bar(501), /<fieldset[^>]*disabled=""/);
+  });
+
+  it("formulário do lote exige motivo; só a confirmação pede tributo, com a sugestão como padrão", () => {
+    const form = (decisionType: "AP_CONFIRM_TAX" | "ACCEPT_DIVERGENCE") =>
+      renderToStaticMarkup(<Fiscal360BatchForm decisionType={decisionType} apExternalIds={[1, 2]} onDone={() => undefined} onCancel={() => undefined} />);
+    assert.match(form("AP_CONFIRM_TAX"), /Usar a sugestão de cada título/);
+    assert.ok(!/Usar a sugestão/.test(form("ACCEPT_DIVERGENCE")));
+    assert.match(form("ACCEPT_DIVERGENCE"), /data-testid="fiscal360-batch-submit"[^>]*disabled=""|disabled=""[^>]*data-testid="fiscal360-batch-submit"/);
+    assert.match(form("ACCEPT_DIVERGENCE"), /Registrar em 2 item/);
+  });
+
+  it("resultado explica o que não recebeu a decisão", () => {
+    const html = renderToStaticMarkup(
+      <Fiscal360BatchResultNotice result={{ batchId: "b", requested: 3, applied: 1, skipped: [{ target: "x", label: "Título AP 7", reason: "título não está mais pendente de classificação." }], failed: [{ target: "y", label: "Título AP 8", reason: "falha interna ao registrar; tente de novo." }] }} />
+    );
+    assert.match(html, /1 de 3 decisão/);
+    assert.match(html, /2 item\(ns\) não receberam/);
+    assert.match(html, /Título AP 7: título não está mais pendente/);
   });
 });
 
