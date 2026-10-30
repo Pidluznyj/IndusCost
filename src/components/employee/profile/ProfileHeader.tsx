@@ -28,7 +28,7 @@ function KpiTile({
   );
 }
 
-export function ProfileHeader({ summary }: { summary: PeopleProfileSummaryDto }) {
+export function ProfileHeader({ summary, compact }: { summary: PeopleProfileSummaryDto; compact?: boolean }) {
   const { identity, kpis } = summary;
   const adjustmentPercent =
     kpis.lastAdjustmentPercentage != null ? formatPercent(kpis.lastAdjustmentPercentage) : null;
@@ -84,6 +84,7 @@ export function ProfileHeader({ summary }: { summary: PeopleProfileSummaryDto })
           </div>
         </div>
       </div>
+      {compact ? null : (
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <KpiTile label="Admissão" value={formatProfileDate(kpis.admissionDate)} />
         <KpiTile label="Tempo de casa" value={kpis.tenureLabel ?? "Não informado"} />
@@ -106,6 +107,7 @@ export function ProfileHeader({ summary }: { summary: PeopleProfileSummaryDto })
           sub={kpis.timeSinceLastAdjustmentLabel ? `há ${kpis.timeSinceLastAdjustmentLabel}` : null}
         />
       </div>
+      )}
     </header>
   );
 }
