@@ -119,6 +119,7 @@ export function CycleDesk({ cycleId, me: realMe, onToast, onChanged }: { cycleId
   const [error, setError] = useState<string | null>(null);
   const [dialog, setDialog] = useState<Dialog>(null);
   const [issued, setIssued] = useState<IssuedInvite[]>([]);
+  const [issuedHidden, setIssuedHidden] = useState(false);
   const [reclassifyRows, setReclassifyRows] = useState<{ name: string; beforeReason: string; afterReason: string }[]>([]);
   const [filters, setFilters] = useState({ text: "", department: "", role: "", manager: "", state: "" });
   const [lifecycleOpen, setLifecycleOpen] = useState(false);
@@ -191,6 +192,7 @@ export function CycleDesk({ cycleId, me: realMe, onToast, onChanged }: { cycleId
       const result = await issuePerformanceInvitesBatch(cycleId, { onlyMissing: true });
       rememberCards(ws.cycle.name, result.issued);
       setIssued((current) => [...result.issued, ...current.filter((c) => !result.issued.some((n) => n.participantId === c.participantId))]);
+      if (result.issued.length) setIssuedHidden(false);
       const deferred = result.deferred ?? 0;
       const base = result.issued.length ? `${result.issued.length} convite(s) gerado(s)` : "Todos já têm convite ativo ou já responderam";
       onToast(deferred ? `${base}. ${deferred} ficam para o retorno do afastamento.` : base);
@@ -234,6 +236,7 @@ export function CycleDesk({ cycleId, me: realMe, onToast, onChanged }: { cycleId
       const result = await issuePerformanceInvite(person.self.id);
       rememberCards(ws.cycle.name, [result]);
       setIssued((current) => [result, ...current.filter((c) => c.participantId !== result.participantId)]);
+      setIssuedHidden(false);
       onToast(person.invite.status === "NONE" ? "Convite gerado" : "Convite reemitido; o anterior foi revogado");
       await reload();
     } catch (cause) {
@@ -436,7 +439,15 @@ export function CycleDesk({ cycleId, me: realMe, onToast, onChanged }: { cycleId
           </div>
         </div>
 
-        {issued.length > 0 ? <IssuedPanel issued={issued} onClear={() => setIssued([])} onToast={onToast} /> : null}
+        {issued.length > 0 && !issuedHidden ? <IssuedPanel issued={issued} onHide={() => setIssuedHidden(true)} onToast={onToast} /> : null}
+        {issued.length > 0 && issuedHidden ? (
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-200 bg-amber-50/60 p-3">
+            <p className="text-sm text-amber-900">{issued.length} código(s) oculto(s).</p>
+            <button type="button" className={BTN_SECONDARY} onClick={() => setIssuedHidden(false)} data-testid="perf-issued-show">
+              Mostrar códigos
+            </button>
+          </div>
+        ) : null}
 
         <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
           <label className="relative sm:col-span-2 lg:col-span-1">
@@ -805,7 +816,7 @@ function PersonRow({
   );
 }
 
-function IssuedPanel({ issued, onClear, onToast }: { issued: IssuedInvite[]; onClear: () => void; onToast: (m: string) => void }) {
+function IssuedPanel({ issued, onHide, onToast }: { issued: IssuedInvite[]; onHide: () => void; onToast: (m: string) => void }) {
   return (
     <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-3" data-testid="perf-issued-panel">
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
@@ -814,13 +825,13 @@ function IssuedPanel({ issued, onClear, onToast }: { issued: IssuedInvite[]; onC
           <button type="button" className={BTN_SECONDARY} onClick={() => openInvitePrint()}>
             <Printer className="h-4 w-4" aria-hidden /> Imprimir fichas (sem o código)
           </button>
-          <button type="button" className={BTN_GHOST} onClick={onClear}>
+          <button type="button" className={BTN_GHOST} onClick={onHide} data-testid="perf-issued-hide">
             Ocultar códigos
           </button>
         </div>
       </div>
       <p className="mb-3 text-xs text-amber-900">
-        O código de 6 dígitos aparece só nesta tela e não vai na folha. Fale o código para a pessoa na hora da entrega. Ao reemitir, o convite anterior deixa de valer.
+        O código de 6 dígitos aparece só nesta tela e não vai na folha. Ele não fica guardado: se sair ou recarregar a página, será preciso reemitir o convite. Fale o código para a pessoa na hora da entrega. Ao reemitir, o convite anterior deixa de valer.
       </p>
       <ul className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
         {issued.map((invite) => (
