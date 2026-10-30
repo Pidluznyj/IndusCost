@@ -1282,10 +1282,54 @@ function isJourneyKind(kind: AssignmentRecord["kind"]): boolean {
 }
 
 /**
- * A tarefa aceita resposta agora? Com o ciclo Aberto e calendário de etapas, só dentro da janela da etapa dela
- * (autoavaliação, líder ou liderança). Depois da coleta, a avaliação do líder segue aberta para revisão devolvida.
+ * Responder adiantado: a etapa ainda não abriu, mas a pessoa já concluiu a primeira que estava disponível e pode seguir,
+ * se quiser. O início da etapa só deixa de travar; o fim continua valendo, e a primeira etapa nunca abre antes da data.
+ * - Na jornada (autoavaliação → liderança): as anteriores enviadas ou encerradas, com pelo menos uma enviada.
+ * - Avaliações que o líder faz: a autoavaliação dele neste ciclo enviada. Quem não participa do ciclo espera a data.
  */
-function collectionOpenFor(cycle: CycleRecord, assignment: AssignmentRecord, now: Date): boolean {
+function answersAhead(db: PerformanceDatabase, cycle: CycleRecord, assignment: AssignmentRecord, now: Date): boolean {
+  if (cycle.status !== "OPEN" || assignment.status === "SUBMITTED") return false;
+  const window = kindWindow(cycle, assignment.kind);
+  if (!window) return false;
+  const today = localDay(now);
+  if (windowState(window, today) !== "BEFORE") return false;
+  if (isJourneyKind(assignment.kind)) {
+    const journey = journeyOf(db, assignment.participantId);
+    const earlier = journey.slice(0, journey.findIndex((a) => a.id === assignment.id));
+    return (
+      earlier.some((a) => a.status === "SUBMITTED") &&
+      earlier.every((a) => {
+        const earlierWindow = kindWindow(cycle, a.kind);
+        return a.status === "SUBMITTED" || (earlierWindow !== null && windowState(earlierWindow, today) === "AFTER");
+      })
+    );
+  }
+  return db.assignments.some(
+    (a) =>
+      a.active &&
+      a.cycleId === cycle.id &&
+      a.kind === "SELF" &&
+      a.employeeId === assignment.evaluatorEmployeeId &&
+      a.status === "SUBMITTED"
+  );
+}
+
+/** Data em que a etapa abre, quando a pessoa está respondendo adiantado. */
+function aheadOpensAt(db: PerformanceDatabase, cycle: CycleRecord, assignment: AssignmentRecord, now: Date): string | null {
+  return answersAhead(db, cycle, assignment, now) ? kindWindow(cycle, assignment.kind)?.startsAt ?? null : null;
+}
+
+function assignmentClosedMessage(db: PerformanceDatabase, cycle: CycleRecord, assignment: AssignmentRecord, now: Date): string | null {
+  return answersAhead(db, cycle, assignment, now) ? null : stageClosedMessage(cycle, assignment.kind, now);
+}
+
+/**
+ * A tarefa aceita resposta agora? Com o ciclo Aberto e calendário de etapas, só dentro da janela da etapa dela
+ * (autoavaliação, líder ou liderança), ou antes dela para quem pode adiantar (`answersAhead`). Depois da coleta, a
+ * avaliação do líder segue aberta para revisão devolvida.
+ */
+function collectionOpenFor(db: PerformanceDatabase, cycle: CycleRecord, assignment: AssignmentRecord, now: Date): boolean {
+  if (answersAhead(db, cycle, assignment, now)) return true;
   if (cycle.status === "OPEN" && !kindWindowOpen(cycle, assignment.kind, localDay(now))) {
     // A avaliação do líder não abre antes do início; depois do fim fica atrasada (como o prazo antigo) e segue
     // aceitando resposta até o RH fechar a coleta. Assim a revisão devolvida também continua possível.
@@ -1339,7 +1383,7 @@ export function saveAnswers(
     if (!assisted && actor !== assignment.employeeId) return fail("FORBIDDEN", "A autoavaliação é só da própria pessoa.");
   }
   if (assignment.status === "SUBMITTED") return fail("ASSIGNMENT_LOCKED", "Esta resposta já foi enviada.");
-  if (!collectionOpenFor(cycle, assignment, options.now())) {
+  if (!collectionOpenFor(db, cycle, assignment, options.now())) {
     return fail("COLLECTION_CLOSED", stageClosedMessage(cycle, assignment.kind, options.now()) ?? "A coleta deste ciclo está fechada.");
   }
   if (assignment.version !== input.expectedVersion) return fail("VERSION_CONFLICT", "A avaliação mudou em outro lugar. Atualize a tela para ver a versão atual.");
@@ -1965,20 +2009,22 @@ export type PublicFormValue = {
   assisted: boolean;
   expiresAt: string;
   dueAt: string;
+  /** Preenchida quando a pessoa está adiantando esta etapa: a data em que ela abre para todos. */
+  opensAt: string | null;
 };
 
 export function publicForm(source: PerformanceDatabase, input: { sessionToken: string }, options: ServiceOptions): ServiceResult<PublicFormValue> {
   const ctx = formSession(source, input.sessionToken, options.now());
   if (!ctx || ctx.cycle.status !== "OPEN" || ctx.done) return fail("INVITE_REJECTED", publicFailureMessage());
-  const closed = stageClosedMessage(ctx.cycle, ctx.assignment.kind, options.now());
+  const closed = assignmentClosedMessage(source, ctx.cycle, ctx.assignment, options.now());
   if (closed) return fail("STAGE_CLOSED", closed);
-  return { ok: true, db: source, value: journeyFormValue(source, { ...ctx, assisted: ctx.session.phase === "ASSISTED", expiresAt: ctx.session.expiresAt }) };
+  return { ok: true, db: source, value: journeyFormValue(source, { ...ctx, assisted: ctx.session.phase === "ASSISTED", expiresAt: ctx.session.expiresAt, now: options.now() }) };
 }
 
 /** Formulário da etapa atual da jornada (portal ou dentro do sistema): o mesmo conteúdo nos dois caminhos. */
 function journeyFormValue(
   source: PerformanceDatabase,
-  ctx: { cycle: CycleRecord; participant: ParticipantRecord; assignment: AssignmentRecord; assisted: boolean; expiresAt: string }
+  ctx: { cycle: CycleRecord; participant: ParticipantRecord; assignment: AssignmentRecord; assisted: boolean; expiresAt: string; now: Date }
 ): PublicFormValue {
   const model = modelOfCycle(source, ctx.cycle);
   const leadership = isLeadershipKind(ctx.assignment.kind);
@@ -2016,6 +2062,7 @@ function journeyFormValue(
       assisted: ctx.assisted,
       expiresAt: ctx.expiresAt,
       dueAt: window?.endsAt ?? ctx.cycle.selfDueAt,
+      opensAt: aheadOpensAt(source, ctx.cycle, ctx.assignment, ctx.now),
   };
 }
 
@@ -2051,7 +2098,7 @@ function myJourneyContext(db: PerformanceDatabase, actorEmployeeId: string | nul
     .map((x) => ({ ...x, assignment: journeyStepNow(db, x.participant.id, x.cycle, now) }))
     .filter((x): x is typeof x & { assignment: AssignmentRecord } => x.assignment !== null)
     // Primeiro o ciclo em que a etapa da pessoa está aberta hoje; depois o aberto mais recente.
-    .map((x) => ({ ...x, openToday: stageClosedMessage(x.cycle, x.assignment.kind, now) === null }))
+    .map((x) => ({ ...x, openToday: assignmentClosedMessage(db, x.cycle, x.assignment, now) === null }))
     .sort((a, b) => Number(b.openToday) - Number(a.openToday) || (b.cycle.openedAt ?? "").localeCompare(a.cycle.openedAt ?? ""));
   return candidates[0] ?? null;
 }
@@ -2067,16 +2114,16 @@ const myScope = (actorEmployeeId: string): PerformanceScope => ({
 export function myJourneySummary(db: PerformanceDatabase, actorEmployeeId: string | null, now: Date) {
   const ctx = myJourneyContext(db, actorEmployeeId, now);
   if (!ctx) return null;
-  const closed = stageClosedMessage(ctx.cycle, ctx.assignment.kind, now);
-  return { cycleId: ctx.cycle.id, cycleName: ctx.cycle.name, kind: ctx.assignment.kind, title: STEP_TEXT[ctx.assignment.kind as PublicFormStep["kind"]].title, open: closed === null, message: closed };
+  const closed = assignmentClosedMessage(db, ctx.cycle, ctx.assignment, now);
+  return { cycleId: ctx.cycle.id, cycleName: ctx.cycle.name, kind: ctx.assignment.kind, title: STEP_TEXT[ctx.assignment.kind as PublicFormStep["kind"]].title, open: closed === null, message: closed, opensAt: aheadOpensAt(db, ctx.cycle, ctx.assignment, now) };
 }
 
 export function myForm(source: PerformanceDatabase, input: { actorEmployeeId: string | null }, options: ServiceOptions): ServiceResult<PublicFormValue> {
   const ctx = myJourneyContext(source, input.actorEmployeeId, options.now());
   if (!ctx) return fail("NO_PENDING", "Você não tem pesquisa de desempenho aberta agora.");
-  const closed = stageClosedMessage(ctx.cycle, ctx.assignment.kind, options.now());
+  const closed = assignmentClosedMessage(source, ctx.cycle, ctx.assignment, options.now());
   if (closed) return fail("STAGE_CLOSED", closed);
-  return { ok: true, db: source, value: journeyFormValue(source, { ...ctx, assisted: false, expiresAt: "" }) };
+  return { ok: true, db: source, value: journeyFormValue(source, { ...ctx, assisted: false, expiresAt: "", now: options.now() }) };
 }
 
 export function mySave(
@@ -2270,9 +2317,11 @@ export function leaderQueue(db: PerformanceDatabase, scope: PerformanceScope, ac
         version: assignment.version,
         revision: assignment.revision,
         returnReason: assignment.returnReason,
-        editable: collectionOpenFor(cycle, assignment, now) && assignment.status !== "SUBMITTED",
+        editable: collectionOpenFor(db, cycle, assignment, now) && assignment.status !== "SUBMITTED",
         /** Etapa do líder fora da janela (abre em / terminou em). */
-        stageMessage: assignment.status !== "SUBMITTED" ? stageClosedMessage(cycle, "LEADER", now) : null,
+        stageMessage: assignment.status !== "SUBMITTED" ? assignmentClosedMessage(db, cycle, assignment, now) : null,
+        /** A etapa ainda não abriu, mas o líder já pode adiantar. */
+        opensAt: aheadOpensAt(db, cycle, assignment, now),
         selfVisible: showSelf,
         divergences:
           showSelf && self ? findDivergences(toStored(db, self.id), toStored(db, assignment.id), rulesOfCycle(db, cycle).divergenceThreshold) : [],
@@ -2474,7 +2523,7 @@ export function readLeaderForm(db: PerformanceDatabase, assignmentId: string, sc
     },
     employee: { name: participant.employeeName, roleName: participant.roleName, departmentName: participant.departmentName },
     cycle: { id: cycle.id, name: cycle.name, periodLabel: cycle.periodLabel, status: cycle.status, dueAt: cycle.leaderDueAt },
-    editable: collectionOpenFor(cycle, assignment, now) && assignment.status !== "SUBMITTED",
+    editable: collectionOpenFor(db, cycle, assignment, now) && assignment.status !== "SUBMITTED",
     instructions: model?.instructions ?? PROPOSED_MODEL_INSTRUCTIONS,
     rules: { requireExtremeEvidence: rules.requireExtremeEvidence, evidenceMinChars: rules.evidenceMinChars },
     questions: questionsOf(db, cycle.modelId).map((q) => ({

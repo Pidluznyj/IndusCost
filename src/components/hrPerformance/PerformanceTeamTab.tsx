@@ -188,6 +188,11 @@ export function PerformanceTeamTab({ onToast, actorName, linkedEmployee = true }
                     {item.stageMessage}
                   </p>
                 ) : null}
+                {item.opensAt ? (
+                  <p className="text-xs text-muted-foreground" data-testid={`perf-team-ahead-${item.employeeName}`}>
+                    A etapa abre em {dateBr(item.opensAt)}. Se quiser, você já pode responder.
+                  </p>
+                ) : null}
                 <p className={cn("text-xs", late ? "font-semibold text-rose-700" : "text-muted-foreground")}>
                   Prazo {dateBr(item.dueAt)}
                   {late ? " · atrasada" : ""}

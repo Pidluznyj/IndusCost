@@ -28,6 +28,7 @@ O ciclo passa a ter **etapas com início e fim**. Os estados técnicos continuam
 
 - **Datas:** dias civis de São Paulo (`YYYY-MM-DD`), inclusivos nas duas pontas (`performanceStages.ts`).
 - **Coleta:** cada etapa só aceita respostas dentro da sua janela. Isso vale para o portal (QR), para a autoavaliação no sistema e para a avaliação do líder. Fora da janela, a mensagem diz "abre em dd/mm" ou "terminou em dd/mm".
+- **Responder adiantado:** quem concluiu a primeira etapa disponível pode seguir para as próximas antes da data de início, se quiser. Na jornada da pessoa, as etapas anteriores precisam estar enviadas ou encerradas, com pelo menos uma enviada. Nas avaliações que o líder faz, a autoavaliação dele no ciclo precisa estar enviada; quem não participa do ciclo espera a data. A primeira etapa nunca abre antes da data, e o fim de cada etapa continua valendo.
 - **Calendário:** é tudo ou nada. A calibração começa depois do fim da coleta. A avaliação do líder não começa antes da autoavaliação. A avaliação da liderança não começa antes da avaliação do líder.
 - **Mudança de datas:** depois da abertura do ciclo, exige motivo (≥ 8 caracteres). A auditoria `CYCLE_UPDATED` registra o calendário anterior e o novo.
 - **Ciclos sem calendário:** os ciclos já existentes têm os campos novos nulos e mantêm o comportamento anterior: tudo aberto enquanto o ciclo estiver Aberto. Nenhum ciclo em andamento muda.

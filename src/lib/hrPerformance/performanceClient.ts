@@ -475,6 +475,7 @@ export type LeaderQueueItem = {
   pdis: { id: string; title: string; status: string; dueAt: string | null }[];
   /** Etapa "Avaliação do líder" fora da janela: "abre em dd/mm" ou "terminou em dd/mm". */
   stageMessage?: string | null;
+  opensAt?: string | null;
   /** Posição preliminar (consolidação/calibração), antes de oficial. */
   preliminaryResult?: { quadrant: string; nineX: NineBand | null; nineY: NineBand | null; calibrated: boolean } | null;
   plan?: FollowUpPlanDto | null;
@@ -506,7 +507,7 @@ export type TeamNotices = {
   inactiveCycles: { cycleId: string; cycleName: string; tasks: number }[];
   pendingLeader: number;
   pendingCalibration: number;
-  myJourney: { cycleId: string; cycleName: string; kind: string; title: string; open: boolean; message: string | null } | null;
+  myJourney: { cycleId: string; cycleName: string; kind: string; title: string; open: boolean; message: string | null; opensAt?: string | null } | null;
 };
 export const fetchLeaderQueue = () => json<{ items: LeaderQueueItem[]; leadership?: SuperiorLeadershipItem[]; notices?: TeamNotices }>(`${BASE}/team`);
 export type FollowUpPlanInput = {

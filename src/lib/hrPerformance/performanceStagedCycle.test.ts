@@ -277,6 +277,88 @@ function stagedWithLeadership(schedule: { selfDueAt: string; leaderDueAt: string
   return { db, cycleId, leadershipModelId: lm.value.modelId };
 }
 
+const AHEAD_SCHEDULE = {
+  selfStartAt: "2026-10-10", selfDueAt: "2026-10-20", leaderStartAt: "2026-10-21", leaderDueAt: "2026-10-30",
+  leadershipStartAt: "2026-10-21", leadershipDueAt: "2026-10-30", calibrationStartAt: "2026-11-01", calibrationDueAt: "2026-11-10",
+};
+
+describe("responder adiantado", () => {
+  it("antes de enviar a primeira etapa, a próxima não abre; depois de enviar, abre e avisa a data", () => {
+    const { db } = stagedWithLeadership(AHEAD_SCHEDULE);
+    const first = must(myForm(db, { actorEmployeeId: "ana" }, openOptions));
+    assert.equal(first.value.step.kind, "SELF");
+    assert.equal(first.value.opensAt, null);
+    const upward = db.assignments.find((a) => a.kind === "LEADERSHIP_UPWARD" && a.participantId === participantOf(db, "ana").id)!;
+    const blocked = saveAnswers(db, { assignmentId: upward.id, expectedVersion: upward.version, answers: [], actorUserId: null, scope: anaScope }, openOptions);
+    assert.equal(blocked.ok === false && blocked.code, "COLLECTION_CLOSED");
+
+    const after = submitSelf(db, "ana");
+    const next = must(myForm(after, { actorEmployeeId: "ana" }, openOptions));
+    assert.equal(next.value.step.kind, "LEADERSHIP_UPWARD");
+    assert.equal(next.value.opensAt, "2026-10-21");
+    assert.equal(next.value.dueAt, "2026-10-30");
+    const summary = myJourneySummary(after, "ana", NOW);
+    assert.equal(summary?.open, true);
+    assert.equal(summary?.opensAt, "2026-10-21");
+    const saved = saveAnswers(after, { assignmentId: upward.id, expectedVersion: upward.version, answers: [], actorUserId: null, scope: anaScope }, openOptions);
+    assert.equal(saved.ok, true);
+  });
+
+  it("a primeira etapa nunca abre antes da data", () => {
+    const { db } = stagedWithLeadership({ ...AHEAD_SCHEDULE, selfStartAt: "2026-10-18" });
+    const form = myForm(db, { actorEmployeeId: "ana" }, openOptions);
+    assert.equal(form.ok === false && form.code, "STAGE_CLOSED");
+    assert.match(form.ok === false ? form.message : "", /abre em 18\/10/);
+  });
+
+  it("autoavaliação perdida não destrava a etapa futura", () => {
+    const { db } = stagedWithLeadership({ ...AHEAD_SCHEDULE, selfStartAt: "2026-10-01", selfDueAt: "2026-10-10" });
+    const form = myForm(db, { actorEmployeeId: "ana" }, openOptions);
+    assert.equal(form.ok === false && form.code, "STAGE_CLOSED");
+    assert.match(form.ok === false ? form.message : "", /abre em 21\/10/);
+  });
+
+  it("o fim da etapa continua valendo", () => {
+    const { db } = stagedWithLeadership(AHEAD_SCHEDULE);
+    const after = submitSelf(db, "ana");
+    const lateNow = new Date("2026-10-31T15:00:00.000Z");
+    const form = myForm(after, { actorEmployeeId: "ana" }, { ...openOptions, now: () => lateNow });
+    assert.equal(form.ok === false && form.code, "STAGE_CLOSED");
+    assert.match(form.ok === false ? form.message : "", /terminou em 30\/10/);
+  });
+
+  it("líder adianta só depois da própria autoavaliação; quem não participa espera a data", () => {
+    const open = stagedOpen();
+    const leader = assignmentOf(open.db, "ana", "LEADER");
+    const waiting = leaderQueue(open.db, brunoScope, "bruno", NOW).find((i) => i.assignmentId === leader.id)!;
+    assert.equal(waiting.editable, false);
+    assert.equal(waiting.opensAt, null);
+    assert.match(waiting.stageMessage ?? "", /abre em 21\/10/);
+
+    const db = structuredClone(open.db) as PerformanceDatabase;
+    db.assignments.push({ ...assignmentOf(db, "ana", "SELF"), id: "self-bruno", employeeId: "bruno", status: "SUBMITTED" });
+    const ready = leaderQueue(db, brunoScope, "bruno", NOW).find((i) => i.assignmentId === leader.id)!;
+    assert.equal(ready.editable, true);
+    assert.equal(ready.opensAt, "2026-10-21");
+    assert.equal(ready.stageMessage, null);
+    assert.equal(saveAnswers(db, { assignmentId: leader.id, expectedVersion: leader.version, answers: allAnswers(3), actorUserId: "u-bruno", scope: brunoScope }, openOptions).ok, true);
+  });
+
+  it("autoavaliação em rascunho do líder não destrava", () => {
+    const open = stagedOpen();
+    const db = structuredClone(open.db) as PerformanceDatabase;
+    db.assignments.push({ ...assignmentOf(db, "ana", "SELF"), id: "self-bruno", employeeId: "bruno", status: "IN_PROGRESS" });
+    const leader = assignmentOf(db, "ana", "LEADER");
+    assert.equal(saveAnswers(db, { assignmentId: leader.id, expectedVersion: leader.version, answers: allAnswers(3), actorUserId: "u-bruno", scope: brunoScope }, openOptions).ok, false);
+  });
+
+  it("ciclo sem calendário não muda", () => {
+    const open = openCycle();
+    const form = must(myForm(open.db, { actorEmployeeId: "ana" }, openOptions));
+    assert.equal(form.value.opensAt, null);
+  });
+});
+
 describe("correções da validação", () => {
   it("autoavaliação perdida não prende a pessoa fora da etapa de liderança", () => {
     const { db } = stagedWithLeadership({
